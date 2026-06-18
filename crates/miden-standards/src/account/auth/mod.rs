@@ -22,4 +22,6 @@ pub use network_account::{
     NetworkAccount,
     NetworkAccountNoteAllowlist,
     NetworkAccountNoteAllowlistError,
+    NetworkAccountTxScriptAllowlist,
+    NetworkAccountTxScriptAllowlistError,
 };

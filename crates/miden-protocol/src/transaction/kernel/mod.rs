@@ -346,7 +346,7 @@ impl TransactionKernel {
         let (output_notes_commitment, account_update_commitment, fee, expiration_block_num) =
             Self::parse_output_stack(stack)?;
 
-        let (final_account_commitment, account_delta_commitment) =
+        let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
 
         // parse final account state
@@ -369,14 +369,14 @@ impl TransactionKernel {
 
         Ok(TransactionOutputs::new(
             account,
-            account_delta_commitment,
+            account_patch_commitment,
             output_notes,
             fee,
             expiration_block_num,
         ))
     }
 
-    /// Returns the final account commitment and account delta commitment extracted from the account
+    /// Returns the final account commitment and account patch commitment extracted from the account
     /// update commitment.
     fn parse_account_update_commitment(
         account_update_commitment: Word,
@@ -402,13 +402,13 @@ impl TransactionKernel {
             <[Felt; 4]>::try_from(&account_update_data[0..4])
                 .expect("we should have sliced off exactly four elements"),
         );
-        let account_delta_commitment = Word::from(
+        let account_patch_commitment = Word::from(
             <[Felt; 4]>::try_from(&account_update_data[4..8])
                 .expect("we should have sliced off exactly four elements"),
         );
 
         let computed_account_update_commitment =
-            Hasher::merge(&[final_account_commitment, account_delta_commitment]);
+            Hasher::merge(&[final_account_commitment, account_patch_commitment]);
 
         if computed_account_update_commitment != account_update_commitment {
             let err_message = format!(
@@ -417,7 +417,7 @@ impl TransactionKernel {
             return Err(TransactionOutputError::AccountUpdateCommitment(err_message.into()));
         }
 
-        Ok((final_account_commitment, account_delta_commitment))
+        Ok((final_account_commitment, account_patch_commitment))
     }
 
     // UTILITY METHODS

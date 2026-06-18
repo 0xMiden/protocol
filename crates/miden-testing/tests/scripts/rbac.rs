@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use core::slice;
 
@@ -11,6 +12,7 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountType,
     RoleSymbol,
+    StorageMapKey,
 };
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
@@ -32,7 +34,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { owner, authority_role: None })
+        .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new() })
         .build_existing()?;
 
     Ok(account)
@@ -54,12 +56,17 @@ fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
-fn role_config_key(role: &RoleSymbol) -> Word {
-    Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)])
+fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
 }
 
-fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> Word {
-    Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
+fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([
+        Felt::ZERO,
+        Felt::from(role),
+        account_id.suffix(),
+        account_id.prefix().as_felt(),
+    ]))
 }
 
 fn account_id_from_felt_pair(
@@ -118,7 +125,7 @@ async fn execute_note_and_apply(
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     Ok(updated)
 }
@@ -455,7 +462,6 @@ async fn test_rbac_grant_existing_member_is_noop() -> anyhow::Result<()> {
     let regrant_note = build_note(owner, grant_minter_to_member)?;
     let regranted = execute_note_and_apply(&mock_chain, &granted, &regrant_note).await?;
 
-    // Member count must remain at 1; granting an existing member is idempotent.
     let (member_count, _) = get_role_config(&regranted, &minter)?;
     assert_eq!(member_count, Felt::from(1u32));
     assert!(is_role_member(&regranted, &minter, member)?);

@@ -21,6 +21,7 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
     Description,
@@ -214,6 +215,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
@@ -249,6 +251,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
@@ -406,6 +409,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
@@ -448,6 +452,7 @@ async fn is_field_mutable_checks(
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
@@ -525,7 +530,8 @@ fn verify_faucet_with_max_name_and_description(
     let mut builder = AccountBuilder::new(seed)
         .account_type(account_type)
         .with_auth_component(NoAuth)
-        .with_component(faucet);
+        .with_component(faucet)
+        .with_component(Pausable::unpaused());
 
     for comp in extra_components {
         builder = builder.with_component(comp);
@@ -690,7 +696,7 @@ async fn test_field_setter_owner_succeeds(
 
     let executed = tx_context.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     for (i, expected) in new_data.iter().enumerate() {
         let chunk = updated_faucet.storage().get_item(slot_fn(i))?;
@@ -923,7 +929,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let executed = tx_context.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
     assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");

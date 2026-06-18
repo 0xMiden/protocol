@@ -1,6 +1,6 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -19,7 +19,6 @@ use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
-use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
@@ -103,17 +102,17 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let mut mock_chain = mock_chain_builder.build()?;
 
     let salt = Word::from([Felt::new_unchecked(1); 4]);
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -121,10 +120,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let tx_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+    let tx_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, one_signature)
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -134,7 +131,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
     );
 
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -199,10 +196,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
             );
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoOutputNotes => {
-            match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
-                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
-            }
+            result.unwrap_err().unwrap_unauthorized_err();
         },
     }
 
@@ -223,9 +217,9 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 ) -> anyhow::Result<()> {
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-    use miden_protocol::transaction::RawOutputNote;
-    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_protocol::transaction::{RawOutputNote, TransactionScript};
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
 
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -250,8 +244,10 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
     )?;
 
-    let send_note_script = AccountInterface::from_account(&multisig_account)
-        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -277,10 +273,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
             );
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoInputNotes => {
-            match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
-                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
-            }
+            result.unwrap_err().unwrap_unauthorized_err();
         },
     }
 
@@ -333,21 +326,21 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
-    // Dry-run to obtain the tx summary that the current approvers must sign.
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
-        .tx_script(update_signers_script.clone())
+        .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
-        .extend_advice_inputs(advice_inputs.clone())
-        .auth_args(salt)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
+
+    // Dry-run to obtain the tx summary that the current approvers must sign.
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -358,19 +351,14 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(update_signers_script)
-        .tx_script_args(multisig_config_hash)
-        .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+    let executed_tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Verify the new threshold/num_approvers config is persisted.
     let threshold_config = multisig_account
@@ -382,7 +370,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = Word::from([i as u32, 0, 0, 0]);
+        let storage_key = StorageMapKey::from_index(i as u32);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)
@@ -413,7 +401,7 @@ async fn test_multisig_smart_set_procedure_policy(
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+    let receive_asset_root = StorageMapKey::from_raw(BasicWallet::receive_asset_root().as_word());
     let immediate_threshold = 1u32;
     let delayed_threshold = 0u32;
     let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;
@@ -439,19 +427,19 @@ async fn test_multisig_smart_set_procedure_policy(
 
     let salt = Word::from([Felt::new_unchecked(4); 4]);
 
-    // Dry-run to obtain the tx summary that the approvers must sign.
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
+        .tx_script(set_policy_script)
+        .auth_args(salt);
+
+    // Dry-run to obtain the tx summary that the approvers must sign.
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -462,17 +450,14 @@ async fn test_multisig_smart_set_procedure_policy(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(set_policy_script)
-        .auth_args(salt)
+    let executed_tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Policy word layout: [immediate, delayed, note_restrictions, 0]
     let stored_policy = multisig_account
@@ -546,19 +531,19 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     let salt = Word::from([Felt::new_unchecked(42); 4]);
 
-    // Dry-run to capture the tx summary.
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
+        .tx_script(set_policy_script)
+        .auth_args(salt);
+
+    // Dry-run to capture the tx summary.
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected dry-run abort with tx summary: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing = SigningInputs::TransactionSummary(tx_summary);
@@ -574,26 +559,16 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     // With only 1 signature (matching the low receive_asset policy), the tx must fail because
     // the unpolicied set_procedure_policy call contributes `default_threshold = 3`.
-    let one_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
+    let one_sig_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .build()?
         .execute()
         .await;
-    match one_sig_result {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
-        other => {
-            panic!("expected Unauthorized with 1 sig (escalation would let it pass): {other:?}")
-        },
-    }
+    one_sig_result.unwrap_err().unwrap_unauthorized_err();
 
     // With all 3 signatures the unpolicied default contribution is met and the tx succeeds.
-    let three_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script)
-        .auth_args(salt)
+    let three_sig_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)

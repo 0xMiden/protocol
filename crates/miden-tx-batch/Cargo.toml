@@ -1,0 +1,32 @@
+[package]
+authors.workspace      = true
+categories             = ["no-std"]
+description            = "Miden blockchain transaction batch executor, prover, and verifier"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["batch", "miden", "prover"]
+license.workspace      = true
+name                   = "miden-tx-batch"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lib]
+bench   = false
+doctest = false
+
+[features]
+default = ["std"]
+std     = ["miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-verifier/std"]
+testing = ["miden-processor/testing", "miden-protocol/testing"]
+
+[dependencies]
+miden-processor = { workspace = true }
+miden-protocol  = { workspace = true }
+miden-prover    = { workspace = true }
+miden-verifier  = { workspace = true }
+thiserror       = { workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["testing"], workspace = true }

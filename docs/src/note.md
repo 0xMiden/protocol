@@ -80,6 +80,8 @@ A note can have up to 4 attachments. Each attachment is a variable-size, _public
 
 The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
 
+Schemes are not required to be unique within a note, but adding multiple attachments with the same scheme is discouraged. It provides no additional benefit and only increases the note's public on-chain data and the fees its creator pays.
+
 Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
@@ -99,7 +101,7 @@ The `Note` lifecycle proceeds through four primary phases: **creation**, **valid
 Accounts can create notes in a transaction. The `Note` exists if it is included in the global notes DB.
 
 - **Users:** Executing local or network transactions.
-- **Miden operators:** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
+- **[Miden node infrastructure](./index.md#operational-roles-capture-and-progress-state):** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
 
 #### Note Type
 

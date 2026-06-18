@@ -2,7 +2,6 @@ use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::constants::WORD_NUM_ELEMENTS
-# use $kernel::types::AccountId
 use miden::core::mem
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
@@ -220,16 +219,14 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=3360
 # NATIVE ACCOUNT DELTA
 # -------------------------------------------------------------------------------------------------
 
-# The link map pointer at which the delta of the fungible asset vault is stored.
-pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
+# The link map pointer at which the delta of the asset vault is stored.
+pub const ACCOUNT_UPDATE_ASSET_PTR=532480
 
-# The link map pointer at which the delta of the non-fungible asset vault is stored.
-pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
-
-# The section of link map pointers where storage map deltas are stored.
+# The section of link map pointers where storage map patches are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
 # delta at that slot index. Slot indices that are not map slots are simply unused.
-const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+8
+# The section spans `MAX_NUM_STORAGE_SLOTS` (255) entries, one per possible slot index.
+const ACCOUNT_PATCH_STORAGE_MAP_SECTION=ACCOUNT_UPDATE_ASSET_PTR+4
 
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
@@ -1427,16 +1424,16 @@ end
 
 ### ACCOUNT DELTA #################################################
 
-#! Returns the link map pointer to the storage map delta of the storage map in the given slot index.
+#! Returns the link map pointer to the storage map patch of the storage map in the given slot index.
 #!
 #! Inputs:  [slot_idx]
-#! Outputs: [account_delta_storage_map_ptr]
+#! Outputs: [account_patch_storage_map_ptr]
 #!
 #! Where:
-#! - account_delta_storage_map_ptr is the link map pointer to the storage map delta for the
+#! - account_patch_storage_map_ptr is the link map pointer to the storage map patch for the
 #!   requested slot index.
-pub proc get_account_delta_storage_map_ptr
-    add.ACCOUNT_DELTA_STORAGE_MAP_SECTION
+pub proc get_account_patch_storage_map_ptr
+    add.ACCOUNT_PATCH_STORAGE_MAP_SECTION
 end
 
 #! Initializes the storage slots holding the initial values of each slot.
@@ -1585,19 +1582,6 @@ pub proc get_input_note_metadata
     mem_loadw_le
 end
 
-#! Sets the metadata for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_METADATA]
-#! Outputs: [NOTE_METADATA]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA is the metadata of the input note.
-pub proc set_input_note_metadata
-    add.INPUT_NOTE_METADATA_OFFSET
-    mem_storew_le
-end
-
 #! Returns the attachment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
@@ -1610,19 +1594,6 @@ pub proc get_input_note_attachments_commitment
     padw
     movup.4 add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_loadw_le
-end
-
-#! Sets the attachment for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_ATTACHMENTS_COMMITMENT]
-#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
-pub proc set_input_note_attachments_commitment
-    add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
-    mem_storew_le
 end
 
 #! Returns the note's args.

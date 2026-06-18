@@ -13,11 +13,6 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Transfer policy that rejects transfers whose native account is not allowed on the issuing
 #! faucet.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the native
-#! account ID (asset recipient when invoked from `on_before_asset_added_to_account`, note
-#! creator when invoked from `on_before_asset_added_to_note`) and asserts it is allowed
-#! against the issuing faucet's `allowed_accounts` storage.
-#!
 #! The same procedure root is reusable as both send and receive policy because it only
 #! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
 #! frame untouched — any `note_idx` carried in the send signature passes through unchanged.

@@ -1,0 +1,41 @@
+# MAIN
+# =================================================================================================
+
+#! Batch kernel program (skeleton).
+#!
+#! A transaction batch groups a set of independently-proven transactions so they can later be
+#! aggregated into a block by the block kernel. This program defines the public input/output
+#! contract that the batch kernel will eventually verify, but currently does not yet perform
+#! any verification: it drops its inputs and exits, leaving the all-zero word output region as the
+#! stack's initial padding zeros.
+#!
+#! Inputs: [
+#!   BLOCK_COMMITMENT,
+#!   BATCH_ID,
+#!   pad(8),
+#! ]
+#!
+#! Outputs: [
+#!   INPUT_NOTES_COMMITMENT,
+#!   BATCH_NOTE_TREE_ROOT,
+#!   batch_expiration_block_num,
+#!   pad(7),
+#! ]
+#!
+#! Where:
+#! - BLOCK_COMMITMENT is the commitment of the batch's reference block.
+#! - BATCH_ID is the batch's `BatchId`, the commitment to its transactions.
+#! - INPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's input note
+#!   commitments. In this skeleton it is the empty word.
+#! - BATCH_NOTE_TREE_ROOT will be the root of the batch note tree built over every transaction's
+#!   output notes. In this skeleton it is the empty word.
+#! - batch_expiration_block_num will be the minimum of every transaction's
+#!   `expiration_block_num`. In this skeleton it is zero.
+#!
+proc main
+    dropw dropw
+end
+
+begin
+    exec.main
+end

@@ -101,7 +101,7 @@ mod tests {
         AccountBuilder::new([0; 32])
             .account_type(account_type)
             .with_auth_component(
-                AuthNetworkAccount::with_allowlist(roots).expect("non-empty allowlist"),
+                AuthNetworkAccount::with_allowed_notes(roots).expect("non-empty allowlist"),
             )
             .with_component(BasicWallet)
             .build()

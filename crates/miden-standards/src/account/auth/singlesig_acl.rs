@@ -408,7 +408,7 @@ mod tests {
                     .storage()
                     .get_map_item(
                         AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                        Word::from([i as u32, 0, 0, 0]),
+                        StorageMapKey::from_index(i as u32),
                     )
                     .expect("storage map access failed");
                 assert_eq!(proc_root, expected_proc_root.as_word());
@@ -417,7 +417,10 @@ mod tests {
             // When no procedures, the map should return empty for key [0,0,0,0]
             let proc_root = account
                 .storage()
-                .get_map_item(AuthSingleSigAcl::trigger_procedure_roots_slot(), Word::empty())
+                .get_map_item(
+                    AuthSingleSigAcl::trigger_procedure_roots_slot(),
+                    StorageMapKey::empty(),
+                )
                 .expect("storage map access failed");
             assert_eq!(proc_root, Word::empty());
         }

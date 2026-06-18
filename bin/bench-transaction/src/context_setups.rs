@@ -92,18 +92,24 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         .build()
 }
 
+pub fn tx_consume_single_p2id_note_falcon() -> Result<TransactionContext> {
+    tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+}
+
+pub fn tx_consume_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+    tx_consume_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
+}
+
 /// Returns the transaction context which could be used to run the transaction which consumes a
 /// single P2ID note into a new basic wallet.
-pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
+fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
     // Create assets
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
     let mut builder = MockChain::builder();
 
     // Create target account
-    let target_account = builder.create_new_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth { auth_scheme })?;
 
     // Create the note
     let note = builder

@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountId,
+    AccountPatch,
     PartialAccount,
     StorageMapKey,
     StorageSlotId,
@@ -200,7 +201,7 @@ where
     /// The signature is requested from the host's authenticator.
     pub async fn on_auth_requested(
         &mut self,
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
@@ -212,12 +213,12 @@ where
         let message = signing_inputs.to_commitment();
 
         let signature: Vec<Felt> = authenticator
-            .get_signature(PublicKeyCommitment::from(pub_key_hash), &signing_inputs)
+            .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
             .to_prepared_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_hash, message]);
+        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
         Ok(vec![AdviceMutation::extend_stack(signature)])
@@ -237,13 +238,9 @@ where
         // Compute the current balance of the fee asset in the account based on the initial value
         // and the delta.
         let current_fee_asset = {
-            let fee_asset_amount_delta = self
-                .base_host
-                .account_delta_tracker()
-                .vault_delta()
-                .fungible()
-                .amount(&initial_fee_asset.vault_key())
-                .unwrap_or(0);
+            let vault_delta = self.base_host.account_update_tracker().build_vault_delta();
+            let fee_asset_amount_delta =
+                vault_delta.fungible().amount(&initial_fee_asset.vault_key()).unwrap_or(0);
 
             // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
             // be less than MAX_AMOUNT as checked by the account delta.
@@ -448,6 +445,7 @@ where
         self,
     ) -> (
         AccountDelta,
+        AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         Vec<AccountCode>,
@@ -455,10 +453,11 @@ where
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_delta, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_delta, account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
         (
             account_delta,
+            account_patch,
             input_notes,
             output_notes,
             self.accessed_foreign_account_code,
@@ -535,11 +534,16 @@ where
                     self.on_foreign_account_requested(account_id).await
                 },
 
-                TransactionEvent::AccountVaultAfterRemoveAsset { asset } => {
-                    self.base_host.on_account_vault_after_remove_asset(asset)
+                TransactionEvent::AccountVaultAfterAssetUpdate { patch } => {
+                    self.base_host.on_account_vault_after_remove_asset(patch)
                 },
-                TransactionEvent::AccountVaultAfterAddAsset { asset } => {
-                    self.base_host.on_account_vault_after_add_asset(asset)
+
+                TransactionEvent::AccountBeforeAssetDeltaComputation => {
+                    self.base_host.on_account_before_asset_delta_computation()
+                },
+
+                TransactionEvent::AccountOnAssetDeltaComputation { delta: update } => {
+                    self.base_host.on_account_on_asset_delta_computation(update)
                 },
 
                 TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {
@@ -632,11 +636,15 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
+                TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary,
+                    signature,
+                } => {
                     if let Some(signature) = signature {
                         Ok(self.base_host.on_auth_requested(signature))
                     } else {
-                        self.on_auth_requested(pub_key_hash, tx_summary).await
+                        self.on_auth_requested(pub_key_commitment, tx_summary).await
                     }
                 },
 

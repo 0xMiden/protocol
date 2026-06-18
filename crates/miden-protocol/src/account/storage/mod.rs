@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use super::{
     AccountError,
-    AccountStorageDelta,
+    AccountStoragePatch,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -44,7 +44,7 @@ pub use partial::PartialStorage;
 /// necessary to:
 /// - Simplify lookups of slots in the transaction kernel (using `std::collections::sorted_array`
 ///   from the miden core library)
-/// - Allow the [`AccountStorageDelta`] to work only with slot names instead of slot indices.
+/// - Allow the [`AccountStoragePatch`] to work only with slot names instead of slot indices.
 /// - Make it simple to check for duplicates by iterating the slots and checking that no two
 ///   adjacent items have the same slot name.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -186,12 +186,12 @@ impl AccountStorage {
     pub fn get_map_item(
         &self,
         slot_name: &StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
     ) -> Result<Word, AccountError> {
         self.get(slot_name)
             .ok_or_else(|| AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })
             .and_then(|slot| match slot.content() {
-                StorageSlotContent::Map(map) => Ok(map.get(&StorageMapKey::from_raw(key))),
+                StorageSlotContent::Map(map) => Ok(map.get(&key)),
                 _ => Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             })
     }
@@ -205,14 +205,14 @@ impl AccountStorage {
     ///
     /// Returns an error if:
     /// - The updates violate storage constraints.
-    pub(super) fn apply_delta(&mut self, delta: &AccountStorageDelta) -> Result<(), AccountError> {
+    pub(super) fn apply_patch(&mut self, delta: &AccountStoragePatch) -> Result<(), AccountError> {
         // Update storage values
         for (slot_name, &value) in delta.values() {
             self.set_item(slot_name, value)?;
         }
 
         // Update storage maps
-        for (slot_name, map_delta) in delta.maps() {
+        for (slot_name, map_patch) in delta.maps() {
             let slot = self
                 .get_mut(slot_name)
                 .ok_or(AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })?;
@@ -222,7 +222,7 @@ impl AccountStorage {
                 _ => return Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             };
 
-            storage_map.apply_delta(map_delta)?;
+            storage_map.apply_patch(map_patch)?;
         }
 
         Ok(())

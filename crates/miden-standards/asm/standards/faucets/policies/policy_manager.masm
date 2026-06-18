@@ -2,6 +2,7 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
+use miden::standards::access::pausable
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -9,12 +10,6 @@ use miden::standards::access::authority
 # separately) via `exec.authority::assert_authorized`, which dispatches between
 # `AuthControlled`, `OwnerControlled`, and `RbacControlled` modes. The manager itself stores no
 # authority discriminator.
-#
-# Mint and burn policies are dispatched internally via `dynexec` from `execute_mint_policy` /
-# `execute_burn_policy`. Send and receive policies are flattened: the active policy root is
-# written directly into the protocol-reserved callback slots
-# (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
-# `..._to_note`) and the kernel invokes them via `call`.
 
 # CONSTANTS
 # ================================================================================================
@@ -25,13 +20,11 @@ const ACTIVE_MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policie
 # Active burn policy root slot. Layout: [PROC_ROOT]
 const ACTIVE_BURN_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root")
 
-# Protocol-reserved callback slot holding the active receive policy proc root. Written by
-# `set_receive_policy`, read by the kernel when dispatching `on_before_asset_added_to_account`.
-const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+# Active send policy root slot. Layout: [PROC_ROOT]
+const ACTIVE_SEND_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root")
 
-# Protocol-reserved callback slot holding the active send policy proc root. Written by
-# `set_send_policy`, read by the kernel when dispatching `on_before_asset_added_to_note`.
-const ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
+# Active receive policy root slot. Layout: [PROC_ROOT]
+const ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root")
 
 # Allowlist map slot for mint policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots")
@@ -270,6 +263,8 @@ end
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
+#! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
+#!   component is not installed).
 #! - active mint policy predicate fails.
 #!
 #! The active policy root is validated at config time (in `set_mint_policy` and on initial
@@ -278,6 +273,9 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc execute_mint_policy
+    exec.pausable::assert_not_paused
+    # => [amount, tag, note_type, RECIPIENT]
+
     exec.get_mint_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
@@ -337,6 +335,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the account is paused.
 #! - active burn policy predicate fails.
 #!
 #! The active policy root is validated at config time (in `set_burn_policy` and on initial
@@ -345,6 +344,9 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc execute_burn_policy
+    exec.pausable::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE]
+
     exec.get_burn_policy_root
     # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
@@ -395,24 +397,104 @@ pub proc set_burn_policy
     # => [pad(16)]
 end
 
+# TRANSFER POLICY FOR PAUSE CHECK
+# ================================================================================================
+
+#! Reads the active transfer policy root from the provided slot, applies the pause check, and
+#! invokes the policy via `dyncall`. Shared by `invoke_send_policy` / `invoke_receive_policy`,
+#! which differ only in which slot they bind.
+#!
+#! If the active root is the empty word (no policy configured for this kind), the transfer is
+#! accepted unchanged and the pause check is skipped — mirroring the kernel's behavior when a
+#! callback slot holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op
+#! when the [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
+#! - custom_data is `0` for the receive callback and the output note index for the send callback.
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
+#!   if no policy is configured.
+#!
+#! Panics if:
+#! - the account is paused.
+#! - the invoked policy predicate fails.
+#!
+#! Invocation: exec
+@locals(4)
+proc invoke_transfer_policy
+    exec.active_account::get_item
+    # => [POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+    exec.word::testz
+    # => [is_empty, POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+    if.true
+        # No policy configured: drop the empty root and asset key, return the asset value
+        # unchanged. `movup.4 drop` removes custom_data so only ASSET_VALUE is returned.
+        dropw dropw movup.4 drop
+        # => [ASSET_VALUE, pad(7)]
+    else
+        exec.pausable::assert_not_paused
+        # => [POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+        loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+        # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+        locaddr.POLICY_PROC_ROOT_PTR
+        # => [policy_root_ptr, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+        dyncall
+        # => [PROCESSED_ASSET_VALUE, pad(12)]
+    end
+end
+
 # SEND PUBLIC INTERFACE
 # ================================================================================================
 
-#! Returns active send policy root (reads the protocol-reserved callback slot).
+#! Invokes the active send policy. Stored in the protocol-reserved `on_before_asset_added_to_note`
+#! callback slot and `dyncall`-invoked by the kernel when an asset with the callback flag is added
+#! to an output note.
+#!
+#! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
+#! applies the pause check and invokes the active send policy.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
+#!   if no send policy is configured.
+#!
+#! Panics if:
+#! - the account is paused.
+#! - the active send policy predicate fails.
+#!
+#! Invocation: call
+pub proc invoke_send_policy
+    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+    exec.invoke_transfer_policy
+    # => [PROCESSED_ASSET_VALUE, pad(12)]
+end
+
+#! Returns active send policy root.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [SEND_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
 pub proc get_send_policy
-    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.active_account::get_item
+    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [SEND_POLICY_ROOT, pad(12)]
 end
 
-#! Sets active send policy root by writing directly into the protocol-reserved callback slot
-#! `miden::protocol::faucet::callback::on_before_asset_added_to_note`. The kernel will dispatch
-#! to whatever root is stored there via `call` the next time an asset with the callback flag is
-#! added to an output note.
+#! Sets active send policy root.
+#!
+#! Writes into [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`].
 #!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -434,28 +516,56 @@ pub proc set_send_policy
     exec.assert_allowed_send_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.native_account::set_item dropw
+    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
 # RECEIVE PUBLIC INTERFACE
 # ================================================================================================
 
-#! Returns active receive policy root (reads the protocol-reserved callback slot).
+#! Invokes the active receive policy. Stored in the protocol-reserved
+#! `on_before_asset_added_to_account` callback slot and `dyncall`-invoked by the kernel when an
+#! asset with the callback flag is added to an account vault.
+#!
+#! Binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`],
+#! which applies the pause check and invokes the active receive policy (skipping both when no
+#! receive policy is configured).
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - custom_data is `0` for the receive callback.
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
+#!   if no receive policy is configured.
+#!
+#! Panics if:
+#! - the account is paused.
+#! - the active receive policy predicate fails.
+#!
+#! Invocation: call
+pub proc invoke_receive_policy
+    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+    exec.invoke_transfer_policy
+    # => [PROCESSED_ASSET_VALUE, pad(12)]
+end
+
+#! Returns active receive policy root.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [RECEIVE_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
 pub proc get_receive_policy
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.active_account::get_item
+    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [RECEIVE_POLICY_ROOT, pad(12)]
 end
 
-#! Sets active receive policy root by writing directly into the protocol-reserved callback slot
-#! `miden::protocol::faucet::callback::on_before_asset_added_to_account`. The kernel will
-#! dispatch to whatever root is stored there via `call` the next time an asset with the callback
-#! flag is added to an account vault.
+#! Sets active receive policy root.
+#!
+#! Writes into [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`].
 #!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -477,6 +587,6 @@ pub proc set_receive_policy
     exec.assert_allowed_receive_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.native_account::set_item dropw
+    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

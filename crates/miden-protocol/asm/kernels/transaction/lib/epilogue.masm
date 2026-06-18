@@ -1,5 +1,5 @@
 use $kernel::account
-use $kernel::account_delta
+use $kernel::account_update
 use $kernel::asset
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset_vault
@@ -39,22 +39,33 @@ const EPILOGUE_AUTH_PROC_START_EVENT=event("miden::protocol::epilogue::auth_proc
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_end")
 
-# An additional number of cyclces to account for the number of cycles that smt::set will take when
+# An additional number of cycles to account for the number of cycles that smt::set will take when
 # removing the computed fee from the asset vault.
 # Theoretically, this can safely be set to worst_case_cycles - best_case_cycles of smt::set. That's
 # because we can assume that the measured number of cycles already contains at least the best case
 # number of cycles, and so we only need to add the difference.
 const SMT_SET_ADDITIONAL_CYCLES=250
 
+# An upper-bound estimate of the cycles needed to hash the asset vault key before the fee-removing
+# smt::set. This cost is incurred only when a fee is actually removed from the asset vault, and is
+# kept separate from SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
+# It is additive rather than double-counted: the lowest-observed NUM_POST_COMPUTE_FEE_CYCLES below
+# comes from a zero-fee transaction that skips fee removal entirely, and so excludes this hashing.
+const VAULT_KEY_HASH_CYCLES=50
+
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed,
 # including an unknown cycle number of the above-mentioned call to smt::set. It is safe to assume
 # that this includes at least smt::set's best case number of cycles.
 # This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
-# to the lowest observed value.
+# to the lowest observed value (which comes from a zero-fee transaction that skips fee removal).
 const NUM_POST_COMPUTE_FEE_CYCLES=608
 
-# The number of cycles the epilogue is estimated to take after compute_fee has been executed.
-const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
+# Upper bound on the post-compute_fee cycle count; it must stay an upper bound or the verification
+# fee is undercharged. Worst case observed is 863 cycles (45 of margin); re-measure when the
+# epilogue or smt::set changes. An adversary cannot inflate the fee-removal smt::set cost: vault
+# keys are hashed before insertion (see AssetVaultKey::hash). The multi-leaf smt::set worst case is
+# not yet exercised (see test_fee.rs TODO).
+const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES+VAULT_KEY_HASH_CYCLES
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -178,7 +189,7 @@ proc build_output_vault
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
             # insert output note asset into output vault
-            exec.asset_vault::add_asset dropw
+            exec.asset_vault::add_asset dropw dropw
             # => [assets_start_ptr, assets_end_ptr, output_vault_root_ptr, num_assets,
             #     note_data_ptr, output_notes_end_ptr]
 
@@ -352,7 +363,7 @@ proc compute_and_remove_fee
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # remove the asset from the account vault
-    exec.asset_vault::remove_fungible_asset dropw
+    exec.asset_vault::remove_fungible_asset dropw dropw
     # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 end
 
@@ -381,7 +392,7 @@ end
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-#!   delta commitment.
+#!   patch commitment.
 #! - fee_amount is the computed fee amount of the transaction denominated in the fee asset.
 #! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
 #!   fee asset.
@@ -390,7 +401,7 @@ end
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
 #! - 4..8: FEE_ASSET_INFO
-#! - 8..12: ACCOUNT_DELTA_COMMITMENT
+#! - 8..12: ACCOUNT_PATCH_COMMITMENT
 #!
 #! Panics if:
 #! - the assets that were in input notes or in the account vault at the beginning of
@@ -398,7 +409,7 @@ end
 #!   transaction. The exception to this is the automatically computed and removed fee asset.
 #! - the transaction does not change the chain state. This must be the case to avoid tx
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
-#!   changing the account's state. The latter is validated as part of computing the account delta
+#!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 #! - the account vault does not contain the computed fee.
 @locals(12)
@@ -441,30 +452,36 @@ pub proc finalize_transaction
     loc_storew_le.0 dropw
     # => []
 
-    # ------ Compute account delta commitment ------
+    # ------ Compute account patch commitment ------
 
-    exec.account_delta::compute_commitment
-    # => [ACCOUNT_DELTA_COMMITMENT]
+    exec.account_update::compute_patch_commitment
+    # => [ACCOUNT_PATCH_COMMITMENT]
+
+    # TODO(account_patch): Temporarily compute the delta commitment, to let the host track the delta.
+    # This will go away when the delta is fully replaced by the patch and removed from the
+    # executed transaction.
+    exec.account_update::compute_delta_commitment dropw
+    # => [ACCOUNT_PATCH_COMMITMENT]
 
     # store commitment in local
     loc_storew_le.8
-    # => [ACCOUNT_DELTA_COMMITMENT]
+    # => [ACCOUNT_PATCH_COMMITMENT]
 
     # ------ Assert that account was changed or notes were consumed ------
 
-    # check if the account delta commitment is the EMPTY_WORD, which is the case when the delta
+    # check if the account patch commitment is the EMPTY_WORD, which is the case when the patch
     # is empty, i.e. the account did not change in this transaction
     exec.word::eqz
-    # => [is_delta_commitment_empty]
+    # => [is_patch_commitment_empty]
 
-    # assert that if the delta commitment is empty, the transaction had input notes,
+    # assert that if the patch commitment is empty, the transaction had input notes,
     # otherwise this transaction is considered empty, which is not allowed
     exec.memory::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, is_delta_commitment_empty]
+    # => [INPUT_NOTES_COMMITMENT, is_patch_commitment_empty]
 
     # if the input notes commitment is an empty word there were no input notes in this transaction
     exec.word::eqz and
-    # => [is_delta_commitment_and_input_notes_commitment_empty]
+    # => [is_patch_commitment_and_input_notes_commitment_empty]
 
     # assert that either the account was changed or notes were consumed
     assertz.err=ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY
@@ -507,14 +524,14 @@ pub proc finalize_transaction
 
     # ------ Compute and insert account update commitment ------
 
-    # load account delta commitment from local
+    # load account patch commitment from local
     padw loc_loadw_le.8 swapw
-    # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
-    # insert into advice map ACCOUNT_UPDATE_COMMITMENT: (FINAL_ACCOUNT_COMMITMENT, ACCOUNT_DELTA_COMMITMENT),
-    # where ACCOUNT_UPDATE_COMMITMENT = hash(FINAL_ACCOUNT_COMMITMENT || ACCOUNT_DELTA_COMMITMENT)
+    # insert into advice map ACCOUNT_UPDATE_COMMITMENT: (FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT),
+    # where ACCOUNT_UPDATE_COMMITMENT = hash(FINAL_ACCOUNT_COMMITMENT || ACCOUNT_PATCH_COMMITMENT)
     adv.insert_hdword
-    # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
     exec.poseidon2::merge
     # => [ACCOUNT_UPDATE_COMMITMENT]

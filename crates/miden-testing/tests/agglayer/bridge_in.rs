@@ -29,12 +29,12 @@ use miden_agglayer::{
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::policies::MintPolicyConfig;
+use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
@@ -190,17 +190,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
 
-    // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
-    // note. The mock account is built from the destination ID encoded in the JSON test vector,
-    // since the claim note targets this account ID.
     let destination_account =
-        if matches!(data_source, ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden) {
-            let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
-            builder.add_account(dest.clone())?;
-            Some(dest)
-        } else {
-            None
-        };
+        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    builder.add_account(destination_account.clone())?;
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -305,7 +297,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
 
     let mut updated_bridge_account = bridge_account.clone();
-    updated_bridge_account.apply_delta(claim_executed.account_delta())?;
+    updated_bridge_account.apply_patch(claim_executed.account_patch())?;
 
     let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account)?;
 
@@ -377,6 +369,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let expected_asset: Asset =
         FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled)
             .into();
     let expected_output_p2id_note = create_p2id_note_exact(
         agglayer_faucet.id(),
@@ -389,38 +382,38 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
-    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
+    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT
     // --------------------------------------------------------------------------------------------
-    // For the simulated case, we control the destination account and can verify the full
-    // end-to-end flow including P2ID consumption and balance updates.
-    if let Some(destination_account) = destination_account {
-        // Add the faucet transaction to the chain and prove the next block so the P2ID note is
-        // committed and can be consumed.
-        mock_chain.add_pending_executed_transaction(&mint_executed)?;
-        mock_chain.prove_next_block()?;
+    // Add the faucet transaction to the chain and prove the next block so the P2ID note is
+    // committed and can be consumed.
+    mock_chain.add_pending_executed_transaction(&mint_executed)?;
+    mock_chain.prove_next_block()?;
 
-        // Execute the consume transaction for the destination account. Pass the account
-        // directly since the JSON-encoded destination decodes to a private account ID.
-        let consume_tx_context = mock_chain
-            .build_tx_context(
-                destination_account.clone(),
-                &[],
-                slice::from_ref(&expected_output_p2id_note),
-            )?
-            .build()?;
-        let consume_executed_transaction = consume_tx_context.execute().await?;
+    // Execute the consume transaction for the destination account. Pass the account
+    // directly since the JSON-encoded destination decodes to a private account ID. The
+    // issuing AggLayer faucet must be supplied as a foreign account so the kernel can
+    // dispatch the receive callback when the asset is added to the destination vault.
+    let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let consume_tx_context = mock_chain
+        .build_tx_context(
+            destination_account.clone(),
+            &[],
+            slice::from_ref(&expected_output_p2id_note),
+        )?
+        .foreign_accounts(vec![agglayer_faucet_inputs])
+        .build()?;
+    let consume_executed_transaction = consume_tx_context.execute().await?;
 
-        // Verify the destination account received the minted asset
-        let mut destination_account = destination_account.clone();
-        destination_account.apply_delta(consume_executed_transaction.account_delta())?;
+    // Verify the destination account received the minted asset
+    let mut destination_account = destination_account;
+    destination_account.apply_patch(consume_executed_transaction.account_patch())?;
 
-        let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
-        assert_eq!(
-            balance.as_u64(),
-            miden_claim_amount.as_canonical_u64(),
-            "destination account balance does not match"
-        );
-    }
+    let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
+    assert_eq!(
+        balance.as_u64(),
+        miden_claim_amount.as_canonical_u64(),
+        "destination account balance does not match"
+    );
     Ok(())
 }
 
@@ -968,7 +961,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_owner_account_id,
         // Seed enough native supply for the lock step's sender to bundle into the B2AGG note.
         Some(miden_claim_amount_u64.saturating_mul(2)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1050,7 +1043,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1065,7 +1058,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         0,
         "Lock transaction should not emit any output note"
     );
-    bridge_account.apply_delta(lock_executed.account_delta())?;
+    bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
@@ -1080,7 +1073,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    bridge_account.apply_patch(update_ger_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1147,7 +1140,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     );
 
     // Bridge vault is drained after the unlock.
-    bridge_account.apply_delta(claim_executed.account_delta())?;
+    bridge_account.apply_patch(claim_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::ZERO,
@@ -1166,7 +1159,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .await?;
 
     let mut destination_account = destination_account;
-    destination_account.apply_delta(consume_executed.account_delta())?;
+    destination_account.apply_patch(consume_executed.account_patch())?;
     assert_eq!(
         destination_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
@@ -1223,7 +1216,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         miden_claim_amount_u64.saturating_mul(4),
         faucet_owner_account_id,
         Some(miden_claim_amount_u64.saturating_mul(4)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1318,7 +1311,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1328,7 +1321,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(lock_executed.account_delta())?;
+    bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64.saturating_mul(2))?,
@@ -1342,7 +1335,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    bridge_account.apply_patch(update_ger_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1353,7 +1346,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .execute()
         .await?;
     assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
-    bridge_account.apply_delta(claim_executed_1.account_delta())?;
+    bridge_account.apply_patch(claim_executed_1.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,

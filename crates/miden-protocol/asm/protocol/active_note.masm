@@ -9,6 +9,8 @@ use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
 use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
 use miden::protocol::note
 use miden::protocol::input_note
+use miden::protocol::util::note::NOTE_TYPE_PUBLIC
+use miden::protocol::util::note::NOTE_TYPE_PRIVATE
 
 # ERRORS
 # =================================================================================================
@@ -172,6 +174,52 @@ pub proc get_metadata
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [METADATA]
+end
+
+#! Returns whether the active note is public.
+#!
+#! Inputs:  []
+#! Outputs: [is_public]
+#!
+#! Where:
+#! - is_public is 1 if the active note is public, 0 otherwise.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc is_public
+    exec.get_metadata
+    # => [METADATA]
+
+    exec.note::metadata_into_note_type
+    # => [note_type]
+
+    eq.NOTE_TYPE_PUBLIC
+    # => [is_public]
+end
+
+#! Returns whether the active note is private.
+#!
+#! Inputs:  []
+#! Outputs: [is_private]
+#!
+#! Where:
+#! - is_private is 1 if the active note is private, 0 otherwise.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc is_private
+    exec.get_metadata
+    # => [METADATA]
+
+    exec.note::metadata_into_note_type
+    # => [note_type]
+
+    eq.NOTE_TYPE_PRIVATE
+    # => [is_private]
 end
 
 #! Returns the sender of the active note.

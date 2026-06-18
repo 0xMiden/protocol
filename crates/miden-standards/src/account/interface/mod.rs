@@ -1,14 +1,6 @@
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::note::PartialNote;
-use miden_protocol::transaction::TransactionScript;
-use thiserror::Error;
-
-use crate::AuthMethod;
-use crate::code_builder::CodeBuilder;
-use crate::errors::CodeBuilderError;
 
 #[cfg(test)]
 mod test;
@@ -25,7 +17,6 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AuthMethod>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -35,21 +26,20 @@ impl AccountInterface {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AccountInterface`] instance from the provided account ID, authentication
-    /// schemes and account component interfaces.
-    pub fn new(
-        account_id: AccountId,
-        auth: Vec<AuthMethod>,
-        components: Vec<AccountComponentInterface>,
-    ) -> Self {
-        Self { account_id, auth, components }
-    }
-
-    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`]
-    /// access component. Since [`AccountComponentInterface::RoleBasedAccessControl`] always
-    /// includes Ownable2Step, this also covers RBAC-controlled accounts.
-    pub fn is_owner_controlled(&self) -> bool {
-        self.components.contains(&AccountComponentInterface::Ownable2Step)
+    /// Creates a new [`AccountInterface`] instance from the provided account ID and account
+    /// component interfaces.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `components` does not contain exactly one auth component. Every account installs
+    /// a single auth component. Zero or multiple auth components is a malformed account.
+    pub fn new(account_id: AccountId, components: Vec<AccountComponentInterface>) -> Self {
+        let auth_count = components.iter().filter(|c| c.is_auth_component()).count();
+        assert_eq!(
+            auth_count, 1,
+            "account interface must contain exactly one auth component, found {auth_count}"
+        );
+        Self { account_id, components }
     }
 
     // PUBLIC ACCESSORS
@@ -70,154 +60,18 @@ impl AccountInterface {
         self.account_id.is_public()
     }
 
-    /// Returns a reference to the vector of used authentication methods.
-    pub fn auth(&self) -> &Vec<AuthMethod> {
-        &self.auth
-    }
-
     /// Returns a reference to the set of used component interfaces.
     pub fn components(&self) -> &Vec<AccountComponentInterface> {
         &self.components
     }
-}
 
-// ------------------------------------------------------------------------------------------------
-/// Code generation
-impl AccountInterface {
-    /// Returns a transaction script which sends the specified notes using the procedures available
-    /// in the current interface.
+    /// Returns a reference to the single auth component installed on this account.
     ///
-    /// Provided `expiration_delta` parameter is used to specify how close to the transaction's
-    /// reference block the transaction must be included into the chain. For example, if the
-    /// transaction's reference block is 100 and transaction expiration delta is 10, the transaction
-    /// can be included into the chain by block 110. If this does not happen, the transaction is
-    /// considered expired and cannot be included into the chain.
-    ///
-    /// Currently only [`AccountComponentInterface::BasicWallet`] and
-    /// [`AccountComponentInterface::FungibleFaucet`] interfaces are supported for the
-    /// `send_note` script creation. Attempt to generate the script using some other interface will
-    /// lead to an error. In case both supported interfaces are available in the account, the script
-    /// will be generated for the [`AccountComponentInterface::FungibleFaucet`] interface.
-    ///
-    /// # Example
-    ///
-    /// Example of the `send_note` script with specified expiration delta and one output note:
-    ///
-    /// ```masm
-    /// begin
-    ///     push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta
-    ///
-    ///     push.{note information}
-    ///
-    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send
-    ///     swapdw dropw dropw swapdw dropw dropw
-    /// end
-    /// ```
-    ///
-    /// # Errors:
-    /// Returns an error if:
-    /// - the available interfaces does not support the generation of the standard `send_note`
-    ///   procedure.
-    /// - the sender of the note isn't the account for which the script is being built.
-    /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to mint an asset with a different faucet ID.
-    ///
-    /// [wallet]: crate::account::interface::AccountComponentInterface::BasicWallet
-    /// [faucet]: crate::account::interface::AccountComponentInterface::FungibleFaucet
-    pub fn build_send_notes_script(
-        &self,
-        output_notes: &[PartialNote],
-        expiration_delta: Option<u16>,
-    ) -> Result<TransactionScript, AccountInterfaceError> {
-        let note_creation_source = self.build_create_notes_section(output_notes)?;
-
-        let script = format!(
-            "begin\n{}\n{}\nend",
-            self.build_set_tx_expiration_section(expiration_delta),
-            note_creation_source,
-        );
-
-        // Add attachment entries to the code builder's advice map.
-        // The commitment is used as key and the elements as value.
-        let mut code_builder = CodeBuilder::new();
-        for note in output_notes {
-            for attachment in note.attachments().iter() {
-                code_builder
-                    .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
-            }
-        }
-
-        let tx_script = code_builder
-            .compile_tx_script(script)
-            .map_err(AccountInterfaceError::InvalidTransactionScript)?;
-
-        Ok(tx_script)
+    /// Every account installs exactly one auth component (validated in [`Self::new`]).
+    pub fn auth_component(&self) -> &AccountComponentInterface {
+        self.components
+            .iter()
+            .find(|c| c.is_auth_component())
+            .expect("AccountInterface invariant: exactly one auth component present")
     }
-
-    /// Generates a note creation code required for the `send_note` transaction script.
-    ///
-    /// For the example of the resulting code see [AccountComponentInterface::send_note_body]
-    /// description.
-    ///
-    /// # Errors:
-    /// Returns an error if:
-    /// - the available interfaces does not support the generation of the standard `send_note`
-    ///   procedure.
-    /// - the sender of the note isn't the account for which the script is being built.
-    /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to mint an asset with a different faucet ID.
-    fn build_create_notes_section(
-        &self,
-        output_notes: &[PartialNote],
-    ) -> Result<String, AccountInterfaceError> {
-        if let Some(fungible_faucet) = self.components().iter().find(|component_interface| {
-            matches!(component_interface, AccountComponentInterface::FungibleFaucet)
-        }) {
-            // Owner-controlled faucets (network-style) mint exclusively via MINT notes; refuse to
-            // generate a tx-script `send_note` flow that would fail at runtime under the
-            // OwnerOnly mint policy.
-            if self.is_owner_controlled() {
-                return Err(AccountInterfaceError::UnsupportedAccountInterface);
-            }
-            fungible_faucet.send_note_body(*self.id(), output_notes)
-        } else if self.components().contains(&AccountComponentInterface::BasicWallet) {
-            AccountComponentInterface::BasicWallet.send_note_body(*self.id(), output_notes)
-        } else {
-            Err(AccountInterfaceError::UnsupportedAccountInterface)
-        }
-    }
-
-    /// Returns a string with the expiration delta update procedure call for the script.
-    fn build_set_tx_expiration_section(&self, expiration_delta: Option<u16>) -> String {
-        if let Some(expiration_delta) = expiration_delta {
-            format!(
-                "push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta\n"
-            )
-        } else {
-            String::new()
-        }
-    }
-}
-
-// ACCOUNT INTERFACE ERROR
-// ============================================================================================
-
-/// Account interface related errors.
-#[derive(Debug, Error)]
-pub enum AccountInterfaceError {
-    #[error("note asset is not issued by faucet {0}")]
-    IssuanceFaucetMismatch(AccountId),
-    #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
-    FaucetNoteWithoutAsset,
-    #[error("invalid transaction script")]
-    InvalidTransactionScript(#[source] CodeBuilderError),
-    #[error("invalid sender account: {0}")]
-    InvalidSenderAccount(AccountId),
-    #[error("{} interface does not support the generation of the standard send_note script", interface.name())]
-    UnsupportedInterface { interface: AccountComponentInterface },
-    #[error(
-        "account does not contain the basic fungible faucet or basic wallet interfaces which are needed to support the send_note script generation"
-    )]
-    UnsupportedAccountInterface,
 }

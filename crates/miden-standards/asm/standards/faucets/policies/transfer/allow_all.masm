@@ -5,10 +5,8 @@
 
 #! Transfer policy that accepts every transfer.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`. The procedure root is
-#! reusable as both send and receive policy because it only consumes the top eight felts
-#! (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call frame untouched — any `note_idx`
-#! carried in the send signature passes through unchanged.
+#! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
+#! account-wide pause check.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_VALUE]

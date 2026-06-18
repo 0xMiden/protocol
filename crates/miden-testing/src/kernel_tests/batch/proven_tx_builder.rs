@@ -2,10 +2,9 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
-use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
@@ -22,7 +21,7 @@ pub struct MockProvenTxBuilder {
     account_id: AccountId,
     initial_account_commitment: Word,
     final_account_commitment: Word,
-    ref_block_commitment: Option<Word>,
+    reference_block: Option<(BlockNumber, Word)>,
     fee: FungibleAsset,
     expiration_block_num: BlockNumber,
     output_notes: Option<Vec<OutputNote>>,
@@ -42,7 +41,7 @@ impl MockProvenTxBuilder {
             account_id,
             initial_account_commitment,
             final_account_commitment,
-            ref_block_commitment: None,
+            reference_block: None,
             fee: FungibleAsset::mock(50).unwrap_fungible(),
             expiration_block_num: BlockNumber::from(u32::MAX),
             output_notes: None,
@@ -96,8 +95,8 @@ impl MockProvenTxBuilder {
 
     /// Sets the transaction's block reference.
     #[must_use]
-    pub fn ref_block_commitment(mut self, ref_block_commitment: Word) -> Self {
-        self.ref_block_commitment = Some(ref_block_commitment);
+    pub fn reference_block(mut self, ref_block: &BlockHeader) -> Self {
+        self.reference_block = Some((ref_block.block_num(), ref_block.commitment()));
 
         self
     }
@@ -124,12 +123,15 @@ impl MockProvenTxBuilder {
         )
         .context("failed to build account update")?;
 
+        let (ref_block_num, ref_block_commitment) =
+            self.reference_block.unwrap_or((BlockNumber::GENESIS, Word::empty()));
+
         ProvenTransaction::new(
             account_update,
             input_note_commitments,
             self.output_notes.unwrap_or_default(),
-            BlockNumber::from(0),
-            self.ref_block_commitment.unwrap_or_default(),
+            ref_block_num,
+            ref_block_commitment,
             self.fee,
             self.expiration_block_num,
             ExecutionProof::new_dummy(),

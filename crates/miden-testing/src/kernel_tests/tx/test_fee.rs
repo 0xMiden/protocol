@@ -39,7 +39,7 @@ async fn create_account_with_fees() -> anyhow::Result<()> {
     let added_asset = FungibleAsset::new(chain.fee_faucet_id(), note_amount)?.sub(tx.fee())?;
 
     assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
-    // except for the nonce, the storage delta should be empty
+    // except for the nonce, the storage patch should be empty
     assert!(tx.account_delta().storage().is_empty());
     assert_eq!(tx.account_delta().vault().added_assets().count(), 1);
     assert_eq!(tx.account_delta().vault().removed_assets().count(), 0);
@@ -97,11 +97,12 @@ async fn num_tx_cycles_after_compute_fee_are_less_than_estimated(
     // These constants should always be updated together with the equivalent constants in
     // epilogue.masm.
     const SMT_SET_ADDITIONAL_CYCLES: usize = 250;
+    const VAULT_KEY_HASH_CYCLES: usize = 50;
     const NUM_POST_COMPUTE_FEE_CYCLES: usize = 608;
 
     assert!(
         tx.measurements().after_tx_cycles_obtained
-            < NUM_POST_COMPUTE_FEE_CYCLES + SMT_SET_ADDITIONAL_CYCLES,
+            < NUM_POST_COMPUTE_FEE_CYCLES + SMT_SET_ADDITIONAL_CYCLES + VAULT_KEY_HASH_CYCLES,
         "estimated number of cycles is not larger than the measurements, so they need to be updated"
     );
 

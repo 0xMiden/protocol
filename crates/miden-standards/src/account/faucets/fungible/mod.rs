@@ -11,6 +11,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
@@ -32,12 +33,12 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
-use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
 use crate::account::policies::TokenPolicyManager;
-use crate::{AuthMethod, procedure_root};
+use crate::note::{BurnNote, MintNote};
+use crate::procedure_root;
 
 #[cfg(test)]
 mod tests;
@@ -74,6 +75,34 @@ procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
     FungibleFaucet::NAME,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_MAX_SUPPLY,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_MAX_SUPPLY_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_DESCRIPTION,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_DESCRIPTION_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_LOGO_URI,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_LOGO_URI_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_EXTERNAL_LINK,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_EXTERNAL_LINK_PROC_NAME,
     FungibleFaucet::code()
 );
 
@@ -195,6 +224,10 @@ impl FungibleFaucet {
 
     const MINT_PROC_NAME: &'static str = "mint_and_send";
     const RECEIVE_AND_BURN_PROC_NAME: &'static str = "receive_and_burn";
+    const SET_MAX_SUPPLY_PROC_NAME: &'static str = "set_max_supply";
+    const SET_DESCRIPTION_PROC_NAME: &'static str = "set_description";
+    const SET_LOGO_URI_PROC_NAME: &'static str = "set_logo_uri";
+    const SET_EXTERNAL_LINK_PROC_NAME: &'static str = "set_external_link";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -249,6 +282,29 @@ impl FungibleFaucet {
     /// Returns the procedure root of the `receive_and_burn` account procedure.
     pub fn receive_and_burn_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
+    }
+
+    /// Returns the procedure root of the `set_max_supply` account procedure. This is an
+    /// authority-gated setter; when paired with `Authority::AuthControlled` (via
+    /// [`create_user_fungible_faucet`]) it must appear in the auth component's trigger
+    /// procedure list.
+    pub fn set_max_supply_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
+    }
+
+    /// Returns the procedure root of the `set_description` account procedure. Authority-gated.
+    pub fn set_description_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_DESCRIPTION
+    }
+
+    /// Returns the procedure root of the `set_logo_uri` account procedure. Authority-gated.
+    pub fn set_logo_uri_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_LOGO_URI
+    }
+
+    /// Returns the procedure root of the `set_external_link` account procedure. Authority-gated.
+    pub fn set_external_link_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_EXTERNAL_LINK
     }
 
     /// Returns the [`StorageSlotName`] holding the token config word
@@ -403,10 +459,10 @@ impl FungibleFaucet {
 
     /// Checks that the account contains the fungible faucet interface.
     fn try_from_interface(
-        interface: AccountInterface,
+        interface: AccountCodeInterface,
         storage: &AccountStorage,
     ) -> Result<Self, FungibleFaucetError> {
-        if !interface.components().contains(&AccountComponentInterface::FungibleFaucet) {
+        if !interface.contains(FungibleFaucet::code().procedure_roots()) {
             return Err(FungibleFaucetError::MissingFungibleFaucetInterface);
         }
 
@@ -481,9 +537,7 @@ impl TryFrom<Account> for FungibleFaucet {
     type Error = FungibleFaucetError;
 
     fn try_from(account: Account) -> Result<Self, Self::Error> {
-        let account_interface = AccountInterface::from_account(&account);
-
-        FungibleFaucet::try_from_interface(account_interface, account.storage())
+        FungibleFaucet::try_from_interface(account.code_interface(), account.storage())
     }
 }
 
@@ -491,79 +545,70 @@ impl TryFrom<&Account> for FungibleFaucet {
     type Error = FungibleFaucetError;
 
     fn try_from(account: &Account) -> Result<Self, Self::Error> {
-        let account_interface = AccountInterface::from_account(account);
-
-        FungibleFaucet::try_from_interface(account_interface, account.storage())
+        FungibleFaucet::try_from_interface(account.code_interface(), account.storage())
     }
 }
 
 // FACTORY
 // ================================================================================================
 
-/// Creates a new fungible faucet account by composing the required components.
+/// Creates a new **user-account** fungible faucet. The account's auth component is the sole
+/// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
-/// combination of arguments passed in:
-/// - `account_type`: typically [`AccountType::Public`] for basic or network faucets.
-/// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
-///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
-///   accepted for unauthenticated faucets.
-/// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
-///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
-///
-/// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
-/// [`FungibleFaucet::builder`]).
-pub fn create_fungible_faucet(
+/// Caller passes a fully-configured [`AuthSingleSigAcl`] — its trigger procedure list must
+/// cover every authority-gated setter on the faucet (`mint_and_send`, the metadata setters,
+/// the policy setters, and `pause` / `unpause`), otherwise those procedures become
+/// permissionless under [`Authority::AuthControlled`].
+pub fn create_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
+    auth_component: AuthSingleSigAcl,
+    token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
-    auth_method: AuthMethod,
+) -> Result<Account, FungibleFaucetError> {
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_auth_component(auth_component)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
+        .map_err(FungibleFaucetError::AccountError)
+}
+
+/// Creates a new **network-style** fungible faucet. The account is always
+/// [`AccountType::Public`] (network accounts cannot be private). Setter gating is enforced
+/// in-procedure by the owner / role check installed via `access_control`
+/// ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
+///
+/// The factory builds the [`AuthNetworkAccount`] auth component internally with a note
+/// allowlist covering the faucet's own [`MintNote`] and [`BurnNote`] scripts and an empty
+/// tx-script allowlist (network faucets are consumed via notes, not tx scripts). Callers
+/// that need a custom allowlist (additional note scripts or tx scripts) should use
+/// [`AccountBuilder`] directly.
+///
+/// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
+/// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled.
+pub fn create_network_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: FungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = FungibleFaucet::mint_and_send_root();
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
+        .expect("MintNote + BurnNote allowlist is non-empty");
 
-    let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
-            pub_key,
-            auth_scheme,
-            AuthSingleSigAclConfig::new()
-                .with_auth_trigger_procedures(vec![mint_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthMethod::NoAuth => NoAuth::new().into(),
-        AuthMethod::NetworkAccount { allowed_script_roots } => {
-            AuthNetworkAccount::with_allowlist(allowed_script_roots)
-                .map_err(|err| {
-                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                        "invalid network account allowlist: {err}"
-                    ))
-                })?
-                .into()
-        },
-        AuthMethod::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets cannot be created with Unknown authentication method".into(),
-            ));
-        },
-        AuthMethod::Multisig { .. } => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets do not support Multisig authentication".into(),
-            ));
-        },
-    };
-
-    let account = AccountBuilder::new(init_seed)
-        .account_type(account_type)
+    AccountBuilder::new(init_seed)
+        .account_type(AccountType::Public)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
         .build()
-        .map_err(FungibleFaucetError::AccountError)?;
-
-    Ok(account)
+        .map_err(FungibleFaucetError::AccountError)
 }

@@ -33,15 +33,9 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
-    TokenPolicyManager,
-    TransferPolicy,
-};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -774,12 +768,12 @@ fn add_faucet_with_callbacks(
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
-                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?,
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build(),
         )
+        .with_component(Pausable::unpaused())
         .with_component(callback_component);
 
     builder.add_account_from_builder(

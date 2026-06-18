@@ -9,7 +9,6 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -22,9 +21,9 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageSlot,
     StorageSlotContent,
-    StorageSlotDelta,
     StorageSlotId,
     StorageSlotName,
+    StorageSlotPatch,
     StorageSlotType,
 };
 use miden_protocol::assembly::diagnostics::NamedSource;
@@ -59,6 +58,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::account::access::Pausable;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -829,21 +829,21 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     assert_matches!(
         tx.account_delta().storage().get(&slot_name0).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
         tx.account_delta().storage().get(&slot_name1).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
         tx.account_delta().storage().get(&slot_name2).unwrap(),
-        StorageSlotDelta::Map(map_delta) => {
+        StorageSlotPatch::Map(map_patch) => {
             let expected = &BTreeMap::from_iter(map_entries);
-            assert_eq!(expected, map_delta.entries())
+            assert_eq!(expected, map_patch.entries())
         }
     );
 
@@ -852,11 +852,9 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
-    // The delta should be present on the proven tx.
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
-    assert_eq!(delta, tx.account_delta());
+    // The patch should be present on the proven tx.
+    let patch = proven_tx.account_update().details().unwrap_public();
+    assert_eq!(patch, tx.account_patch());
 
     Ok(())
 }
@@ -1471,7 +1469,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
     assert_eq!(
         executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotDelta::Value(slot_value),
+        &StorageSlotPatch::Value(slot_value),
     );
     Ok(())
 }
@@ -1561,6 +1559,55 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_has_storage_slot() -> anyhow::Result<()> {
+    let existing_slot_name = format!("{}", AccountStorage::mock_value_slot0().name());
+
+    // (slot name, whether a slot with that name is expected to exist on the account)
+    let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
+
+    for (slot_name, expected_to_exist) in test_cases {
+        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+
+        let assertion = if expected_to_exist {
+            r#"assert.err="installed storage slot should be reported as present""#
+        } else {
+            r#"assertz.err="unknown storage slot should be reported as absent""#
+        };
+
+        let code = format!(
+            r#"
+            use miden::core::sys
+
+            use $kernel::prologue
+            use mock::account->mock_account
+
+            const SLOT_NAME = word("{slot_name}")
+
+            begin
+                exec.prologue::prepare_transaction
+
+                # pad the stack for the call
+                push.SLOT_NAME[0..2]
+                repeat.14 push.0 movdn.2 end
+                # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+                call.mock_account::has_storage_slot
+                # => [has_slot, pad(15)]
+
+                {assertion}
+
+                exec.sys::truncate_stack
+            end
+            "#,
+        );
+
+        tx_context.execute_code(&code).await?;
+    }
+
+    Ok(())
+}
+
 /// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
 /// callbacks.
 ///
@@ -1598,6 +1645,7 @@ async fn test_faucet_has_callbacks(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
+        .with_component(Pausable::unpaused())
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;
 

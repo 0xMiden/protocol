@@ -1,15 +1,23 @@
+use alloc::collections::BTreeMap;
+use alloc::vec;
+
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     AccountStorage,
     RoleSymbol,
+    StorageMap,
+    StorageMapKey,
     StorageSlot,
+    StorageSlotContent,
     StorageSlotName,
 };
 use miden_protocol::errors::{AccountError, RoleSymbolError};
@@ -29,6 +37,11 @@ static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+static AUTHORITY_PROCEDURE_ROLES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::authority::procedure_roles")
+        .expect("storage slot name should be valid")
+});
+
 /// Authority value written to the storage slot for [`Authority::AuthControlled`].
 const AUTH_CONTROLLED: u8 = 0;
 /// Authority value written to the storage slot for [`Authority::OwnerControlled`].
@@ -43,29 +56,44 @@ const RBAC_CONTROLLED: u8 = 2;
 ///
 /// Components that gate state-mutating procedures (such as
 /// [`TokenPolicyManager`][crate::account::policies::TokenPolicyManager] for `set_mint_policy` /
-/// `set_burn_policy`, or the fungible token metadata setters) consult this single shared slot via
-/// the MASM helper `authority::assert_authorized`. Installing the [`Authority`] component on an
-/// account thus selects the gating mode for *all* such procedures in one place.
+/// `set_burn_policy`, or the fungible token metadata setters) consult this shared slot via the
+/// MASM helper `authority::assert_authorized`. Installing the [`Authority`] component on an account
+/// thus selects the gating mode for *all* such procedures in one place.
 ///
-/// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
+/// # Safety invariant for [`Authority::AuthControlled`]
+///
+/// Because `assert_authorized` is a no-op under `AuthControlled`, the account's auth component
+/// is the **sole** gate for every authority-gated setter. The auth component MUST therefore
+/// authenticate every such setter root, otherwise the setters become permissionless.
+///
+/// # Per-procedure roles under [`Authority::RbacControlled`]
+///
+/// Under RBAC, each gated procedure can be assigned its own role via `roles`, keyed by the
+/// procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
+/// runtime `assert_authorized` identifies the calling procedure via the `caller` instruction and
+/// looks up its role. A procedure without a mapping falls back to the
+/// [`Ownable2Step`][crate::account::access::Ownable2Step] owner check.
+///
+/// Storage layout:
+/// - Value slot: `[authority, 0, 0, 0]`.
+/// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
-    /// Authority is the account's auth component; no extra check is performed by
-    /// `authority::assert_authorized`.
+    /// Authority is the account's auth component.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
-    /// must be sent by the registered owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
     OwnerControlled = OWNER_CONTROLLED,
-    /// Authority is membership in a specific RBAC role. The call must be sent by an account that
-    /// holds `role` in the
-    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component.
+    /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///
+    /// `roles` maps a gated procedure's [`AccountProcedureRoot`] to the role required to invoke it.
     /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
-    /// component to be installed on the account; the MASM helper calls into
+    /// component to be installed on the account. the MASM helper calls into
     /// `rbac::assert_sender_has_role` and will fail to link otherwise.
-    RbacControlled { role: RoleSymbol } = RBAC_CONTROLLED,
+    RbacControlled {
+        roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    } = RBAC_CONTROLLED,
 }
 
 impl Authority {
@@ -85,29 +113,60 @@ impl Authority {
         &AUTHORITY_SLOT_NAME
     }
 
+    /// Returns the [`StorageSlotName`] holding the per-procedure role map (RBAC only).
+    pub fn procedure_roles_slot() -> &'static StorageSlotName {
+        &AUTHORITY_PROCEDURE_ROLES_SLOT_NAME
+    }
+
     /// Reads the authority configuration from account storage.
     pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, AuthorityError> {
         let word = storage
             .get_item(Self::authority_slot())
             .map_err(AuthorityError::MissingStorageSlot)?;
-        Self::try_from(word)
+
+        let discriminant: u8 = word[0]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|_| AuthorityError::InvalidAuthority(word[0].as_canonical_u64()))?;
+
+        match discriminant {
+            AUTH_CONTROLLED => Ok(Self::AuthControlled),
+            OWNER_CONTROLLED => Ok(Self::OwnerControlled),
+            RBAC_CONTROLLED => {
+                let roles = Self::read_roles_from_storage(storage)?;
+                Ok(Self::RbacControlled { roles })
+            },
+            other => Err(AuthorityError::InvalidAuthority(other.into())),
+        }
     }
 
-    /// Returns the [`AccountComponentMetadata`] for this component.
-    pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![(
+    /// Returns the [`AccountComponentMetadata`] for this configuration.
+    pub fn component_metadata(&self) -> AccountComponentMetadata {
+        let mut slots = vec![(
             AUTHORITY_SLOT_NAME.clone(),
             StorageSlotSchema::value(
                 "Authority configuration",
                 [
                     FeltSchema::u8("authority"),
-                    FeltSchema::felt("role_symbol"),
+                    FeltSchema::new_void(),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
             ),
-        )])
-        .expect("storage schema should be valid");
+        )];
+
+        if matches!(self, Authority::RbacControlled { .. }) {
+            slots.push((
+                AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.clone(),
+                StorageSlotSchema::map(
+                    "Per-procedure role assignment (procedure root -> role symbol)",
+                    SchemaType::native_word(),
+                    SchemaType::role_symbol(),
+                ),
+            ));
+        }
+
+        let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
             .with_description(
@@ -116,58 +175,78 @@ impl Authority {
             )
             .with_storage_schema(storage_schema)
     }
+
+    // PRIVATE HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the discriminant byte written to `word[0]` of the authority slot.
+    fn as_u8(&self) -> u8 {
+        match self {
+            Authority::AuthControlled => AUTH_CONTROLLED,
+            Authority::OwnerControlled => OWNER_CONTROLLED,
+            Authority::RbacControlled { .. } => RBAC_CONTROLLED,
+        }
+    }
+
+    /// Encodes the authority configuration value slot word: `[authority, 0, 0, 0]`.
+    fn to_word(&self) -> Word {
+        Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+    }
+
+    /// Reconstructs the per-procedure role map from the procedure-roles storage slot.
+    fn read_roles_from_storage(
+        storage: &AccountStorage,
+    ) -> Result<BTreeMap<AccountProcedureRoot, RoleSymbol>, AuthorityError> {
+        let slot = storage
+            .slots()
+            .iter()
+            .find(|slot| slot.name().id() == AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.id())
+            .ok_or(AuthorityError::MissingProcedureRolesSlot)?;
+
+        let StorageSlotContent::Map(map) = slot.content() else {
+            return Err(AuthorityError::MissingProcedureRolesSlot);
+        };
+
+        let mut roles = BTreeMap::new();
+        for (key, value) in map.entries() {
+            let proc_root = AccountProcedureRoot::from_raw(key.as_word());
+            let role = RoleSymbol::try_from(value[0]).map_err(AuthorityError::InvalidRoleSymbol)?;
+            roles.insert(proc_root, role);
+        }
+
+        Ok(roles)
+    }
 }
 
 // TRAIT IMPLEMENTATIONS
 // ================================================================================================
 
-impl From<Authority> for Word {
-    fn from(value: Authority) -> Self {
-        match value {
-            Authority::AuthControlled => {
-                Word::new([Felt::from(AUTH_CONTROLLED), Felt::ZERO, Felt::ZERO, Felt::ZERO])
-            },
-            Authority::OwnerControlled => {
-                Word::new([Felt::from(OWNER_CONTROLLED), Felt::ZERO, Felt::ZERO, Felt::ZERO])
-            },
-            Authority::RbacControlled { role } => {
-                Word::new([Felt::from(RBAC_CONTROLLED), role.into(), Felt::ZERO, Felt::ZERO])
-            },
-        }
-    }
-}
-
-impl TryFrom<Word> for Authority {
-    type Error = AuthorityError;
-
-    fn try_from(word: Word) -> Result<Self, Self::Error> {
-        let authority: u8 = word[0]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|_| AuthorityError::InvalidAuthority(word[0].as_canonical_u64()))?;
-        match authority {
-            AUTH_CONTROLLED => Ok(Self::AuthControlled),
-            OWNER_CONTROLLED => Ok(Self::OwnerControlled),
-            RBAC_CONTROLLED => {
-                let role =
-                    RoleSymbol::try_from(word[1]).map_err(AuthorityError::InvalidRoleSymbol)?;
-                Ok(Self::RbacControlled { role })
-            },
-            other => Err(AuthorityError::InvalidAuthority(other.into())),
-        }
-    }
-}
-
 impl From<Authority> for AccountComponent {
     fn from(value: Authority) -> Self {
-        let slot = StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), Word::from(value));
-        AccountComponent::new(
-            Authority::code().clone(),
-            vec![slot],
-            Authority::component_metadata(),
+        let metadata = value.component_metadata();
+
+        let mut slots = vec![StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), value.to_word())];
+
+        if let Authority::RbacControlled { roles } = value {
+            let entries = roles.into_iter().map(|(proc_root, role)| {
+                (StorageMapKey::new(proc_root.as_word()), role_value_word(&role))
+            });
+            slots.push(StorageSlot::with_map(
+                AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.clone(),
+                StorageMap::with_entries(entries)
+                    .expect("authority procedure-roles map should be valid"),
+            ));
+        }
+
+        AccountComponent::new(Authority::code().clone(), slots, metadata).expect(
+            "authority component should satisfy the requirements of a valid account component",
         )
-        .expect("authority component should satisfy the requirements of a valid account component")
     }
+}
+
+/// Encodes a role symbol as a map value word: `[role_symbol, 0, 0, 0]`.
+fn role_value_word(role: &RoleSymbol) -> Word {
+    Word::new([role.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO])
 }
 
 // AUTHORITY ERROR
@@ -178,8 +257,10 @@ impl From<Authority> for AccountComponent {
 pub enum AuthorityError {
     #[error("invalid authority value: {0}")]
     InvalidAuthority(u64),
-    #[error("invalid role symbol in authority slot")]
+    #[error("invalid role symbol in authority storage")]
     InvalidRoleSymbol(#[source] RoleSymbolError),
     #[error("failed to read authority slot from storage")]
     MissingStorageSlot(#[source] AccountError),
+    #[error("authority procedure-roles slot is missing or not a map")]
+    MissingProcedureRolesSlot,
 }
