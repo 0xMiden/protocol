@@ -16,8 +16,8 @@ const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 # - payback_recipient        [8..11]  (private mode only; zero in public mode)
 # - payback_note_type        [12]
 # - payback_tag              [13]
-# - payback_target_prefix    [14]     (public mode only; zero in private mode)
-# - payback_target_suffix    [15]     (public mode only; zero in private mode)
+# - payback_target_suffix    [14]     (public mode only; zero in private mode)
+# - payback_target_prefix    [15]     (public mode only; zero in private mode)
 #
 # In private mode, the recipient digest and tag are precomputed off-chain by the creator and
 # embedded as opaque values; the consumer of the SWAP cannot learn who the payback targets from
@@ -30,8 +30,8 @@ const REQUESTED_ASSET_PTR=0
 const PAYBACK_RECIPIENT_PTR=8
 const PAYBACK_NOTE_TYPE_PTR=12
 const PAYBACK_TAG_PTR=13
-const PAYBACK_TARGET_PREFIX_PTR=14
-const PAYBACK_TARGET_SUFFIX_PTR=15
+const PAYBACK_TARGET_SUFFIX_PTR=14
+const PAYBACK_TARGET_PREFIX_PTR=15
 
 # Storage is exactly 16 felts = 4 words, so the asset region starts right after.
 const ASSET_PTR=16

@@ -177,8 +177,8 @@ impl SwapNote {
 /// | `[8..11]` | Payback recipient digest (private mode; zero in public mode) |
 /// | `[12]`    | Payback note type |
 /// | `[13]`    | Payback note tag |
-/// | `[14]`    | Payback target account ID prefix (public mode; zero in private mode) |
-/// | `[15]`    | Payback target account ID suffix (public mode; zero in private mode) |
+/// | `[14]`    | Payback target account ID suffix (public mode; zero in private mode) |
+/// | `[15]`    | Payback target account ID prefix (public mode; zero in private mode) |
 ///
 /// See [`SwapPayback`] for the rationale behind the per-mode shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,9 +303,9 @@ impl From<SwapNoteStorage> for NoteStorage {
                 storage_values.push(Felt::from(NoteType::Public.as_u8()));
                 // [13] payback tag
                 storage_values.push(Felt::from(storage.payback_tag.as_u32()));
-                // [14..15] payback target id (prefix, suffix)
-                storage_values.push(payback_target_id.prefix().as_felt());
+                // [14..15] payback target id (suffix, prefix)
                 storage_values.push(payback_target_id.suffix());
+                storage_values.push(payback_target_id.prefix().as_felt());
             },
         }
 
@@ -374,8 +374,8 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
                 }
 
                 let payback_target_id = AccountId::try_from_elements(
-                    note_storage[15],
                     note_storage[14],
+                    note_storage[15],
                 )
                 .map_err(|e| {
                     NoteError::other_with_source("failed to parse payback target account ID", e)
@@ -521,7 +521,7 @@ mod tests {
         .items()
         .to_vec();
 
-        // Inject a non-zero target prefix in the slot that must stay clear for private payback.
+        // Inject a non-zero target suffix in the slot that must stay clear for private payback.
         items[14] = Felt::from(1u32);
         assert!(SwapNoteStorage::try_from(items.as_slice()).is_err());
     }
