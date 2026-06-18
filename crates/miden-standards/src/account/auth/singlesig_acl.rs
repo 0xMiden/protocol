@@ -76,7 +76,7 @@ impl AuthSingleSigAclConfig {
 ///
 /// This component uses *exempt-list* ACL semantics: every called account procedure requires
 /// authentication by default, and only procedures explicitly listed in
-/// [`AuthSingleSigAclConfig::exempt_procedures`] are permitted to execute without a signature.
+/// [`AuthSingleSigAclConfig`] are permitted to execute without a signature.
 /// This makes the safe path the default - newly added setters cannot silently become
 /// permissionless by being forgotten in the configuration.
 ///
