@@ -875,20 +875,21 @@ async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::R
 /// Tests that recomputing a delta correctly resets the account delta tracked by the host.
 ///
 /// The auth procedure adds `asset0` to the vault, explicitly calls `compute_delta_commitment`,
-/// and then removes `asset0` again. The epilogue then implicitly calls `compute_delta_commitment`
-/// a second time. The net vault delta is empty, so the host's tracked delta must end up empty.
+/// and then removes `asset0` again. It then builds the tx summary (which calls
+/// `compute_delta_commitment` a second time) and emits `AUTH_UNAUTHORIZED_EVENT`, so the can access
+/// the delta via `TransactionSummary::account_delta`.
 ///
 /// Without the reset performed at the start of each `compute_delta_commitment`, this would fail:
 /// - The explicit call iterates the asset delta link map, sees the added `asset0`, and fires
 ///   `on_asset_delta_computation`, which accumulates `asset0` into the host's tracked vault delta.
 /// - Removing `asset0` afterwards turns its link map entry into a net-empty entry.
-/// - The implicit call iterates the link map again, but the net-empty entry does NOT fire
+/// - The summary's call iterates the link map again, but the net-empty entry does NOT fire
 ///   `on_asset_delta_computation`, so the previously accumulated `asset0` would remain in the
 ///   host's vault delta forever, leaving it non-empty even though the actual change is zero.
 ///
 /// With the reset (the `before_asset_delta_computation` event emitted at the start of each
 /// `compute_delta_commitment`), the host clears its vault delta before each iteration, so the
-/// implicit call correctly produces an empty delta.
+/// summary's call correctly produces an empty delta.
 #[tokio::test]
 async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
@@ -909,29 +910,50 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let auth_code = format!(
         "
     use miden::protocol::native_account
+    use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 
     {TEST_ACCOUNT_CONVENIENCE_WRAPPERS}
 
+    #! Inputs:  [[AUTH_ARGS], pad(12)]
+    #! Outputs: [pad(16)]
     @auth_script
     pub proc auth_test
         exec.native_account::incr_nonce drop
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # add asset 0 to the vault
         push.{ASSET0_VALUE} push.{ASSET0_KEY}
         exec.add_asset dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # compute the delta to trigger the host to add the assets to the vault delta
         exec.native_account::compute_delta_commitment
         dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # remove asset 0 for correct asset preservation
         push.{ASSET0_VALUE}
         push.{ASSET0_KEY}
         exec.remove_asset dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
+
+        # Build the tx summary.
+        # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
+        dropw padw
+        # => [SALT, pad(12)]
+
+        exec.::miden::standards::auth::create_tx_summary
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+        adv.insert_hqword
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+        exec.::miden::standards::auth::hash_tx_summary
+        # => [TX_SUMMARY_COMMITMENT, pad(12)]
+
+        emit.AUTH_UNAUTHORIZED_EVENT
+
+        push.0 assert.err=\"emitting the event should have aborted execution\"
     end
     ",
         ASSET0_KEY = asset0.to_key_word(),
@@ -955,23 +977,19 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    let executed_tx = mock_chain
+    let tx_summary = mock_chain
         .build_tx_context(account, &[], &[])?
         .build()?
         .execute()
         .await
-        .context("failed to execute transaction")?;
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let account_delta = tx_summary.account_delta();
 
-    assert!(
-        executed_tx.account_delta().vault().is_empty(),
-        "vault delta should be effectively empty"
-    );
-    assert!(
-        executed_tx.account_delta().storage().is_empty(),
-        "storage delta should be empty"
-    );
+    assert!(account_delta.vault().is_empty(), "vault delta should be effectively empty");
+    assert!(account_delta.storage().is_empty(), "storage delta should be empty");
     assert_eq!(
-        executed_tx.account_delta().nonce_delta().as_canonical_u64(),
+        account_delta.nonce_delta().as_canonical_u64(),
         1,
         "nonce should have been incremented"
     );
