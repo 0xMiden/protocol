@@ -463,6 +463,10 @@ mod tests {
             },
             SwapPayback::Public { .. } => panic!("expected private payback"),
         }
+
+        let parsed =
+            SwapNoteStorage::try_from(note_storage.items()).expect("round trip should succeed");
+        assert_eq!(parsed, storage);
     }
 
     #[test]
@@ -482,33 +486,10 @@ mod tests {
             },
             SwapPayback::Private { .. } => panic!("expected public payback"),
         }
-    }
-
-    #[test]
-    fn swap_note_storage_try_from_round_trip_public() {
-        let original =
-            SwapNoteStorage::new_public(fungible_asset(), dummy_target_id(), dummy_payback_tag());
-        let note_storage = NoteStorage::from(original.clone());
 
         let parsed =
             SwapNoteStorage::try_from(note_storage.items()).expect("round trip should succeed");
-
-        assert_eq!(parsed, original);
-    }
-
-    #[test]
-    fn swap_note_storage_try_from_round_trip_private() {
-        let original = SwapNoteStorage::new_private(
-            fungible_asset(),
-            dummy_recipient_digest(),
-            dummy_payback_tag(),
-        );
-        let note_storage = NoteStorage::from(original.clone());
-
-        let parsed =
-            SwapNoteStorage::try_from(note_storage.items()).expect("round trip should succeed");
-
-        assert_eq!(parsed, original);
+        assert_eq!(parsed, storage);
     }
 
     #[test]
