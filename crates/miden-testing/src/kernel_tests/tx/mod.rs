@@ -16,8 +16,8 @@ use miden_protocol::{Felt, Word, ZERO};
 use crate::MockChain;
 
 mod test_account;
-mod test_account_delta;
 mod test_account_interface;
+mod test_account_update;
 mod test_active_note;
 mod test_array;
 mod test_asset;
