@@ -405,6 +405,7 @@ pub fn payback_serial_from_swap(swap_serial: Word) -> Word {
 #[cfg(test)]
 mod tests {
 
+    use assert_matches::assert_matches;
     use miden_protocol::account::{AccountIdVersion, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteType};
@@ -504,7 +505,13 @@ mod tests {
 
         // Inject a non-zero target suffix in the slot that must stay clear for private payback.
         items[14] = Felt::from(1u32);
-        assert!(SwapNoteStorage::try_from(items.as_slice()).is_err());
+        let err = SwapNoteStorage::try_from(items.as_slice())
+            .expect_err("private payback with a dirty target slot must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "SWAP private payback must have payback target id slots cleared".into()
+        );
     }
 
     #[test]
@@ -519,7 +526,13 @@ mod tests {
 
         // Inject a non-zero recipient felt in the slot that must stay clear for public payback.
         items[8] = Felt::from(1u32);
-        assert!(SwapNoteStorage::try_from(items.as_slice()).is_err());
+        let err = SwapNoteStorage::try_from(items.as_slice())
+            .expect_err("public payback with a dirty recipient slot must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "SWAP public payback must have recipient slots cleared".into()
+        );
     }
 
     #[test]
