@@ -134,12 +134,8 @@ impl SignedBlock {
     /// Validates that the header and body correspond by checking the transaction commitment and
     /// note root, and -- when `parent` is provided -- authenticates the block against its parent.
     ///
-    /// Pass `Some(parent)` to fully verify the block: in addition to the self-consistency checks,
-    /// this confirms the parent's number is this block's number minus one, the parent's commitment
-    /// matches this block's `prev_block_commitment`, and this block's signature verifies against
-    /// the parent's `validator_key` (the key the parent authorized to sign this block). Pass
-    /// `None` for the genesis block, which has no parent, or when only self-consistency is
-    /// required.
+    /// Pass `Some(parent)` to additionally authenticate the block against its parent; pass `None`
+    /// for the genesis block, which has no parent, or when only self-consistency is required.
     ///
     /// `parent` MUST come from already-trusted chain state. Because `prev_block_commitment` is
     /// attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
