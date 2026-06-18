@@ -533,7 +533,6 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::account::{AccountIdVersion, AccountType, AccountUpdateDetails};
-    use crate::asset::FungibleAsset;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
@@ -587,7 +586,6 @@ mod tests {
             Vec::<OutputNote>::new(),
             block_num,
             block_ref,
-            FungibleAsset::mock(100).unwrap_fungible(),
             expiration_block_num,
             proof,
         )

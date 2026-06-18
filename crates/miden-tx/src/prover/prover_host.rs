@@ -204,11 +204,6 @@ where
                 )))
             },
 
-            // We don't track enough information to handle this event. Since this just improves
-            // error messages for users and the error should not be relevant during proving, we
-            // ignore it.
-            TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { .. } => Ok(Vec::new()),
-
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
             TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),
 

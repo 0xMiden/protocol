@@ -5,7 +5,6 @@
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
@@ -15,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
-use crate::{Auth, MockChain, TransactionContextBuilder};
+use crate::{MockChain, TransactionContextBuilder};
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -150,26 +149,6 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
     account_vault.remove_asset(fungible_asset2.into())?;
 
     assert_eq!(tx.final_account().vault_root(), account_vault.root());
-
-    Ok(())
-}
-
-/// Tests that a transaction against an account with a non-empty vault successfully loads the fee
-/// asset during the epilogue.
-///
-/// The non-empty vault is important for the test because the advice provider's merkle store has all
-/// merkle paths for an empty vault by default, and so there would be nothing to load.
-#[tokio::test]
-async fn loading_fee_asset_succeeds() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder().fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?);
-    let account = builder.add_existing_mock_account_with_assets(
-        Auth::IncrNonce,
-        [
-            FungibleAsset::mock(23),
-            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 50)?.into(),
-        ],
-    )?;
-    builder.build()?.build_tx_context(account, &[], &[])?.build()?.execute().await?;
 
     Ok(())
 }

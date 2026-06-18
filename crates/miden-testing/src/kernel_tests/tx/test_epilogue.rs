@@ -116,10 +116,6 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let account_update_commitment =
         Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
-    let fee_asset = FungibleAsset::new(
-        tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
-        0,
-    )?;
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -130,24 +126,16 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().suffix(),
-    );
-    assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().prefix().as_felt()
-    );
-    assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
-            .as_canonical_u64(),
-        fee_asset.amount().as_u64()
-    );
-    assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
             .as_canonical_u64(),
         u64::from(u32::MAX)
+    );
+
+    // Everything after the expiration block number (index 8) must be zero.
+    assert_eq!(
+        exec_output.get_stack_word(8).as_elements()[1..],
+        Word::empty().as_elements()[1..],
     );
     assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
