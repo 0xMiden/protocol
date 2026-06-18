@@ -330,14 +330,14 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
         let key = Word::new([note_storage[0], note_storage[1], note_storage[2], note_storage[3]]);
         let value = Word::new([note_storage[4], note_storage[5], note_storage[6], note_storage[7]]);
         let requested_asset = Asset::from_key_value_words(key, value)
-            .map_err(|e| NoteError::other_with_source("failed to parse requested asset", e))?;
+            .map_err(|err| NoteError::other_with_source("failed to parse requested asset", err))?;
 
         // [12] = payback_note_type
         let payback_note_type = NoteType::try_from(
             u8::try_from(note_storage[12].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
-        .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
+        .map_err(|err| NoteError::other_with_source("failed to parse payback note type", err))?;
 
         // [13] = payback tag
         let payback_tag_u32 = u32::try_from(note_storage[13].as_canonical_u64())
@@ -367,7 +367,7 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
             },
             NoteType::Public => {
                 // [8..11] must be zero so the storage shape is unambiguous.
-                if note_storage[8..=11].iter().any(|f| f.as_canonical_u64() != 0) {
+                if note_storage[8..=11].iter().any(|felt| felt.as_canonical_u64() != 0) {
                     return Err(NoteError::other(
                         "SWAP public payback must have recipient slots cleared",
                     ));
@@ -377,8 +377,8 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
                     note_storage[14],
                     note_storage[15],
                 )
-                .map_err(|e| {
-                    NoteError::other_with_source("failed to parse payback target account ID", e)
+                .map_err(|err| {
+                    NoteError::other_with_source("failed to parse payback target account ID", err)
                 })?;
 
                 SwapPayback::Public { payback_target_id }
