@@ -27,7 +27,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::testing::account_id::{ACCOUNT_ID_SENDER, AccountIdBuilder};
+use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
@@ -43,30 +43,37 @@ use crate::{Auth, MockChain, TransactionContextBuilder};
 // For the approach to these tests, see `AccountUpdateTest::execute`.
 // ================================================================================================
 
-/// Tests that a noop transaction with [`Auth::Noop`] results in an empty nonce delta with an empty
-/// word as its commitment.
-///
-/// In order to make the account delta empty but the transaction still legal, we consume a note
-/// without assets.
+/// Tests that an empty account delta commits to the empty word.
 #[tokio::test]
 async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::with_mock_libraries()
+        .compile_tx_script(
+            r#"
+      use miden::protocol::native_account
+
+      begin
+          exec.native_account::compute_delta_commitment
+          # => [DELTA_COMMITMENT]
+
+          padw assert_eqw.err="empty account delta should commit to the empty word"
+      end
+      "#,
+        )
+        .context("failed to compile tx script")?;
+
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::Noop)?;
-    let p2any_note =
-        builder.add_p2any_note(AccountId::try_from(ACCOUNT_ID_SENDER)?, NoteType::Public, [])?;
+    // Use IncrNonce to make the transaction non-empty.
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account.id(), &[p2any_note.id()], &[])
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])
         .expect("failed to build tx context")
+        .tx_script(tx_script)
         .build()?
         .execute()
         .await
         .context("failed to execute transaction")?;
-
-    assert_eq!(executed_tx.account_delta().nonce_delta(), ZERO);
-    assert!(executed_tx.account_delta().is_empty());
-    assert_eq!(executed_tx.account_delta().to_commitment(), Word::empty());
 
     Ok(())
 }
