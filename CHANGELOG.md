@@ -40,6 +40,7 @@
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Renamed the `TransactionEvent::AuthRequest` field from `pub_key_hash: Word` to `pub_key_commitment: PublicKeyCommitment` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
+- [BREAKING] Removed `AccountDelta` from `ExecutedTransaction` which is replaced by `AccountPatch` ([#3109](https://github.com/0xMiden/protocol/pull/3109)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
