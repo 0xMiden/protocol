@@ -555,11 +555,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         .execute()
         .await?;
 
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
+    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
+
     // Prove, serialize/deserialize and verify the transaction
     prove_and_verify_transaction(executed_transaction.clone()).await?;
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
-    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
     Ok(())
 }
 
