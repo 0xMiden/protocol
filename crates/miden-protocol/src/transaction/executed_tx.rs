@@ -132,11 +132,6 @@ impl ExecutedTransaction {
         self.tx_inputs.block_header()
     }
 
-    /// Returns a description of changes between the initial and final account states.
-    pub fn account_delta(&self) -> &AccountDelta {
-        &self.account_delta
-    }
-
     /// Returns the patch of the transaction that describes the update from the initial to the final
     /// account state.
     pub fn account_patch(&self) -> &AccountPatch {
@@ -166,20 +161,8 @@ impl ExecutedTransaction {
     /// Returns individual components of this transaction.
     pub fn into_parts(
         self,
-    ) -> (
-        TransactionInputs,
-        TransactionOutputs,
-        AccountDelta,
-        AccountPatch,
-        TransactionMeasurements,
-    ) {
-        (
-            self.tx_inputs,
-            self.tx_outputs,
-            self.account_delta,
-            self.account_patch,
-            self.tx_measurements,
-        )
+    ) -> (TransactionInputs, TransactionOutputs, AccountPatch, TransactionMeasurements) {
+        (self.tx_inputs, self.tx_outputs, self.account_patch, self.tx_measurements)
     }
 }
 
@@ -191,7 +174,7 @@ impl From<ExecutedTransaction> for TransactionInputs {
 
 impl From<ExecutedTransaction> for TransactionMeasurements {
     fn from(tx: ExecutedTransaction) -> Self {
-        let (_, _, _, _, tx_progress) = tx.into_parts();
+        let (_, _, _, tx_progress) = tx.into_parts();
         tx_progress
     }
 }
