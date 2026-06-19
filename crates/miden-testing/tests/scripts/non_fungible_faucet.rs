@@ -5,11 +5,11 @@ use alloc::sync::Arc;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, NonFungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{NoteAttachments, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
-use miden_standards::account::faucets::{NonFungibleFaucet, TokenName, compute_commitment};
+use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistOwnerControlled,
     BurnPolicy,
@@ -46,7 +46,7 @@ fn build_nft_faucet(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new(symbol)?)
         .symbol(TokenSymbol::new(symbol)?)
-        .max_supply(AssetAmount::new(max_supply)?)
+        .max_supply(max_supply)
         .build()?;
 
     let token_policy_manager = TokenPolicyManager::builder()
@@ -116,7 +116,10 @@ async fn nft_mint_succeeds() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
-    let commitment = compute_commitment(b"token #1 metadata", Word::from([7, 8, 9, 10u32]));
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"token #1 metadata",
+        Word::from([7, 8, 9, 10u32]),
+    );
     let recipient = Word::from([1, 2, 3, 4u32]);
 
     let executed = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
@@ -135,7 +138,10 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
-    let commitment = compute_commitment(b"duplicate token", Word::from([3, 3, 3, 3u32]));
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"duplicate token",
+        Word::from([3, 3, 3, 3u32]),
+    );
     let recipient = Word::from([4, 4, 4, 4u32]);
 
     // mint the same commitment twice in one transaction; the second call must fail
@@ -167,8 +173,8 @@ async fn nft_mint_exceeds_max_supply_fails() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 1, owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
-    let c1 = compute_commitment(b"token 1", Word::from([1, 0, 0, 0u32]));
-    let c2 = compute_commitment(b"token 2", Word::from([2, 0, 0, 0u32]));
+    let c1 = NonFungibleFaucet::compute_asset_commitment(b"token 1", Word::from([1, 0, 0, 0u32]));
+    let c2 = NonFungibleFaucet::compute_asset_commitment(b"token 2", Word::from([2, 0, 0, 0u32]));
     let recipient = Word::from([9, 9, 9, 9u32]);
 
     let body1 = nft_mint_body(c1, recipient);
@@ -201,14 +207,15 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
-    let commitment = compute_commitment(b"burnable token", Word::from([5, 6, 7, 8u32]));
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"burnable token", Word::from([5, 6, 7, 8u32]));
     let recipient = Word::from([9, 9, 9, 9u32]);
 
     // 1. mint and apply the delta: the faucet records the commitment ISSUED with supply 1
     let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
     let mut faucet = faucet;
     faucet.apply_delta(minted.account_delta())?;
-    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), AssetAmount::from(1u32));
+    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 1);
 
     // 2. consume a BURN note carrying the minted NFT against the faucet
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
@@ -230,7 +237,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 
     // 3. supply is decremented back to 0
     faucet.apply_delta(burned.account_delta())?;
-    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), AssetAmount::from(0u32));
+    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 0);
 
     Ok(())
 }
@@ -245,7 +252,10 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
-    let commitment = compute_commitment(b"note-minted token", Word::from([1, 2, 3, 4u32]));
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"note-minted token",
+        Word::from([1, 2, 3, 4u32]),
+    );
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
     let sender = AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private);
 
@@ -280,7 +290,10 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::owner_only())?;
     let mock_chain = builder.build()?;
 
-    let commitment = compute_commitment(b"unauthorized mint", Word::from([6, 6, 6, 6u32]));
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"unauthorized mint",
+        Word::from([6, 6, 6, 6u32]),
+    );
     let recipient_digest = Word::from([7, 7, 7, 7u32]);
     // sender is NOT the owner
     let non_owner = AccountId::dummy([11; 15], AccountIdVersion::Version1, AccountType::Private);
@@ -317,7 +330,7 @@ fn build_nft_faucet_with_blocklist(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
-        .max_supply(AssetAmount::new(10_000)?)
+        .max_supply(10_000)
         .build()?;
 
     let account_builder = AccountBuilder::new([55u8; 32])
@@ -350,7 +363,10 @@ async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
     let faucet = build_nft_faucet_with_blocklist(&mut builder, owner, [target_account.id()])?;
 
     // a faucet NFT with callbacks enabled so the transfer policy callback fires on receipt
-    let commitment = compute_commitment(b"blocked transfer", Word::from([1, 2, 3, 4u32]));
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"blocked transfer",
+        Word::from([1, 2, 3, 4u32]),
+    );
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
         .with_callbacks(AssetCallbackFlag::Enabled)
         .into();

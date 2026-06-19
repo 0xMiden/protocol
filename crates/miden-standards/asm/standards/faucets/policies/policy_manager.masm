@@ -260,9 +260,8 @@ end
 #! Executes active mint policy by dynamic execution.
 #!
 #! The policy operates on the full asset value word so the interface is shared across fungible
-#! and non-fungible faucets. For a fungible asset the value is `[amount, 0, 0, 0]`; for a
-#! non-fungible asset it is the asset commitment `[hash0, hash1, hash2, hash3]`. The policy may
-#! adjust the value and the note routing (`tag`, `note_type`, `RECIPIENT`).
+#! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
+#! `note_type`, and `RECIPIENT`.
 #!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]

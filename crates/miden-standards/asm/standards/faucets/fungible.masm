@@ -251,8 +251,8 @@ pub proc mint_and_send
     loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    # Run the active mint policy over the full asset value word. The policy may adjust the
-    # value and the note routing; for a fungible asset the value is `[amount, 0, 0, 0]`.
+    # Run the active mint policy over the full asset value word. The policy may adjust the asset
+    # value and the output note's tag, type, and recipient.
     exec.policy_manager::execute_mint_policy
     # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT, pad(6)]
 

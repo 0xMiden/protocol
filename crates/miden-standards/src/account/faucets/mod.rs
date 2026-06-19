@@ -18,8 +18,6 @@ pub use fungible::{
 pub use non_fungible::{
     NonFungibleFaucet,
     NonFungibleFaucetBuilder,
-    authority_gated_setter_roots,
-    compute_commitment,
     create_network_non_fungible_faucet,
     create_user_non_fungible_faucet,
 };
