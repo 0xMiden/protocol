@@ -65,8 +65,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         .await?;
 
     sender_account
-        .apply_delta(create_swap_note_tx.account_delta())
-        .context("failed to apply delta")?;
+        .apply_patch(create_swap_note_tx.account_patch())
+        .context("failed to apply patch")?;
 
     assert!(
         create_swap_note_tx
@@ -115,8 +115,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
         .await?;
 
     target_account
-        .apply_delta(consume_swap_note_tx.account_delta())
-        .context("failed to apply delta to target account")?;
+        .apply_patch(consume_swap_note_tx.account_patch())
+        .context("failed to apply patch to target account")?;
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
     assert_eq!(
@@ -145,8 +145,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
         .await?;
 
     sender_account
-        .apply_delta(consume_payback_tx.account_delta())
-        .context("failed to apply delta to sender account")?;
+        .apply_patch(consume_payback_tx.account_patch())
+        .context("failed to apply patch to sender account")?;
 
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
 
@@ -199,7 +199,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    target_account.apply_delta(consume_swap_note_tx.account_delta())?;
+    target_account.apply_patch(consume_swap_note_tx.account_patch())?;
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
     assert_eq!(
@@ -227,7 +227,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    sender_account.apply_delta(consume_payback_tx.account_delta())?;
+    sender_account.apply_patch(consume_payback_tx.account_patch())?;
 
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
     Ok(())

@@ -5,7 +5,7 @@ use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::asset::ASSET_SIZE
 use $kernel::link_map
 use $kernel::memory
-use $kernel::memory::ACCOUNT_DELTA_ASSET_PTR
+use $kernel::memory::ACCOUNT_UPDATE_ASSET_PTR
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
@@ -59,13 +59,13 @@ const TRACK_ASSET_DELTA_OP_LOC = 0
 const COMBINE_INCOMING_DELTA_OP_LOC = 0
 const COMBINE_CURRENT_DELTA_OP_LOC = 1
 
-#! Locals in update_asset_delta. The last region is a buffer of removed assets that is hashed after
+#! Locals in commit_asset_delta. The last region is a buffer of removed assets that is hashed after
 #! the added-assets section.
-const UPDATE_ASSET_DELTA_HAS_NEXT_LOC = 0
-const UPDATE_ASSET_DELTA_ITER_LOC = 1
-const UPDATE_ASSET_DELTA_NUM_ADDED_LOC = 2
-const UPDATE_ASSET_DELTA_NUM_REMOVED_LOC = 3
-const UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC = 4
+const COMMIT_ASSET_DELTA_HAS_NEXT_LOC = 0
+const COMMIT_ASSET_DELTA_ITER_LOC = 1
+const COMMIT_ASSET_DELTA_NUM_ADDED_LOC = 2
+const COMMIT_ASSET_DELTA_NUM_REMOVED_LOC = 3
+const COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC = 4
 
 #! Locals in commit_asset_patch.
 const COMMIT_ASSET_PATCH_HAS_NEXT_LOC = 0
@@ -75,8 +75,8 @@ const COMMIT_ASSET_PATCH_NUM_CHANGED_LOC = 2
 #! The maximum number of assets that can be removed in a single transaction.
 #!
 #! This limit is arbitrary and can be increased accordingly with the number of locals of
-#! update_asset_delta.
-const UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
+#! commit_asset_delta.
+const COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
 
 # PROCEDURES
 # =================================================================================================
@@ -121,7 +121,7 @@ pub proc compute_patch_commitment
     exec.commit_asset_patch
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
-    exec.update_storage_patch
+    exec.commit_storage_patch
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.poseidon2::squeeze_digest
@@ -159,7 +159,7 @@ end
 #!
 #! Panics if:
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
-pub proc compute_commitment
+pub proc compute_delta_commitment
     # pad capacity and RATE1 of the hasher with empty words
     padw padw
     # => [EMPTY_WORD, CAPACITY]
@@ -179,10 +179,10 @@ pub proc compute_commitment
     exec.poseidon2::copy_digest movdnw.3
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
-    exec.update_asset_delta
+    exec.commit_asset_delta
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
-    exec.update_storage_patch
+    exec.commit_storage_patch
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.poseidon2::squeeze_digest
@@ -212,7 +212,7 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_storage_patch
+proc commit_storage_patch
     exec.memory::get_native_num_storage_slots movdn.12
     # => [RATE0, RATE1, CAPACITY, num_storage_slots]
 
@@ -227,7 +227,7 @@ proc update_storage_patch
         dup.12
         # => [slot_idx, RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
 
-        exec.update_slot_patch
+        exec.commit_slot_patch
         # => [RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
 
         # increment slot index
@@ -253,7 +253,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_slot_patch
+proc commit_slot_patch
     dup exec.account::get_native_storage_slot_type
     # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
@@ -262,9 +262,9 @@ proc update_slot_patch
     # => [is_value_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
     if.true
-        exec.update_value_slot_patch
+        exec.commit_value_slot_patch
     else
-        exec.update_map_slot_patch
+        exec.commit_map_slot_patch
     end
     # => [RATE0, RATE1, CAPACITY]
 end
@@ -273,7 +273,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_value_slot_patch
+proc commit_value_slot_patch
     exec.account::get_item_delta
     # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
@@ -326,7 +326,7 @@ end
 #! - 3: iter
 #! - 4: num_changed_entries
 @locals(5)
-proc update_map_slot_patch
+proc commit_map_slot_patch
     # initialize num_changed_entries = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's value
@@ -437,18 +437,18 @@ end
 #! - 1: iter
 #! - 2: num_added_assets
 #! - 3: num_removed_assets
-#! - 4..8196: removed_assets (UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
+#! - 4..8196: removed_assets (COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
 @locals(8196)
-proc update_asset_delta
+proc commit_asset_delta
     # initialize num_added_assets = 0 and num_removed_assets = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's values
-    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
-    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+    push.0 loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
+    push.0 loc_store.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
 
     # signal to the host that delta computation is starting so it can reset its accumulating
-    # vault delta. this is necessary because compute_commitment can be invoked multiple times in
-    # a single transaction (e.g. by auth and the epilogue) and each invocation re-emits the
+    # vault delta. this is necessary because compute_delta_commitment can be invoked multiple times
+    # in a single transaction (e.g. by auth and the epilogue) and each invocation re-emits the
     # ACCOUNT_ON_ASSET_DELTA_COMPUTATION events.
     emit.ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION
 
@@ -457,7 +457,7 @@ proc update_asset_delta
     # Store removed assets to memory for later processing.
     # ---------------------------------------------------------------------------------------------
 
-    push.ACCOUNT_DELTA_ASSET_PTR
+    push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
 
     exec.link_map::iter
@@ -469,8 +469,8 @@ proc update_asset_delta
         # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, RATE0, RATE1, CAPACITY]
 
         # store has_next and iter
-        movup.12 loc_store.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
-        movup.12 loc_store.UPDATE_ASSET_DELTA_ITER_LOC
+        movup.12 loc_store.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
+        movup.12 loc_store.COMMIT_ASSET_DELTA_ITER_LOC
         # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
         movdnw.2 exec.word::test_eq not
@@ -488,9 +488,9 @@ proc update_asset_delta
 
             if.true
                 # increment num_added_assets
-                loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
                 add.1
-                loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
                 # => [ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
                 # drop previous RATE elements
@@ -500,18 +500,18 @@ proc update_asset_delta
                 exec.poseidon2::permute
                 # => [RATE0, RATE1, CAPACITY]
             else
-                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
                 # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
                 # make sure we do not write outside the assigned number of locals
-                dup neq.UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS
+                dup neq.COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS
                 assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS
                 # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
                 # compute the pointer at which to store the removed asset as
                 # locaddr.removed_assets_ptr + num_removed_assets * ASSET_SIZE
                 mul.ASSET_SIZE
-                locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC
+                locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC
                 add
                 # => [removed_assets_ptr, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
@@ -519,9 +519,9 @@ proc update_asset_delta
                 # => [RATE0, RATE1, CAPACITY]
 
                 # increment num_removed_assets
-                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
                 add.1
-                loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                loc_store.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
                 # => [RATE0, RATE1, CAPACITY]
             end
         else
@@ -532,8 +532,8 @@ proc update_asset_delta
         # => [RATE0, RATE1, CAPACITY]
 
         # load iter and has_next
-        loc_load.UPDATE_ASSET_DELTA_ITER_LOC
-        loc_load.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
+        loc_load.COMMIT_ASSET_DELTA_ITER_LOC
+        loc_load.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
         # => [has_next, iter, RATE0, RATE1, CAPACITY]
     end
 
@@ -544,7 +544,7 @@ proc update_asset_delta
     # Add the added assets trailer if num_added_assets != 0.
     # ---------------------------------------------------------------------------------------------
 
-    loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
+    loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
     exec.commit_asset_count_trailer
     # => [RATE0, RATE1, CAPACITY]
 
@@ -552,11 +552,11 @@ proc update_asset_delta
     # ---------------------------------------------------------------------------------------------
 
     # setup start_ptr and end_ptr for the removed assets buffer
-    locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC dup
+    locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC dup
     # => [start_ptr, start_ptr, RATE0, RATE1, CAPACITY]
 
     # end_ptr = start_ptr + num_removed_assets * ASSET_SIZE
-    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
     mul.ASSET_SIZE add
     # => [end_ptr, start_ptr, RATE0, RATE1, CAPACITY]
 
@@ -575,7 +575,7 @@ proc update_asset_delta
     # Add the removed assets trailer if num_removed_assets != 0.
     # ---------------------------------------------------------------------------------------------
 
-    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
+    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
     exec.commit_asset_count_trailer
     # => [RATE0, RATE1, CAPACITY]
 end
@@ -638,7 +638,7 @@ proc commit_asset_patch
     # Iterate and hash asset patches.
     # ---------------------------------------------------------------------------------------------
 
-    push.ACCOUNT_DELTA_ASSET_PTR
+    push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
 
     exec.link_map::iter
@@ -744,7 +744,7 @@ end
 #! - INITIAL_ASSET_VALUE is the value of the asset before the update.
 #! - FINAL_ASSET_VALUE is the value of the asset after the update.
 pub proc update_asset
-    swapw dupw.1 push.ACCOUNT_DELTA_ASSET_PTR
+    swapw dupw.1 push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, ASSET_KEY, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
     # retrieve the current patch entry
@@ -765,7 +765,7 @@ pub proc update_asset
     cdropw
     # => [NEW_INITIAL_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-    swapw push.ACCOUNT_DELTA_ASSET_PTR
+    swapw push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, ASSET_KEY, NEW_INITIAL_VALUE, FINAL_ASSET_VALUE]
 
     exec.link_map::set drop
