@@ -76,6 +76,46 @@ impl AccountVaultDelta {
         }
     }
 
+    /// Returns an iterator over the added assets in this delta.
+    pub fn added_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
+        self.fungible
+            .0
+            .iter()
+            .filter(|&(_, &value)| value >= 0)
+            .map(|(vault_key, &diff)| {
+                Asset::Fungible(
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
+                        .unwrap()
+                        .with_callbacks(vault_key.callback_flag()),
+                )
+            })
+            .chain(
+                self.non_fungible
+                    .filter_by_action(NonFungibleDeltaAction::Add)
+                    .map(Asset::NonFungible),
+            )
+    }
+
+    /// Returns an iterator over the removed assets in this delta.
+    pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
+        self.fungible
+            .0
+            .iter()
+            .filter(|&(_, &value)| value < 0)
+            .map(|(vault_key, &diff)| {
+                Asset::Fungible(
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
+                        .unwrap()
+                        .with_callbacks(vault_key.callback_flag()),
+                )
+            })
+            .chain(
+                self.non_fungible
+                    .filter_by_action(NonFungibleDeltaAction::Remove)
+                    .map(Asset::NonFungible),
+            )
+    }
+
     /// Appends the vault delta to the given `elements` from which the delta commitment will be
     /// computed.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
@@ -84,12 +124,10 @@ impl AccountVaultDelta {
         // TODO(unified_delta): Refactor the internal asset delta structure to match the tx kernel
         // internals and to make this extra allocation unnecessary.
         let added_assets = BTreeMap::from_iter(
-            self.added_assets_inner()
-                .map(|asset| (asset.vault_key(), asset.to_value_word())),
+            self.added_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
         let removed_assets = BTreeMap::from_iter(
-            self.removed_assets_inner()
-                .map(|asset| (asset.vault_key(), asset.to_value_word())),
+            self.removed_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
 
         Self::add_asset_section(AssetDeltaOperation::Add, added_assets, elements);
@@ -155,58 +193,6 @@ impl AccountVaultDelta {
         }
 
         Self { fungible, non_fungible }
-    }
-
-    /// Returns an iterator over the added assets in this delta.
-    pub fn added_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        self.added_assets_inner()
-    }
-
-    /// Returns an iterator over the removed assets in this delta.
-    pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        self.removed_assets_inner()
-    }
-}
-
-impl AccountVaultDelta {
-    /// Returns an iterator over the added assets in this delta.
-    fn added_assets_inner(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        self.fungible
-            .0
-            .iter()
-            .filter(|&(_, &value)| value >= 0)
-            .map(|(vault_key, &diff)| {
-                Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
-                )
-            })
-            .chain(
-                self.non_fungible
-                    .filter_by_action(NonFungibleDeltaAction::Add)
-                    .map(Asset::NonFungible),
-            )
-    }
-
-    /// Returns an iterator over the removed assets in this delta.
-    fn removed_assets_inner(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        self.fungible
-            .0
-            .iter()
-            .filter(|&(_, &value)| value < 0)
-            .map(|(vault_key, &diff)| {
-                Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
-                )
-            })
-            .chain(
-                self.non_fungible
-                    .filter_by_action(NonFungibleDeltaAction::Remove)
-                    .map(Asset::NonFungible),
-            )
     }
 }
 
