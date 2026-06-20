@@ -230,7 +230,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     // Verify intermediate state: owner unchanged, nominated set
     assert_eq!(get_owner_from_storage(&updated)?, Some(owner));
@@ -251,7 +251,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     let executed2 = tx2.execute().await?;
 
     let mut final_account = updated.clone();
-    final_account.apply_delta(executed2.account_delta())?;
+    final_account.apply_patch(executed2.account_patch())?;
 
     assert_eq!(get_owner_from_storage(&final_account)?, Some(new_owner));
     assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
@@ -286,7 +286,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     // Commit step 1 to the chain
     mock_chain.add_pending_executed_transaction(&executed)?;
@@ -359,7 +359,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     // Commit step 1 to the chain
     mock_chain.add_pending_executed_transaction(&executed)?;
@@ -376,7 +376,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     let executed2 = tx2.execute().await?;
 
     let mut final_account = updated.clone();
-    final_account.apply_delta(executed2.account_delta())?;
+    final_account.apply_patch(executed2.account_patch())?;
 
     assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
     assert_eq!(get_owner_from_storage(&final_account)?, Some(owner));
@@ -408,7 +408,7 @@ async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     assert_eq!(get_owner_from_storage(&updated)?, Some(owner));
     assert_eq!(get_nominated_owner_from_storage(&updated)?, Some(owner));
@@ -439,7 +439,7 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     let executed = tx.execute().await?;
 
     let mut final_account = account.clone();
-    final_account.apply_delta(executed.account_delta())?;
+    final_account.apply_patch(executed.account_patch())?;
 
     assert_eq!(get_owner_from_storage(&final_account)?, None);
     assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
@@ -476,7 +476,7 @@ async fn test_renounce_ownership_fails_with_pending_transfer() -> anyhow::Result
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     // Commit step 1 to the chain.
     mock_chain.add_pending_executed_transaction(&executed)?;

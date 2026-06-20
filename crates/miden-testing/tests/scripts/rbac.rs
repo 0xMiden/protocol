@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountType,
     RoleSymbol,
+    StorageMapKey,
 };
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
@@ -55,12 +56,17 @@ fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
-fn role_config_key(role: &RoleSymbol) -> Word {
-    Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)])
+fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
 }
 
-fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> Word {
-    Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
+fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([
+        Felt::ZERO,
+        Felt::from(role),
+        account_id.suffix(),
+        account_id.prefix().as_felt(),
+    ]))
 }
 
 fn account_id_from_felt_pair(
@@ -119,7 +125,7 @@ async fn execute_note_and_apply(
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     Ok(updated)
 }

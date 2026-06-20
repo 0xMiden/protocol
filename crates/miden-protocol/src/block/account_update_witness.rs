@@ -1,5 +1,5 @@
 use crate::Word;
-use crate::account::delta::AccountUpdateDetails;
+use crate::account::AccountUpdateDetails;
 use crate::block::account_tree::AccountWitness;
 use crate::utils::serde::{
     ByteReader,
@@ -14,8 +14,7 @@ use crate::utils::serde::{
 /// - The witness is an smt proof of the initial state commitment of the account before the block in
 ///   which the witness is included, that is, in the account tree at the state of the previous block
 ///   header.
-/// - The account update details represent the delta between the state of the account before the
-///   block and the state after this block.
+/// - The [`AccountUpdateDetails`] representing the change applied to the account by the block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountUpdateWitness {
     /// The state commitment before the update.

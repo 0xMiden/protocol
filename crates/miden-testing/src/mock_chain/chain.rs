@@ -6,8 +6,7 @@ use miden_block_prover::LocalBlockProver;
 use miden_processor::serde::DeserializationError;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
-use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{Account, AccountId, PartialAccount};
+use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
@@ -960,21 +959,21 @@ impl MockChain {
 
         for account_update in proven_block.body().updated_accounts() {
             match account_update.details() {
-                AccountUpdateDetails::Delta(account_delta) => {
-                    if account_delta.is_full_state() {
-                        let account = Account::try_from(account_delta)
-                            .context("failed to convert full state delta into full account")?;
+                AccountUpdateDetails::Public(account_patch) => {
+                    if account_patch.is_full_state() {
+                        let account = Account::try_from(account_patch)
+                            .context("failed to convert full state patch into full account")?;
                         self.committed_accounts.insert(account.id(), account.clone());
                     } else {
                         let committed_account = self
                             .committed_accounts
                             .get_mut(&account_update.account_id())
                             .ok_or_else(|| {
-                                anyhow::anyhow!("account delta in block for non-existent account")
+                                anyhow::anyhow!("account patch in block for non-existent account")
                             })?;
                         committed_account
-                            .apply_delta(account_delta)
-                            .context("failed to apply account delta")?;
+                            .apply_patch(account_patch)
+                            .context("failed to apply account patch")?;
                     }
                 },
                 // No state to keep for private accounts other than the commitment on the account
