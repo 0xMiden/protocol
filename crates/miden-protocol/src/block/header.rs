@@ -320,8 +320,6 @@ impl BlockHeader {
         prev_block_commitment: Word,
         validator_key: miden_crypto::dsa::ecdsa_k256_keccak::PublicKey,
     ) -> Self {
-        use alloc::vec::Vec;
-
         use crate::block::{BlockBody, FeeParameters};
         use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
         use crate::transaction::OrderedTransactionHeaders;
