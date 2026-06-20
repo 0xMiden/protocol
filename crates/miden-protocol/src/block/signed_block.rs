@@ -1,7 +1,7 @@
 use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
-use crate::block::validation::ParentValidationError;
+use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber};
 use crate::utils::serde::{
     ByteReader,
@@ -158,7 +158,7 @@ impl SignedBlock {
 
         // When a trusted parent is provided, authenticate the block against it.
         if let Some(parent) = parent {
-            self.header.validate_against_parent(&self.signature, parent)?;
+            self.header.validate_against_parent(parent, &self.signature)?;
         }
 
         Ok(())
@@ -226,7 +226,6 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::block::validation::test_block_header;
     use crate::testing::random_secret_key::random_secret_key;
     use crate::transaction::OrderedTransactionHeaders;
 
@@ -234,7 +233,8 @@ mod tests {
     /// modes lives in `block::validation`; here we only confirm `SignedBlock::validate` wires the
     /// signature and parent header through to the shared check.
     fn block_one(parent: &BlockHeader, signer: &SigningKey) -> SignedBlock {
-        let header = test_block_header(1, parent.commitment(), random_secret_key().public_key());
+        let header =
+            BlockHeader::new_dummy(1, parent.commitment(), random_secret_key().public_key());
         let signature = signer.sign(header.commitment());
         let body = BlockBody::new_unchecked(
             Vec::new(),
@@ -248,13 +248,13 @@ mod tests {
     #[test]
     fn validate_accepts_committed_signer() {
         let validator = random_secret_key();
-        let parent = test_block_header(0, Word::empty(), validator.public_key());
+        let parent = BlockHeader::new_dummy(0, Word::empty(), validator.public_key());
         block_one(&parent, &validator).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_rejects_uncommitted_signer() {
-        let parent = test_block_header(0, Word::empty(), random_secret_key().public_key());
+        let parent = BlockHeader::new_dummy(0, Word::empty(), random_secret_key().public_key());
         let impostor = random_secret_key();
         let result = block_one(&parent, &impostor).validate(Some(&parent));
         assert!(matches!(result, Err(SignedBlockError::InvalidSignature)));
