@@ -14,7 +14,6 @@ use super::{
     TransactionOutputs,
 };
 use crate::account::{AccountPatch, PartialAccount};
-use crate::asset::FungibleAsset;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
 use crate::utils::serde::{
@@ -73,7 +72,6 @@ impl ExecutedTransaction {
             tx_outputs.account().to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes().commitment(),
-            tx_outputs.fee(),
         );
 
         Self {
@@ -117,11 +115,6 @@ impl ExecutedTransaction {
     /// Returns the notes created in this transaction.
     pub fn output_notes(&self) -> &RawOutputNotes {
         self.tx_outputs.output_notes()
-    }
-
-    /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
-        self.tx_outputs.fee()
     }
 
     /// Returns the block number at which the transaction will expire.
