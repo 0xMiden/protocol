@@ -733,8 +733,21 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     loc_load.0 loc_load.1
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    exec.multisig::cleanup_pubkey_and_scheme_id_mapping
-    # => [pad(12)]
+    dup.1 dup.1
+    u32assert2 u32lt
+    # => [should_cleanup, init_num_of_approvers, new_num_of_approvers, pad(12)]
+
+    # Only clean up the pubkey/scheme-id mapping when the signer set actually
+    # shrinks (init_num_of_approvers > new_num_of_approvers). Entering the
+    # cleanup proc otherwise perturbs the prover trace enough to fail node-side
+    # STARK verification when the map has exactly one entry.
+    if.true
+        exec.multisig::cleanup_pubkey_and_scheme_id_mapping
+        # => [pad(12)]
+    else
+        drop drop
+        # => [pad(12)]
+    end
 end
 
 #! Authenticate a transaction using multisig smart-policy rules.

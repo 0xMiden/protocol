@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Fixed `update_signers_and_threshold` producing a STARK-invalid proof when adding a signer to a single-signer multisig: the pubkey/scheme-id mapping cleanup now runs only when the signer set shrinks (`init_num_of_approvers > new_num_of_approvers`), in both the standard and smart multisig auth components.
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).

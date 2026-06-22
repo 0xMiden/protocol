@@ -26,6 +26,7 @@ use super::multisig::{
     build_update_signers_config_vector,
     setup_keys_and_authenticators_with_scheme,
 };
+use crate::prove_and_verify_transaction;
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -378,6 +379,90 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         let expected_word: Word = expected_key.to_commitment().into();
         assert_eq!(stored_pub_key, expected_word, "public key at index {i} mismatch");
     }
+
+    Ok(())
+}
+
+/// Regression test: adding a signer to a single-signer multisig smart account must produce a
+/// STARK-valid proof. When the approver map holds exactly one entry, unconditionally entering
+/// `cleanup_pubkey_and_scheme_id_mapping` after `update_signers_and_threshold` perturbs the prover
+/// trace enough to fail verification, even though the proc's loop guard short-circuits. The fix
+/// gates the cleanup on the signer set actually shrinking, so growing from 1 to 2 signers skips it.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_add_signer_from_single_signer(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    // Start with a single approver, threshold 1.
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(1, &public_keys, auth_scheme, 10, vec![])?;
+    let account_id = multisig_account.id();
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // Grow the signer set to 2 approvers, threshold 2.
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let new_threshold: u64 = 2;
+    let new_num_approvers: u64 = 2;
+    let multisig_config_data = build_update_signers_config_vector(
+        new_threshold,
+        new_num_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, multisig_config_data);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+
+    let tx_context_builder = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(update_signers_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
+
+    // Dry-run to obtain the tx summary that the single current approver must sign.
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    let executed_tx = tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig)
+        .build()?
+        .execute()
+        .await?;
+
+    // Generate and verify a real STARK proof. Without the conditional cleanup fix this fails with
+    // a constraint mismatch because the approver map holds a single entry.
+    prove_and_verify_transaction(executed_tx).await?;
 
     Ok(())
 }

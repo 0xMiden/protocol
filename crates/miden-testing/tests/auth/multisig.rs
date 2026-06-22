@@ -36,6 +36,8 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
+use crate::prove_and_verify_transaction;
+
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -673,6 +675,136 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 
     // Verify the transaction executed successfully with new signers
     assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::ONE);
+
+    Ok(())
+}
+
+/// Regression test: adding a signer to a single-signer multisig must produce a STARK-valid proof.
+///
+/// When the approver map holds exactly one entry (a 1-of-1 multisig), unconditionally entering
+/// `cleanup_pubkey_and_scheme_id_mapping` after `update_signers_and_threshold` perturbs the prover
+/// trace enough to fail node-side STARK verification, even though the proc's internal loop guard
+/// short-circuits and never clears anything. The fix gates the cleanup on the signer set actually
+/// shrinking (`init_num_of_approvers > new_num_of_approvers`), so growing from 1 to 2 signers skips
+/// it. Proving the next block here exercises proof generation and guards against that regression.
+///
+/// **Roles:**
+/// - 1 Original Approver (multisig signer, threshold 1)
+/// - 2 Updated Approvers (after adding a signer, threshold 2)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script calling `update_signers_and_threshold`
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_add_signer_from_single_signer(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    // Start with a single approver, threshold 1.
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+
+    // Grow the signer set to 2 approvers, threshold 2.
+    let mut advice_map = AdviceMap::default();
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let threshold = 2u64;
+    let num_of_approvers = 2u64;
+
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+
+    let tx_script_code = "
+        begin
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+        end
+    ";
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script(tx_script_code)?;
+
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
+
+    // Execute without signatures first to get the tx summary.
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    // Sign with the single original approver (threshold 1).
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+
+    let update_approvers_tx = tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+
+    // Generate and verify a real STARK proof for the transaction. With the approver map holding a
+    // single entry, unconditionally entering the cleanup proc perturbs the prover trace enough to
+    // fail verification with a constraint mismatch; the conditional cleanup fix avoids that. A
+    // dummy block proof (`add_pending_executed_transaction` + `prove_next_block`) would not
+    // exercise this path, so we prove the transaction directly.
+    prove_and_verify_transaction(update_approvers_tx.clone()).await?;
+
+    // Confirm the signer set actually grew to the two new approvers.
+    let mut updated_multisig_account = multisig_account.clone();
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
+
+    let extracted_pub_keys = get_public_keys_from_account(&updated_multisig_account);
+    assert_eq!(
+        extracted_pub_keys.len(),
+        2,
+        "get_public_keys_from_account should return 2 public keys after adding a signer"
+    );
+
+    for expected_key in new_public_keys.iter() {
+        let expected_word: Word = expected_key.to_commitment().into();
+        assert!(
+            extracted_pub_keys.iter().any(|key| *key == expected_word),
+            "new approver public key {expected_word:?} not found after update"
+        );
+    }
 
     Ok(())
 }
