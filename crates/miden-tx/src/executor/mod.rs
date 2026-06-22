@@ -8,7 +8,7 @@ pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetVaultKey};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -44,13 +44,6 @@ pub use notes_checker::{
 
 mod program_executor;
 pub use program_executor::ProgramExecutor;
-
-/// TODO: Decide whether to allow fee assets to have callbacks.
-///
-/// Since fee removal is a way of transferring assets, but we do not have a fee-removal callback,
-/// using a callback-enabled asset allows bypassing the callbacks. For now, assume fee assets are
-/// callback-disabled.
-const FEE_ASSET_CALLBACK_FLAG: AssetCallbackFlag = AssetCallbackFlag::Disabled;
 
 // TRANSACTION EXECUTOR
 // ================================================================================================
@@ -314,18 +307,10 @@ where
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
         let native_account_vault_root = account.vault().root();
-        let fee_asset_vault_key = AssetVaultKey::new_fungible(
-            block_header.fee_parameters().fee_faucet_id(),
-            FEE_ASSET_CALLBACK_FLAG,
-        );
 
         let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
             .map_err(TransactionExecutorError::InvalidTransactionInputs)?
             .with_tx_args(tx_args);
-
-        // Add the vault key for the fee asset to the list of asset vault keys which will need to be
-        // accessed at the end of the transaction.
-        asset_vault_keys.insert(fee_asset_vault_key);
 
         // filter out any asset vault keys for which we already have witnesses in the advice inputs
         asset_vault_keys.retain(|asset_key| {
@@ -370,26 +355,6 @@ where
         let account_procedure_index_map =
             AccountProcedureIndexMap::new([tx_inputs.account().code()]);
 
-        let initial_fee_asset_balance = {
-            let vault_root = tx_inputs.account().vault().root();
-            let fee_parameters = tx_inputs.block_header().fee_parameters();
-            let fee_asset_vault_key = AssetVaultKey::new_fungible(
-                fee_parameters.fee_faucet_id(),
-                FEE_ASSET_CALLBACK_FLAG,
-            );
-
-            let fee_asset = tx_inputs
-                .read_vault_asset(vault_root, fee_asset_vault_key)
-                .map_err(TransactionExecutorError::FeeAssetRetrievalFailed)?;
-            match fee_asset {
-                Some(Asset::Fungible(fee_asset)) => fee_asset.amount().as_u64(),
-                Some(Asset::NonFungible(_)) => {
-                    return Err(TransactionExecutorError::FeeAssetMustBeFungible);
-                },
-                // If the asset was not found, its balance is zero.
-                None => 0,
-            }
-        };
         let host = TransactionExecutorHost::new(
             tx_inputs.account(),
             input_notes.clone(),
@@ -398,7 +363,6 @@ where
             account_procedure_index_map,
             self.authenticator,
             tx_inputs.block_header().block_num(),
-            initial_fee_asset_balance,
             self.source_manager.clone(),
         );
 
@@ -418,11 +382,9 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    // Note that the account delta does not contain the removed transaction fee, so it is the
-    // "pre-fee" delta of the transaction.
-
     let (
-        pre_fee_account_delta,
+        account_delta,
+        account_patch,
         _input_notes,
         output_notes,
         accessed_foreign_account_code,
@@ -435,20 +397,13 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
             .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
-    let pre_fee_delta_commitment = pre_fee_account_delta.to_commitment();
-    if tx_outputs.account_delta_commitment() != pre_fee_delta_commitment {
-        return Err(TransactionExecutorError::InconsistentAccountDeltaCommitment {
-            in_kernel_commitment: tx_outputs.account_delta_commitment(),
-            host_commitment: pre_fee_delta_commitment,
+    let patch_commitment = account_patch.to_commitment();
+    if tx_outputs.account_patch_commitment() != patch_commitment {
+        return Err(TransactionExecutorError::InconsistentAccountPatchCommitment {
+            in_kernel_commitment: tx_outputs.account_patch_commitment(),
+            host_commitment: patch_commitment,
         });
     }
-
-    // The full transaction delta is the pre fee delta with the fee asset removed.
-    let mut post_fee_account_delta = pre_fee_account_delta;
-    post_fee_account_delta
-        .vault_mut()
-        .remove_asset(Asset::from(tx_outputs.fee()))
-        .map_err(TransactionExecutorError::RemoveFeeAssetFromDelta)?;
 
     let initial_account = tx_inputs.account();
     let final_account = tx_outputs.account();
@@ -462,10 +417,10 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 
     // Make sure nonce delta was computed correctly.
     let nonce_delta = final_account.nonce() - initial_account.nonce();
-    if nonce_delta != post_fee_account_delta.nonce_delta() {
+    if nonce_delta != account_delta.nonce_delta() {
         return Err(TransactionExecutorError::InconsistentAccountNonceDelta {
             expected: nonce_delta,
-            actual: post_fee_account_delta.nonce_delta(),
+            actual: account_delta.nonce_delta(),
         });
     }
 
@@ -482,7 +437,8 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     Ok(ExecutedTransaction::new(
         tx_inputs,
         tx_outputs,
-        post_fee_account_delta,
+        account_delta,
+        account_patch,
         tx_progress.into(),
     ))
 }
@@ -546,12 +502,6 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
             match error.downcast_ref::<TransactionKernelError>() {
                 Some(TransactionKernelError::Unauthorized(summary)) => {
                     TransactionExecutorError::Unauthorized(summary.clone())
-                },
-                Some(TransactionKernelError::InsufficientFee { account_balance, tx_fee }) => {
-                    TransactionExecutorError::InsufficientFee {
-                        account_balance: *account_balance,
-                        tx_fee: *tx_fee,
-                    }
                 },
                 Some(TransactionKernelError::MissingAuthenticator) => {
                     TransactionExecutorError::MissingAuthenticator

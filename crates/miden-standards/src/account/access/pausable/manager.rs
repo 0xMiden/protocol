@@ -27,19 +27,17 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// `PausableManager` works uniformly with every standard access scheme:
-/// - [`crate::account::access::AccessControl::AuthControlled`] →
-///   [`crate::account::access::Authority::AuthControlled`] gates pause / unpause via the account's
-///   own auth component.
+/// - [`crate::account::access::Authority::AuthControlled`] — installed directly by
+///   [`crate::account::faucets::create_user_fungible_faucet`]; gates pause / unpause via the
+///   account's own auth component.
 /// - [`crate::account::access::AccessControl::Ownable2Step`] →
 ///   [`crate::account::access::Authority::OwnerControlled`] requires the Ownable2Step owner.
 /// - [`crate::account::access::AccessControl::Rbac`] →
-///   [`crate::account::access::Authority::RbacControlled { role }`] requires the single configured
-///   role for both pause and unpause (no PAUSER / UNPAUSER separation — emergency pause is a
-///   coarse-grained capability).
+///   [`crate::account::access::Authority::RbacControlled`] for roles per procedure.
 ///
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — installed automatically by the
-///   [`crate::account::access::AccessControl`] enum.
+///   [`crate::account::access::AccessControl`] enum (or directly by user-faucet factories).
 /// - [`super::Pausable`] — provides the `is_paused` storage slot that pause / unpause write to.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PausableManager;

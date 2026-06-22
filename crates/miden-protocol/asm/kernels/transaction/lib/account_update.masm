@@ -1,0 +1,930 @@
+use $kernel::account
+use $kernel::asset
+use $kernel::asset::COMPOSITION_NONE
+use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
+use $kernel::asset::ASSET_SIZE
+use $kernel::link_map
+use $kernel::memory
+use $kernel::memory::ACCOUNT_UPDATE_ASSET_PTR
+use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="nonce in delta must have been incremented if account vault or account storage changed"
+
+const ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="final nonce in patch must have been incremented if account vault or account storage changed"
+
+const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS="number of removed assets in the transaction exceeds the maximum limit of 1024"
+
+# EVENTS
+# =================================================================================================
+
+const ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION=event("miden::protocol::account::before_asset_delta_computation")
+
+const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT=event("miden::protocol::account::on_asset_delta_computation")
+
+# CONSTANTS
+# =================================================================================================
+
+# The domain of the delta commitment header.
+const DOMAIN_DELTA = 1
+# The domain of the patch commitment header.
+const DOMAIN_PATCH = 2
+# The domain of an asset in the delta commitment.
+const DOMAIN_ASSET = 3
+# The domain of a value storage slot in the delta commitment.
+const DOMAIN_VALUE = 5
+# The domain of a map storage slot in the delta commitment.
+const DOMAIN_MAP = 6
+
+#! The default delta operation indicating no change.
+const DELTA_OP_NONE = 0
+
+#! The delta operation indicating that an asset was added.
+const DELTA_OP_ADD = 1
+
+#! The delta operation indicating that an asset was removed.
+const DELTA_OP_REMOVE = 2
+
+# The maximum value a felt can represent.
+const FELT_MAX = 0xffffffff00000000
+
+#! Local in track_asset_delta that stores the delta operation.
+const TRACK_ASSET_DELTA_OP_LOC = 0
+
+#! Locals in combine_asset_delta that store the incoming and current delta operations so that the
+#! new delta operation can be selected after the magnitude comparison.
+const COMBINE_INCOMING_DELTA_OP_LOC = 0
+const COMBINE_CURRENT_DELTA_OP_LOC = 1
+
+#! Locals in commit_asset_delta. The last region is a buffer of removed assets that is hashed after
+#! the added-assets section.
+const COMMIT_ASSET_DELTA_HAS_NEXT_LOC = 0
+const COMMIT_ASSET_DELTA_ITER_LOC = 1
+const COMMIT_ASSET_DELTA_NUM_ADDED_LOC = 2
+const COMMIT_ASSET_DELTA_NUM_REMOVED_LOC = 3
+const COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC = 4
+
+#! Locals in commit_asset_patch.
+const COMMIT_ASSET_PATCH_HAS_NEXT_LOC = 0
+const COMMIT_ASSET_PATCH_ITER_LOC = 1
+const COMMIT_ASSET_PATCH_NUM_CHANGED_LOC = 2
+
+#! The maximum number of assets that can be removed in a single transaction.
+#!
+#! This limit is arbitrary and can be increased accordingly with the number of locals of
+#! commit_asset_delta.
+const COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
+
+# PROCEDURES
+# =================================================================================================
+
+# DELTA & PATCH COMPUTATION
+# -------------------------------------------------------------------------------------------------
+
+#! Computes the commitment to the native account's patch.
+#!
+#! See the Rust function `AccountPatch::to_commitment` for a detailed description of how it is computed.
+#!
+#! Inputs:  []
+#! Outputs: [PATCH_COMMITMENT]
+#!
+#! Where:
+#! - PATCH_COMMITMENT is the commitment to the account patch.
+#!
+#! Panics if:
+#! - the vault patch or storage patch is not empty but the nonce increment is zero.
+pub proc compute_patch_commitment
+    # pad capacity and RATE1 of the hasher with empty words
+    padw padw
+    # => [EMPTY_WORD, CAPACITY]
+
+    exec.memory::get_native_account_id
+    # => [native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
+
+    # get the nonce of the account and assume it is the final nonce
+    # we later assert that the nonce was incremented (unless the patch is empty)
+    exec.memory::get_account_nonce
+    push.DOMAIN_PATCH
+    # => [domain_patch, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
+
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY]
+
+    # save the ID and nonce digest (RATE0 word) for a later check
+    exec.poseidon2::copy_digest movdnw.3
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.commit_asset_patch
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.commit_storage_patch
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.poseidon2::squeeze_digest
+    # => [PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    exec.was_nonce_incremented not
+    # => [!was_nonce_incremented, PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    if.true
+        # if the nonce wasn't incremented, then the vault and storage patch is required to be empty
+        # storage and vault patch were empty if the patch commitment is equal to
+        # ID_AND_NONCE_DIGEST
+        assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        # => []
+
+        # if the patch is empty, its commitment is defined as the empty word
+        padw
+        # => [EMPTY_WORD]
+    else
+        # drop the ID and nonce digest
+        swapw dropw
+        # => [PATCH_COMMITMENT]
+    end
+end
+
+#! Computes the commitment to the native account's delta.
+#!
+#! See the Rust function `AccountDelta::to_commitment` for a detailed description of how it is computed.
+#!
+#! Inputs:  []
+#! Outputs: [DELTA_COMMITMENT]
+#!
+#! Where:
+#! - DELTA_COMMITMENT is the commitment to the account delta.
+#!
+#! Panics if:
+#! - the vault delta or storage patch is not empty but the nonce increment is zero.
+pub proc compute_delta_commitment
+    # pad capacity and RATE1 of the hasher with empty words
+    padw padw
+    # => [EMPTY_WORD, CAPACITY]
+
+    exec.memory::get_native_account_id
+    # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+
+    # the delta of the nonce is equal to was_nonce_incremented
+    exec.was_nonce_incremented push.DOMAIN_DELTA
+    # => [domain_delta, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
+
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY]
+
+    # save the ID and nonce digest (RATE0 word) for a later check
+    exec.poseidon2::copy_digest movdnw.3
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.commit_asset_delta
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.commit_storage_patch
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.poseidon2::squeeze_digest
+    # => [DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    exec.was_nonce_incremented not
+    # => [!was_nonce_incremented, DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    if.true
+        # if the nonce wasn't incremented, then the vault and storage delta is required to be empty
+        # storage and vault delta were empty if the delta commitment is equal to
+        # ID_AND_NONCE_DIGEST
+        assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        # => []
+
+        # if the delta is empty, its commitment is defined as the empty word
+        padw
+        # => [EMPTY_WORD]
+    else
+        # drop the ID and nonce digest
+        swapw dropw
+        # => [DELTA_COMMITMENT]
+    end
+end
+
+#! Updates the given delta hasher with the storage slots.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+proc commit_storage_patch
+    exec.memory::get_native_num_storage_slots movdn.12
+    # => [RATE0, RATE1, CAPACITY, num_storage_slots]
+
+    push.0 movdn.12
+    # => [RATE0, RATE1, CAPACITY, slot_idx = 0, num_storage_slots]
+
+    # loop if num_storage_slots != 0
+    dup.13 neq.0
+    # => [should_loop, RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
+
+    while.true
+        dup.12
+        # => [slot_idx, RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
+
+        exec.commit_slot_patch
+        # => [RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
+
+        # increment slot index
+        movup.12 add.1
+        # => [next_slot_idx, RATE0, RATE1, CAPACITY, num_storage_slots]
+
+        dup movdn.13
+        # => [next_slot_idx, RATE0, RATE1, CAPACITY, next_slot_idx, num_storage_slots]
+
+        # continue if next_slot_idx != num_storage_slots
+        # we use neq instead of lt for efficiency
+        dup.14 neq
+        # => [should_loop, RATE0, RATE1, CAPACITY, next_slot_idx, num_storage_slots]
+    end
+    # => [RATE0, RATE1, CAPACITY, next_slot_idx, num_storage_slots]
+
+    # clean the stack
+    movup.12 drop movup.12 drop
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Updates the given delta hasher with the storage slot at the provided index.
+#!
+#! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+proc commit_slot_patch
+    dup exec.account::get_native_storage_slot_type
+    # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
+
+    # check if slot is of type value
+    push.STORAGE_SLOT_TYPE_VALUE eq
+    # => [is_value_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
+
+    if.true
+        exec.commit_value_slot_patch
+    else
+        exec.commit_map_slot_patch
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Updates the given delta hasher with the value storage slot at the provided index.
+#!
+#! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+proc commit_value_slot_patch
+    exec.account::get_item_delta
+    # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+    exec.word::test_eq not
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+    # set was_changed to true if the account is new
+    # generally, the delta for a new account must include all its storage slots, regardless of the
+    # initial value and even if it is an empty word, because the initial delta for an account must
+    # represent its full state
+    exec.memory::is_new_account or
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+    # only include in delta if the slot's value has changed or the account is new
+    if.true
+        # drop init value
+        dropw
+        # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+        # build value slot metadata
+        movup.5 movup.5
+        # => [slot_id_suffix, slot_id_prefix, CURRENT_VALUE, RATE0, RATE1, CAPACITY]
+
+        push.0.DOMAIN_VALUE
+        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, RATE0, RATE1, CAPACITY]
+
+        # clear rate elements
+        swapdw dropw dropw
+        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    else
+        # drop init value, current value and slot name
+        dropw dropw drop drop
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Updates the given delta hasher with the map storage slot at the provided index.
+#!
+#! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: slot_id_suffix
+#! - 1: slot_id_prefix
+#! - 2: has_next
+#! - 3: iter
+#! - 4: num_changed_entries
+@locals(5)
+proc commit_map_slot_patch
+    # initialize num_changed_entries = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's value
+    push.0 loc_store.4
+    # => [slot_idx, RATE0, RATE1, CAPACITY]
+
+    dup exec.account::get_slot_id
+    # => [slot_id_suffix, slot_id_prefix, slot_idx, RATE0, RATE1, CAPACITY]
+
+    loc_store.0 loc_store.1
+    # => [slot_idx, RATE0, RATE1, CAPACITY]
+
+    exec.memory::get_account_patch_storage_map_ptr
+    # => [account_patch_storage_map_ptr, RATE0, RATE1, CAPACITY]
+
+    exec.link_map::iter
+    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+
+    # enter loop if the link map is not empty
+    while.true
+        exec.link_map::next_key_double_value
+        # => [KEY, INIT_VALUE, NEW_VALUE, has_next, iter, RATE0, RATE1, CAPACITY]
+
+        # store has_next
+        movup.12 loc_store.2
+        # => [KEY, INIT_VALUE, NEW_VALUE, iter, RATE0, RATE1, CAPACITY]
+
+        # store iter
+        movup.12 loc_store.3
+        # => [KEY, INIT_VALUE, NEW_VALUE, RATE0, RATE1, CAPACITY]
+
+        swapw.2
+        # => [NEW_VALUE, INIT_VALUE, KEY, RATE0, RATE1, CAPACITY]
+
+        exec.word::test_eq not
+        # => [was_changed, NEW_VALUE, INIT_VALUE, KEY, RATE0, RATE1, CAPACITY]
+
+        # if the key-value pair has actually changed, update the hasher
+        if.true
+            # drop the initial value
+            swapw dropw swapw
+            # => [KEY, NEW_VALUE, RATE0, RATE1, CAPACITY]
+
+            # increment number of changed entries in local
+            loc_load.4 add.1 loc_store.4
+            # => [KEY, NEW_VALUE, RATE0, RATE1, CAPACITY]
+
+            # drop previous RATE elements
+            swapdw dropw dropw
+            # => [KEY, NEW_VALUE, CAPACITY]
+
+            exec.poseidon2::permute
+            # => [RATE0, RATE1, CAPACITY]
+        else
+            # discard the key and init and new value words loaded from the map
+            dropw dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        # load iter and has_next
+        loc_load.3
+        # => [iter, RATE0, RATE1, CAPACITY]
+
+        loc_load.2
+        # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    end
+
+    # drop iter
+    drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # only include the map slot metadata if there were entries in the map that resulted in an
+    # update to the hasher state
+    loc_load.4 neq.0
+    # => [is_num_changed_entries_non_zero, RATE0, RATE1, CAPACITY]
+
+    # if the account is new (nonce == 0) include the map header even if it is an empty map
+    # in order to have the delta commit to this initial storage slot.
+    exec.memory::is_new_account or
+    # => [should_include_map_header, RATE0, RATE1, CAPACITY]
+
+    if.true
+        # drop the previous RATE elements
+        dropw dropw
+        # => [CAPACITY]
+
+        padw loc_load.1 loc_load.0 loc_load.4 push.DOMAIN_MAP
+        # => [[domain, num_changed_entries, slot_id_suffix, slot_id_prefix], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Updates the given delta hasher with the asset vault delta.
+#!
+#! It iterates the asset delta link map once and processes the added assets first. It writes the
+#! removed assets into local memory to enable a subsequent iteration over linear memory rather than
+#! a second expensive link map iteration that would have to skip added assets.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
+#! - 2: num_added_assets
+#! - 3: num_removed_assets
+#! - 4..8196: removed_assets (COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
+@locals(8196)
+proc commit_asset_delta
+    # initialize num_added_assets = 0 and num_removed_assets = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's values
+    push.0 loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
+    push.0 loc_store.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+
+    # signal to the host that delta computation is starting so it can reset its accumulating
+    # vault delta. this is necessary because compute_delta_commitment can be invoked multiple times
+    # in a single transaction (e.g. by auth and the epilogue) and each invocation re-emits the
+    # ACCOUNT_ON_ASSET_DELTA_COMPUTATION events.
+    emit.ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION
+
+    # Iterate asset delta.
+    # Add added assets into the hasher.
+    # Store removed assets to memory for later processing.
+    # ---------------------------------------------------------------------------------------------
+
+    push.ACCOUNT_UPDATE_ASSET_PTR
+    # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
+
+    exec.link_map::iter
+    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+
+    # enter loop if the link map is not empty
+    while.true
+        exec.link_map::next_key_double_value
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, RATE0, RATE1, CAPACITY]
+
+        # store has_next and iter
+        movup.12 loc_store.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
+        movup.12 loc_store.COMMIT_ASSET_DELTA_ITER_LOC
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+        movdnw.2 exec.word::test_eq not
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, RATE0, RATE1, CAPACITY]
+
+        if.true
+            exec.compute_asset_delta
+            # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            emit.ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT
+            # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            eq.DELTA_OP_ADD
+            # => [is_addition, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            if.true
+                # increment num_added_assets
+                loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
+                add.1
+                loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
+                # => [ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # drop previous RATE elements
+                swapdw dropw dropw
+                # => [ASSET_KEY, DELTA_ASSET_VALUE, CAPACITY]
+
+                exec.poseidon2::permute
+                # => [RATE0, RATE1, CAPACITY]
+            else
+                loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # make sure we do not write outside the assigned number of locals
+                dup neq.COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS
+                assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS
+                # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # compute the pointer at which to store the removed asset as
+                # locaddr.removed_assets_ptr + num_removed_assets * ASSET_SIZE
+                mul.ASSET_SIZE
+                locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC
+                add
+                # => [removed_assets_ptr, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                exec.asset::store
+                # => [RATE0, RATE1, CAPACITY]
+
+                # increment num_removed_assets
+                loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+                add.1
+                loc_store.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [RATE0, RATE1, CAPACITY]
+            end
+        else
+            # discard the values loaded from the map
+            dropw dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        # load iter and has_next
+        loc_load.COMMIT_ASSET_DELTA_ITER_LOC
+        loc_load.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
+        # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    end
+
+    # drop iter
+    drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the added assets trailer if num_added_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
+    exec.commit_asset_count_trailer
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Hash the removed assets.
+    # ---------------------------------------------------------------------------------------------
+
+    # setup start_ptr and end_ptr for the removed assets buffer
+    locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC dup
+    # => [start_ptr, start_ptr, RATE0, RATE1, CAPACITY]
+
+    # end_ptr = start_ptr + num_removed_assets * ASSET_SIZE
+    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+    mul.ASSET_SIZE add
+    # => [end_ptr, start_ptr, RATE0, RATE1, CAPACITY]
+
+    # move the pointers below the hasher state
+    movdn.13 movdn.12
+    # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
+
+    # absorb the removed assets from memory into the hasher state; this is a no-op when
+    # start_ptr == end_ptr (i.e. when no assets were removed)
+    exec.poseidon2::absorb_double_words_from_memory
+    # => [RATE0, RATE1, CAPACITY, end_ptr, end_ptr]
+
+    movup.12 drop movup.12 drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the removed assets trailer if num_removed_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
+    exec.commit_asset_count_trailer
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Permutes the delta hasher with a trailer that commits to the number of assets affected by the
+#! given delta operation. If num_assets is zero, this is a no-op and the hasher state is preserved.
+#!
+#! Inputs:  [delta_op, num_assets, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Where:
+#! - delta_op is the delta operation (DELTA_OP_ADD or DELTA_OP_REMOVE).
+#! - num_assets is the number of assets affected by delta_op (added or removed).
+proc commit_asset_count_trailer
+    dup.1 neq.0
+    # => [is_non_zero, delta_op, num_assets, RATE0, RATE1, CAPACITY]
+
+    if.true
+        # move delta_op and num_assets below RATE0 and RATE1 so the previous RATE elements
+        # can be dropped while preserving them
+        movdn.9 movdn.9
+        # => [RATE0, RATE1, delta_op, num_assets, CAPACITY]
+
+        dropw dropw
+        # => [delta_op, num_assets, CAPACITY]
+
+        # build the metadata
+        push.0 movdn.2 push.DOMAIN_ASSET
+        # => [[domain, delta_op, num_assets, 0], CAPACITY]
+
+        # prepend the empty word that follows the metadata word as the second hasher input
+        padw swapw
+        # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    else
+        # discard delta_op and num_assets
+        drop drop
+        # => [RATE0, RATE1, CAPACITY]
+    end
+end
+
+#! Updates the given patch hasher with the asset vault patches.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
+#! - 2: num_changed_assets
+@locals(3)
+proc commit_asset_patch
+    # initialize num_changed_assets = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's values
+    push.0 loc_store.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+
+    # Iterate and hash asset patches.
+    # ---------------------------------------------------------------------------------------------
+
+    push.ACCOUNT_UPDATE_ASSET_PTR
+    # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
+
+    exec.link_map::iter
+    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+
+    # enter loop if the link map is not empty
+    while.true
+        exec.link_map::next_key_double_value
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, ...]
+
+        # store has_next and iter
+        movup.12 loc_store.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
+        movup.12 loc_store.COMMIT_ASSET_PATCH_ITER_LOC
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ...]
+
+        movdnw.2 exec.word::test_eq not
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, ...]
+
+        if.true
+            # increment num_changed_assets
+            loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+            add.1
+            loc_store.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, ...]
+
+            # drop initial value
+            dropw swapw
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            # drop previous RATE elements
+            swapdw dropw dropw
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, CAPACITY]
+
+            exec.poseidon2::permute
+            # => [RATE0, RATE1, CAPACITY]
+        else
+            # discard the values loaded from the map
+            dropw dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        # load iter and has_next
+        loc_load.COMMIT_ASSET_PATCH_ITER_LOC
+        loc_load.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
+        # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    end
+
+    # drop iter
+    drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the asset patch trailer if num_changed_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC neq.0
+    if.true
+        # drop the previous RATE elements
+        dropw dropw
+        # => [CAPACITY]
+
+        padw push.0.0
+        loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+        push.DOMAIN_ASSET
+        # => [[domain, num_changed_assets, 0, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+# ACCOUNT UPDATE BOOKKEEPING
+# -------------------------------------------------------------------------------------------------
+
+#! Returns a flag indicating whether the account's nonce was incremented.
+#!
+#! Inputs:  []
+#! Outputs: [was_nonce_incremented]
+#!
+#! Where:
+#! - was_nonce_incremented is the boolean flag indicating whether the account nonce was incremented.
+pub proc was_nonce_incremented
+    exec.memory::get_init_nonce
+    # => [init_nonce]
+
+    exec.memory::get_account_nonce
+    # => [current_nonce, init_nonce]
+
+    neq
+    # => [was_nonce_incremented]
+end
+
+#! Adds the given asset update to the patch.
+#!
+#! Assumes the assets are valid, so it should be called after asset_vault::add_asset.
+#!
+#! Inputs:  [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset that is added.
+#! - INITIAL_ASSET_VALUE is the value of the asset before the update.
+#! - FINAL_ASSET_VALUE is the value of the asset after the update.
+pub proc update_asset
+    swapw dupw.1 push.ACCOUNT_UPDATE_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    # retrieve the current patch entry
+    exec.link_map::get
+    # => [contains_key, STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    movdn.12
+    # => [STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    swapw dropw
+    # => [STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    movup.8
+    # => [contains_key, STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    # If contains_key STORED_INITIAL_VALUE remains.
+    # If !contains_key INITIAL_ASSET_VALUE remains.
+    cdropw
+    # => [NEW_INITIAL_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    swapw push.ACCOUNT_UPDATE_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, NEW_INITIAL_VALUE, FINAL_ASSET_VALUE]
+
+    exec.link_map::set drop
+    # => []
+end
+
+#! Computes the delta between two asset values and returns the resulting delta op and delta value.
+#!
+#! This procedure assumes the provided INITIAL_ASSET_VALUE and FINAL_ASSET_VALUE are NOT equal.
+#!
+#! This procedure computes the delta as follows:
+#! - If the composition of the asset is none:
+#!   - If the initial value is the empty word, the final value must be non-empty, so the asset was
+#!     added.
+#!   - Conversely, if the initial value is not the empty word, the final value must be empty
+#!     according to the asset vault guarantees, so the asset was removed.
+#! - If the composition is not none:
+#!   - Compute the delta as `GREATER_ASSET_VALUE - LESSER_ASSET_VALUE` using `asset::lt` to find
+#!     the larger value and `asset::split` for the computation itself.
+#!   - Since the procedure assumes the values are not equal, the final value must be less than or
+#!     greater than the initial value. If the final value is larger than the initial one, value
+#!     was added; if it is smaller, value was removed.
+#!
+#! Inputs:  [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+#! Outputs: [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset whose delta is computed.
+#! - INITIAL_ASSET_VALUE is the value of the asset in the account vault at the beginning of the
+#!   transaction.
+#! - FINAL_ASSET_VALUE is the value of the asset in the account vault at the time the procedure is
+#!   called.
+#! - delta_op is the delta operation (addition or removal) for the asset.
+#! - DELTA_ASSET_VALUE is the resulting delta between the initial and final asset value.
+#!
+#! Panics if:
+#! - the asset's composition is Custom (not yet supported).
+proc compute_asset_delta
+    dupw.2
+    # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+    exec.asset::key_to_composition
+    # => [asset_composition, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+    eq.COMPOSITION_NONE
+    # => [is_composition_none, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+    if.true
+        dropw
+        # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        # the asset was removed if the initial value is not the empty word (in which case the final
+        # word must be empty)
+        exec.word::testz not
+        # => [was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        # compute delta_op as was_removed + 1
+        dup add.1
+        # => [delta_op, was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        movdn.13
+        # => [was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        # if was_removed INITIAL_ASSET_VALUE is selected
+        # if !was_removed FINAL_ASSET_VALUE is selected
+        cdropw
+        # => [DELTA_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        swapw movup.8
+        # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+    else
+        dupw.2 dupw.2 movupw.2
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        exec.asset::lt
+        # => [is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        # compute delta_op as is_final_lt_initial + 1
+        dup add.1
+        # => [delta_op, is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        movdn.13
+        # => [is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        # place the greater asset at the deeper position in the stack
+        # if is_final_lt_initial the stack becomes [FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+        # if !is_final_lt_initial the stack remains [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+        cswapw
+        # => [LESSER_ASSET_VALUE, GREATER_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        # compute the delta as greater - lesser
+        dupw.2 exec.asset::split
+        # => [DELTA_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        swapw movup.8
+        # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+    end
+end
+
+#! Updates the storage map patch of the given slot index with the given key-value pair and its
+#! previous value.
+#!
+#! The layout of a link map entry for a given KEY is: [KEY, INIT_VALUE, NEW_VALUE] where INIT_VALUE
+#! represents the initial value for the given KEY at the beginning of transaction execution and
+#! NEW_VALUE is the new value. The delta entry is a NOOP if INIT_VALUE and NEW_VALUE are equal.
+#!
+#! Inputs:  [slot_index, KEY, PREV_VALUE, NEW_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - slot_index is the slot index of the storage map slot.
+#! - KEY is the key in the storage map that is being updated.
+#! - PREV_VALUE is the previous value of the key in the storage map that is being updated.
+#! - NEW_VALUE is the new value of the key in the storage map that is being updated.
+@locals(8)
+pub proc set_map_item
+    # retrieve the link map ptr to the storage map patch for the provided index
+    exec.memory::get_account_patch_storage_map_ptr
+    # => [account_patch_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
+
+    # store map ptr in local
+    loc_store.0
+    # => [KEY, PREV_VALUE, NEW_VALUE]
+
+    # store KEY in local
+    loc_storew_le.4
+    # => [KEY, PREV_VALUE, NEW_VALUE]
+
+    loc_load.0
+    # => [account_patch_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
+
+    # retrieve the current patch
+    exec.link_map::get
+    # => [contains_key, VALUE0, VALUE1, PREV_VALUE, NEW_VALUE]
+
+    movdn.12
+    # => [VALUE0, VALUE1, PREV_VALUE, contains_key, NEW_VALUE]
+
+    # VALUE1 was the previous "new value" if this key was already updated, so in any case,
+    # we can drop it since this update overwrites the previous one
+    swapw dropw
+    # => [VALUE0, PREV_VALUE, contains_key, NEW_VALUE]
+
+    movup.8
+    # => [contains_key, VALUE0, PREV_VALUE, NEW_VALUE]
+
+    # contains_key determines whether this is the first update to this KEY
+    # if this is the first update, PREV_VALUE is the *initial* value of the key-value pair
+    # if this is not the first update, VALUE0 is the initial value, so we want to store it back
+    # use cdropw to selectively keep the word that represents the initial value
+    # If contains_key VALUE0 remains.
+    # If !contains_key PREV_VALUE remains.
+    cdropw
+    # => [INITIAL_VALUE, NEW_VALUE]
+
+    # load key and index from locals
+    padw loc_loadw_le.4 loc_load.0
+    # => [account_patch_storage_map_ptr, KEY, INITIAL_VALUE, NEW_VALUE]
+
+    exec.link_map::set drop
+    # => []
+end

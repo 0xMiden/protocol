@@ -52,16 +52,22 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionArgs,
     TransactionKernel,
+    TransactionScript,
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
-use miden_standards::AuthMethod;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::account::interface::{
+    AccountComponentInterface,
+    AccountInterface,
+    AccountInterfaceExt,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
+use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     LocalTransactionProver,
@@ -554,21 +560,16 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let summary_commitment = summary.to_commitment();
 
     let account_interface = AccountInterface::from_account(&account);
-    let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
-        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthMethod::Multisig { .. } => {
-            panic!("Expected SingleSig auth scheme, got Multisig")
-        },
-        AuthMethod::NetworkAccount { .. } => {
-            panic!("Expected SingleSig auth scheme, got NetworkAccount")
-        },
-        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
-    };
+    assert!(matches!(
+        account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
+    ));
+    let pub_keys = get_public_keys_from_account(&account);
+    let pub_key = pub_keys.first().expect("expected at least one public key");
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
+    let signature_key = Hasher::merge(&[*pub_key, summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
@@ -616,21 +617,16 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let summary_commitment = summary.to_commitment();
 
     let account_interface = AccountInterface::from_account(&account);
-    let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
-        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthMethod::Multisig { .. } => {
-            panic!("Expected SingleSig auth scheme, got Multisig")
-        },
-        AuthMethod::NetworkAccount { .. } => {
-            panic!("Expected SingleSig auth scheme, got NetworkAccount")
-        },
-        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
-    };
+    assert!(matches!(
+        account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
+    ));
+    let pub_keys = get_public_keys_from_account(&account);
+    let pub_key = pub_keys.first().expect("expected at least one public key");
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
+    let signature_key = Hasher::merge(&[*pub_key, summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
@@ -941,8 +937,10 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
-    let script = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let script = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
 
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain

@@ -33,7 +33,7 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
@@ -773,6 +773,7 @@ fn add_faucet_with_callbacks(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build(),
         )
+        .with_component(Pausable::unpaused())
         .with_component(callback_component);
 
     builder.add_account_from_builder(

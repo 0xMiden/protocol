@@ -131,12 +131,8 @@ pub enum AccountError {
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
     #[error("account header data has length {actual} but it must be of length {expected}")]
     HeaderDataIncorrectLength { actual: usize, expected: usize },
-    #[error("active account nonce {current} plus increment {increment} overflows a felt to {new}")]
-    NonceOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
+    #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
+    NonceMustIncrease { current: Felt, new: Felt },
     #[error(
         "digest of the seed has {actual} trailing zeroes but must have at least {expected} trailing zeroes"
     )]
@@ -151,6 +147,10 @@ pub enum AccountError {
         "an account with a seed cannot be converted into a delta since it represents an unregistered account"
     )]
     DeltaFromAccountWithSeed,
+    #[error(
+        "an account with a seed cannot be converted into a patch since it represents an unregistered account"
+    )]
+    PatchFromAccountWithSeed,
     #[error("seed converts to an invalid account ID")]
     SeedConvertsToInvalidAccountId(#[source] AccountIdError),
     #[error("storage map root {0} not found in the account storage")]
@@ -173,8 +173,24 @@ pub enum AccountError {
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,
+    #[error(
+        "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
+    )]
+    ApplyFullStatePatchToAccount,
+    #[error("delta is for account ID {delta_id} but is being applied to account {account_id}")]
+    DeltaAccountIdMismatch {
+        account_id: AccountId,
+        delta_id: AccountId,
+    },
+    #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
+    PatchAccountIdMismatch {
+        account_id: AccountId,
+        patch_id: AccountId,
+    },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
+    #[error("only account patches representing a full account can be converted to a full account")]
+    PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
     /// This variant can be used by methods that are not inherent to the account but want to return
@@ -249,6 +265,23 @@ pub enum StorageSlotNameError {
     TooShort,
     #[error("slot names must contain at most {} characters", StorageSlotName::MAX_LENGTH)]
     TooLong,
+}
+
+// ACCOUNT CODE INTERFACE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountCodeInterfaceError {
+    #[error(
+        "account code interface must contain at least {} procedures, but only {actual} were given",
+        AccountCode::MIN_NUM_PROCEDURES
+    )]
+    TooFewProcedures { actual: usize },
+    #[error(
+        "account code interface contains {actual} procedures but it may contain at most {} procedures",
+        AccountCode::MAX_NUM_PROCEDURES
+    )]
+    TooManyProcedures { actual: usize },
 }
 
 // ACCOUNT COMPONENT NAME ERROR
@@ -429,11 +462,37 @@ pub enum AccountPatchError {
     #[error("final nonce can never be set to zero")]
     FinalNonceIsZero,
 
-    #[error("non-empty account storage or vault patch with final nonce set to zero is not allowed")]
-    NonEmptyStorageOrVaultPatchWithZeroNonce,
+    #[error(
+        "state change to an account (store, vault or code) require that the final nonce is incremented"
+    )]
+    StateChangeRequiresNonceUpdate,
 
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
+
+    #[error("storage slot {0} was used as different slot types")]
+    StorageSlotUsedAsDifferentTypes(StorageSlotName),
+
+    #[error("cannot merge two full state patches")]
+    MergingFullStatePatches,
+
+    #[error(
+        "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
+    )]
+    NonceMustIncrementByOne { current: Felt, new: Felt },
+
+    #[error(
+        "patch is for account ID {actual} but is being merged into patch for account {expected}"
+    )]
+    AccountIdMismatch { expected: AccountId, actual: AccountId },
+
+    #[error(
+        "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
+    )]
+    IncompatibleAccountUpdates {
+        left_update_type: &'static str,
+        right_update_type: &'static str,
+    },
 }
 
 // STORAGE MAP ERROR
@@ -468,8 +527,8 @@ pub enum BatchAccountUpdateError {
         "final state commitment in account update from transaction {0} does not match initial state of current update"
     )]
     AccountUpdateInitialStateMismatch(TransactionId),
-    #[error("failed to merge account delta from transaction {0}")]
-    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountDeltaError>),
+    #[error("failed to merge account patch from transaction {0}")]
+    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
 }
 
 // ASSET ERROR
@@ -511,6 +570,8 @@ pub enum AssetError {
     UnknownAssetCallbackFlag(u8),
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
+    #[error("unknown asset delta operation encoding: {0}")]
+    UnknownAssetDeltaOperation(u8),
     #[error("asset composition {0:?} is not supported at this operational site")]
     UnsupportedAssetComposition(AssetComposition),
     #[error(
@@ -874,8 +935,6 @@ pub enum TransactionOutputError {
     DuplicateOutputNote(NoteId),
     #[error("final account commitment is not in the advice map")]
     FinalAccountCommitmentMissingInAdviceMap,
-    #[error("fee asset is not a fungible asset")]
-    FeeAssetNotFungibleAsset(#[source] AssetError),
     #[error("failed to parse final account header")]
     FinalAccountHeaderParseFailure(#[source] AccountError),
     #[error(
@@ -953,8 +1012,8 @@ pub enum ProvenTransactionError {
     PrivateAccountWithDetails(AccountId),
     #[error("account {0} with public state is missing its account details")]
     PublicStateAccountMissingDetails(AccountId),
-    #[error("new account {id} with public state must be accompanied by a full state delta")]
-    NewPublicStateAccountRequiresFullStateDelta { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
     #[error(
         "existing account {0} with public state should only provide delta updates instead of full details"
     )]
@@ -970,8 +1029,8 @@ pub enum ProvenTransactionError {
     },
     #[error("proven transaction neither changed the account state, nor consumed any notes")]
     EmptyTransaction,
-    #[error("failed to validate account delta in transaction account update")]
-    AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error("failed to validate account patch in transaction account update")]
+    AccountPatchCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
 }
@@ -1044,7 +1103,7 @@ pub enum ProposedBatchError {
         created_by: TransactionId,
     },
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
         source: BatchAccountUpdateError,
@@ -1260,10 +1319,10 @@ pub enum ProposedBlockError {
     #[error("note with nullifier {0} is already spent")]
     NullifierSpent(Nullifier),
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
-        source: Box<AccountDeltaError>,
+        source: Box<AccountPatchError>,
     },
 
     #[error("failed to track account witness")]

@@ -172,7 +172,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -228,7 +228,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             "BURN note should use the BURN script"
         );
 
-        bridge_account.apply_delta(executed_tx.account_delta())?;
+        bridge_account.apply_patch(executed_tx.account_patch())?;
         assert_eq!(
             AggLayerBridge::read_let_num_leaves(&bridge_account),
             (i + 1) as u64,
@@ -269,7 +269,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             0,
             "Burn transaction should not create output notes"
         );
-        faucet.apply_delta(burn_executed_tx.account_delta())?;
+        faucet.apply_patch(burn_executed_tx.account_patch())?;
         mock_chain.add_pending_executed_transaction(&burn_executed_tx)?;
         mock_chain.prove_next_block()?;
     }
@@ -436,7 +436,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -449,7 +449,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(executed_tx.account_delta())?;
+    bridge_account.apply_patch(executed_tx.account_patch())?;
 
     let leaf = Keccak256Digest::try_from(vectors.leaves[0].as_str())
         .expect("valid leaf hex from MTF vectors");
@@ -693,7 +693,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -808,7 +808,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     );
 
     // Apply the delta to the user account
-    user_account.apply_delta(executed_transaction.account_delta())?;
+    user_account.apply_patch(executed_transaction.account_patch())?;
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -1017,7 +1017,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1035,7 +1035,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         "Lock path should not emit any output note"
     );
 
-    bridge_account.apply_delta(executed_tx.account_delta())?;
+    bridge_account.apply_patch(executed_tx.account_patch())?;
 
     // The asset now lives in the bridge's own vault.
     let bridge_balance = bridge_account.vault().get_balance(bridge_asset.vault_key())?;

@@ -7,6 +7,7 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
+    StorageMapKey,
 };
 use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::NoteType;
@@ -14,11 +15,10 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -27,6 +27,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -219,7 +220,7 @@ async fn test_multisig_2_of_2_with_note_creation(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(tx_context_execute.account_delta())?;
+    multisig_account.apply_patch(tx_context_execute.account_patch())?;
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -538,12 +539,11 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 
     // Apply the delta to get the updated account with new signers
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify that the public keys were actually updated in storage
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key =
-            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+        let storage_key = StorageMapKey::from_index(i as u32);
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -788,12 +788,11 @@ async fn test_multisig_update_signers_remove_owner(
 
     // Apply delta to get updated account
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify public keys were updated
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key =
-            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+        let storage_key = StorageMapKey::from_index(i as u32);
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -828,8 +827,7 @@ async fn test_multisig_update_signers_remove_owner(
 
     // Verify removed owners' slots are empty (indices 2, 3, and 4 should be cleared)
     for removed_idx in 2..5 {
-        let removed_owner_key =
-            [Felt::new_unchecked(removed_idx), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+        let removed_owner_key = StorageMapKey::from_index(removed_idx as u32);
         let removed_owner_slot = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), removed_owner_key)
@@ -845,8 +843,7 @@ async fn test_multisig_update_signers_remove_owner(
     // Verify only 2 non-empty keys remain (at indices 0 and 1)
     let mut non_empty_count = 0;
     for i in 0..5 {
-        let storage_key =
-            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+        let storage_key = StorageMapKey::from_index(i as u32);
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -1139,7 +1136,7 @@ async fn test_multisig_proc_threshold_overrides(
     assert!(tx_result.is_ok(), "Note consumption with 1 signature should succeed");
 
     // Apply the transaction to the account
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -1158,9 +1155,10 @@ async fn test_multisig_proc_threshold_overrides(
         Default::default(),
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])),
     )?;
-    let multisig_account_interface = AccountInterface::from_account(&multisig_account);
-    let send_note_transaction_script =
-        multisig_account_interface.build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_transaction_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     // Build base transaction context for note sending
     let tx_context_builder2 = mock_chain
@@ -1214,7 +1212,7 @@ async fn test_multisig_proc_threshold_overrides(
     assert!(result.is_ok(), "Transaction should succeed with 2 signatures for note sending");
 
     // Apply the transaction to the account
-    multisig_account.apply_delta(result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -1303,7 +1301,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(set_tx.account_delta())?;
+    multisig_account.apply_patch(set_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&set_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1332,7 +1330,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await
         .expect("override=1 should allow receive_asset with one signature");
-    multisig_account.apply_delta(one_sig_tx.account_delta())?;
+    multisig_account.apply_patch(one_sig_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&one_sig_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1380,7 +1378,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(clear_tx.account_delta())?;
+    multisig_account.apply_patch(clear_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&clear_tx)?;
     mock_chain.prove_next_block()?;
 
