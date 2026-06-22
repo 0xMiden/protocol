@@ -66,8 +66,10 @@ pub enum NoteFile {
     /// chain.
     ///
     /// This is useful for importing an expected note while avoiding an exact [`NoteId`] lookup. The
-    /// importer can use the sync hint to search for matching notes by tag, then verify that a
-    /// returned note's metadata reproduces the expected [`NoteId`] from the details commitment.
+    /// importer can use the sync hint to search for matching notes by tag, then, for each returned
+    /// note, recompute the note ID as `NoteId::new(details_commitment, returned_metadata)` using
+    /// this variant's details commitment; the returned note whose recomputed ID matches is the
+    /// expected one. This recovers its metadata without revealing the note ID to the node.
     ///
     /// Attachments are carried here rather than fetched by ID because attachment content is not
     /// returned by a tag-based sync, so fetching it would otherwise require leaking the note ID.
@@ -277,103 +279,41 @@ mod tests {
         assert_eq!(magic_value, b"note");
     }
 
+    /// Asserts that `file` survives a serialization round-trip unchanged.
+    fn assert_roundtrip(file: NoteFile) {
+        assert_eq!(NoteFile::read_from_bytes(&file.to_bytes()).unwrap(), file);
+    }
+
     #[test]
     fn serialize_id() {
-        let note = create_example_note();
-        let file = NoteFile::NoteId(note.id());
-        let mut buffer = Vec::new();
-        file.write_into(&mut buffer);
-
-        let file_copy = NoteFile::read_from_bytes(&buffer).unwrap();
-
-        match file_copy {
-            NoteFile::NoteId(note_id) => {
-                assert_eq!(note.id(), note_id);
-            },
-            _ => panic!("Invalid note file variant"),
-        }
+        assert_roundtrip(NoteFile::NoteId(create_example_note().id()));
     }
 
     #[test]
     fn serialize_expected_note() {
         let note = create_example_note();
-        let sync_hint = NoteSyncHint::new(456.into(), NoteTag::from(123));
-        let file = NoteFile::ExpectedNote {
+        assert_roundtrip(NoteFile::ExpectedNote {
             details: note.details.clone(),
             attachments: NoteAttachments::empty(),
-            sync_hint,
-        };
-        let mut buffer = Vec::new();
-        file.write_into(&mut buffer);
-
-        let file_copy = NoteFile::read_from_bytes(&buffer).unwrap();
-
-        match file_copy {
-            NoteFile::ExpectedNote {
-                details,
-                attachments,
-                sync_hint: actual_sync_hint,
-            } => {
-                assert_eq!(details, note.details);
-                assert!(attachments.is_empty());
-                assert_eq!(actual_sync_hint, sync_hint);
-            },
-            _ => panic!("Invalid note file variant"),
-        }
+            sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
+        });
     }
 
     #[test]
     fn serialize_expected_note_with_attachments() {
         let note = create_example_note_with_attachment();
-        let sync_hint = NoteSyncHint::new(456.into(), NoteTag::from(123));
-        let file = NoteFile::ExpectedNote {
+        assert!(!note.attachments().is_empty());
+        assert_roundtrip(NoteFile::ExpectedNote {
             details: note.details.clone(),
             attachments: note.attachments().clone(),
-            sync_hint,
-        };
-        let mut buffer = Vec::new();
-        file.write_into(&mut buffer);
-
-        let file_copy = NoteFile::read_from_bytes(&buffer).unwrap();
-
-        match file_copy {
-            NoteFile::ExpectedNote {
-                details,
-                attachments,
-                sync_hint: actual_sync_hint,
-            } => {
-                assert_eq!(details, note.details);
-                assert_eq!(&attachments, note.attachments());
-                assert!(!attachments.is_empty());
-                assert_eq!(actual_sync_hint, sync_hint);
-            },
-            _ => panic!("Invalid note file variant"),
-        }
+            sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
+        });
     }
 
     #[test]
     fn serialize_committed_note() {
         let note = create_example_note();
-        let mock_inclusion_proof =
-            NoteInclusionProof::new(BlockNumber::from(0), 0, Default::default()).unwrap();
-        let file = NoteFile::Committed {
-            note: note.clone(),
-            proof: mock_inclusion_proof.clone(),
-        };
-        let mut buffer = Vec::new();
-        file.write_into(&mut buffer);
-
-        let file_copy = NoteFile::read_from_bytes(&buffer).unwrap();
-
-        match file_copy {
-            NoteFile::Committed {
-                note: note_copy,
-                proof: inclusion_proof_copy,
-            } => {
-                assert_eq!(note, note_copy);
-                assert_eq!(inclusion_proof_copy, mock_inclusion_proof);
-            },
-            _ => panic!("Invalid note file variant"),
-        }
+        let proof = NoteInclusionProof::new(BlockNumber::from(0), 0, Default::default()).unwrap();
+        assert_roundtrip(NoteFile::Committed { note, proof });
     }
 }
