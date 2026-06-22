@@ -107,10 +107,10 @@ TODO: Claims cannot be reversed once the nullifier is set
 ![GER injection flow](diagrams/ger-injection.png)
 
 Global Exit Roots represent a snapshot of exit tree roots across all AggLayer-connected
-chains. A GER Manager observes L1 GER updates and creates [`UPDATE_GER`](#44-update_ger) notes
+chains. A GER injector observes L1 GER updates and creates [`UPDATE_GER`](#44-update_ger) notes
 on Miden. The bridge consumes these notes:
 
-1. Asserts the note sender is the designated GER manager.
+1. Asserts the note sender is the designated GER injector.
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Stores `KEY -> [1, 0, 0, 0]` in the `ger_map`, marking the GER as known.
 4. Reverts if the GER was already present in the map (duplicate insertions are rejected).
@@ -123,13 +123,13 @@ to be valid.
 > `UPDATE_GER` note causes the consuming transaction to revert. Because `UPDATE_GER` is a
 > network note (consumed by the note nullifier mechanism), a duplicate would become
 > permanently unconsumable rather than silently accepted. Rejecting duplicates makes the
-> failure explicit and prevents the GER manager from accidentally creating unconsumed notes.
+> failure explicit and prevents the GER injector from accidentally creating unconsumed notes.
 
 A separate GER Remover role can revoke a previously-registered GER by sending a
 [`REMOVE_GER`](#45-remove_ger) note. The bridge consumes such a note and:
 
 1. Asserts the note sender is the designated GER remover (a role distinct from the GER
-   manager so that insertion and revocation authority can be split).
+   injector so that insertion and revocation authority can be split).
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Asserts that `ger_map[KEY] == [1, 0, 0, 0]`, i.e. that the GER is currently known.
 4. Overwrites `ger_map[KEY]` with `[0, 0, 0, 0]`, the Miden equivalent of Solidity's
@@ -153,11 +153,11 @@ Claims that were already processed against the GER are not reversed - removal on
 prevents future claims against that root.
 
 Note that removal does not blocklist a GER permanently: because the map entry is reset
-to the empty word, the GER manager can re-register the same GER via a subsequent
+to the empty word, the GER injector can re-register the same GER via a subsequent
 `UPDATE_GER` note (re-insertion does not touch the removal chain). This is a security
-caveat worth calling out: a compromised or faulty GER manager can undo a `REMOVE_GER`
+caveat worth calling out: a compromised or faulty GER injector can undo a `REMOVE_GER`
 emergency patch and re-open the very claim window the removal was meant to close. The
-split between the manager and remover roles bounds this only if the offending role can be
+split between the injector and remover roles bounds this only if the offending role can be
 rotated out, which is not yet supported
 ([#2706](https://github.com/0xMiden/protocol/issues/2706)). The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
@@ -200,10 +200,10 @@ The bridge has three administrative roles set at account creation time:
 
 - **Bridge admin** (`admin_account_id`): authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes.
-- **GER manager** (`ger_manager_account_id`): authorizes GER updates via [`UPDATE_GER`](#44-update_ger)
+- **GER injector** (`ger_injector_account_id`): authorizes GER updates via [`UPDATE_GER`](#44-update_ger)
   notes.
 - **GER remover** (`ger_remover_account_id`): authorizes GER removals via
-  [`REMOVE_GER`](#45-remove_ger) notes. Kept distinct from the GER manager so that insertion
+  [`REMOVE_GER`](#45-remove_ger) notes. Kept distinct from the GER injector so that insertion
   and revocation authority can be split.
 
 All roles are verified by checking the note sender against the stored account ID.
@@ -281,10 +281,10 @@ Asserts the note sender matches the bridge admin stored in
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender is not the GER manager; GER has already been registered in storage |
+| **Panics** | Note sender is not the GER injector; GER has already been registered in storage |
 
-Asserts the note sender matches the GER manager stored in
-`agglayer::bridge::ger_manager_account_id`, then computes
+Asserts the note sender matches the GER injector stored in
+`agglayer::bridge::ger_injector_account_id`, then computes
 `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
 Duplicate insertions (same GER value) are explicitly rejected: if the key already exists
@@ -343,13 +343,13 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::admin_account_id` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
-| `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
+| `agglayer::bridge::ger_injector_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER injector account ID for UPDATE_GER note authorization |
 | `agglayer::bridge::ger_remover_account_id` | Value | -- | `[0, 0, rem_suffix, rem_prefix]` | GER remover account ID for REMOVE_GER note authorization |
 | `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
-`admin_account_id`, `ger_manager_account_id`, and `ger_remover_account_id` (set at account
+`admin_account_id`, `ger_injector_account_id`, and `ger_remover_account_id` (set at account
 creation time).
 
 ### 3.2 Faucet Account Component
@@ -652,7 +652,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | GER manager (sender authorization enforced by the bridge's `update_ger` procedure) |
+| `sender` | GER injector (sender authorization enforced by the bridge's `update_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -677,14 +677,14 @@ CLAIM notes can be verified against it.
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::update_ger` (which asserts sender is GER manager), which computes
+`bridge_config::update_ger` (which asserts sender is GER injector), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | GER manager only -- **enforced** by `bridge_config::update_ger` procedure |
+| **Issuer** | GER injector only -- **enforced** by `bridge_config::update_ger` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.5 REMOVE_GER

@@ -15,7 +15,7 @@ const ERR_GER_ALREADY_REGISTERED = "GER is already registered in storage"
 const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's faucet registry"
 const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
-const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root manager"
+const ERR_SENDER_NOT_GER_INJECTOR = "note sender is not the global exit root injector"
 const ERR_SENDER_NOT_GER_REMOVER = "note sender is not the global exit root remover"
 
 # CONSTANTS
@@ -23,7 +23,7 @@ const ERR_SENDER_NOT_GER_REMOVER = "note sender is not the global exit root remo
 
 # Storage slots
 const BRIDGE_ADMIN_SLOT = word("agglayer::bridge::admin_account_id")
-const GER_MANAGER_SLOT = word("agglayer::bridge::ger_manager_account_id")
+const GER_INJECTOR_SLOT = word("agglayer::bridge::ger_injector_account_id")
 const GER_REMOVER_SLOT = word("agglayer::bridge::ger_remover_account_id")
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
@@ -74,13 +74,13 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the global exit root manager.
+#! - the note sender is not the global exit root injector.
 #! - the GER has already been registered in storage.
 #!
 #! Invocation: call
 pub proc update_ger
-    # assert the note sender is the global exit root manager.
-    exec.assert_sender_is_ger_manager
+    # assert the note sender is the global exit root injector.
+    exec.assert_sender_is_ger_injector
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
@@ -581,20 +581,20 @@ proc assert_sender_is_bridge_admin
     # => [pad(16)]
 end
 
-#! Asserts that the note sender matches the global exit root manager stored in account storage.
+#! Asserts that the note sender matches the global exit root injector stored in account storage.
 #!
-#! Reads the GER manager account ID from GER_MANAGER_SLOT and compares it against the sender of the
+#! Reads the GER injector account ID from GER_INJECTOR_SLOT and compares it against the sender of the
 #! currently executing note.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender does not match the GER manager account ID.
+#! - the note sender does not match the GER injector account ID.
 #!
 #! Invocation: exec
-proc assert_sender_is_ger_manager
-    push.GER_MANAGER_SLOT[0..2]
+proc assert_sender_is_ger_injector
+    push.GER_INJECTOR_SLOT[0..2]
     exec.active_account::get_item
     # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
 
@@ -605,7 +605,7 @@ proc assert_sender_is_ger_manager
     # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
 
     exec.account_id::is_equal
-    assert.err=ERR_SENDER_NOT_GER_MANAGER
+    assert.err=ERR_SENDER_NOT_GER_INJECTOR
     # => [pad(16)]
 end
 

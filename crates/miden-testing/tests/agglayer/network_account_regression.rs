@@ -48,7 +48,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -59,7 +59,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -70,7 +70,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     // check.
     let ger = ExitRoot::from([0u8; 32]);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mock_chain = builder.build()?;
@@ -99,7 +99,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -110,7 +110,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;

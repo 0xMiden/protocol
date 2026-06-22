@@ -182,12 +182,12 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER REMOVER ACCOUNT (not used in this benchmark, but distinct from admin and manager)
+    // CREATE GER REMOVER ACCOUNT (not used in this benchmark, but distinct from admin and injector)
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
@@ -197,7 +197,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -275,7 +275,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN
@@ -401,8 +401,8 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (not used in bridge-out, but required for bridge creation)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (not used in bridge-out, but required for bridge creation)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -415,7 +415,7 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
 

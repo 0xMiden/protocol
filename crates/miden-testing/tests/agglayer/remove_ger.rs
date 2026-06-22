@@ -20,15 +20,15 @@ const GER_BYTES: [u8; 32] = [
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 ];
 
-/// Creates the bridge admin, GER manager, and GER remover wallets, builds the bridge account
+/// Creates the bridge admin, GER injector, and GER remover wallets, builds the bridge account
 /// wired to those roles, and registers the bridge account with the builder.
 ///
-/// Returns the bridge account together with the GER manager and GER remover wallets.
+/// Returns the bridge account together with the GER injector and GER remover wallets.
 fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Account, Account)> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
@@ -39,12 +39,12 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Acco
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
-    Ok((bridge_account, ger_manager, ger_remover))
+    Ok((bridge_account, ger_injector, ger_remover))
 }
 
 /// Computes one fold of the removed-GER hash chain, `keccak256(prev_chain || ger)`, in the
@@ -69,12 +69,12 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
 #[tokio::test]
 async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
 
     // STEP 1: Register the GER via UPDATE_GER
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // STEP 2: Remove the GER via REMOVE_GER (sent by the GER remover)
@@ -122,7 +122,7 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 #[tokio::test]
 async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -135,11 +135,11 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
     let ger_c = ExitRoot::from(ger_c_bytes);
 
     let update_a =
-        UpdateGerNote::create(ger_a, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger_a, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let update_b =
-        UpdateGerNote::create(ger_b, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger_b, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let update_c =
-        UpdateGerNote::create(ger_c, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger_c, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_b =
         RemoveGerNote::create(ger_b, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
 
@@ -196,7 +196,7 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 #[tokio::test]
 async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -206,9 +206,9 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
     let ger_b = ExitRoot::from(ger_b_bytes);
 
     let update_a =
-        UpdateGerNote::create(ger_a, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger_a, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let update_b =
-        UpdateGerNote::create(ger_b, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger_b, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_a =
         RemoveGerNote::create(ger_a, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_b =
@@ -258,11 +258,11 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_ger_note_first =
         RemoveGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_ger_note_second =
@@ -301,15 +301,15 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_first =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_note =
         RemoveGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
     let update_second =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(RawOutputNote::Full(update_first.clone()));
     builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
@@ -347,17 +347,17 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_manager, _ger_remover) = setup_bridge(&mut builder)?;
+    let (bridge_account, ger_injector, _ger_remover) = setup_bridge(&mut builder)?;
 
     // Register a GER first so the failure is exclusively due to the sender check.
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
-    // The GER manager (not the remover) attempts to send the REMOVE_GER note.
+    // The GER injector (not the remover) attempts to send the REMOVE_GER note.
     let remove_ger_note =
-        RemoveGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        RemoveGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(remove_ger_note.clone()));
 
     let mut mock_chain = builder.build()?;

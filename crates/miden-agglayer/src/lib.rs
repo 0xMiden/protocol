@@ -135,12 +135,12 @@ fn create_agglayer_faucet_component(
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    ger_injector_id: AccountId,
     ger_remover_id: AccountId,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id, ger_remover_id))
+        .with_component(AggLayerBridge::new(bridge_admin_id, ger_injector_id, ger_remover_id))
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
@@ -153,10 +153,10 @@ fn create_bridge_account_builder(
 pub fn create_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    ger_injector_id: AccountId,
     ger_remover_id: AccountId,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, ger_remover_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
         .build()
         .expect("bridge account should be valid")
 }
@@ -168,10 +168,10 @@ pub fn create_bridge_account(
 pub fn create_existing_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    ger_injector_id: AccountId,
     ger_remover_id: AccountId,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, ger_remover_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
         .build_existing()
         .expect("bridge account should be valid")
 }

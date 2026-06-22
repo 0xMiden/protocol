@@ -37,7 +37,7 @@ use crate::ExitRoot;
 ///
 /// # Parameters
 /// - `ger`: the Global Exit Root data the note carries
-/// - `sender_account_id`: the account ID of the note creator (the GER manager or remover)
+/// - `sender_account_id`: the account ID of the note creator (the GER injector or remover)
 /// - `target_account_id`: the account ID that will consume this note (the bridge account)
 /// - `script`: the note script to run (UPDATE_GER or REMOVE_GER)
 /// - `rng`: random number generator for the note serial number

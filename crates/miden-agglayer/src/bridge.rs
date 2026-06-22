@@ -61,9 +61,9 @@ static BRIDGE_ADMIN_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::admin_account_id")
         .expect("bridge admin account ID storage slot name should be valid")
 });
-static GER_MANAGER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::ger_manager_account_id")
-        .expect("GER manager account ID storage slot name should be valid")
+static GER_INJECTOR_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::ger_injector_account_id")
+        .expect("GER injector account ID storage slot name should be valid")
 });
 static GER_REMOVER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::ger_remover_account_id")
@@ -146,7 +146,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// ## Storage Layout
 ///
 /// - [`Self::bridge_admin_id_slot_name`]: Stores the bridge admin account ID.
-/// - [`Self::ger_manager_id_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::ger_injector_id_slot_name`]: Stores the GER injector account ID.
 /// - [`Self::ger_remover_id_slot_name`]: Stores the GER remover account ID.
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
 /// - [`Self::removed_ger_hash_chain_lo_slot_name`]: Stores the lower 128 bits of the removed-GER
@@ -176,7 +176,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[derive(Debug, Clone)]
 pub struct AggLayerBridge {
     bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    ger_injector_id: AccountId,
     ger_remover_id: AccountId,
 }
 
@@ -197,12 +197,12 @@ impl AggLayerBridge {
     /// Creates a new AggLayer bridge component with the standard configuration.
     pub fn new(
         bridge_admin_id: AccountId,
-        ger_manager_id: AccountId,
+        ger_injector_id: AccountId,
         ger_remover_id: AccountId,
     ) -> Self {
         Self {
             bridge_admin_id,
-            ger_manager_id,
+            ger_injector_id,
             ger_remover_id,
         }
     }
@@ -217,9 +217,9 @@ impl AggLayerBridge {
         &BRIDGE_ADMIN_ID_SLOT_NAME
     }
 
-    /// Storage slot name for the GER manager account ID.
-    pub fn ger_manager_id_slot_name() -> &'static StorageSlotName {
-        &GER_MANAGER_ID_SLOT_NAME
+    /// Storage slot name for the GER injector account ID.
+    pub fn ger_injector_id_slot_name() -> &'static StorageSlotName {
+        &GER_INJECTOR_ID_SLOT_NAME
     }
 
     /// Storage slot name for the GER remover account ID.
@@ -535,7 +535,7 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_MAP_SLOT_NAME,
             &*FAUCET_METADATA_MAP_SLOT_NAME,
             &*BRIDGE_ADMIN_ID_SLOT_NAME,
-            &*GER_MANAGER_ID_SLOT_NAME,
+            &*GER_INJECTOR_ID_SLOT_NAME,
             &*GER_REMOVER_ID_SLOT_NAME,
             &*REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME,
             &*REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME,
@@ -549,7 +549,7 @@ impl AggLayerBridge {
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
         let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
-        let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
+        let ger_injector_word = AccountIdKey::new(bridge.ger_injector_id).as_word();
         let ger_remover_word = AccountIdKey::new(bridge.ger_remover_id).as_word();
 
         let bridge_storage_slots = vec![
@@ -562,7 +562,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
-            StorageSlot::with_value(GER_MANAGER_ID_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_value(GER_INJECTOR_ID_SLOT_NAME.clone(), ger_injector_word),
             StorageSlot::with_value(GER_REMOVER_ID_SLOT_NAME.clone(), ger_remover_word),
             StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME.clone(), Word::empty()),

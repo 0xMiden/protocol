@@ -146,13 +146,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
+    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and manager)
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
     // --------------------------------------------------------------------------------------------
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -164,7 +164,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -265,7 +265,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
@@ -447,7 +447,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
@@ -458,7 +458,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -570,7 +570,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     builder.add_output_note(RawOutputNote::Full(config_note_b.clone()));
 
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.clone().build()?;
@@ -642,9 +642,9 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
+    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -660,7 +660,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -737,7 +737,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
@@ -791,12 +791,12 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and manager)
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
@@ -806,7 +806,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -888,7 +888,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN
@@ -958,8 +958,8 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -973,7 +973,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -1036,7 +1036,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // CREATE REMOVE_GER NOTE (removes the GER the claim's proof is verified against)
@@ -1106,11 +1106,11 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    // Bridge admin / GER manager / bridge account.
+    // Bridge admin / GER injector / bridge account.
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -1121,7 +1121,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let mut bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -1221,7 +1221,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // GER for the claim's Merkle proof.
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.clone().build()?;
@@ -1374,7 +1374,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -1385,7 +1385,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let mut bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -1496,7 +1496,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(claim_note_2.clone()));
 
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.clone().build()?;
@@ -1614,7 +1614,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -1625,7 +1625,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let bridge_account = create_existing_bridge_account(
         bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
         ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
@@ -1704,7 +1704,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.clone().build()?;
