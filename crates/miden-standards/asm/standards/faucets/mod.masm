@@ -231,7 +231,7 @@ end
 #! Updates the description (7 Words) if the description mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
-#! The caller passes the Poseidon hash of the new description on the stack and provides
+#! The caller passes the Poseidon2 hash of the new description on the stack and provides
 #! the actual 7 Words in the advice map under that hash. The hash is verified against
 #! the preimage during loading.
 #!
@@ -311,7 +311,7 @@ end
 #! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
-#! The caller passes the Poseidon hash of the new logo URI on the stack and provides
+#! The caller passes the Poseidon2 hash of the new logo URI on the stack and provides
 #! the actual 7 Words in the advice map under that hash. The hash is verified against
 #! the preimage during loading.
 #!
@@ -390,7 +390,7 @@ end
 #! Updates the external link (7 Words) if the external link mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
-#! The caller passes the Poseidon hash of the new external link on the stack and provides
+#! The caller passes the Poseidon2 hash of the new external link on the stack and provides
 #! the actual 7 Words in the advice map under that hash. The hash is verified against
 #! the preimage during loading.
 #!
