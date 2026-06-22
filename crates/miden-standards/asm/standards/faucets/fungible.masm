@@ -16,7 +16,7 @@ use miden::protocol::asset
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
-use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
+use miden::standards::faucets
 use miden::standards::access::pausable
 
 # =================================================================================================
@@ -73,8 +73,7 @@ end
 #!
 #! Invocation: exec
 proc is_max_supply_mutable_internal
-    push.MUTABILITY_CONFIG_SLOT[0..2]
-    exec.active_account::get_item
+    exec.faucets::get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop drop
     # => [is_max_supply_mutable]
