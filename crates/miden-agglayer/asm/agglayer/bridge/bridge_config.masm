@@ -131,7 +131,7 @@ end
 #! 2. KEY [1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]  (origin address part 2)
 #!
 #! Also registers:
-#! 3. faucet_registry_map: [0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, is_native, asset_callbacks, 0]
+#! 3. faucet_registry_map: [0, 0, faucet_id_suffix, faucet_id_prefix] -> [is_registered, is_native, asset_callbacks, 0]
 #! 4. token_registry_map: hash(tokenAddress[5] || origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix].
 #!    The (origin_network, origin_token_address) pair is the canonical asset identity;
 #!    keying on the address alone would collide across networks.
@@ -212,16 +212,16 @@ pub proc register_faucet
     dropw
     # => [pad(16)]
 
-    # --- Step 3: Store [1, is_native, asset_callbacks, 0] in faucet_registry_map ---
-    # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [1, is_native, asset_callbacks, 0]
+    # --- Step 3: Store [is_registered, is_native, asset_callbacks, 0] in faucet_registry_map ---
+    # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [is_registered, is_native, asset_callbacks, 0]
     # The trailing 0 of VALUE is supplied by the stack's bottom pads.
 
     loc_load.REG_ASSET_CALLBACKS_LOC
     loc_load.REG_IS_NATIVE_LOC push.FAUCET_REGISTERED_FLAG
-    # => [1, is_native, asset_callbacks, pad(16)]
+    # => [is_registered, is_native, asset_callbacks, pad(16)]
 
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 1, is_native, asset_callbacks, pad(16)]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, is_registered, is_native, asset_callbacks, pad(16)]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -306,7 +306,7 @@ pub proc assert_faucet_registered
     exec.active_account::get_map_item
     # => [VALUE]
 
-    # the stored word is [1, is_native, asset_callbacks, 0] for registered faucets
+    # the stored word is [is_registered, is_native, asset_callbacks, 0] for registered faucets
     # assert element 0 (registration flag) equals "1"
     assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
     # => []
@@ -410,7 +410,7 @@ end
 
 #! Returns whether a faucet is native (not owned by the bridge).
 #!
-#! Reads the faucet_registry_map value [1, is_native, asset_callbacks, 0] and returns the
+#! Reads the faucet_registry_map value [is_registered, is_native, asset_callbacks, 0] and returns the
 #! is_native flag.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
@@ -424,7 +424,7 @@ pub proc is_faucet_native
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [1, is_native, asset_callbacks, 0]
+    # => [is_registered, is_native, asset_callbacks, 0]
 
     # Drop element 0 (registration flag), move is_native past the trailing elements, drop them.
     drop movdn.2 drop drop
@@ -433,7 +433,7 @@ end
 
 #! Returns the asset-callbacks bit registered for a faucet.
 #!
-#! Reads the faucet_registry_map value [1, is_native, asset_callbacks, 0] and returns the
+#! Reads the faucet_registry_map value [is_registered, is_native, asset_callbacks, 0] and returns the
 #! asset_callbacks flag. For an unregistered faucet the returned value is 0.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
@@ -447,7 +447,7 @@ pub proc get_faucet_asset_callbacks
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [1, is_native, asset_callbacks, 0]
+    # => [is_registered, is_native, asset_callbacks, 0]
 
     # Keep only element 2 (asset_callbacks).
     drop drop swap drop
