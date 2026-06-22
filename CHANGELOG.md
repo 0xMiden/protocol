@@ -5,6 +5,7 @@
 ### Changes
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
+- [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
