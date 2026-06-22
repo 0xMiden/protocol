@@ -103,7 +103,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // VERIFY FAUCET IS NOW REGISTERED
     let mut updated_bridge = bridge_account.clone();
-    updated_bridge.apply_delta(executed_transaction.account_delta())?;
+    updated_bridge.apply_patch(executed_transaction.account_patch())?;
 
     let value_after = updated_bridge.storage().get_map_item(registry_slot_name, key)?;
     // TODO: use a getter helper on AggLayerBridge once available
@@ -207,8 +207,8 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
 
     // Apply both deltas onto a single bridge account view.
     let mut updated_bridge = bridge_account.clone();
-    updated_bridge.apply_delta(executed_1.account_delta())?;
-    updated_bridge.apply_delta(executed_2.account_delta())?;
+    updated_bridge.apply_patch(executed_1.account_patch())?;
+    updated_bridge.apply_patch(executed_2.account_patch())?;
 
     // VERIFY both (address, network) pairs resolve to their own faucet, and the keys are distinct.
     let token_registry_slot = AggLayerBridge::token_registry_map_slot_name();

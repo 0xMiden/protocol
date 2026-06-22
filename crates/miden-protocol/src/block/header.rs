@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
+
 use crate::account::AccountId;
 use crate::block::BlockNumber;
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
@@ -30,7 +32,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
 /// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
-/// - `validator_key` is the public key of the validator that is expected to sign the block.
+/// - `validator_key` is the public key of the validator authorized to sign the *next* block.
 /// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
 /// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
@@ -171,7 +173,10 @@ impl BlockHeader {
         self.note_root
     }
 
-    /// Returns the public key of the block's validator.
+    /// Returns the public key of the validator authorized to sign the *next* block.
+    ///
+    /// A block's signature is verified against the `validator_key` committed to by its parent
+    /// block, not against this field. See the [`BlockHeader`] docs for details.
     pub fn validator_key(&self) -> &PublicKey {
         &self.validator_key
     }
@@ -206,6 +211,56 @@ impl BlockHeader {
     /// Returns the block number of the epoch block to which this block belongs.
     pub fn epoch_block_num(&self) -> BlockNumber {
         BlockNumber::from_epoch(self.block_epoch())
+    }
+
+    // VALIDATION
+    // --------------------------------------------------------------------------------------------
+
+    /// Validates that `parent` precedes and authorizes this block.
+    ///
+    /// The `signature` is the signature of the validator defined by the parent block against this
+    /// header.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block is the genesis block (no parent), the parent's number or
+    /// commitment do not match, or the signature does not verify against the parent's validator
+    /// key.
+    pub(crate) fn validate_against_parent(
+        &self,
+        parent: &BlockHeader,
+        signature: &Signature,
+    ) -> Result<(), ParentValidationError> {
+        // Block 0 does not have a parent.
+        let Some(expected_parent_num) = self.block_num().checked_sub(1) else {
+            return Err(ParentValidationError::GenesisBlockHasNoParent {
+                parent: parent.block_num(),
+            });
+        };
+
+        // Check block numbers.
+        if expected_parent_num != parent.block_num() {
+            return Err(ParentValidationError::ParentNumberMismatch {
+                expected: expected_parent_num,
+                parent: parent.block_num(),
+            });
+        }
+
+        // Check commitments.
+        let expected_prev_commitment = self.prev_block_commitment();
+        if expected_prev_commitment != parent.commitment() {
+            return Err(ParentValidationError::ParentCommitmentMismatch {
+                expected: expected_prev_commitment,
+                parent: parent.commitment(),
+            });
+        }
+
+        // Verify the signature against the validator key authorized by the parent block.
+        if !signature.verify(self.commitment(), parent.validator_key()) {
+            return Err(ParentValidationError::InvalidSignature);
+        }
+
+        Ok(())
     }
 
     // HELPERS
@@ -248,6 +303,52 @@ impl BlockHeader {
         ]);
         elements.extend([ZERO, ZERO, ZERO, ZERO]);
         Hasher::hash_elements(&elements)
+    }
+
+    // TEST HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Builds a minimal block header with a controllable block number, previous-block commitment,
+    /// and validator key.
+    ///
+    /// The remaining roots are zeroed except the note root and transaction commitment, which match
+    /// the empty [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
+    /// self-consistency checks in `SignedBlock::validate` and  `ProvenBlock::validate` pass.
+    #[cfg(test)]
+    pub(crate) fn new_dummy(
+        block_num: u32,
+        prev_block_commitment: Word,
+        validator_key: miden_crypto::dsa::ecdsa_k256_keccak::PublicKey,
+    ) -> Self {
+        use crate::block::{BlockBody, FeeParameters};
+        use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+        use crate::transaction::OrderedTransactionHeaders;
+
+        let body = BlockBody::new_unchecked(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            OrderedTransactionHeaders::new_unchecked(Vec::new()),
+        );
+        let note_root = body.compute_block_note_tree().root();
+        let tx_commitment = body.transactions().commitment();
+
+        let fee_parameters =
+            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
+        BlockHeader::new(
+            0,
+            prev_block_commitment,
+            BlockNumber::from(block_num),
+            Word::empty(),
+            Word::empty(),
+            Word::empty(),
+            note_root,
+            tx_commitment,
+            Word::empty(),
+            validator_key,
+            fee_parameters,
+            0,
+        )
     }
 }
 
@@ -364,9 +465,6 @@ impl FeeParameters {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
 impl Serializable for FeeParameters {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.fee_faucet_id.write_into(target);
@@ -383,6 +481,30 @@ impl Deserializable for FeeParameters {
     }
 }
 
+// PARENT VALIDATION ERROR
+// ================================================================================================
+
+/// Error returned when a block fails validation against its parent block.
+///
+/// This is the shared, block-type-agnostic error produced by
+/// [`BlockHeader::validate_against_parent`]. Each block type maps it into its own error enum via
+/// `From`, which preserves that type's specific error messages.
+#[derive(Debug)]
+pub(crate) enum ParentValidationError {
+    InvalidSignature,
+    ParentNumberMismatch {
+        expected: BlockNumber,
+        parent: BlockNumber,
+    },
+    ParentCommitmentMismatch {
+        expected: Word,
+        parent: Word,
+    },
+    GenesisBlockHasNoParent {
+        parent: BlockNumber,
+    },
+}
+
 // TESTS
 // ================================================================================================
 
@@ -392,6 +514,7 @@ mod tests {
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
+    use crate::testing::random_secret_key::random_secret_key;
 
     #[test]
     fn test_serde() {
@@ -409,5 +532,79 @@ mod tests {
         let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
 
         assert_eq!(deserialized, header);
+    }
+
+    /// Expected outcome of a [`BlockHeader::validate_against_parent`] case.
+    enum Expect {
+        Ok,
+        InvalidSignature,
+        Genesis,
+        ParentNumber,
+        ParentCommitment,
+    }
+
+    /// Exercises `validate_against_parent` against a parent that commits `validator` as the signer
+    /// of the child. Each case tweaks one input: the child's block number, whether it links to the
+    /// parent, and whether it is signed by the committed key.
+    #[rstest::rstest]
+    // Signed by the committed key and correctly linked: accepted. The next key it commits is free.
+    #[case::accepts(1, true, true, Expect::Ok)]
+    // The rotation bug: self-signed with a key the parent never committed.
+    #[case::self_signed_uncommitted_key(1, true, false, Expect::InvalidSignature)]
+    // Genesis has no parent to anchor against.
+    #[case::genesis(0, true, true, Expect::Genesis)]
+    // Child claims to be block 2, but the parent is block 0.
+    #[case::wrong_parent_number(2, true, true, Expect::ParentNumber)]
+    // Child's prev_block_commitment does not match the parent's commitment.
+    #[case::wrong_parent_commitment(1, false, true, Expect::ParentCommitment)]
+    fn validate_against_parent_cases(
+        #[case] child_num: u32,
+        #[case] link_to_parent: bool,
+        #[case] sign_with_committed_key: bool,
+        #[case] expected: Expect,
+    ) {
+        let validator = random_secret_key();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), validator.public_key());
+
+        let prev_commitment = if link_to_parent {
+            parent.commitment()
+        } else {
+            Word::empty()
+        };
+
+        // The signer and the key the child commits as the next block's signer.
+        let (signer, child_validator_key) = if sign_with_committed_key {
+            (validator, random_secret_key().public_key())
+        } else {
+            let impostor = random_secret_key();
+            let key = impostor.public_key();
+            (impostor, key)
+        };
+
+        let child = BlockHeader::new_dummy(child_num, prev_commitment, child_validator_key);
+        let signature = signer.sign(child.commitment());
+        let result = child.validate_against_parent(&parent, &signature);
+
+        match expected {
+            Expect::Ok => result.unwrap(),
+            Expect::InvalidSignature => {
+                assert!(matches!(result, Err(ParentValidationError::InvalidSignature)));
+            },
+            Expect::Genesis => {
+                assert!(matches!(
+                    result,
+                    Err(ParentValidationError::GenesisBlockHasNoParent { .. })
+                ));
+            },
+            Expect::ParentNumber => {
+                assert!(matches!(result, Err(ParentValidationError::ParentNumberMismatch { .. })));
+            },
+            Expect::ParentCommitment => {
+                assert!(matches!(
+                    result,
+                    Err(ParentValidationError::ParentCommitmentMismatch { .. })
+                ));
+            },
+        }
     }
 }
