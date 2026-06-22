@@ -16,6 +16,7 @@ use agglayer::common::asset_conversion
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
+use agglayer::common::eth_address
 use agglayer::common::eth_address::EthereumAddressFormat
 
 # ERRORS
@@ -23,6 +24,8 @@ use agglayer::common::eth_address::EthereumAddressFormat
 
 const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
 const ERR_B2AGG_NOTE_MUST_BE_PUBLIC = "B2AGG note must be public"
+const ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN = "BRIDGE_MESSAGE note destination network ID must not be Miden's AggLayer network ID"
+const ERR_BRIDGE_MSG_NOTE_MUST_BE_PUBLIC = "BRIDGE_MESSAGE note must be public"
 
 # CONSTANTS
 # =================================================================================================
@@ -73,6 +76,22 @@ const DESTINATION_ADDRESS_4_LOC=12
 const DESTINATION_NETWORK_LOC=13
 const BRIDGE_OUT_IS_NATIVE_LOC=14
 
+# bridge_message memory locals
+const BRIDGE_MSG_DEST_NETWORK_LOC=0
+const BRIDGE_MSG_DEST_ADDRESS_0_LOC=1
+const BRIDGE_MSG_DEST_ADDRESS_1_LOC=2
+const BRIDGE_MSG_DEST_ADDRESS_2_LOC=3
+const BRIDGE_MSG_DEST_ADDRESS_3_LOC=4
+const BRIDGE_MSG_DEST_ADDRESS_4_LOC=5
+const BRIDGE_MSG_METADATA_HASH_0_LOC=6
+const BRIDGE_MSG_METADATA_HASH_1_LOC=7
+const BRIDGE_MSG_METADATA_HASH_2_LOC=8
+const BRIDGE_MSG_METADATA_HASH_3_LOC=9
+const BRIDGE_MSG_METADATA_HASH_4_LOC=10
+const BRIDGE_MSG_METADATA_HASH_5_LOC=11
+const BRIDGE_MSG_METADATA_HASH_6_LOC=12
+const BRIDGE_MSG_METADATA_HASH_7_LOC=13
+
 # create_burn_note memory locals
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const ATTACHMENT_LOC=8
@@ -82,6 +101,7 @@ const ATTACHMENT_SCHEME_LOC=12
 # -------------------------------------------------------------------------------------------------
 
 const LEAF_TYPE_ASSET=0
+const LEAF_TYPE_MESSAGE=1
 use miden::protocol::note::NOTE_TYPE_PUBLIC
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
@@ -241,6 +261,142 @@ pub proc bridge_out
         exec.create_burn_note
         # => [pad(16)]
     end
+end
+
+#! Bridges a message out via the AggLayer.
+#!
+#! This procedure handles the complete bridge-message operation:
+#! 1. Validates the note is public and the destination is not Miden
+#! 2. Builds the leaf data with leafType=1, the caller-provided metadata hash,
+#!    and the note sender's address as the origin token address
+#! 3. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
+#!
+#! Unlike bridge_out, this procedure does NOT involve any faucet lookup, burn, or lock operations.
+#! The amount field is always zero.
+#!
+#! Inputs:  [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - dest_network_id is the u32 destination network/chain ID.
+#! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
+#! - metadata_hash(8) is the Keccak256 hash of the message metadata (8 u32 limbs).
+#!
+#! Panics if:
+#! - the note calling `bridge_message` is not public.
+#! - destination network ID is Miden's AggLayer network ID.
+#!
+#! Invocation: call
+@locals(14)
+pub proc bridge_message
+    exec.active_note::is_public assert.err=ERR_BRIDGE_MSG_NOTE_MUST_BE_PUBLIC
+    # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+
+    dup exec.utils::swap_u32_bytes push.MIDEN_NETWORK_ID neq
+    assert.err=ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN
+    # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+
+    # Save all 14 input values to locals. Within a `call` frame, the stack floor is 16,
+    # so `loc_store` at depth 16 pops the value into local memory while keeping depth at 16
+    # (zeros fill from below). This drains the meaningful input values into locals.
+    loc_store.BRIDGE_MSG_DEST_NETWORK_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_0_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_1_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_2_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_3_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_4_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_0_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_1_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_2_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_3_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_4_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_5_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_6_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_7_LOC
+    # => [pad(16)]
+
+    # --- 1. Store destination_network ---
+    loc_load.BRIDGE_MSG_DEST_NETWORK_LOC
+    push.LEAF_DATA_START_PTR push.DESTINATION_NETWORK_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # --- 2. Store destination_address (5 felts) ---
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_4_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_3_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_2_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_1_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_0_LOC
+    push.LEAF_DATA_START_PTR push.DESTINATION_ADDRESS_OFFSET add
+    exec.write_address_to_memory
+    # => [pad(16)]
+
+    # --- 3. Store metadata_hash (8 felts) ---
+    loc_load.BRIDGE_MSG_METADATA_HASH_7_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_6_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_5_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_4_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_3_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_2_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_1_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_0_LOC
+    push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
+    movdn.8
+    exec.utils::mem_store_double_word_unaligned
+    # => [pad(16)]
+
+    # --- 4. Store leafType=1 (byte-swapped) ---
+    push.LEAF_TYPE_MESSAGE
+    exec.utils::swap_u32_bytes
+    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # --- 5. Store originNetwork = MIDEN_NETWORK_ID (byte-swapped to LE) ---
+    push.MIDEN_NETWORK_ID
+    exec.utils::swap_u32_bytes
+    push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # --- 6. Store origin_token_address from note sender ---
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, pad(16)]
+
+    # from_account_id expects [suffix, prefix] — get_sender already returns this order
+    exec.eth_address::from_account_id
+    # => [limb0, limb1, limb2, limb3, limb4, pad(16)]
+
+    push.LEAF_DATA_START_PTR push.ORIGIN_TOKEN_ADDRESS_OFFSET add
+    exec.write_address_to_memory
+    # => [pad(16)]
+
+    # --- 7. Store amount = 0 (8 felts, all zero) ---
+    # Push 8 zeros and the address above the call frame floor, then store.
+    padw padw
+    push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
+    movdn.8
+    exec.utils::mem_store_double_word_unaligned
+    # => [pad(16)]
+
+    # --- 8. Zero the 3 padding felts ---
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add
+    mem_store
+    # => [pad(16)]
+
+    # --- 9. Compute leaf value and append to LET ---
+    push.LEAF_DATA_START_PTR
+    exec.add_leaf_bridge
+    # => [pad(16)]
 end
 
 # HELPER PROCEDURES

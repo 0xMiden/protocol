@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added outbound message bridging (`bridge_message`) to the AggLayer bridge, enabling arbitrary cross-chain messages from Miden to Ethereum/AggLayer chains via leafType=1 leaves in the Local Exit Tree. Includes `BRIDGE_MESSAGE` note script, `MessageNote` Rust type, and `from_account_id` address conversion ([#3012](https://github.com/0xMiden/protocol/pull/3012)).
+
 ### Changes
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).

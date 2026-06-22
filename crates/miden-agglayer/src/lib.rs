@@ -25,6 +25,7 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
+pub mod message_note;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod update_ger_note;
@@ -55,6 +56,7 @@ pub use eth_types::{
     MetadataHash,
 };
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
+pub use message_note::MessageNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
 

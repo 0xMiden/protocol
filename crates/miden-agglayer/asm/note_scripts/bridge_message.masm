@@ -1,0 +1,119 @@
+use agglayer::bridge::bridge_out
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const BRIDGE_MSG_NOTE_ASSETS_PTR = 0
+const BRIDGE_MSG_NOTE_STORAGE_PTR = 8
+const BRIDGE_MSG_NOTE_NUM_STORAGE_ITEMS = 14
+
+# ERRORS
+# =================================================================================================
+const ERR_BRIDGE_MSG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="BRIDGE_MESSAGE script expects exactly 14 note storage items"
+const ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH="BRIDGE_MESSAGE note attachment target account does not match consuming account"
+const ERR_BRIDGE_MSG_NOTE_HAS_ASSETS="BRIDGE_MESSAGE note must not contain any assets"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Bridge Message note script: bridges a message (no assets) from Miden to an AggLayer-connected
+#! chain.
+#!
+#! This note can be consumed in two ways:
+#! - If the consuming account is the sender (reclaim case): no-op, since there are no assets.
+#! - If the consuming account is the Agglayer Bridge: the note details are hashed into a leaf and
+#!   appended to the Local Exit Tree.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Note storage layout (14 felts total):
+#! - destination_network [0]     : 1 felt
+#! - destination_address [1..5]  : 5 felts
+#! - metadata_hash       [6..13] : 8 felts
+#!
+#! Where:
+#! - destination_network: Destination network identifier (uint32)
+#! - destination_address: 20-byte address as 5 u32 felts
+#! - metadata_hash: 32-byte hash as 8 u32 felts
+#!
+#! Note attachment is constructed from a NetworkAccountTarget standard:
+#! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
+#!
+#! Panics if:
+#! - The note contains any assets (message notes must be asset-free).
+#! - The note does not contain exactly 14 storage items.
+#! - The note attachment does not target the consuming account.
+#! - The note is not public (enforced by `bridge_message`).
+#! - The destination network ID equals Miden's AggLayer network ID.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Check if reclaim
+    exec.active_account::get_id
+    # => [account_id_prefix, account_id_suffix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_id_suffix, sender_id_prefix, account_id_prefix, account_id_suffix, pad(16)]
+
+    exec.account_id::is_equal
+    # => [reclaim, pad(16)]
+
+    # BRIDGE_MESSAGE note is being reclaimed; no-op since there are no assets
+    if.true
+        # Nothing to do on reclaim — message notes carry no assets.
+        # => [pad(16)]
+    else
+        # Ensure note attachment targets the consuming bridge account.
+        exec.network_account_target::active_account_matches_target_account
+        assert.err=ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH
+        # => [pad(16)]
+
+        # Assert the note carries no assets (message notes are asset-free).
+        push.BRIDGE_MSG_NOTE_ASSETS_PTR exec.active_note::get_assets
+        # => [num_assets, pad(16)]
+
+        assertz.err=ERR_BRIDGE_MSG_NOTE_HAS_ASSETS
+        # => [pad(16)]
+
+        # Store note storage -> mem[8..22]
+        push.BRIDGE_MSG_NOTE_STORAGE_PTR exec.active_note::get_storage
+        # => [num_storage_items, pad(16)]
+
+        # Validate the number of storage items
+        push.BRIDGE_MSG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_BRIDGE_MSG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        # => [pad(16)]
+
+        # Load the 14 storage felts as 4 words in reverse order so the stack top matches
+        # the expected call layout: [dest_network, da(5), mh(8), pad(2)]
+        #
+        # Memory layout (BRIDGE_MSG_NOTE_STORAGE_PTR = 8, 4 words):
+        #   word at addr  8: [dest_network, da0, da1, da2]
+        #   word at addr 12: [da3, da4, mh0, mh1]
+        #   word at addr 16: [mh2, mh3, mh4, mh5]
+        #   word at addr 20: [mh6, mh7, 0, 0]
+        #
+        # Each `padw` + `mem_loadw_le.X` pushes 4 zeros then overwrites them with the word at X.
+        # Loading in reverse address order so dest_network ends up on top.
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.12 mem_loadw_le
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.8 mem_loadw_le
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.4 mem_loadw_le
+        padw mem_loadw_le.BRIDGE_MSG_NOTE_STORAGE_PTR
+        # => [dest_network, da(5), mh(8), 0, 0, pad(16)]
+        # Top 16 elements: [dest_network, da(5), mh(8), 0, 0]
+
+        call.bridge_out::bridge_message
+        # => [pad(16), pad(16)]
+
+        # Clean up the 16 extra elements below the call's return frame
+        dropw dropw dropw dropw
+        # => [pad(16)]
+    end
+    # => [pad(16)]
+end

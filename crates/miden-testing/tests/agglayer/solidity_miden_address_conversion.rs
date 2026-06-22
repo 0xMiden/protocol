@@ -176,3 +176,51 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// MASM unit test: verifies that `eth_address::from_account_id` produces the same 5 felts
+/// as the Rust `EthEmbeddedAccountId::from_account_id().to_elements()`.
+#[tokio::test]
+async fn test_from_account_id_matches_rust() -> anyhow::Result<()> {
+    use miden_protocol::account::{AccountIdVersion, AccountType};
+
+    let account_id = AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountType::Public);
+
+    let expected_elements: Vec<Felt> =
+        EthEmbeddedAccountId::from_account_id(account_id).to_elements();
+    assert_eq!(expected_elements.len(), 5);
+
+    let prefix_val = account_id.prefix().as_u64();
+    let suffix_val = account_id.suffix().as_canonical_u64();
+
+    let source = format!(
+        r#"
+            use miden::core::sys
+            use agglayer::common::eth_address
+
+            begin
+                push.{prefix_val} push.{suffix_val}
+                exec.eth_address::from_account_id
+                exec.sys::truncate_stack
+            end
+        "#,
+    );
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_library())
+        .unwrap()
+        .assemble_program(&source)
+        .unwrap();
+
+    let exec_output = execute_program_with_default_host(program).await?;
+    let actual: Vec<u64> = exec_output.stack[0..5].iter().map(|f| f.as_canonical_u64()).collect();
+    let expected: Vec<u64> = expected_elements.iter().map(|f| f.as_canonical_u64()).collect();
+
+    assert_eq!(
+        actual, expected,
+        "MASM from_account_id output should match Rust EthEmbeddedAccountId::to_elements()"
+    );
+
+    Ok(())
+}
