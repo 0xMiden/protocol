@@ -1,6 +1,5 @@
 use core::num::NonZeroU16;
 use core::slice;
-use std::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
@@ -110,24 +109,34 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    // assert that the removed asset is in the delta
-    let mut removed_assets: BTreeMap<_, _> = executed_transaction
-        .account_delta()
-        .vault()
-        .removed_assets()
-        .map(|asset| (asset.vault_key(), asset))
-        .collect();
-    assert_eq!(removed_assets.len(), 2, "two assets should have been removed");
+    // Assert that the non-fungible asset was removed
+    let vault_patch = executed_transaction.account_patch().vault();
     assert_eq!(
-        removed_assets.remove(&sent_asset0.vault_key()).unwrap(),
-        sent_asset0,
-        "sent asset0 should be in removed assets"
+        vault_patch.removed_asset_keys().count(),
+        1,
+        "the non-fungible asset should have been completely removed"
     );
     assert_eq!(
-        removed_assets.remove(&sent_asset1.vault_key()).unwrap(),
-        sent_asset1.unwrap_fungible().add(sent_asset2.unwrap_fungible())?.into(),
-        "sent asset1 + sent_asset2 should be in removed assets"
+        vault_patch.removed_asset_keys().next().unwrap(),
+        &sent_asset0.vault_key(),
+        "the non-fungible asset should have been completely removed"
     );
+
+    // Assert that the fungible asset's value was decremented
+    assert_eq!(
+        vault_patch.updated_assets().count(),
+        1,
+        "the fungible asset should have been updated"
+    );
+    // Expected value is total - (sent_asset1 + sent_asset2).
+    let expected_removed = sent_asset1.unwrap_fungible().add(sent_asset2.unwrap_fungible())?;
+    let expected_asset_value = total_asset.unwrap_fungible().sub(expected_removed)?.into();
+    assert_eq!(
+        vault_patch.updated_assets().next().unwrap(),
+        expected_asset_value,
+        "fungible asset should have been decremented"
+    );
+
     assert_eq!(
         executed_transaction.output_notes().get_note(0),
         &RawOutputNote::Partial(p2any_note.into())

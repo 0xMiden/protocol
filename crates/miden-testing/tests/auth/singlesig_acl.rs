@@ -2,6 +2,7 @@ use core::slice;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
@@ -14,7 +15,6 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -201,9 +201,9 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
         .await
         .expect("no trigger, no auth should succeed");
     assert_eq!(
-        executed.account_delta().nonce_delta(),
-        Felt::ZERO,
-        "no auth but should still trigger nonce increment"
+        executed.account_patch().final_nonce(),
+        None,
+        "no auth should not trigger nonce increment"
     );
 
     Ok(())
@@ -246,9 +246,9 @@ async fn test_acl_with_allow_unauthorized_output_notes(
         .await
         .expect("no trigger, no auth should succeed");
     assert_eq!(
-        executed.account_delta().nonce_delta(),
-        Felt::ZERO,
-        "no auth but should still trigger nonce increment"
+        executed.account_patch().final_nonce(),
+        None,
+        "no auth should not trigger nonce increment"
     );
 
     Ok(())
