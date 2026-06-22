@@ -735,20 +735,6 @@ pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
 
-#! Returns the faucet ID of the fee asset as defined in the transaction's reference block.
-#!
-#! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
-#!
-#! Where:
-#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the fee asset.
-pub proc get_fee_faucet_id
-    mem_load.FEE_FAUCET_ID_PREFIX_PTR
-    mem_load.FEE_FAUCET_ID_SUFFIX_PTR
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
-end
-
 #! Returns the verification base fee from the transaction's reference block.
 #!
 #! Inputs:  []

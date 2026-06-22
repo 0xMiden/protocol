@@ -53,7 +53,6 @@ impl LocalTransactionProver {
         ref_block_commitment: Word,
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let fee = tx_outputs.fee();
         let expiration_block_num = tx_outputs.expiration_block_num();
         let (account_header, output_notes) = tx_outputs.into_parts();
 
@@ -89,7 +88,6 @@ impl LocalTransactionProver {
             output_notes,
             ref_block_num,
             ref_block_commitment,
-            fee,
             expiration_block_num,
             proof,
         )
