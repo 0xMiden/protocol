@@ -19,12 +19,14 @@ use miden_protocol::account::{
     AccountType,
     StorageMap,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
     StorageSlotContent,
     StorageSlotId,
     StorageSlotName,
     StorageSlotPatch,
     StorageSlotType,
+    StorageValuePatch,
 };
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
@@ -833,21 +835,21 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     assert_matches!(
         tx.account_patch().storage().get(&slot_name0).unwrap(),
-        StorageSlotPatch::Value(value) => {
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
         tx.account_patch().storage().get(&slot_name1).unwrap(),
-        StorageSlotPatch::Value(value) => {
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
         tx.account_patch().storage().get(&slot_name2).unwrap(),
-        StorageSlotPatch::Map(map_patch) => {
+        StorageSlotPatch::Map(StorageMapPatch::Create { entries }) => {
             let expected = &BTreeMap::from_iter(map_entries);
-            assert_eq!(expected, map_patch.entries())
+            assert_eq!(expected, entries.as_map())
         }
     );
 
@@ -1476,7 +1478,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     assert_eq!(executed_tx.account_patch().storage().values().count(), 1);
     assert_eq!(
         executed_tx.account_patch().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotPatch::Value(slot_value),
+        &StorageSlotPatch::Value(StorageValuePatch::Update { value: slot_value }),
     );
     Ok(())
 }

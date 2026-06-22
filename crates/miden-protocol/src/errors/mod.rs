@@ -458,8 +458,28 @@ pub enum AccountPatchError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
+    #[error("storage map {0} cannot be mutated because it's delta operation is set to remove")]
+    StorageMapDeltaOpIsRemove(StorageSlotName),
+
+    #[error("storage slot name {0} is assigned to more than one slot patch")]
+    DuplicateStorageSlotName(StorageSlotName),
+
     #[error("cannot merge two full state patches")]
     MergingFullStatePatches,
+
+    #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
+    StoragePatchMergeDoubleCreate(StorageSlotName),
+
+    #[error(
+        "failed to merge storage patch for slot {0}: cannot create a slot after it was updated, which indicates it already exists"
+    )]
+    StoragePatchMergeCreateAfterUpdate(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot update slot after it was removed")]
+    StoragePatchMergeUpdateAfterRemove(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot remove a slot twice")]
+    StoragePatchMergeDoubleRemove(StorageSlotName),
 
     #[error(
         "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"

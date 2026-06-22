@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
@@ -8,9 +9,11 @@ use crate::account::{
     StorageMap,
     StorageMapKey,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlot,
     StorageSlotName,
     StorageSlotPatch,
+    StorageValuePatch,
 };
 use crate::utils::sync::LazyLock;
 
@@ -21,67 +24,70 @@ impl AccountStoragePatch {
     // CONSTRUCTORS
     // ----------------------------------------------------------------------------------------
 
-    /// Creates an [`AccountStoragePatch`] from the given iterators.
+    /// Creates an [`AccountStoragePatch`] of `Update` patches from the given iterators.
+    ///
+    /// Cleared and updated values are recorded as [`StorageValuePatch::Update`]; the provided map
+    /// patches are stored as-is.
     pub fn from_iters(
         cleared_values: impl IntoIterator<Item = StorageSlotName>,
         updated_values: impl IntoIterator<Item = (StorageSlotName, Word)>,
         updated_maps: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
     ) -> Self {
-        let deltas =
-            cleared_values
-                .into_iter()
-                .map(|slot_name| (slot_name, StorageSlotPatch::with_empty_value()))
-                .chain(updated_values.into_iter().map(|(slot_name, slot_value)| {
-                    (slot_name, StorageSlotPatch::Value(slot_value))
-                }))
-                .chain(
-                    updated_maps.into_iter().map(|(slot_name, map_patch)| {
-                        (slot_name, StorageSlotPatch::Map(map_patch))
-                    }),
+        let patches: BTreeMap<_, _> = cleared_values
+            .into_iter()
+            .map(|slot_name| {
+                (
+                    slot_name,
+                    StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() }),
                 )
-                .collect();
+            })
+            .chain(updated_values.into_iter().map(|(slot_name, value)| {
+                (slot_name, StorageSlotPatch::Value(StorageValuePatch::Update { value }))
+            }))
+            .chain(
+                updated_maps
+                    .into_iter()
+                    .map(|(slot_name, map_patch)| (slot_name, StorageSlotPatch::Map(map_patch))),
+            )
+            .collect();
 
-        Self::from_raw(deltas)
+        Self::from_raw(patches)
     }
 
     // ACCESSORS
     // -------------------------------------------------------------------------------------------
 
-    /// Returns the updated value for the given slot, or `None` if the slot was not updated.
-    ///
-    /// # Panics
-    /// Panics if the slot patch is a map.
+    /// Returns the value patched into the given slot, or `None` if the slot is absent, removed, or
+    /// a map slot.
     pub fn get_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
-        self.get(slot_name).cloned().map(StorageSlotPatch::unwrap_value)
+        match self.get(slot_name)? {
+            StorageSlotPatch::Value(value_patch) => value_patch.value(),
+            StorageSlotPatch::Map(_) => None,
+        }
     }
 
-    /// Returns the map patch for the given slot, or `None` if the slot was not updated.
-    ///
-    /// # Panics
-    /// Panics if the slot patch is a value.
+    /// Returns the map patch for the given slot, or `None` if the slot is absent or a value slot.
     pub fn get_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatch> {
-        self.get(slot_name).map(|patch| match patch {
-            StorageSlotPatch::Map(map_patch) => map_patch,
-            StorageSlotPatch::Value(_) => panic!("called get_map on a value slot patch"),
-        })
+        match self.get(slot_name)? {
+            StorageSlotPatch::Map(map_patch) => Some(map_patch),
+            StorageSlotPatch::Value(_) => None,
+        }
     }
 
-    /// Returns the updated value for the given map entry, or `None` if the slot or key was not
-    /// updated.
-    ///
-    /// # Panics
-    /// Panics if the slot patch is a value.
+    /// Returns the value patched for the given map entry, or `None` if the slot, key, or entries
+    /// are absent.
     pub fn get_map_value(&self, slot_name: &StorageSlotName, key: &StorageMapKey) -> Option<Word> {
-        self.get_map(slot_name)?.entries().get(key).copied()
+        self.get_map(slot_name)?.entries()?.as_map().get(key).copied()
     }
 
     // MUTATORS
     // -------------------------------------------------------------------------------------------
 
     pub fn add_cleared_items(mut self, items: impl IntoIterator<Item = StorageSlotName>) -> Self {
-        items
-            .into_iter()
-            .for_each(|slot_name| self.set_item(slot_name, Word::empty()).expect("TODO"));
+        items.into_iter().for_each(|slot_name| {
+            self.update_value(slot_name, Word::empty())
+                .expect("value slot patch should not collide with a map slot patch")
+        });
 
         self
     }
@@ -90,8 +96,9 @@ impl AccountStoragePatch {
         mut self,
         items: impl IntoIterator<Item = (StorageSlotName, Word)>,
     ) -> Self {
-        items.into_iter().for_each(|(slot_name, slot_value)| {
-            self.set_item(slot_name, slot_value).expect("TODO")
+        items.into_iter().for_each(|(slot_name, value)| {
+            self.update_value(slot_name, value)
+                .expect("value slot patch should not collide with a map slot patch")
         });
 
         self
@@ -102,12 +109,41 @@ impl AccountStoragePatch {
         items: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
     ) -> Self {
         items.into_iter().for_each(|(slot_name, map_patch)| {
-            for (key, value) in map_patch.entries() {
-                self.set_map_item(slot_name.clone(), *key, *value).expect("TODO")
+            if let Some(entries) = map_patch.entries() {
+                for (key, value) in entries.as_map() {
+                    self.update_map_item(slot_name.clone(), *key, *value)
+                        .expect("map slot patch should not collide with a value slot patch")
+                }
             }
         });
 
         self
+    }
+}
+
+impl StorageMapPatch {
+    /// Creates a new [`StorageMapPatch::Update`] from the provided iterators of cleared and updated
+    /// entries.
+    pub fn from_iters(
+        cleared_keys: impl IntoIterator<Item = StorageMapKey>,
+        updated_entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        StorageMapPatch::Update {
+            entries: StorageMapPatchEntries::from_iters(cleared_keys, updated_entries),
+        }
+    }
+}
+
+impl StorageMapPatchEntries {
+    /// Creates a new set of map patch entries from the provided iterators of cleared and updated
+    /// entries.
+    pub fn from_iters(
+        cleared_keys: impl IntoIterator<Item = StorageMapKey>,
+        updated_entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        Self::from_raw(BTreeMap::from_iter(
+            cleared_keys.into_iter().map(|key| (key, Word::empty())).chain(updated_entries),
+        ))
     }
 }
 

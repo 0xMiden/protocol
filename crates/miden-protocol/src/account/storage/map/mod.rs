@@ -4,7 +4,7 @@ use miden_core::EMPTY_WORD;
 use miden_crypto::merkle::EmptySubtreeRoots;
 
 use super::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, Word};
-use crate::account::StorageMapPatch;
+use crate::account::StorageMapPatchEntries;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::{AccountError, StorageMapError};
@@ -188,10 +188,10 @@ impl StorageMap {
             .map_err(AccountError::MaxNumStorageMapLeavesExceeded)
     }
 
-    /// Applies the provided delta to this account storage.
-    pub fn apply_patch(&mut self, delta: &StorageMapPatch) -> Result<Word, AccountError> {
+    /// Applies the provided map patch entries to this storage map.
+    pub fn apply_patch(&mut self, entries: &StorageMapPatchEntries) -> Result<Word, AccountError> {
         // apply the updated and cleared leaves to the storage map
-        for (&key, &value) in delta.entries().iter() {
+        for (&key, &value) in entries.as_map().iter() {
             self.insert(key, value)?;
         }
 

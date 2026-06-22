@@ -171,8 +171,8 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
 
     // Slots 2 and 3 are absent because their values haven't effectively changed.
     let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.set_item(slot_0_name.clone(), slot_0_final_value)?;
-    expected_storage_patch.set_item(slot_1_name.clone(), slot_1_final_value)?;
+    expected_storage_patch.update_value(slot_0_name.clone(), slot_0_final_value)?;
+    expected_storage_patch.update_value(slot_1_name.clone(), slot_1_final_value)?;
 
     AccountUpdateTest {
         initial_storage_slots: vec![
@@ -312,9 +312,9 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
 
     // map2 should not appear in the patch since its only change normalized to a no-op.
     let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.set_map_item(slot_0_name.clone(), key0, key0_final_value)?;
-    expected_storage_patch.set_map_item(slot_0_name.clone(), key1, key1_final_value)?;
-    expected_storage_patch.set_map_item(slot_1_name.clone(), key3, key3_final_value)?;
+    expected_storage_patch.update_map_item(slot_0_name.clone(), key0, key0_final_value)?;
+    expected_storage_patch.update_map_item(slot_0_name.clone(), key1, key1_final_value)?;
+    expected_storage_patch.update_map_item(slot_1_name.clone(), key3, key3_final_value)?;
 
     AccountUpdateTest {
         initial_storage_slots: vec![
@@ -645,8 +645,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
     let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.set_item(MOCK_VALUE_SLOT0.clone(), updated_slot_value)?;
-    expected_storage_patch.set_map_item(
+    expected_storage_patch.update_value(MOCK_VALUE_SLOT0.clone(), updated_slot_value)?;
+    expected_storage_patch.update_map_item(
         MOCK_MAP_SLOT.clone(),
         updated_map_key,
         updated_map_value,
@@ -758,7 +758,14 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_patch_entries = tx.account_patch().storage().get_map(&slot_name).unwrap().entries();
+        let map_patch_entries = tx
+            .account_patch()
+            .storage()
+            .get_map(&slot_name)
+            .unwrap()
+            .entries()
+            .expect("map patch should have entries")
+            .as_map();
         let expected: BTreeMap<_, _> = expected_map.entries().map(|(k, v)| (*k, *v)).collect();
         assert_eq!(map_patch_entries, &expected, "map delta does not match for slot {slot_name}",);
     }
@@ -864,7 +871,14 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
     let patch = proven_tx.account_update().details().unwrap_public();
 
     assert_eq!(patch.storage().maps().count(), 1);
-    assert!(patch.storage().get_map(&slot_name0).unwrap().is_empty());
+    assert!(
+        patch
+            .storage()
+            .get_map(&slot_name0)
+            .unwrap()
+            .entries()
+            .is_some_and(|entries| entries.is_empty())
+    );
 
     let recreated_account = Account::try_from(patch)?;
     // The recreated account should match the original account with the nonce incremented (and the

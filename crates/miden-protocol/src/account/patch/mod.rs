@@ -5,18 +5,17 @@ mod update_details;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
+pub use storage::{
+    AccountStoragePatch,
+    StorageMapPatch,
+    StorageMapPatchEntries,
+    StorageSlotPatch,
+    StorageValuePatch,
+};
 pub use update_details::AccountUpdateDetails;
 pub use vault::AccountVaultPatch;
 
-use crate::account::{
-    Account,
-    AccountCode,
-    AccountId,
-    AccountStorage,
-    StorageSlot,
-    StorageSlotType,
-};
+use crate::account::{Account, AccountCode, AccountId, AccountStorage};
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountError, AccountPatchError};
@@ -329,7 +328,7 @@ impl TryFrom<&AccountPatch> for Account {
     /// Returns an error if:
     /// - The patch does not carry account code or a final nonce.
     /// - Applying the vault patch to an empty vault fails.
-    /// - Applying the storage patch to the reconstructed initial storage fails.
+    /// - Applying the storage patch to empty storage fails.
     fn try_from(patch: &AccountPatch) -> Result<Self, Self::Error> {
         if !patch.is_full_state() {
             return Err(AccountError::PartialStatePatchToAccount);
@@ -342,16 +341,9 @@ impl TryFrom<&AccountPatch> for Account {
         let mut vault = AssetVault::default();
         vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
 
-        let mut empty_storage_slots = Vec::new();
-        for (slot_name, slot_patch) in patch.storage().slots() {
-            let slot = match slot_patch.slot_type() {
-                StorageSlotType::Value => StorageSlot::with_empty_value(slot_name.clone()),
-                StorageSlotType::Map => StorageSlot::with_empty_map(slot_name.clone()),
-            };
-            empty_storage_slots.push(slot);
-        }
-        let mut storage = AccountStorage::new(empty_storage_slots)
-            .expect("storage patch should contain a valid number of slots");
+        // A full state patch consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
+        let mut storage = AccountStorage::default();
         storage.apply_patch(patch.storage())?;
 
         Account::new(patch.id(), vault, storage, code, nonce, None)
@@ -447,6 +439,8 @@ mod tests {
         StorageMapKey,
         StorageMapPatch,
         StorageSlotName,
+        StorageSlotPatch,
+        StorageValuePatch,
     };
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::errors::{AccountError, AccountPatchError};
@@ -586,8 +580,11 @@ mod tests {
         let slot_name = StorageSlotName::mock(4);
         let slot_value = Word::from([1, 2, 3, 4u32]);
 
-        let storage_patch =
-            AccountStoragePatch::from_iters([], [(slot_name.clone(), slot_value)], []);
+        // A full state patch is composed of `Create` slot patches.
+        let storage_patch = AccountStoragePatch::from_entries([(
+            slot_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: slot_value }),
+        )])?;
 
         let patch = AccountPatch::new(
             account_id,
@@ -744,7 +741,7 @@ mod tests {
         let map_storage = AccountStoragePatch::from_iters(
             [],
             [],
-            [(shared_slot.clone(), StorageMapPatch::default())],
+            [(shared_slot.clone(), StorageMapPatch::from_iters([], []))],
         );
 
         let mut patch = AccountPatch::new(
@@ -871,9 +868,10 @@ mod tests {
 
         assert_eq!(patch.storage().num_slots(), 1);
         let merged_map = patch.storage().get_map(&map_slot).expect("map slot should be present");
-        assert_eq!(merged_map.entries().len(), 2);
-        assert_eq!(merged_map.entries().get(&key_self).copied(), Some(value_self));
-        assert_eq!(merged_map.entries().get(&key_other).copied(), Some(value_other));
+        let merged_entries = merged_map.entries().expect("map patch should have entries");
+        assert_eq!(merged_entries.as_map().len(), 2);
+        assert_eq!(merged_entries.as_map().get(&key_self).copied(), Some(value_self));
+        assert_eq!(merged_entries.as_map().get(&key_other).copied(), Some(value_other));
 
         Ok(())
     }

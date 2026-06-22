@@ -594,6 +594,7 @@ mod tests {
         AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
+        StorageMapPatchEntries,
         StorageSlotName,
     };
     use crate::block::BlockNumber;
@@ -659,7 +660,9 @@ mod tests {
         for _ in 0..required_entries {
             map.insert(StorageMapKey::from_raw(rand_value()), rand_value::<Word>());
         }
-        let storage_patch = StorageMapPatch::new(map);
+        let storage_patch = StorageMapPatch::Update {
+            entries: StorageMapPatchEntries::from_raw(map),
+        };
 
         // A patch that exceeds the limit returns an error.
         let storage_patch =

@@ -50,7 +50,9 @@ pub use patch::{
     AccountUpdateDetails,
     AccountVaultPatch,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlotPatch,
+    StorageValuePatch,
 };
 
 pub mod delta;

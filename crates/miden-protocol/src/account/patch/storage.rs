@@ -1,5 +1,5 @@
 use alloc::collections::BTreeMap;
-use alloc::collections::btree_map::Entry;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::{
@@ -9,7 +9,7 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::errors::{AccountDeltaError, AccountPatchError};
+use crate::errors::AccountPatchError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -22,12 +22,14 @@ use crate::{EMPTY_WORD, Felt, Word, ZERO};
 // ACCOUNT STORAGE PATCH
 // ================================================================================================
 
-/// The [`AccountStoragePatch`] stores the differences between two states of account storage.
+/// The [`AccountStoragePatch`] stores the changes between two states of account storage.
 ///
-/// The patch consists of a map from [`StorageSlotName`] to [`StorageSlotPatch`].
+/// The patch consists of a map from [`StorageSlotName`] to [`StorageSlotPatch`], where each slot
+/// patch records whether the slot was created, updated, or removed (see [`StorageValuePatch`] and
+/// [`StorageMapPatch`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountStoragePatch {
-    /// The updates to the slots of the account.
+    /// The patches to the slots of the account.
     patches: BTreeMap<StorageSlotName, StorageSlotPatch>,
 }
 
@@ -38,15 +40,43 @@ impl AccountStoragePatch {
     /// Domain separator for map storage slots in delta and patch commitments.
     const DOMAIN_MAP: Felt = Felt::new_unchecked(6);
 
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new, empty storage patch.
     pub fn new() -> Self {
         Self { patches: BTreeMap::new() }
     }
 
-    /// Creates a new storage patch from the provided slot patches.
+    /// Creates a new storage patch from the provided map of slot patches.
+    ///
+    /// Because the input is already a map keyed by slot name, slot name uniqueness holds by
+    /// construction. Use [`AccountStoragePatch::from_entries`] to build a patch from a sequence
+    /// that may contain duplicates.
     pub fn from_raw(patches: BTreeMap<StorageSlotName, StorageSlotPatch>) -> Self {
         Self { patches }
     }
+
+    /// Creates a new storage patch from the provided sequence of slot patches.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the same [`StorageSlotName`] appears more than once.
+    pub fn from_entries(
+        entries: impl IntoIterator<Item = (StorageSlotName, StorageSlotPatch)>,
+    ) -> Result<Self, AccountPatchError> {
+        let mut patches = BTreeMap::new();
+        for (slot_name, slot_patch) in entries {
+            if patches.insert(slot_name.clone(), slot_patch).is_some() {
+                return Err(AccountPatchError::DuplicateStorageSlotName(slot_name));
+            }
+        }
+
+        Ok(Self::from_raw(patches))
+    }
+
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns the patch for the provided slot name, or `None` if no patch exists.
     pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlotPatch> {
@@ -63,15 +93,15 @@ impl AccountStoragePatch {
         self.patches.iter()
     }
 
-    /// Returns an iterator over the updated values in this storage patch.
-    pub fn values(&self) -> impl Iterator<Item = (&StorageSlotName, &Word)> {
+    /// Returns an iterator over the value slot patches in this storage patch.
+    pub fn values(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageValuePatch)> {
         self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
-            StorageSlotPatch::Value(word) => Some((slot_name, word)),
+            StorageSlotPatch::Value(value_patch) => Some((slot_name, value_patch)),
             StorageSlotPatch::Map(_) => None,
         })
     }
 
-    /// Returns an iterator over the updated maps in this storage patch.
+    /// Returns an iterator over the map slot patches in this storage patch.
     pub fn maps(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageMapPatch)> {
         self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
             StorageSlotPatch::Value(_) => None,
@@ -79,86 +109,56 @@ impl AccountStoragePatch {
         })
     }
 
-    /// Returns true if storage patch contains no updates.
+    /// Returns true if storage patch contains no patches.
     pub fn is_empty(&self) -> bool {
         self.patches.is_empty()
     }
 
-    /// Tracks a slot change.
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Records the update of a value slot to the provided value.
     ///
     /// This does not (and cannot) validate that the slot name _exists_ or that it points to a
     /// _value_ slot in the corresponding account.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the slot name points to an existing slot that is not of type value.
-    pub fn set_item(
+    /// Returns an error if the slot name already points to a map slot patch.
+    pub fn update_value(
         &mut self,
         slot_name: StorageSlotName,
-        new_slot_value: Word,
-    ) -> Result<(), AccountDeltaError> {
-        if !self.patches.get(&slot_name).map(StorageSlotPatch::is_value).unwrap_or(true) {
-            return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
-        }
-
-        self.patches.insert(slot_name, StorageSlotPatch::Value(new_slot_value));
-
-        Ok(())
+        value: Word,
+    ) -> Result<(), AccountPatchError> {
+        self.set_value_slot(slot_name, StorageValuePatch::Update { value })
     }
 
-    /// Tracks a map item change.
-    ///
-    /// This does not (and cannot) validate that the slot name _exists_ or that it points to a
-    /// _map_ slot in the corresponding account.
+    /// Records the update of a map entry in an updated map slot.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the slot name points to an existing slot that is not of type map.
-    pub fn set_map_item(
+    /// - the slot name already points to a value slot patch.
+    /// - the storage map's delta operation is "Remove".
+    pub fn update_map_item(
         &mut self,
         slot_name: StorageSlotName,
         key: StorageMapKey,
-        new_value: Word,
-    ) -> Result<(), AccountDeltaError> {
-        match self
-            .patches
-            .entry(slot_name.clone())
-            .or_insert(StorageSlotPatch::Map(StorageMapPatch::default()))
-        {
-            StorageSlotPatch::Value(_) => {
-                return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
-            },
-            StorageSlotPatch::Map(storage_map_patch) => {
-                storage_map_patch.insert(key, new_value);
-            },
-        };
-
+        value: Word,
+    ) -> Result<(), AccountPatchError> {
+        self.map_entries_mut(slot_name, false)?.insert(key, value);
         Ok(())
     }
 
-    /// Inserts an empty storage map patch for the provided slot name.
-    ///
-    /// This is useful for full state patches to represent an empty map in the patch.
-    ///
-    /// This overwrites the existing slot patch, if any.
-    pub fn insert_empty_map_patch(&mut self, slot_name: StorageSlotName) {
-        self.patches.insert(slot_name, StorageSlotPatch::with_empty_map());
-    }
-
-    /// Merges another patch into this one, overwriting any existing values.
+    /// Merges another patch into this one, with the entries of `other` taking precedence.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         for (slot_name, slot_patch) in other.patches {
-            match self.patches.entry(slot_name.clone()) {
-                Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(slot_patch);
+            match self.patches.get_mut(&slot_name) {
+                None => {
+                    self.patches.insert(slot_name, slot_patch);
                 },
-                Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry
-                        .get_mut()
-                        .merge(slot_patch)
-                        .ok_or(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name))?;
+                Some(existing) => {
+                    existing.merge(&slot_name, slot_patch)?;
                 },
             }
         }
@@ -166,52 +166,51 @@ impl AccountStoragePatch {
         Ok(())
     }
 
-    /// Returns an iterator of all the cleared storage slots.
-    fn cleared_values(&self) -> impl Iterator<Item = &StorageSlotName> {
-        self.values().filter_map(
-            |(slot_name, slot_value)| {
-                if slot_value.is_empty() { Some(slot_name) } else { None }
-            },
-        )
+    /// Consumes self and returns the underlying map of the storage patch.
+    pub fn into_map(self) -> BTreeMap<StorageSlotName, StorageSlotPatch> {
+        self.patches
     }
 
-    /// Returns an iterator of all the updated storage slots.
-    fn updated_values(&self) -> impl Iterator<Item = (&StorageSlotName, &Word)> {
-        self.values().filter_map(|(slot_name, slot_value)| {
-            if !slot_value.is_empty() {
-                Some((slot_name, slot_value))
-            } else {
-                None
-            }
-        })
-    }
+    // COMMITMENT
+    // --------------------------------------------------------------------------------------------
 
-    /// Appends the storage slots patch to the given `elements` from which the delta commitment will
-    /// be computed.
+    /// Appends the storage slot patches to the given `elements` from which the delta or patch
+    /// commitment is computed.
+    ///
+    /// TODO(storage_delta): Map [`StorageValuePatch::Create`] and [`StorageValuePatch::Update`]
+    /// (and likewise for maps) to the current structure to match the transaction kernel's
+    /// commitment. This will be refactored in a follow-up to include the delta ops in the
+    /// commitment.
     pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         for (slot_name, slot_patch) in self.patches.iter() {
             let slot_id = slot_name.id();
 
             match slot_patch {
-                StorageSlotPatch::Value(new_value) => {
+                StorageSlotPatch::Value(value_patch) => {
                     elements.extend_from_slice(&[
                         Self::DOMAIN_VALUE,
                         ZERO,
                         slot_id.suffix(),
                         slot_id.prefix(),
                     ]);
-                    elements.extend_from_slice(new_value.as_elements());
+                    elements.extend_from_slice(value_patch.committed_value().as_elements());
                 },
                 StorageSlotPatch::Map(map_patch) => {
-                    for (key, value) in map_patch.entries() {
-                        elements.extend_from_slice(key.as_elements());
-                        elements.extend_from_slice(value.as_elements());
-                    }
+                    let num_changed_entries = if let Some(map_entries) = map_patch.entries() {
+                        for (key, value) in map_entries.as_map() {
+                            elements.extend_from_slice(key.as_elements());
+                            elements.extend_from_slice(value.as_elements());
+                        }
 
-                    let num_changed_entries = Felt::try_from(map_patch.num_entries() as u64)
-                        .expect(
-                            "number of changed entries should not exceed max representable felt",
-                        );
+                        map_entries.num_entries() as u64
+                    } else {
+                        // If the map slot was removed the number of removed entries is unknown and
+                        // so we commit to 0 changed entries.
+                        0
+                    };
+                    let num_changed_entries = Felt::try_from(num_changed_entries).expect(
+                        "number of changed entries should not exceed max representable felt",
+                    );
 
                     elements.extend_from_slice(&[
                         Self::DOMAIN_MAP,
@@ -225,9 +224,62 @@ impl AccountStoragePatch {
         }
     }
 
-    /// Consumes self and returns the underlying map of the storage patch.
-    pub fn into_map(self) -> BTreeMap<StorageSlotName, StorageSlotPatch> {
-        self.patches
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Inserts the provided value slot patch, validating that the slot is not already used as a map
+    /// slot.
+    fn set_value_slot(
+        &mut self,
+        slot_name: StorageSlotName,
+        value_patch: StorageValuePatch,
+    ) -> Result<(), AccountPatchError> {
+        match self.patches.get_mut(&slot_name) {
+            None => {
+                self.patches.insert(slot_name, StorageSlotPatch::Value(value_patch));
+            },
+            Some(StorageSlotPatch::Value(current_value_patch)) => {
+                *current_value_patch = value_patch;
+            },
+            Some(_) => {
+                return Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name));
+            },
+        }
+
+        Ok(())
+    }
+
+    /// Returns a mutable reference to the entries of the map slot patch for the provided slot name,
+    /// inserting a created or updated empty map patch if no patch exists yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the slot name already points to a value slot patch.
+    /// - the storage map's delta operation is "Remove".
+    fn map_entries_mut(
+        &mut self,
+        slot_name: StorageSlotName,
+        create: bool,
+    ) -> Result<&mut StorageMapPatchEntries, AccountPatchError> {
+        let slot_patch = self.patches.entry(slot_name.clone()).or_insert_with(|| {
+            let entries = StorageMapPatchEntries::new();
+            let map_patch = if create {
+                StorageMapPatch::Create { entries }
+            } else {
+                StorageMapPatch::Update { entries }
+            };
+            StorageSlotPatch::Map(map_patch)
+        });
+
+        match slot_patch {
+            StorageSlotPatch::Map(map_patch) => map_patch
+                .entries_mut()
+                .ok_or(AccountPatchError::StorageMapDeltaOpIsRemove(slot_name)),
+            StorageSlotPatch::Value(_) => {
+                Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name))
+            },
+        }
     }
 }
 
@@ -239,76 +291,29 @@ impl Default for AccountStoragePatch {
 
 impl Serializable for AccountStoragePatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let num_cleared_values = self.cleared_values().count();
-        let num_cleared_values =
-            u8::try_from(num_cleared_values).expect("number of slots should fit in u8");
-        let cleared_values = self.cleared_values();
-
-        let num_updated_values = self.updated_values().count();
-        let num_updated_values =
-            u8::try_from(num_updated_values).expect("number of slots should fit in u8");
-        let updated_values = self.updated_values();
-
-        let num_maps = self.maps().count();
-        let num_maps = u8::try_from(num_maps).expect("number of slots should fit in u8");
-        let maps = self.maps();
-
-        target.write_u8(num_cleared_values);
-        target.write_many(cleared_values);
-
-        target.write_u8(num_updated_values);
-        target.write_many(updated_values);
-
-        target.write_u8(num_maps);
-        target.write_many(maps);
+        let num_slots = u8::try_from(self.patches.len()).expect("number of slots should fit in u8");
+        target.write_u8(num_slots);
+        target.write_many(self.slots());
     }
 
     fn get_size_hint(&self) -> usize {
-        let u8_size = 0u8.get_size_hint();
-
-        let mut storage_map_patch_size = 0;
-        for (slot_name, storage_map_patch) in self.maps() {
-            // The serialized size of each entry is the combination of slot (key) and the patch
-            // (value).
-            storage_map_patch_size += slot_name.get_size_hint() + storage_map_patch.get_size_hint();
+        let mut size = 0u8.get_size_hint();
+        for (slot_name, slot_patch) in self.patches.iter() {
+            size += slot_name.get_size_hint() + slot_patch.get_size_hint();
         }
-
-        // Length Prefixes
-        u8_size * 3 +
-        // Cleared Values
-        self.cleared_values().fold(0, |acc, slot_name| acc + slot_name.get_size_hint()) +
-        // Updated Values
-        self.updated_values().fold(0, |acc, (slot_name, slot_value)| {
-            acc + slot_name.get_size_hint() + slot_value.get_size_hint()
-        }) +
-        // Storage Map Patch
-        storage_map_patch_size
+        size
     }
 }
 
 impl Deserializable for AccountStoragePatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mut patches = BTreeMap::new();
+        let num_slots = source.read_u8()? as usize;
+        let entries = source
+            .read_many_iter::<(StorageSlotName, StorageSlotPatch)>(num_slots)?
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let num_cleared_values = source.read_u8()?;
-        for _ in 0..num_cleared_values {
-            let cleared_value: StorageSlotName = source.read()?;
-            patches.insert(cleared_value, StorageSlotPatch::with_empty_value());
-        }
-
-        let num_updated_values = source.read_u8()?;
-        for _ in 0..num_updated_values {
-            let (updated_slot, updated_value) = source.read()?;
-            patches.insert(updated_slot, StorageSlotPatch::Value(updated_value));
-        }
-
-        let num_maps = source.read_u8()? as usize;
-        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapPatch)>(num_maps)? {
-            let (slot_name, map_patch) = read_result?;
-            patches.insert(slot_name, StorageSlotPatch::Map(map_patch));
-        }
-
-        Ok(Self::from_raw(patches))
+        Self::from_entries(entries)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -317,12 +322,11 @@ impl Deserializable for AccountStoragePatch {
 
 /// The patch of a single storage slot.
 ///
-/// - [`StorageSlotPatch::Value`] contains the value to which a value slot is updated.
-/// - [`StorageSlotPatch::Map`] contains the [`StorageMapPatch`] which contains the key-value pairs
-///   that were updated in a map slot.
+/// - [`StorageSlotPatch::Value`] carries the [`StorageValuePatch`] for a value slot.
+/// - [`StorageSlotPatch::Map`] carries the [`StorageMapPatch`] for a map slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageSlotPatch {
-    Value(Word),
+    Value(StorageValuePatch),
     Map(StorageMapPatch),
 }
 
@@ -335,19 +339,6 @@ impl StorageSlotPatch {
 
     /// The type byte for map slot patches.
     const MAP: u8 = 1;
-
-    // CONSTRUCTORS
-    // ----------------------------------------------------------------------------------------
-
-    /// Returns a new [`StorageSlotPatch::Value`] with an empty value.
-    pub fn with_empty_value() -> Self {
-        Self::Value(Word::empty())
-    }
-
-    /// Returns a new [`StorageSlotPatch::Map`] with an empty map patch.
-    pub fn with_empty_map() -> Self {
-        Self::Map(StorageMapPatch::default())
-    }
 
     // ACCESSORS
     // ----------------------------------------------------------------------------------------
@@ -370,65 +361,39 @@ impl StorageSlotPatch {
         matches!(self, Self::Map(_))
     }
 
-    // MUTATORS
+    // HELPERS
     // ----------------------------------------------------------------------------------------
 
-    /// Unwraps a value slot patch into a [`Word`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if:
-    /// - `self` is not of type [`StorageSlotPatch::Value`].
-    pub fn unwrap_value(self) -> Word {
-        match self {
-            StorageSlotPatch::Value(value) => value,
-            StorageSlotPatch::Map(_) => panic!("called unwrap_value on a map slot patch"),
-        }
-    }
-
-    /// Unwraps a map slot patch into a [`StorageMapPatch`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if:
-    /// - `self` is not of type [`StorageSlotPatch::Map`].
-    pub fn unwrap_map(self) -> StorageMapPatch {
-        match self {
-            StorageSlotPatch::Value(_) => panic!("called unwrap_map on a value slot patch"),
-            StorageSlotPatch::Map(map_patch) => map_patch,
-        }
-    }
-
-    /// Merges `other` into `self`.
+    /// Merges `other` into `self`, with `other` taking precedence.
     ///
     /// # Errors
     ///
-    /// Returns `None` if:
-    /// - merging failed due to a slot type mismatch.
-    #[must_use]
-    fn merge(&mut self, other: Self) -> Option<()> {
+    /// Returns `None` if merging failed due to a slot type mismatch.
+    fn merge(&mut self, slot_name: &StorageSlotName, other: Self) -> Result<(), AccountPatchError> {
         match (self, other) {
-            (StorageSlotPatch::Value(current_value), StorageSlotPatch::Value(new_value)) => {
-                *current_value = new_value;
+            (StorageSlotPatch::Value(current), StorageSlotPatch::Value(new)) => {
+                current.merge(slot_name, new)
             },
-            (StorageSlotPatch::Map(current_map_patch), StorageSlotPatch::Map(new_map_patch)) => {
-                current_map_patch.merge(new_map_patch);
+            (StorageSlotPatch::Map(current), StorageSlotPatch::Map(new)) => {
+                current.merge(slot_name, new)
             },
-            (..) => {
-                return None;
-            },
+            (..) => Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name.clone())),
         }
-
-        Some(())
     }
 }
 
 impl From<StorageSlotContent> for StorageSlotPatch {
+    /// Converts a slot's content into a [`StorageSlotPatch`] that creates the slot. Used when
+    /// building a full state patch from an existing account.
     fn from(content: StorageSlotContent) -> Self {
         match content {
-            StorageSlotContent::Value(word) => StorageSlotPatch::Value(word),
+            StorageSlotContent::Value(value) => {
+                StorageSlotPatch::Value(StorageValuePatch::Create { value })
+            },
             StorageSlotContent::Map(storage_map) => {
-                StorageSlotPatch::Map(StorageMapPatch::from(storage_map))
+                StorageSlotPatch::Map(StorageMapPatch::Create {
+                    entries: StorageMapPatchEntries::from(storage_map),
+                })
             },
         }
     }
@@ -437,14 +402,22 @@ impl From<StorageSlotContent> for StorageSlotPatch {
 impl Serializable for StorageSlotPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            StorageSlotPatch::Value(value) => {
+            StorageSlotPatch::Value(value_patch) => {
                 target.write_u8(Self::VALUE);
-                target.write(value);
+                target.write(value_patch);
             },
-            StorageSlotPatch::Map(storage_map_patch) => {
+            StorageSlotPatch::Map(map_patch) => {
                 target.write_u8(Self::MAP);
-                target.write(storage_map_patch);
+                target.write(map_patch);
             },
+        }
+    }
+
+    fn get_size_hint(&self) -> usize {
+        let tag_size = 0u8.get_size_hint();
+        match self {
+            StorageSlotPatch::Value(value_patch) => tag_size + value_patch.get_size_hint(),
+            StorageSlotPatch::Map(map_patch) => tag_size + map_patch.get_size_hint(),
         }
     }
 }
@@ -452,16 +425,151 @@ impl Serializable for StorageSlotPatch {
 impl Deserializable for StorageSlotPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
-            Self::VALUE => {
-                let value = source.read()?;
-                Ok(Self::Value(value))
-            },
-            Self::MAP => {
-                let map_patch = source.read()?;
-                Ok(Self::Map(map_patch))
-            },
+            Self::VALUE => Ok(Self::Value(source.read()?)),
+            Self::MAP => Ok(Self::Map(source.read()?)),
             other => Err(DeserializationError::InvalidValue(format!(
                 "unknown storage slot patch variant {other}"
+            ))),
+        }
+    }
+}
+
+// STORAGE VALUE PATCH
+// ================================================================================================
+
+/// The patch of a single value storage slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageValuePatch {
+    /// Records the creation of the slot with the given value.
+    Create { value: Word },
+
+    /// Records that an existing slot was set to the given value.
+    Update { value: Word },
+
+    /// Records that the slot was removed.
+    Remove,
+}
+
+impl StorageValuePatch {
+    // CONSTANTS
+    // ----------------------------------------------------------------------------------------
+
+    const CREATE: u8 = 0;
+    const UPDATE: u8 = 1;
+    const REMOVE: u8 = 2;
+
+    // ACCESSORS
+    // ----------------------------------------------------------------------------------------
+
+    /// Returns the new value of the slot for [`StorageValuePatch::Create`] and
+    /// [`StorageValuePatch::Update`], or `None` for [`StorageValuePatch::Remove`].
+    pub fn value(&self) -> Option<Word> {
+        match self {
+            StorageValuePatch::Create { value } | StorageValuePatch::Update { value } => {
+                Some(*value)
+            },
+            StorageValuePatch::Remove => None,
+        }
+    }
+
+    // HELPERS
+    // ----------------------------------------------------------------------------------------
+
+    /// Returns the value to commit to.
+    ///
+    /// Slot removal commits to [`Word::empty`].
+    fn committed_value(&self) -> Word {
+        self.value().unwrap_or_default()
+    }
+
+    /// Merges `other` into `self`, with `other` taking precedence.
+    ///
+    /// A slot that was created and then updated remains created (with the updated value).
+    fn merge(&mut self, slot_name: &StorageSlotName, other: Self) -> Result<(), AccountPatchError> {
+        match (self, other) {
+            // (Create, _) patterns
+            // ------------------------------------------------------------------------------------
+            (StorageValuePatch::Create { .. }, StorageValuePatch::Create { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeDoubleCreate(slot_name.clone()));
+            },
+            (
+                StorageValuePatch::Create { value: current },
+                StorageValuePatch::Update { value: incoming },
+            ) => *current = incoming,
+            (current @ StorageValuePatch::Create { .. }, StorageValuePatch::Remove) => {
+                *current = StorageValuePatch::Remove
+            },
+
+            // (Update, _) patterns
+            // ------------------------------------------------------------------------------------
+            (StorageValuePatch::Update { .. }, StorageValuePatch::Create { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeCreateAfterUpdate(
+                    slot_name.clone(),
+                ));
+            },
+            (
+                StorageValuePatch::Update { value: current },
+                StorageValuePatch::Update { value: incoming },
+            ) => *current = incoming,
+            (current @ StorageValuePatch::Update { .. }, StorageValuePatch::Remove) => {
+                *current = StorageValuePatch::Remove
+            },
+
+            // (Remove, _) patterns
+            // ------------------------------------------------------------------------------------
+            (current @ StorageValuePatch::Remove, incoming @ StorageValuePatch::Create { .. }) => {
+                *current = incoming;
+            },
+            (StorageValuePatch::Remove, StorageValuePatch::Update { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeUpdateAfterRemove(
+                    slot_name.clone(),
+                ));
+            },
+            (StorageValuePatch::Remove, StorageValuePatch::Remove) => {
+                return Err(AccountPatchError::StoragePatchMergeDoubleRemove(slot_name.clone()));
+            },
+        }
+
+        Ok(())
+    }
+}
+
+impl Serializable for StorageValuePatch {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        match self {
+            StorageValuePatch::Create { value } => {
+                target.write_u8(Self::CREATE);
+                target.write(value);
+            },
+            StorageValuePatch::Update { value } => {
+                target.write_u8(Self::UPDATE);
+                target.write(value);
+            },
+            StorageValuePatch::Remove => {
+                target.write_u8(Self::REMOVE);
+            },
+        }
+    }
+
+    fn get_size_hint(&self) -> usize {
+        let tag_size = 0u8.get_size_hint();
+        match self {
+            StorageValuePatch::Create { .. } | StorageValuePatch::Update { .. } => {
+                tag_size + Word::SERIALIZED_SIZE
+            },
+            StorageValuePatch::Remove => tag_size,
+        }
+    }
+}
+
+impl Deserializable for StorageValuePatch {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        match source.read_u8()? {
+            Self::CREATE => Ok(Self::Create { value: source.read()? }),
+            Self::UPDATE => Ok(Self::Update { value: source.read()? }),
+            Self::REMOVE => Ok(Self::Remove),
+            other => Err(DeserializationError::InvalidValue(format!(
+                "unknown storage value patch variant {other}"
             ))),
         }
     }
@@ -470,44 +578,204 @@ impl Deserializable for StorageSlotPatch {
 // STORAGE MAP PATCH
 // ================================================================================================
 
-/// [StorageMapPatch] stores the differences between two states of account storage maps.
-///
-/// The differences are represented as leaf updates: a map of updated item key ([Word]) to
-/// value ([Word]). For cleared items the value is [EMPTY_WORD].
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StorageMapPatch(BTreeMap<StorageMapKey, Word>);
+/// The patch of a single map storage slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageMapPatch {
+    /// Records the creation of the map with the given entries.
+    ///
+    /// An empty entry set is meaningful to represent the creation of an empty map.
+    Create { entries: StorageMapPatchEntries },
+
+    /// Records that the entries of an existing map were changed.
+    Update { entries: StorageMapPatchEntries },
+
+    /// Records that the map slot was removed.
+    Remove,
+}
 
 impl StorageMapPatch {
-    /// Creates a new storage map patch from the provided leaves.
-    pub fn new(map: BTreeMap<StorageMapKey, Word>) -> Self {
-        Self(map)
+    // CONSTANTS
+    // ----------------------------------------------------------------------------------------
+
+    const CREATE: u8 = 0;
+    const UPDATE: u8 = 1;
+    const REMOVE: u8 = 2;
+
+    // ACCESSORS
+    // ----------------------------------------------------------------------------------------
+
+    /// Returns the entries of the map patch for [`StorageMapPatch::Create`] and
+    /// [`StorageMapPatch::Update`], or `None` for [`StorageMapPatch::Remove`].
+    pub fn entries(&self) -> Option<&StorageMapPatchEntries> {
+        match self {
+            StorageMapPatch::Create { entries } | StorageMapPatch::Update { entries } => {
+                Some(entries)
+            },
+            StorageMapPatch::Remove => None,
+        }
     }
 
-    /// Returns the number of changed entries in this map patch.
+    /// Consumes self and returns the entries of the map patch for [`StorageMapPatch::Create`] and
+    /// [`StorageMapPatch::Update`], or `None` for [`StorageMapPatch::Remove`].
+    pub fn into_entries(self) -> Option<StorageMapPatchEntries> {
+        match self {
+            StorageMapPatch::Create { entries } | StorageMapPatch::Update { entries } => {
+                Some(entries)
+            },
+            StorageMapPatch::Remove => None,
+        }
+    }
+
+    // HELPERS
+    // ----------------------------------------------------------------------------------------
+
+    /// Returns a mutable reference to the entries for [`StorageMapPatch::Create`] and
+    /// [`StorageMapPatch::Update`], or `None` for [`StorageMapPatch::Remove`].
+    fn entries_mut(&mut self) -> Option<&mut StorageMapPatchEntries> {
+        match self {
+            StorageMapPatch::Create { entries } | StorageMapPatch::Update { entries } => {
+                Some(entries)
+            },
+            StorageMapPatch::Remove => None,
+        }
+    }
+
+    /// Merges `other` into `self`, with `other` taking precedence.
+    ///
+    /// A map that was created and then updated remains created (with the merged entries).
+    fn merge(&mut self, slot_name: &StorageSlotName, other: Self) -> Result<(), AccountPatchError> {
+        match (self, other) {
+            // (Create, _) patterns
+            // ------------------------------------------------------------------------------------
+            (StorageMapPatch::Create { .. }, StorageMapPatch::Create { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeDoubleCreate(slot_name.clone()));
+            },
+            (
+                StorageMapPatch::Create { entries: current },
+                StorageMapPatch::Update { entries: incoming },
+            ) => current.merge(incoming),
+            (current @ StorageMapPatch::Create { .. }, StorageMapPatch::Remove) => {
+                *current = StorageMapPatch::Remove
+            },
+
+            // (Update, _) patterns
+            // ------------------------------------------------------------------------------------
+            (StorageMapPatch::Update { .. }, StorageMapPatch::Create { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeCreateAfterUpdate(
+                    slot_name.clone(),
+                ));
+            },
+            (
+                StorageMapPatch::Update { entries: current },
+                StorageMapPatch::Update { entries: incoming },
+            ) => current.merge(incoming),
+            (current @ StorageMapPatch::Update { .. }, StorageMapPatch::Remove) => {
+                *current = StorageMapPatch::Remove
+            },
+
+            // (Remove, _) patterns
+            // ------------------------------------------------------------------------------------
+            (current @ StorageMapPatch::Remove, incoming @ StorageMapPatch::Create { .. }) => {
+                *current = incoming;
+            },
+            (StorageMapPatch::Remove, StorageMapPatch::Update { .. }) => {
+                return Err(AccountPatchError::StoragePatchMergeUpdateAfterRemove(
+                    slot_name.clone(),
+                ));
+            },
+            (StorageMapPatch::Remove, StorageMapPatch::Remove) => {
+                return Err(AccountPatchError::StoragePatchMergeDoubleRemove(slot_name.clone()));
+            },
+        }
+
+        Ok(())
+    }
+}
+
+impl Serializable for StorageMapPatch {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        match self {
+            StorageMapPatch::Create { entries } => {
+                target.write_u8(Self::CREATE);
+                target.write(entries);
+            },
+            StorageMapPatch::Update { entries } => {
+                target.write_u8(Self::UPDATE);
+                target.write(entries);
+            },
+            StorageMapPatch::Remove => {
+                target.write_u8(Self::REMOVE);
+            },
+        }
+    }
+
+    fn get_size_hint(&self) -> usize {
+        let tag_size = 0u8.get_size_hint();
+        match self {
+            StorageMapPatch::Create { entries } | StorageMapPatch::Update { entries } => {
+                tag_size + entries.get_size_hint()
+            },
+            StorageMapPatch::Remove => tag_size,
+        }
+    }
+}
+
+impl Deserializable for StorageMapPatch {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        match source.read_u8()? {
+            Self::CREATE => Ok(Self::Create { entries: source.read()? }),
+            Self::UPDATE => Ok(Self::Update { entries: source.read()? }),
+            Self::REMOVE => Ok(Self::Remove),
+            other => Err(DeserializationError::InvalidValue(format!(
+                "unknown storage map patch variant {other}"
+            ))),
+        }
+    }
+}
+
+// STORAGE MAP PATCH ENTRIES
+// ================================================================================================
+
+/// The changed entries of a storage map, represented as a map of changed item key
+/// ([`StorageMapKey`]) to value ([`Word`]). For cleared items the value is [`EMPTY_WORD`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StorageMapPatchEntries(BTreeMap<StorageMapKey, Word>);
+
+impl StorageMapPatchEntries {
+    /// Creates a new, empty set of map patch entries.
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    /// Creates a new set of map patch entries from the provided map.
+    pub fn from_raw(entries: BTreeMap<StorageMapKey, Word>) -> Self {
+        Self(entries)
+    }
+
+    /// Returns the number of changed entries.
     pub fn num_entries(&self) -> usize {
         self.0.len()
     }
 
-    /// Returns a reference to the updated entries in this storage map patch.
+    /// Returns a reference to the changed entries.
     ///
     /// Note that the returned key is the [`StorageMapKey`].
-    pub fn entries(&self) -> &BTreeMap<StorageMapKey, Word> {
+    pub fn as_map(&self) -> &BTreeMap<StorageMapKey, Word> {
         &self.0
     }
 
-    /// Inserts an item into the storage map patch.
+    /// Inserts an entry.
     pub fn insert(&mut self, key: StorageMapKey, value: Word) {
         self.0.insert(key, value);
     }
 
-    /// Returns true if storage map patch contains no updates.
+    /// Returns true if there are no changed entries.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// Merge `other` into this patch, giving precedence to `other`.
-    pub fn merge(&mut self, other: Self) {
-        // Aggregate the changes into a map such that `other` overwrites self.
+    /// Merges `other` into these entries, with the entries of `other` taking precedence.
+    fn merge(&mut self, other: Self) {
         self.0.extend(other.0);
     }
 
@@ -516,89 +784,47 @@ impl StorageMapPatch {
         &mut self.0
     }
 
-    /// Returns an iterator of all the cleared keys in the storage map.
-    fn cleared_keys(&self) -> impl Iterator<Item = &StorageMapKey> + '_ {
-        self.0.iter().filter(|&(_, value)| value.is_empty()).map(|(key, _)| key)
-    }
-
-    /// Returns an iterator of all the updated entries in the storage map.
-    fn updated_entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> + '_ {
-        self.0.iter().filter_map(
-            |(key, value)| {
-                if !value.is_empty() { Some((key, value)) } else { None }
-            },
-        )
-    }
-}
-
-#[cfg(any(feature = "testing", test))]
-impl StorageMapPatch {
-    /// Creates a new [StorageMapPatch] from the provided iterators.
-    pub fn from_iters(
-        cleared_leaves: impl IntoIterator<Item = StorageMapKey>,
-        updated_leaves: impl IntoIterator<Item = (StorageMapKey, Word)>,
-    ) -> Self {
-        Self(BTreeMap::from_iter(
-            cleared_leaves.into_iter().map(|key| (key, EMPTY_WORD)).chain(updated_leaves),
-        ))
-    }
-
     /// Consumes self and returns the underlying map.
     pub fn into_map(self) -> BTreeMap<StorageMapKey, Word> {
         self.0
     }
 }
 
-/// Converts a [StorageMap] into a [StorageMapPatch] for initial patch construction.
-impl From<StorageMap> for StorageMapPatch {
-    fn from(map: StorageMap) -> Self {
-        StorageMapPatch::new(map.into_entries().into_iter().collect())
+impl FromIterator<(StorageMapKey, Word)> for StorageMapPatchEntries {
+    /// Creates a new set of map patch entries from the provided iterators of cleared and
+    /// updated entries.
+    fn from_iter<T: IntoIterator<Item = (StorageMapKey, Word)>>(iter: T) -> Self {
+        Self::from_raw(BTreeMap::from_iter(iter))
     }
 }
 
-impl Serializable for StorageMapPatch {
+/// Converts a [`StorageMap`] into a set of map patch entries for full state patch construction.
+impl From<StorageMap> for StorageMapPatchEntries {
+    fn from(map: StorageMap) -> Self {
+        StorageMapPatchEntries::from_raw(map.into_entries().into_iter().collect())
+    }
+}
+
+impl Serializable for StorageMapPatchEntries {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let cleared: Vec<&StorageMapKey> = self.cleared_keys().collect();
-        let updated: Vec<(&StorageMapKey, &Word)> = self.updated_entries().collect();
-
-        target.write_usize(cleared.len());
-        target.write_many(cleared.iter());
-
-        target.write_usize(updated.len());
-        target.write_many(updated.iter());
+        target.write_usize(self.0.len());
+        target.write_many(self.0.iter());
     }
 
     fn get_size_hint(&self) -> usize {
-        let cleared_keys_count = self.cleared_keys().count();
-        let updated_entries_count = self.updated_entries().count();
-
-        // Cleared Keys
-        cleared_keys_count.get_size_hint() +
-        cleared_keys_count * StorageMapKey::SERIALIZED_SIZE +
-
-        // Updated Entries
-        updated_entries_count.get_size_hint() +
-        updated_entries_count * (StorageMapKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
+        self.0.len().get_size_hint()
+            + self.0.len() * (StorageMapKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
     }
 }
 
-impl Deserializable for StorageMapPatch {
+impl Deserializable for StorageMapPatchEntries {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mut map = BTreeMap::new();
+        let count = source.read_usize()?;
+        let entries = source
+            .read_many_iter::<(StorageMapKey, Word)>(count)?
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-        let cleared_count = source.read_usize()?;
-        for _ in 0..cleared_count {
-            let cleared_key = source.read()?;
-            map.insert(cleared_key, EMPTY_WORD);
-        }
-
-        let updated_count = source.read_usize()?;
-        for _ in 0..updated_count {
-            let (updated_key, updated_value) = source.read()?;
-            map.insert(updated_key, updated_value);
-        }
-
-        Ok(Self::new(map))
+        Ok(Self::from_raw(entries))
     }
 }
 
@@ -607,12 +833,22 @@ impl Deserializable for StorageMapPatch {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use anyhow::Context;
     use assert_matches::assert_matches;
 
-    use super::{AccountStoragePatch, Deserializable, Serializable};
-    use crate::account::{StorageMapKey, StorageMapPatch, StorageSlotName, StorageSlotPatch};
-    use crate::errors::AccountDeltaError;
+    use super::{
+        AccountStoragePatch,
+        Deserializable,
+        Serializable,
+        StorageMapPatch,
+        StorageMapPatchEntries,
+        StorageSlotPatch,
+        StorageValuePatch,
+    };
+    use crate::account::{StorageMapKey, StorageSlotName};
+    use crate::errors::AccountPatchError;
     use crate::{ONE, Word};
 
     #[test]
@@ -623,18 +859,18 @@ mod tests {
         let mut patch = AccountStoragePatch::from_iters(
             [value_slot_name.clone()],
             [],
-            [(map_slot_name.clone(), StorageMapPatch::default())],
+            [(map_slot_name.clone(), StorageMapPatch::from_iters([], []))],
         );
 
         let err = patch
-            .set_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
+            .update_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
             .unwrap_err();
-        assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(value_slot_name, slot_name)
         });
 
-        let err = patch.set_item(map_slot_name.clone(), Word::empty()).unwrap_err();
-        assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+        let err = patch.update_value(map_slot_name.clone(), Word::empty()).unwrap_err();
+        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(map_slot_name, slot_name)
         });
     }
@@ -660,7 +896,7 @@ mod tests {
         assert_eq!(patch.get_value(&absent_slot), None);
 
         let map_patch = patch.get_map(&map_slot).unwrap();
-        assert_eq!(map_patch.entries().get(&map_key), Some(&map_value));
+        assert_eq!(map_patch.entries().unwrap().as_map().get(&map_key), Some(&map_value));
         assert_eq!(patch.get_map(&absent_slot), None);
 
         assert_eq!(patch.get_map_value(&map_slot, &map_key), Some(map_value));
@@ -686,96 +922,109 @@ mod tests {
         let storage_patch = AccountStoragePatch::from_iters(
             [],
             [],
-            [(StorageSlotName::mock(3), StorageMapPatch::default())],
+            [(StorageSlotName::mock(3), StorageMapPatch::from_iters([], []))],
         );
         assert!(!storage_patch.is_empty());
     }
 
     #[test]
-    fn test_serde_account_storage_patch() {
-        let storage_patch = AccountStoragePatch::new();
-        let serialized = storage_patch.to_bytes();
-        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_patch);
-        assert_eq!(storage_patch.get_size_hint(), serialized.len());
+    fn account_storage_patch_deserialize_rejects_duplicate_slot() {
+        let slot_name = StorageSlotName::mock(1);
+        // Two value slot patches for the same slot name, length-prefixed with a count of 2.
+        let mut bytes = Vec::new();
+        bytes.push(2u8);
+        let value_patch =
+            StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() });
+        for _ in 0..2 {
+            slot_name.write_into(&mut bytes);
+            value_patch.write_into(&mut bytes);
+        }
 
-        let storage_patch = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
-        let serialized = storage_patch.to_bytes();
-        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_patch);
-        assert_eq!(storage_patch.get_size_hint(), serialized.len());
-
-        let storage_patch = AccountStoragePatch::from_iters(
-            [],
-            [(StorageSlotName::mock(2), Word::from([ONE, ONE, ONE, ONE]))],
-            [],
-        );
-        let serialized = storage_patch.to_bytes();
-        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_patch);
-        assert_eq!(storage_patch.get_size_hint(), serialized.len());
-
-        let storage_patch = AccountStoragePatch::from_iters(
-            [],
-            [],
-            [(StorageSlotName::mock(3), StorageMapPatch::default())],
-        );
-        let serialized = storage_patch.to_bytes();
-        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_patch);
-        assert_eq!(storage_patch.get_size_hint(), serialized.len());
+        let err = AccountStoragePatch::read_from_bytes(&bytes).unwrap_err();
+        assert_matches!(err, super::DeserializationError::InvalidValue(_));
     }
 
     #[test]
-    fn test_serde_storage_map_patch() {
-        let storage_map_patch = StorageMapPatch::default();
-        let serialized = storage_map_patch.to_bytes();
-        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_patch);
-
-        let storage_map_patch =
-            StorageMapPatch::from_iters([StorageMapKey::from_array([1, 1, 1, 1])], []);
-        let serialized = storage_map_patch.to_bytes();
-        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_patch);
-
-        let storage_map_patch = StorageMapPatch::from_iters(
-            [],
-            [(StorageMapKey::empty(), Word::from([ONE, ONE, ONE, ONE]))],
-        );
-        let serialized = storage_map_patch.to_bytes();
-        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_patch);
+    fn from_entries_rejects_duplicate_slot() {
+        let slot_name = StorageSlotName::mock(1);
+        let err = AccountStoragePatch::from_entries([
+            (
+                slot_name.clone(),
+                StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() }),
+            ),
+            (
+                slot_name.clone(),
+                StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() }),
+            ),
+        ])
+        .unwrap_err();
+        assert_matches!(err, AccountPatchError::DuplicateStorageSlotName(name) => {
+            assert_eq!(name, slot_name)
+        });
     }
 
     #[test]
-    fn test_serde_storage_slot_value_patch() {
-        let slot_patch = StorageSlotPatch::with_empty_value();
-        let serialized = slot_patch.to_bytes();
-        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_patch);
+    fn test_serde_account_storage_patch() -> anyhow::Result<()> {
+        for storage_patch in [
+            AccountStoragePatch::new(),
+            AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []),
+            AccountStoragePatch::from_iters(
+                [],
+                [(StorageSlotName::mock(2), Word::from([ONE, ONE, ONE, ONE]))],
+                [],
+            ),
+            AccountStoragePatch::from_iters(
+                [],
+                [],
+                [(StorageSlotName::mock(3), StorageMapPatch::from_iters([], []))],
+            ),
+        ] {
+            let serialized = storage_patch.to_bytes();
+            let deserialized = AccountStoragePatch::read_from_bytes(&serialized)?;
+            assert_eq!(deserialized, storage_patch);
+            assert_eq!(storage_patch.get_size_hint(), serialized.len());
+        }
 
-        let slot_patch = StorageSlotPatch::Value(Word::from([1, 2, 3, 4u32]));
-        let serialized = slot_patch.to_bytes();
-        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_patch);
+        Ok(())
     }
 
     #[test]
-    fn test_serde_storage_slot_map_patch() {
-        let slot_patch = StorageSlotPatch::with_empty_map();
-        let serialized = slot_patch.to_bytes();
-        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_patch);
+    fn test_serde_storage_value_patch() -> anyhow::Result<()> {
+        for value_patch in [
+            StorageValuePatch::Create { value: Word::from([1, 2, 3, 4u32]) },
+            StorageValuePatch::Update { value: Word::from([1, 2, 3, 4u32]) },
+            StorageValuePatch::Remove,
+        ] {
+            let slot_patch = StorageSlotPatch::Value(value_patch);
+            let serialized = slot_patch.to_bytes();
+            let deserialized = StorageSlotPatch::read_from_bytes(&serialized)?;
+            assert_eq!(deserialized, slot_patch);
+            assert_eq!(slot_patch.get_size_hint(), serialized.len());
+        }
 
-        let map_patch = StorageMapPatch::from_iters(
+        Ok(())
+    }
+
+    #[test]
+    fn test_serde_storage_map_patch() -> anyhow::Result<()> {
+        let entries = StorageMapPatchEntries::from_iters(
             [StorageMapKey::from_array([1, 2, 3, 4])],
             [(StorageMapKey::from_array([5, 6, 7, 8]), Word::from([3, 4, 5, 6u32]))],
         );
-        let slot_patch = StorageSlotPatch::Map(map_patch);
-        let serialized = slot_patch.to_bytes();
-        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_patch);
+
+        for map_patch in [
+            StorageMapPatch::Create { entries: entries.clone() },
+            StorageMapPatch::Update { entries },
+            StorageMapPatch::Remove,
+        ] {
+            let slot_patch = StorageSlotPatch::Map(map_patch);
+            let serialized = slot_patch.to_bytes();
+            let deserialized = StorageSlotPatch::read_from_bytes(&serialized)?;
+            assert_eq!(deserialized, slot_patch);
+            assert_eq!(slot_patch.get_size_hint(), serialized.len());
+        }
+
+        Ok(())
     }
 
     #[rstest::rstest]
@@ -791,7 +1040,7 @@ mod tests {
         /// Creates a patch containing the item as an update if Some, else with the item cleared.
         fn create_patch(item: Option<u32>) -> AccountStoragePatch {
             let slot_name = StorageSlotName::mock(123);
-            let item = item.map(|x| (slot_name.clone(), Word::from([x, 0, 0, 0])));
+            let item = item.map(|value| (slot_name.clone(), Word::from([value, 0, 0, 0])));
 
             AccountStoragePatch::new()
                 .add_cleared_items(item.is_none().then_some(slot_name.clone()))
@@ -814,7 +1063,11 @@ mod tests {
     #[case::none_some(None, Some(2), Some(2))]
     #[case::some_none(Some(1), None, None)]
     #[test]
-    fn merge_maps(#[case] x: Option<u32>, #[case] y: Option<u32>, #[case] expected: Option<u32>) {
+    fn merge_maps(
+        #[case] x: Option<u32>,
+        #[case] y: Option<u32>,
+        #[case] expected: Option<u32>,
+    ) -> anyhow::Result<()> {
         fn create_patch(value: Option<u32>) -> StorageMapPatch {
             let key = StorageMapKey::from_array([10, 0, 0, 0]);
             match value {
@@ -829,8 +1082,10 @@ mod tests {
         let patch_y = create_patch(y);
         let expected = create_patch(expected);
 
-        patch_x.merge(patch_y);
+        patch_x.merge(&StorageSlotName::mock(5), patch_y)?;
 
         assert_eq!(patch_x, expected);
+
+        Ok(())
     }
 }
