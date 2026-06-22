@@ -26,7 +26,7 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -238,6 +238,43 @@ fn build_network_faucet_with_burn_switching(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds an existing public fungible faucet whose send and receive policies are registered only
+/// as reserved alternatives, with no active transfer policy. Used to exercise minting on a faucet
+/// that has reserved-but-inactive transfer policies.
+fn build_existing_faucet_with_reserved_only_transfer_policy(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let max_supply = AssetAmount::new(max_supply)?;
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .allowed_send_policy(TransferPolicy::allow_all())
+        .allowed_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -280,7 +317,8 @@ fn build_network_faucet_with_min_burn_amount(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_components(token_policy_manager);
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
@@ -330,6 +368,39 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
 
     let executed_transaction =
         execute_mint_transaction(&mut mock_chain, faucet.clone(), &params).await?;
+    verify_minted_output_note(&executed_transaction, &faucet, &params)?;
+
+    Ok(())
+}
+
+/// Checks that minting on a faucet whose transfer policies are registered only as reserved
+/// alternatives still produces assets carrying `AssetCallbackFlag::Enabled`. The mint succeeds and
+/// the output asset is enabled only if `has_callbacks` is true from creation.
+#[tokio::test]
+async fn minting_on_reserved_only_transfer_policy_faucet_enables_callbacks() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_existing_faucet_with_reserved_only_transfer_policy(
+        &mut builder,
+        "RSV",
+        1000,
+        owner_account_id,
+    )?;
+    let mut mock_chain = builder.build()?;
+
+    let params = FaucetTestParams {
+        recipient: Word::from([0, 1, 2, 3u32]),
+        tag: NoteTag::default(),
+        note_type: NoteType::Private,
+        amount: Felt::new_unchecked(100),
+    };
+
+    let executed_transaction =
+        execute_mint_transaction(&mut mock_chain, faucet.clone(), &params).await?;
+    // `verify_minted_output_note` asserts the minted asset carries `AssetCallbackFlag::Enabled`.
     verify_minted_output_note(&executed_transaction, &faucet, &params)?;
 
     Ok(())
@@ -839,7 +910,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
     // Apply the delta to the target account and verify the asset was added to the account's vault
-    target_account.apply_delta(consume_executed_transaction.account_delta())?;
+    target_account.apply_patch(consume_executed_transaction.account_patch())?;
 
     // Verify the account's vault now contains the expected fungible asset
     let actual_asset = target_account.vault().get(expected_asset.vault_key()).unwrap();
@@ -1197,7 +1268,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let mut updated_faucet = faucet.clone();
-    updated_faucet.apply_delta(executed_transaction.account_delta())?;
+    updated_faucet.apply_patch(executed_transaction.account_patch())?;
 
     let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
     let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
@@ -1214,7 +1285,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let executed_transaction = tx_context.execute().await?;
 
     let mut final_faucet = updated_faucet.clone();
-    final_faucet.apply_delta(executed_transaction.account_delta())?;
+    final_faucet.apply_patch(executed_transaction.account_patch())?;
 
     // Verify that owner changed to new_owner and nominated was cleared
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
@@ -1388,7 +1459,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let mut updated_faucet = faucet.clone();
-    updated_faucet.apply_delta(executed_transaction.account_delta())?;
+    updated_faucet.apply_patch(executed_transaction.account_patch())?;
 
     // Check stored value after renouncing - should be zero
     let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
@@ -1491,7 +1562,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Apply the delta to the faucet account and verify the token issuance decreased
-    faucet.apply_delta(executed_transaction.account_delta())?;
+    faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1722,7 +1793,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
-    faucet.apply_delta(executed_transaction.account_delta())?;
+    faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1785,14 +1856,14 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let set_transaction = tx_context.execute().await?;
     mock_chain.add_pending_executed_transaction(&set_transaction)?;
     mock_chain.prove_next_block()?;
-    faucet.apply_delta(set_transaction.account_delta())?;
+    faucet.apply_patch(set_transaction.account_patch())?;
 
     // The burn that was below the original threshold now succeeds.
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let burn_transaction = tx_context.execute().await?;
 
     // Lowering the threshold left the supply untouched; only the burn reduces it.
-    faucet.apply_delta(burn_transaction.account_delta())?;
+    faucet.apply_patch(burn_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1948,7 +2019,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
-    target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
+    target_account_mut.apply_patch(consume_executed_transaction.account_patch())?;
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
         .with_callbacks(AssetCallbackFlag::Enabled);
@@ -2104,7 +2175,8 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_components(token_policy_manager);
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(
         Auth::NetworkAccount {

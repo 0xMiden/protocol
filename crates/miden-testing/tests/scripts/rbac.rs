@@ -125,7 +125,7 @@ async fn execute_note_and_apply(
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     Ok(updated)
 }

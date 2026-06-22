@@ -1,4 +1,4 @@
-use $kernel::account_delta
+use $kernel::account_update
 use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::callbacks
@@ -198,7 +198,7 @@ pub use memory::get_account_nonce->get_nonce
 #! Panics if:
 #! - the nonce has already been incremented.
 pub proc incr_nonce
-    exec.account_delta::was_nonce_incremented
+    exec.account_update::was_nonce_incremented
     # => [was_nonce_incremented]
 
     # assert the nonce has not already been incremented
@@ -726,7 +726,7 @@ pub proc add_asset_to_vault
     emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
     # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
-    exec.account_delta::update_asset
+    exec.account_update::update_asset
     # => [FINAL_ASSET_VALUE]
 end
 
@@ -768,7 +768,7 @@ pub proc remove_asset_from_vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
     # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
-    exec.account_delta::update_asset
+    exec.account_update::update_asset
     # => [FINAL_ASSET_VALUE]
 end
 
@@ -1594,7 +1594,7 @@ proc set_map_item_raw
     exec.slot_ptr_to_index
     # => [slot_idx, KEY, OLD_VALUE, NEW_VALUE]
 
-    exec.account_delta::set_map_item
+    exec.account_update::set_map_item
     # => []
 
     # load OLD_VALUE as return value on the stack

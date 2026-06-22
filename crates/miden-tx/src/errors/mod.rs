@@ -18,7 +18,6 @@ use miden_protocol::errors::{
     OutputNoteError,
     ProvenTransactionError,
     TransactionInputError,
-    TransactionInputsExtractionError,
     TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
@@ -84,14 +83,10 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
 
 #[derive(Debug, Error)]
 pub enum TransactionExecutorError {
-    #[error("failed to read fee asset from transaction inputs")]
-    FeeAssetRetrievalFailed(#[source] TransactionInputsExtractionError),
     #[error("failed to fetch transaction inputs from the data store")]
     FetchTransactionInputsFailed(#[source] DataStoreError),
     #[error("failed to fetch asset witnesses from the data store")]
     FetchAssetWitnessFailed(#[source] DataStoreError),
-    #[error("fee asset must be fungible but was non-fungible")]
-    FeeAssetMustBeFungible,
     #[error("foreign account inputs for ID {0} are not anchored on reference block")]
     ForeignAccountNotAnchoredInReference(AccountId),
     #[error(
@@ -113,8 +108,6 @@ pub enum TransactionExecutorError {
         in_kernel_commitment: Word,
         host_commitment: Word,
     },
-    #[error("failed to remove the fee asset from the pre-fee account delta")]
-    RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("input account ID {input_id} does not match output account ID {output_id}")]
     InconsistentAccountId {
         input_id: AccountId,
@@ -122,10 +115,6 @@ pub enum TransactionExecutorError {
     },
     #[error("expected account nonce delta to be {expected}, found {actual}")]
     InconsistentAccountNonceDelta { expected: Felt, actual: Felt },
-    #[error(
-        "fee asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
-    )]
-    InsufficientFee { account_balance: u64, tx_fee: u64 },
     #[error("account witness provided for account ID {0} is invalid")]
     InvalidAccountWitness(AccountId, #[source] SmtProofError),
     #[error(
@@ -267,8 +256,6 @@ pub enum TransactionKernelError {
     AccountStorageSlotsNumMissing(u32),
     #[error("account nonce can only be incremented once")]
     NonceCanOnlyIncrementOnce,
-    #[error("failed to convert fee asset into fungible asset")]
-    FailedToConvertFeeAsset(#[source] AssetError),
     #[error(
         "failed to get inputs for foreign account {foreign_account_id} from data store at reference block {ref_block}"
     )]
@@ -296,10 +283,6 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
-    #[error(
-        "fee asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
-    )]
-    InsufficientFee { account_balance: u64, tx_fee: u64 },
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]
