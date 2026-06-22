@@ -198,17 +198,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(
-        self,
-    ) -> (AccountDelta, AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (
-            self.update_tracker.clone().into_delta(),
-            self.update_tracker.into_patch(),
-            self.input_notes,
-            output_notes,
-        )
+        (self.update_tracker.into_patch(), self.input_notes, output_notes)
     }
 
     // MUTATORS

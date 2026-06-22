@@ -555,11 +555,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         .execute()
         .await?;
 
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
+    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
+
     // Prove, serialize/deserialize and verify the transaction
     prove_and_verify_transaction(executed_transaction.clone()).await?;
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
-    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
     Ok(())
 }
 
@@ -786,7 +790,10 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     assert_eq!(full_note.id(), expected_note.id());
 
     // Verify nonce was incremented
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
 
     Ok(())
 }
@@ -1558,7 +1565,10 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
 
     // Verify the transaction was executed successfully
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Apply the delta to the faucet account and verify the token issuance decreased
@@ -1682,7 +1692,11 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let executed_transaction = tx_context.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::from(2u8),),
+        "nonce should be incremented by 1 in each of the 2 txs"
+    );
 
     Ok(())
 }

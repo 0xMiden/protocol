@@ -10,7 +10,6 @@ use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
-    AccountDelta,
     AccountId,
     AccountPatch,
     PartialAccount,
@@ -389,7 +388,6 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        AccountDelta,
         AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
@@ -398,10 +396,9 @@ where
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_delta, account_patch, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
         (
-            account_delta,
             account_patch,
             input_notes,
             output_notes,
