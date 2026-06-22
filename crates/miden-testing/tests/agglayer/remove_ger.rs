@@ -98,8 +98,8 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 
     // VERIFY GER IS NO LONGER REGISTERED AND CHAIN HASH ADVANCED
     let mut updated_bridge_account = bridge_account.clone();
-    updated_bridge_account.apply_delta(update_executed.account_delta())?;
-    updated_bridge_account.apply_delta(remove_executed.account_delta())?;
+    updated_bridge_account.apply_patch(update_executed.account_patch())?;
+    updated_bridge_account.apply_patch(remove_executed.account_patch())?;
 
     let is_registered = AggLayerBridge::is_ger_registered(ger, &updated_bridge_account)?;
     assert!(!is_registered, "GER should have been removed from the bridge account");
@@ -155,7 +155,7 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
         let tx_context =
             mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
-        updated_bridge_account.apply_delta(executed.account_delta())?;
+        updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
@@ -164,7 +164,7 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
         .build_tx_context(bridge_account.id(), &[remove_b.id()], &[])?
         .build()?;
     let remove_executed = remove_tx_context.execute().await?;
-    updated_bridge_account.apply_delta(remove_executed.account_delta())?;
+    updated_bridge_account.apply_patch(remove_executed.account_patch())?;
 
     assert!(
         AggLayerBridge::is_ger_registered(ger_a, &updated_bridge_account)?,
@@ -226,7 +226,7 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
         let tx_context =
             mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
-        updated_bridge_account.apply_delta(executed.account_delta())?;
+        updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
@@ -322,7 +322,7 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
         let tx_context =
             mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
-        updated_bridge_account.apply_delta(executed.account_delta())?;
+        updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
