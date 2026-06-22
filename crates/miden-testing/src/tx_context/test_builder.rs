@@ -31,8 +31,8 @@ use crate::MockChain;
 /// A crate-internal builder that makes a [TransactionContext] for tests.
 ///
 /// Use it when a test just needs some valid chain data to run against and does not care about the
-/// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and gets the
-/// inputs from [`crate::MockChain::build_tx_context`].
+/// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and gets
+/// the inputs from [`crate::MockChain::build_tx_context`].
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct TestTransactionBuilder {
