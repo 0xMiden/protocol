@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
