@@ -9,7 +9,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
@@ -489,14 +489,14 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     }
 
     // Create a new output note for the second transaction with new signers
-    let output_note_new = P2idNote::create(
-        updated_multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![output_note_asset],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::empty()),
-    )?;
+    let output_note_new: Note = P2idNote::builder()
+        .sender(updated_multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(output_note_asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .build()?
+        .into();
 
     // Create a new spawn note for the second transaction
     let input_note_new = create_spawn_note([&output_note_new])?;

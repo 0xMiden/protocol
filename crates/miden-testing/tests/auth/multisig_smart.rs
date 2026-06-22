@@ -2,7 +2,7 @@ use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::vm::AdviceMap;
@@ -235,14 +235,14 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         )],
     )?;
 
-    let output_note = P2idNote::create(
-        multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(5)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
-    )?;
+    let output_note: Note = P2idNote::builder()
+        .sender(multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(5))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])))
+        .build()?
+        .into();
 
     let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
         &multisig_account.code_interface(),

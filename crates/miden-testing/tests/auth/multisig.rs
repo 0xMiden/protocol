@@ -10,7 +10,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -612,14 +612,14 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     }
 
     // Create a new output note for the second transaction with new signers
-    let output_note_new = P2idNote::create(
-        updated_multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![output_note_asset],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::empty()),
-    )?;
+    let output_note_new: Note = P2idNote::builder()
+        .sender(updated_multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(output_note_asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .build()?
+        .into();
 
     // Create a new spawn note for the second transaction
     let input_note_new = create_spawn_note([&output_note_new])?;
@@ -1156,14 +1156,14 @@ async fn test_multisig_proc_threshold_overrides(
 
     // Create output note to send 5 units from the account
     let asset = FungibleAsset::mock(5);
-    let output_note = P2idNote::create(
-        multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![asset],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])),
-    )?;
+    let output_note: Note = P2idNote::builder()
+        .sender(multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
+        .build()?
+        .into();
     let send_note_transaction_script = TransactionScript::from(SendNotesTransactionScript::new(
         &multisig_account.code_interface(),
         &[output_note.clone().into()],

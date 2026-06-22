@@ -8,7 +8,7 @@ use miden_protocol::batch::BatchNoteTree;
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
 use miden_protocol::crypto::merkle::smt::Smt;
-use miden_protocol::note::{NoteAttachments, NoteType};
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::InputNoteCommitment;
 use miden_standards::note::P2idNote;
 
@@ -32,38 +32,34 @@ async fn proven_block_success() -> anyhow::Result<()> {
     let account2 = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
     let account3 = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
 
-    let output_note0 = P2idNote::create(
-        account0.id(),
-        account0.id(),
-        vec![asset],
-        NoteType::Private,
-        NoteAttachments::default(),
-        builder.rng_mut(),
-    )?;
-    let output_note1 = P2idNote::create(
-        account1.id(),
-        account1.id(),
-        vec![asset],
-        NoteType::Private,
-        NoteAttachments::default(),
-        builder.rng_mut(),
-    )?;
-    let output_note2 = P2idNote::create(
-        account2.id(),
-        account2.id(),
-        vec![asset],
-        NoteType::Private,
-        NoteAttachments::default(),
-        builder.rng_mut(),
-    )?;
-    let output_note3 = P2idNote::create(
-        account3.id(),
-        account3.id(),
-        vec![asset],
-        NoteType::Private,
-        NoteAttachments::default(),
-        builder.rng_mut(),
-    )?;
+    let output_note0: Note = P2idNote::builder()
+        .sender(account0.id())
+        .target(account0.id())
+        .asset(asset)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    let output_note1: Note = P2idNote::builder()
+        .sender(account1.id())
+        .target(account1.id())
+        .asset(asset)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    let output_note2: Note = P2idNote::builder()
+        .sender(account2.id())
+        .target(account2.id())
+        .asset(asset)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    let output_note3: Note = P2idNote::builder()
+        .sender(account3.id())
+        .target(account3.id())
+        .asset(asset)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
 
     let input_note0 = builder.add_spawn_note([&output_note0])?;
     let input_note1 = builder.add_spawn_note([&output_note1])?;

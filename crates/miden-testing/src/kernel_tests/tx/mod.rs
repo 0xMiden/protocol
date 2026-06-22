@@ -101,12 +101,13 @@ pub fn input_note_data_ptr(note_idx: u32) -> memory::MemoryAddress {
 struct TestSetup {
     mock_chain: MockChain,
     account: Account,
-    p2id_note_0_assets: Note,
+    p2any_note_0_assets: Note,
     p2id_note_1_asset: Note,
     p2id_note_2_assets: Note,
 }
 
-/// Return a [`TestSetup`], whose notes contain 0, 1 and 2 assets respectively.
+/// Return a [`TestSetup`] whose notes contain 0, 1 and 2 assets respectively. The 0-asset note is
+/// a P2ANY note, since P2ID notes must carry at least one asset.
 fn setup_test() -> anyhow::Result<TestSetup> {
     let mut builder = MockChain::builder();
 
@@ -144,12 +145,9 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     )?;
 
     // Notes
-    let p2id_note_0_assets = builder.add_p2id_note(
-        ACCOUNT_ID_SENDER.try_into().unwrap(),
-        account.id(),
-        &[],
-        NoteType::Public,
-    )?;
+    // Use P2ANY: a P2ID note must carry at least one asset.
+    let p2any_note_0_assets =
+        builder.add_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), NoteType::Public, [])?;
     let p2id_note_1_asset = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -168,7 +166,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     anyhow::Ok(TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     })
