@@ -3,5 +3,5 @@ name              = "miden-utils"
 version.workspace = true
 
 [lib]
-namespace = "miden::utils"
+namespace = "miden::protocol_utils"
 path      = "mod.masm"

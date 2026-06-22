@@ -10,7 +10,7 @@ use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::note::MAX_ATTACHMENT_TOTAL_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::constants::WORD_NUM_ELEMENTS
-use miden::utils::note::NOTE_METADATA_VERSION_1
+use miden::protocol_utils::note::NOTE_METADATA_VERSION_1
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word

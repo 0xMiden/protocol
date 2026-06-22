@@ -1,26 +1,26 @@
-use miden::utils::asset
+use miden::protocol_utils::asset
 
 # RE-EXPORTS
 # =================================================================================================
 
-pub use miden::utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-pub use miden::utils::asset::ASSET_SIZE
-pub use miden::utils::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use miden::utils::asset::key_to_faucet_id
-pub use miden::utils::asset::key_into_faucet_id
-pub use miden::utils::asset::key_to_asset_id
-pub use miden::utils::asset::key_into_asset_id
-pub use miden::utils::asset::key_to_callbacks_enabled
-pub use miden::utils::asset::key_to_composition
-pub use miden::utils::asset::COMPOSITION_NONE
-pub use miden::utils::asset::COMPOSITION_FUNGIBLE
-pub use miden::utils::asset::COMPOSITION_CUSTOM
-pub use miden::utils::asset::store
-pub use miden::utils::asset::load
-pub use miden::utils::asset::fungible_value_into_amount
-pub use miden::utils::asset::fungible_to_amount
-pub use miden::utils::asset::create_fungible_key
-pub use miden::utils::asset::create_non_fungible_asset_unchecked->create_non_fungible_asset
+pub use miden::protocol_utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use miden::protocol_utils::asset::ASSET_SIZE
+pub use miden::protocol_utils::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use miden::protocol_utils::asset::key_to_faucet_id
+pub use miden::protocol_utils::asset::key_into_faucet_id
+pub use miden::protocol_utils::asset::key_to_asset_id
+pub use miden::protocol_utils::asset::key_into_asset_id
+pub use miden::protocol_utils::asset::key_to_callbacks_enabled
+pub use miden::protocol_utils::asset::key_to_composition
+pub use miden::protocol_utils::asset::COMPOSITION_NONE
+pub use miden::protocol_utils::asset::COMPOSITION_FUNGIBLE
+pub use miden::protocol_utils::asset::COMPOSITION_CUSTOM
+pub use miden::protocol_utils::asset::store
+pub use miden::protocol_utils::asset::load
+pub use miden::protocol_utils::asset::fungible_value_into_amount
+pub use miden::protocol_utils::asset::fungible_to_amount
+pub use miden::protocol_utils::asset::create_fungible_key
+pub use miden::protocol_utils::asset::create_non_fungible_asset_unchecked->create_non_fungible_asset
 
 # ERRORS
 # =================================================================================================

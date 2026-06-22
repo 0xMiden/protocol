@@ -9,8 +9,8 @@ use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
 use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
 use miden::protocol::note
 use miden::protocol::input_note
-use miden::utils::note::NOTE_TYPE_PUBLIC
-use miden::utils::note::NOTE_TYPE_PRIVATE
+use miden::protocol_utils::note::NOTE_TYPE_PUBLIC
+use miden::protocol_utils::note::NOTE_TYPE_PRIVATE
 
 # ERRORS
 # =================================================================================================

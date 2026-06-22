@@ -437,12 +437,12 @@ impl TransactionKernel {
 
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
-    const KERNEL_TESTING_LIB_BYTES: &'static [u8] =
+    const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masp"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {
-        let package = Package::read_from_bytes(Self::KERNEL_TESTING_LIB_BYTES)
+        let package = Package::read_from_bytes(Self::KERNEL_TESTING_PACKAGE_BYTES)
             .expect("failed to deserialize transaction kernel library package");
         Arc::unwrap_or_clone(package.mast)
     }
