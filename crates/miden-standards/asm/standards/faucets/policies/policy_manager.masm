@@ -297,6 +297,9 @@ end
 #! Invocation: call
 pub proc get_mint_policy
     exec.get_mint_policy_root
+    # => [MINT_POLICY_ROOT, pad(16)]
+
+    swapw dropw
     # => [MINT_POLICY_ROOT, pad(12)]
 end
 
@@ -368,6 +371,9 @@ end
 #! Invocation: call
 pub proc get_burn_policy
     exec.get_burn_policy_root
+    # => [BURN_POLICY_ROOT, pad(16)]
+
+    swapw dropw
     # => [BURN_POLICY_ROOT, pad(12)]
 end
 
@@ -489,6 +495,9 @@ end
 #! Invocation: call
 pub proc get_send_policy
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [SEND_POLICY_ROOT, pad(16)]
+
+    swapw dropw
     # => [SEND_POLICY_ROOT, pad(12)]
 end
 
@@ -560,6 +569,9 @@ end
 #! Invocation: call
 pub proc get_receive_policy
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [RECEIVE_POLICY_ROOT, pad(16)]
+
+    swapw dropw
     # => [RECEIVE_POLICY_ROOT, pad(12)]
 end
 
