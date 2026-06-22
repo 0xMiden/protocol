@@ -28,22 +28,11 @@ use crate::MockChain;
 // TEST TRANSACTION BUILDER
 // ================================================================================================
 
-/// [TestTransactionBuilder] is the miden-base-internal utility for constructing a
-/// [TransactionContext] in tests that just need *some* valid chain data to execute against, without
-/// caring about the exact state of a concrete [`crate::MockChain`].
+/// A crate-internal builder that makes a [TransactionContext] for tests.
 ///
-/// It is the named entry point for what was previously done by instantiating
-/// [`super::TransactionContextBuilder`] directly (e.g. via
-/// [`super::TransactionContextBuilder::with_existing_mock_account`]). Building spins up an ad-hoc
-/// [`crate::MockChain`] internally and resolves the transaction inputs through
-/// [`crate::MockChain::build_tx_context`], so this builder is not coupled to a concrete chain and
-/// therefore deliberately does not expose the chain-coupled `tx_inputs` configuration.
-///
-/// This type is crate-internal: it is intended for use within `miden-testing` only and is not part
-/// of the public API.
-//
-// PR1 of issue #1919 introduces this builder additively; its call sites are migrated over in a
-// follow-up PR, so the API surface is unused for now.
+/// Use it when a test just needs some valid chain data to run against and does not care about the
+/// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and gets the
+/// inputs from [`crate::MockChain::build_tx_context`].
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct TestTransactionBuilder {
