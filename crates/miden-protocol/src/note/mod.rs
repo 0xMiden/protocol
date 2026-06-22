@@ -63,7 +63,7 @@ mod script;
 pub use script::{NoteScript, NoteScriptRoot};
 
 mod file;
-pub use file::NoteFile;
+pub use file::{NoteFile, NoteSyncHint};
 
 // NOTE
 // ================================================================================================

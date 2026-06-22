@@ -15,6 +15,7 @@
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
 - Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
+- [BREAKING] Reworked `NoteFile` variants into `NoteId`, `ExpectedNote`, and `Committed`, added `NoteSyncHint`, and made `ExpectedNote` carry note attachments and a required `NoteTag` ([#1983](https://github.com/0xMiden/protocol/issues/1983)).
 - Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010), [#3071](https://github.com/0xMiden/protocol/pull/3071)).
 - Added `AccountPatch::merge` for combining patches across consecutive transactions ([#3082](https://github.com/0xMiden/protocol/pull/3082)).
 - [BREAKING] Replaced the account delta in `AccountUpdateDetails`, `TxAccountUpdate`, and the kernel-emitted account update commitment with the account patch ([#3089](https://github.com/0xMiden/protocol/pull/3089)).
