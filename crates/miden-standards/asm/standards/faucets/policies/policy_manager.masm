@@ -47,10 +47,12 @@ const POLICY_PROC_ROOT_PTR=0
 const ERR_MINT_POLICY_ROOT_IS_ZERO="mint policy root is zero"
 const ERR_MINT_POLICY_ROOT_NOT_IN_ACCOUNT="mint policy root is not a procedure of this account"
 const ERR_MINT_POLICY_ROOT_NOT_ALLOWED="mint policy root is not allowed"
+const ERR_ACTIVE_MINT_POLICY_NOT_SET="active mint policy is not set"
 
 const ERR_BURN_POLICY_ROOT_IS_ZERO="burn policy root is zero"
 const ERR_BURN_POLICY_ROOT_NOT_IN_ACCOUNT="burn policy root is not a procedure of this account"
 const ERR_BURN_POLICY_ROOT_NOT_ALLOWED="burn policy root is not allowed"
+const ERR_ACTIVE_BURN_POLICY_NOT_SET="active burn policy is not set"
 
 const ERR_SEND_POLICY_ROOT_IS_ZERO="send policy root is zero"
 const ERR_SEND_POLICY_ROOT_NOT_IN_ACCOUNT="send policy root is not a procedure of this account"
@@ -265,10 +267,8 @@ end
 #! Panics if:
 #! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
 #!   component is not installed).
+#! - the active mint policy root is zero.
 #! - active mint policy predicate fails.
-#!
-#! The active policy root is validated at config time (in `set_mint_policy` and on initial
-#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
@@ -277,6 +277,10 @@ pub proc execute_mint_policy
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.get_mint_policy_root
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
+
+    exec.word::testz
+    assertz.err=ERR_ACTIVE_MINT_POLICY_NOT_SET
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
@@ -336,10 +340,8 @@ end
 #!
 #! Panics if:
 #! - the account is paused.
+#! - the active burn policy root is zero.
 #! - active burn policy predicate fails.
-#!
-#! The active policy root is validated at config time (in `set_burn_policy` and on initial
-#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
@@ -348,6 +350,10 @@ pub proc execute_burn_policy
     # => [ASSET_KEY, ASSET_VALUE]
 
     exec.get_burn_policy_root
+    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
+
+    exec.word::testz
+    assertz.err=ERR_ACTIVE_BURN_POLICY_NOT_SET
     # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
