@@ -1,6 +1,6 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -131,7 +131,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
     );
 
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -358,7 +358,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Verify the new threshold/num_approvers config is persisted.
     let threshold_config = multisig_account
@@ -370,7 +370,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = Word::from([i as u32, 0, 0, 0]);
+        let storage_key = StorageMapKey::from_index(i as u32);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)
@@ -401,7 +401,7 @@ async fn test_multisig_smart_set_procedure_policy(
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+    let receive_asset_root = StorageMapKey::from_raw(BasicWallet::receive_asset_root().as_word());
     let immediate_threshold = 1u32;
     let delayed_threshold = 0u32;
     let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;
@@ -457,7 +457,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Policy word layout: [immediate, delayed, note_restrictions, 0]
     let stored_policy = multisig_account

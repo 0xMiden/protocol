@@ -2,7 +2,6 @@ use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::constants::WORD_NUM_ELEMENTS
-# use $kernel::types::AccountId
 use miden::core::mem
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
@@ -221,13 +220,13 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=3360
 # -------------------------------------------------------------------------------------------------
 
 # The link map pointer at which the delta of the asset vault is stored.
-pub const ACCOUNT_DELTA_ASSET_PTR=532480
+pub const ACCOUNT_UPDATE_ASSET_PTR=532480
 
 # The section of link map pointers where storage map patches are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
 # delta at that slot index. Slot indices that are not map slots are simply unused.
 # The section spans `MAX_NUM_STORAGE_SLOTS` (255) entries, one per possible slot index.
-const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_ASSET_PTR+4
+const ACCOUNT_PATCH_STORAGE_MAP_SECTION=ACCOUNT_UPDATE_ASSET_PTR+4
 
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
@@ -734,20 +733,6 @@ end
 const BLOCK_METADATA_TIMESTAMP_PTR=BLOCK_METADATA_PTR+2
 pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
-end
-
-#! Returns the faucet ID of the fee asset as defined in the transaction's reference block.
-#!
-#! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
-#!
-#! Where:
-#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the fee asset.
-pub proc get_fee_faucet_id
-    mem_load.FEE_FAUCET_ID_PREFIX_PTR
-    mem_load.FEE_FAUCET_ID_SUFFIX_PTR
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
 end
 
 #! Returns the verification base fee from the transaction's reference block.
@@ -1434,7 +1419,7 @@ end
 #! - account_patch_storage_map_ptr is the link map pointer to the storage map patch for the
 #!   requested slot index.
 pub proc get_account_patch_storage_map_ptr
-    add.ACCOUNT_DELTA_STORAGE_MAP_SECTION
+    add.ACCOUNT_PATCH_STORAGE_MAP_SECTION
 end
 
 #! Initializes the storage slots holding the initial values of each slot.

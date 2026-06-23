@@ -17,7 +17,7 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountVaultDelta, NonFungibleDeltaAction};
+use crate::account::AccountVaultPatch;
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::{AssetError, AssetVaultError};
 
@@ -188,38 +188,16 @@ impl AssetVault {
     // PUBLIC MODIFIERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the specified delta to the asset vault.
+    /// Applies the specified patch to the asset vault.
+    ///
+    /// This updates each asset that is contained in the patch to its new value.
     ///
     /// # Errors
-    /// Returns an error:
-    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
-    /// - If the delta contains an addition/subtraction for a fungible asset that is not stored in
-    ///   the vault.
-    /// - If the delta contains a non-fungible asset removal that is not stored in the vault.
-    /// - If the delta contains a non-fungible asset addition that is already stored in the vault.
-    /// - The maximum number of leaves per asset is exceeded.
-    pub fn apply_delta(&mut self, delta: &AccountVaultDelta) -> Result<(), AssetVaultError> {
-        for (vault_key, &delta) in delta.fungible().iter() {
-            // SAFETY: fungible asset delta should only contain fungible faucet IDs and delta amount
-            // should be in bounds
-            let asset = FungibleAsset::new(vault_key.faucet_id(), delta.unsigned_abs())
-                .expect("fungible asset delta should be valid")
-                .with_callbacks(vault_key.callback_flag());
-            match delta >= 0 {
-                true => self.add_fungible_asset(asset),
-                false => self.remove_fungible_asset(asset),
-            }?;
-        }
-
-        for (&asset, &action) in delta.non_fungible().iter() {
-            match action {
-                NonFungibleDeltaAction::Add => {
-                    self.add_non_fungible_asset(asset)?;
-                },
-                NonFungibleDeltaAction::Remove => {
-                    self.remove_non_fungible_asset(asset)?;
-                },
-            }
+    ///
+    /// Returns an error if the maximum number of leaves per asset is exceeded.
+    pub fn apply_patch(&mut self, patch: &AccountVaultPatch) -> Result<(), AssetVaultError> {
+        for (&vault_key, &value) in patch.iter() {
+            self.insert_entry(vault_key, value)?;
         }
 
         Ok(())
@@ -227,6 +205,16 @@ impl AssetVault {
 
     // ADD ASSET
     // --------------------------------------------------------------------------------------------
+
+    /// Inserts the specified asset into the vault, overwriting the asset value at the same vault
+    /// key. Returns the value of the asset previously.
+    ///
+    /// # Errors
+    /// - The maximum number of leaves per asset is exceeded.
+    pub fn insert_asset(&mut self, asset: Asset) -> Result<Word, AssetVaultError> {
+        self.insert_entry(asset.vault_key(), asset.to_value_word())
+    }
+
     /// Add the specified asset to the vault.
     ///
     /// # Errors

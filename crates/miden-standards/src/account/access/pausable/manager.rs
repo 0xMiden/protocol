@@ -27,9 +27,9 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// `PausableManager` works uniformly with every standard access scheme:
-/// - [`crate::account::access::AccessControl::AuthControlled`] →
-///   [`crate::account::access::Authority::AuthControlled`] gates pause / unpause via the account's
-///   own auth component.
+/// - [`crate::account::access::Authority::AuthControlled`] — installed directly by
+///   [`crate::account::faucets::create_user_fungible_faucet`]; gates pause / unpause via the
+///   account's own auth component.
 /// - [`crate::account::access::AccessControl::Ownable2Step`] →
 ///   [`crate::account::access::Authority::OwnerControlled`] requires the Ownable2Step owner.
 /// - [`crate::account::access::AccessControl::Rbac`] →
@@ -37,7 +37,7 @@ procedure_root!(
 ///
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — installed automatically by the
-///   [`crate::account::access::AccessControl`] enum.
+///   [`crate::account::access::AccessControl`] enum (or directly by user-faucet factories).
 /// - [`super::Pausable`] — provides the `is_paused` storage slot that pause / unpause write to.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PausableManager;
@@ -46,8 +46,8 @@ impl PausableManager {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::pausable::manager";
 
-    pub const PAUSE_PROC_NAME: &'static str = "pause";
-    pub const UNPAUSE_PROC_NAME: &'static str = "unpause";
+    const PAUSE_PROC_NAME: &'static str = "pause";
+    const UNPAUSE_PROC_NAME: &'static str = "unpause";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

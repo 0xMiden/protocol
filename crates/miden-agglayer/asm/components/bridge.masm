@@ -7,6 +7,7 @@
 # - `store_faucet_metadata_hash` from the bridge_config module
 # - `deregister_faucet` from the bridge_config module
 # - `update_ger` from the bridge_config module
+# - `remove_ger` from the bridge_config module
 # - `claim` for bridge-in
 # - `bridge_out` for bridge-out
 
@@ -14,5 +15,6 @@ pub use ::agglayer::bridge::bridge_config::register_faucet
 pub use ::agglayer::bridge::bridge_config::store_faucet_metadata_hash
 pub use ::agglayer::bridge::bridge_config::deregister_faucet
 pub use ::agglayer::bridge::bridge_config::update_ger
+pub use ::agglayer::bridge::bridge_config::remove_ger
 pub use ::agglayer::bridge::bridge_in::claim
 pub use ::agglayer::bridge::bridge_out::bridge_out

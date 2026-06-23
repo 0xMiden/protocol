@@ -10,8 +10,8 @@ use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
-    AccountDelta,
     AccountId,
+    AccountPatch,
     PartialAccount,
     StorageMapKey,
     StorageSlotId,
@@ -19,7 +19,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
@@ -97,9 +97,6 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
-    /// The initial balance of the fee asset in the native account's vault.
-    initial_fee_asset_balance: u64,
-
     /// The source manager to track source code file span information, improving any MASM related
     /// error messages.
     source_manager: Arc<dyn SourceManagerSync>,
@@ -123,7 +120,6 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
-        initial_fee_asset_balance: u64,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
         let base_host = TransactionBaseHost::new(
@@ -142,7 +138,6 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
-            initial_fee_asset_balance,
             source_manager,
         }
     }
@@ -200,7 +195,7 @@ where
     /// The signature is requested from the host's authenticator.
     pub async fn on_auth_requested(
         &mut self,
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
@@ -212,65 +207,15 @@ where
         let message = signing_inputs.to_commitment();
 
         let signature: Vec<Felt> = authenticator
-            .get_signature(PublicKeyCommitment::from(pub_key_hash), &signing_inputs)
+            .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
             .to_prepared_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_hash, message]);
+        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
         Ok(vec![AdviceMutation::extend_stack(signature)])
-    }
-
-    /// Handles the [`TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount`] and returns an error
-    /// if the account cannot pay the fee.
-    async fn on_before_tx_fee_removed_from_account(
-        &self,
-        fee_asset: FungibleAsset,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // Construct initial fee asset.
-        let initial_fee_asset =
-            FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
-                .expect("fungible asset created from fee asset should be valid");
-
-        // Compute the current balance of the fee asset in the account based on the initial value
-        // and the delta.
-        let current_fee_asset = {
-            let vault_delta = self.base_host.account_update_tracker().build_vault_delta();
-            let fee_asset_amount_delta =
-                vault_delta.fungible().amount(&initial_fee_asset.vault_key()).unwrap_or(0);
-
-            // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
-            // be less than MAX_AMOUNT as checked by the account delta.
-            let fee_asset_delta = FungibleAsset::new(
-                initial_fee_asset.faucet_id(),
-                fee_asset_amount_delta.unsigned_abs(),
-            )
-            .expect("faucet ID and amount should be valid");
-
-            // SAFETY: These computations are essentially the same as the ones executed by the
-            // transaction kernel, which should have aborted if they weren't valid.
-            if fee_asset_amount_delta > 0 {
-                initial_fee_asset
-                    .add(fee_asset_delta)
-                    .expect("transaction kernel should ensure amounts do not exceed MAX_AMOUNT")
-            } else {
-                initial_fee_asset
-                    .sub(fee_asset_delta)
-                    .expect("transaction kernel should ensure amount is not negative")
-            }
-        };
-
-        // Return an error if the balance in the account does not cover the fee.
-        if current_fee_asset.amount() < fee_asset.amount() {
-            return Err(TransactionKernelError::InsufficientFee {
-                account_balance: current_fee_asset.amount().as_u64(),
-                tx_fee: fee_asset.amount().as_u64(),
-            });
-        }
-
-        Ok(Vec::new())
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -443,7 +388,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        AccountDelta,
+        AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         Vec<AccountCode>,
@@ -451,10 +396,10 @@ where
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_delta, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
         (
-            account_delta,
+            account_patch,
             input_notes,
             output_notes,
             self.accessed_foreign_account_code,
@@ -633,21 +578,21 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
+                TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary,
+                    signature,
+                } => {
                     if let Some(signature) = signature {
                         Ok(self.base_host.on_auth_requested(signature))
                     } else {
-                        self.on_auth_requested(pub_key_hash, tx_summary).await
+                        self.on_auth_requested(pub_key_commitment, tx_summary).await
                     }
                 },
 
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
-                },
-
-                TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset } => {
-                    self.on_before_tx_fee_removed_from_account(fee_asset).await
                 },
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

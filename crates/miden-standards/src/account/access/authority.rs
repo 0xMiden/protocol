@@ -26,11 +26,26 @@ use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
 use crate::account::account_component_code;
+use crate::procedure_root;
 
 // CONSTANTS
 // ================================================================================================
 
 account_component_code!(AUTHORITY_CODE, "access/authority.masl");
+
+procedure_root!(
+    AUTHORITY_FREEZE,
+    Authority::NAME,
+    Authority::FREEZE_PROC_NAME,
+    Authority::code()
+);
+
+procedure_root!(
+    AUTHORITY_UNFREEZE,
+    Authority::NAME,
+    Authority::UNFREEZE_PROC_NAME,
+    Authority::code()
+);
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority")
@@ -74,18 +89,28 @@ const RBAC_CONTROLLED: u8 = 2;
 /// looks up its role. A procedure without a mapping falls back to the
 /// [`Ownable2Step`][crate::account::access::Ownable2Step] owner check.
 ///
+/// # Emergency switch (`is_frozen`)
+///
+/// The component includes an `is_frozen` flag. If it is `true`, all procedures that call
+/// `assert_authorized` would panic, effectively freezing them. Accounts are always constructed
+/// unfrozen.
+///
+/// The flag can be toggled by the configured
+/// [`Ownable2Step`][crate::account::access::Ownable2Step] owner via `freeze` / `unfreeze`.
+///
+/// This flag is only meaningful when [`Ownable2Step`][crate::account::access::Ownable2Step] is
+/// installed and has no effect under [`Authority::AuthControlled`].
+///
 /// Storage layout:
-/// - Value slot: `[authority, 0, 0, 0]`.
+/// - Value slot: `[authority, is_frozen, 0, 0]`.
 /// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
-    /// Authority is the account's auth component; no extra check is performed by
-    /// `authority::assert_authorized`.
+    /// Authority is the account's auth component.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
-    /// must be sent by the registered owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///
@@ -102,6 +127,11 @@ impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
 
+    /// Name of the owner-gated procedure that freezes the authority-gated surface.
+    const FREEZE_PROC_NAME: &'static str = "freeze";
+    /// Name of the owner-gated procedure that unfreezes the authority-gated surface.
+    const UNFREEZE_PROC_NAME: &'static str = "unfreeze";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &AUTHORITY_CODE
@@ -109,6 +139,22 @@ impl Authority {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the procedure root of the owner-gated `freeze` emergency switch.
+    ///
+    /// This procedure is always gated on the owner check directly, so unlike role-assignable
+    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    pub fn freeze_root() -> AccountProcedureRoot {
+        *AUTHORITY_FREEZE
+    }
+
+    /// Returns the procedure root of the owner-gated `unfreeze` emergency switch.
+    ///
+    /// This procedure is always gated on the owner check directly, so unlike role-assignable
+    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    pub fn unfreeze_root() -> AccountProcedureRoot {
+        *AUTHORITY_UNFREEZE
+    }
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
     pub fn authority_slot() -> &'static StorageSlotName {
@@ -142,6 +188,18 @@ impl Authority {
         }
     }
 
+    /// Reads the `is_frozen` emergency-switch flag from account storage.
+    ///
+    /// Returns `true` if the account's authority-gated surface is currently frozen (every
+    /// procedure that calls `assert_authorized` panics until it is unfrozen).
+    pub fn try_read_frozen(storage: &AccountStorage) -> Result<bool, AuthorityError> {
+        let word = storage
+            .get_item(Self::authority_slot())
+            .map_err(AuthorityError::MissingStorageSlot)?;
+
+        Ok(word[1] != Felt::ZERO)
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this configuration.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let mut slots = vec![(
@@ -150,7 +208,7 @@ impl Authority {
                 "Authority configuration",
                 [
                     FeltSchema::u8("authority"),
-                    FeltSchema::new_void(),
+                    FeltSchema::u8("is_frozen"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -190,7 +248,7 @@ impl Authority {
         }
     }
 
-    /// Encodes the authority configuration value slot word: `[authority, 0, 0, 0]`.
+    /// Encodes the authority configuration value slot word: `[authority, is_frozen, 0, 0]`.
     fn to_word(&self) -> Word {
         Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }

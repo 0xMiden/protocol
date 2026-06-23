@@ -11,8 +11,11 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountCode,
     AccountComponent,
+    AccountDelta,
     AccountStorage,
+    AccountStoragePatch,
     AccountType,
+    AccountVaultDelta,
     StorageSlot,
     StorageSlotName,
 };
@@ -47,6 +50,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{
+    InputNote,
     InputNotes,
     RawOutputNote,
     RawOutputNotes,
@@ -56,12 +60,16 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
-use miden_standards::AuthMethod;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::account::interface::{
+    AccountComponentInterface,
+    AccountInterface,
+    AccountInterfaceExt,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
+use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
@@ -71,6 +79,7 @@ use miden_tx::{
     TransactionExecutorError,
     TransactionProverError,
 };
+use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note, create_spawn_note};
@@ -518,12 +527,15 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
 /// Tests that a transaction consuming and creating one note with basic authentication correctly
 /// signs the transaction summary.
+#[rstest]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> {
+async fn tx_summary_commitment_is_signed_by_auth_singlesig(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme })?;
     let mut rng = RandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -536,103 +548,41 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
     let chain = builder.build()?;
 
-    let tx = chain
-        .build_tx_context(account.id(), &[spawn_note.id()], &[])?
-        .build()?
-        .execute()
-        .await?;
+    let tx_builder =
+        chain.build_tx_context(account.id(), &[], core::slice::from_ref(&spawn_note))?;
 
-    let summary = TransactionSummary::new(
-        tx.account_delta().clone(),
-        tx.input_notes().clone(),
-        tx.output_notes().clone(),
-        Word::from([
-            0,
-            0,
-            tx.block_header().block_num().as_u32(),
-            tx.final_account().nonce().as_canonical_u64() as u32,
-        ]),
-    );
-    let summary_commitment = summary.to_commitment();
+    let tx = tx_builder.clone().build()?;
+    let ref_block_num = tx.tx_inputs().block_header().block_num();
+    let tx = tx.execute().await?;
 
-    let account_interface = AccountInterface::from_account(&account);
-    let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
-        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthMethod::Multisig { .. } => {
-            panic!("Expected SingleSig auth scheme, got Multisig")
-        },
-        AuthMethod::NetworkAccount { .. } => {
-            panic!("Expected SingleSig auth scheme, got NetworkAccount")
-        },
-        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
-    };
-
-    // This is in an internal detail of the tx executor host, but this is the easiest way to check
-    // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
-
-    // The summary commitment should have been signed as part of transaction execution and inserted
-    // into the advice map.
-    tx.advice_witness().map.get(&signature_key).unwrap();
-
-    Ok(())
-}
-
-/// Tests that a transaction consuming and creating one note with EcdsaK256Keccak authentication
-/// correctly signs the transaction summary.
-#[tokio::test]
-async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let account = builder
-        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
-    let mut rng = RandomCoin::new(Word::empty());
-    let p2id_note = P2idNote::create(
+    let nonce_delta = Felt::ONE;
+    let final_nonce = account.nonce() + nonce_delta;
+    let account_delta = AccountDelta::new(
         account.id(),
-        account.id(),
-        vec![],
-        NoteType::Private,
-        NoteAttachments::default(),
-        &mut rng,
+        AccountStoragePatch::default(),
+        AccountVaultDelta::default(),
+        nonce_delta,
     )?;
-    let spawn_note = builder.add_spawn_note([&p2id_note])?;
-    let chain = builder.build()?;
-
-    let tx = chain
-        .build_tx_context(account.id(), &[spawn_note.id()], &[])?
-        .build()?
-        .execute()
-        .await?;
-
-    let summary = TransactionSummary::new(
-        tx.account_delta().clone(),
-        tx.input_notes().clone(),
-        tx.output_notes().clone(),
-        Word::from([
-            0,
-            0,
-            tx.block_header().block_num().as_u32(),
-            tx.final_account().nonce().as_canonical_u64() as u32,
-        ]),
+    let expected_summary = TransactionSummary::new(
+        account_delta,
+        InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
+        RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2id_note))])?,
+        Word::from([0, 0, ref_block_num.as_u32(), final_nonce.as_canonical_u64() as u32]),
     );
-    let summary_commitment = summary.to_commitment();
+
+    let summary_commitment = expected_summary.to_commitment();
 
     let account_interface = AccountInterface::from_account(&account);
-    let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
-        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthMethod::Multisig { .. } => {
-            panic!("Expected SingleSig auth scheme, got Multisig")
-        },
-        AuthMethod::NetworkAccount { .. } => {
-            panic!("Expected SingleSig auth scheme, got NetworkAccount")
-        },
-        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
-    };
+    assert!(matches!(
+        account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
+    ));
+    let pub_keys = get_public_keys_from_account(&account);
+    let pub_key = pub_keys.first().expect("expected at least one public key");
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
+    let signature_key = Hasher::merge(&[*pub_key, summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
