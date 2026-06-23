@@ -63,12 +63,6 @@ pub struct P2ideNote {
 impl P2ideNote {
     /// Builds a new [`P2ideNote`].
     ///
-    /// Set the recipient with `.target(account_id)`, add assets with `.asset()` / `.assets()`
-    /// (at least one is required), and optionally add attachments with `.attachment()`, a
-    /// `.reclaim_height()`, and a `.timelock_height()`. The note type defaults to
-    /// [`NoteType::Private`]. The serial number can be set explicitly with `.serial_number(word)`
-    /// or drawn from an RNG with `.generate_serial_number(rng)`.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -175,27 +169,25 @@ impl P2ideNote {
 // ================================================================================================
 
 impl<S: p2ide_note_builder::State> P2ideNoteBuilder<S> {
-    /// Adds a single asset to the note. At least one asset is required for `.build()` to succeed;
-    /// this can be called multiple times to add several assets.
+    /// Adds a single asset to the note. At least one asset is required for `.build()` to succeed.
     pub fn asset(mut self, asset: impl Into<Asset>) -> Self {
         self.assets.push(asset.into());
         self
     }
 
-    /// Adds multiple assets to the note. Can be combined freely with [`Self::asset`].
+    /// Adds multiple assets to the note.
     pub fn assets(mut self, assets: impl IntoIterator<Item = impl Into<Asset>>) -> Self {
         self.assets.extend(assets.into_iter().map(Into::into));
         self
     }
 
-    /// Adds a single attachment to the note. Can be called multiple times to add several
-    /// attachments.
+    /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
         self
     }
 
-    /// Adds multiple attachments to the note. Can be combined freely with [`Self::attachment`].
+    /// Adds multiple attachments to the note.
     pub fn attachments(
         mut self,
         attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
@@ -210,6 +202,27 @@ where
     S::SerialNumber: p2ide_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
+    ///
+    /// This and `serial_number` are mutually exclusive: the builder's typestate rejects setting
+    /// the serial number twice at compile time.
+    ///
+    /// ```compile_fail
+    /// # #[allow(dead_code)]
+    /// # fn demo(
+    /// #     sender: miden_protocol::account::AccountId,
+    /// #     target: miden_protocol::account::AccountId,
+    /// #     rng: &mut impl miden_protocol::crypto::rand::FeltRng,
+    /// # ) {
+    /// use miden_protocol::Word;
+    /// use miden_standards::note::P2ideNote;
+    ///
+    /// let _ = P2ideNote::builder()
+    ///     .sender(sender)
+    ///     .target(target)
+    ///     .serial_number(Word::empty())
+    ///     .generate_serial_number(rng); // serial number already set: compile error
+    /// # }
+    /// ```
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
@@ -478,7 +491,7 @@ mod tests {
 
         assert_eq!(note.sender(), sender());
         assert_eq!(note.target(), target());
-        assert_eq!(note.note_type(), NoteType::Private);
+        assert_eq!(note.note_type(), NoteType::default());
         assert_eq!(note.reclaim_height(), None);
         assert_eq!(note.timelock_height(), None);
         assert_eq!(note.assets().num_assets(), 1);
