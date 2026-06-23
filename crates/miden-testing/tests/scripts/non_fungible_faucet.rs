@@ -211,10 +211,10 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         NonFungibleFaucet::compute_asset_commitment(b"burnable token", Word::from([5, 6, 7, 8u32]));
     let recipient = Word::from([9, 9, 9, 9u32]);
 
-    // 1. mint and apply the delta: the faucet records the commitment ISSUED with supply 1
+    // 1. mint and apply the patch: the faucet records the commitment ISSUED with supply 1
     let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
     let mut faucet = faucet;
-    faucet.apply_delta(minted.account_delta())?;
+    faucet.apply_patch(minted.account_patch())?;
     assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 1);
 
     // 2. consume a BURN note carrying the minted NFT against the faucet
@@ -236,7 +236,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         .await?;
 
     // 3. supply is decremented back to 0
-    faucet.apply_delta(burned.account_delta())?;
+    faucet.apply_patch(burned.account_patch())?;
     assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 0);
 
     Ok(())
