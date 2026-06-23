@@ -410,7 +410,7 @@ pub proc deregister_faucet
     exec.hash_token_address
     # => [TOKEN_ADDR_HASH, pad(12)]
 
-    push.0.0.0.0 swapw
+    padw swapw
     # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(8)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
@@ -419,7 +419,7 @@ pub proc deregister_faucet
     # => [pad(16)]
 
     # --- 3. Clear faucet_registry: KEY=[0,0,suffix,prefix], VALUE=[0,0,0,0] ---
-    push.0.0.0.0
+    padw
     loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.0
     # => [[0, 0, suffix, prefix], [0, 0, 0, 0], pad(8)]
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
@@ -427,34 +427,22 @@ pub proc deregister_faucet
     dropw
     # => [pad(16)]
 
-    # --- 4. Clear all four faucet_metadata sub-keys for this faucet ---
-    # Each sub-key KEY = [sub_key, 0, suffix, prefix] is cleared to VALUE = [0, 0, 0, 0].
-    push.0.0.0.0
-    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.FAUCET_METADATA_SUBKEY_ADDR_LO
-    push.FAUCET_METADATA_MAP_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
-    # => [pad(16)]
-
-    push.0.0.0.0
-    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.FAUCET_METADATA_SUBKEY_ADDR_HI
-    push.FAUCET_METADATA_MAP_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
-    # => [pad(16)]
-
-    push.0.0.0.0
-    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.FAUCET_METADATA_SUBKEY_HASH_LO
-    push.FAUCET_METADATA_MAP_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
-    # => [pad(16)]
-
-    push.0.0.0.0
-    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.FAUCET_METADATA_SUBKEY_HASH_HI
-    push.FAUCET_METADATA_MAP_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
+    # --- 4. Clear all four faucet_metadata sub-keys: KEY = [sub_key, 0, suffix, prefix] -> [0; 4] ---
+    # sub_key runs 0..3 (ADDR_LO, ADDR_HI, HASH_LO, HASH_HI), which are consecutive.
+    push.FAUCET_METADATA_SUBKEY_ADDR_LO
+    # => [sub_key, pad(15)]
+    repeat.4
+        padw
+        loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
+        push.0 dup.7
+        # => [[sub_key, 0, suffix, prefix], [0, 0, 0, 0], sub_key, pad(7)]
+        push.FAUCET_METADATA_MAP_SLOT[0..2]
+        exec.native_account::set_map_item
+        dropw
+        # => [sub_key, pad(15)]
+        add.1
+    end
+    drop
     # => [pad(16)]
 end
 
