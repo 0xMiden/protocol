@@ -282,7 +282,7 @@ Asserts the note sender matches the bridge admin stored in
 | **Invocation** | `call` |
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
-| **Context** | Consuming a `DEREGISTER_AGG_BRIDGE` note on the bridge account |
+| **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
 | **Panics** | Note sender is not the bridge admin; faucet is not currently registered |
 
 Asserts the note sender matches the bridge admin stored in
@@ -681,7 +681,7 @@ two-step registration into `faucet_registry_map` and `token_registry_map`).
 | **Issuer** | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.4 DEREGISTER_AGG_BRIDGE
+### 4.4 DEREGISTER_AGG_FAUCET
 
 **Purpose:** Deregisters a faucet from the bridge's faucet and token registries.
 
@@ -705,7 +705,7 @@ two-step registration into `faucet_registry_map` and `token_registry_map`).
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `deregister_agg_bridge.masm` |
+| `script` | `deregister_agg_faucet.masm` |
 | `storage` | 2 felts -- the faucet id |
 
 **Storage layout (2 felts):**
@@ -726,7 +726,7 @@ the faucet is currently registered, and clears the `faucet_registry_map`,
 After consumption, in-flight B2AGG / CLAIM notes referencing the deregistered
 faucet will fail their `assert_faucet_registered` / `lookup_faucet_by_token_address`
 checks. The bridge admin should drain or otherwise warn users about pending
-notes before sending a `DEREGISTER_AGG_BRIDGE`.
+notes before sending a `DEREGISTER_AGG_FAUCET`.
 
 #### Permissions
 
@@ -1298,7 +1298,7 @@ the Miden side (enforced by the caller restriction on
 [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
 The bridge admin can also revoke a faucet's authorization via a
-[`DEREGISTER_AGG_BRIDGE`](#44-deregister_agg_bridge) note, which carries only the faucet id and
+[`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note, which carries only the faucet id and
 calls [`bridge_config::deregister_faucet`](#bridge_configderegister_faucet) to clear every entry
 the faucet's current registration wrote: the `faucet_registry_map`, `token_registry_map`, and
 `faucet_metadata_map`. The token-registry key is recomputed from the faucet's own stored metadata,

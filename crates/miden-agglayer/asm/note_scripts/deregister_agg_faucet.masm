@@ -5,7 +5,7 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-const DEREGISTER_AGG_BRIDGE_NUM_STORAGE_ITEMS = 2
+const DEREGISTER_AGG_FAUCET_NUM_STORAGE_ITEMS = 2
 
 const STORAGE_START_PTR = 0
 const FAUCET_ID_SUFFIX = 0
@@ -14,10 +14,10 @@ const FAUCET_ID_PREFIX = 1
 # ERRORS
 # =================================================================================================
 
-const ERR_DEREGISTER_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_BRIDGE expects exactly 2 note storage items"
-const ERR_DEREGISTER_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_BRIDGE note attachment target account does not match consuming account"
+const ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_FAUCET expects exactly 2 note storage items"
+const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET note attachment target account does not match consuming account"
 
-#! Agglayer Bridge DEREGISTER_AGG_BRIDGE script: deregisters a faucet from the bridge's faucet
+#! Agglayer Bridge DEREGISTER_AGG_FAUCET script: deregisters a faucet from the bridge's faucet
 #! registry, token registry, and faucet metadata.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
@@ -53,7 +53,7 @@ pub proc main
 
     # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_DEREGISTER_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    assert.err=ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # Load note storage to memory
@@ -61,7 +61,7 @@ pub proc main
     # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items
-    push.DEREGISTER_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_DEREGISTER_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS
+    push.DEREGISTER_AGG_FAUCET_NUM_STORAGE_ITEMS assert_eq.err=ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS
     # => [pad(16)]
 
     # Build deregister_faucet args by loading the two stored felts explicitly.

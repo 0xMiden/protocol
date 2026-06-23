@@ -7,7 +7,7 @@ use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
     ConversionMetadata,
-    DeregisterAggBridgeNote,
+    DeregisterAggFaucetNote,
     EthAddress,
     MetadataHash,
     create_existing_bridge_account,
@@ -261,17 +261,17 @@ fn faucet_metadata_key(faucet: AccountId, sub_key: u8) -> StorageMapKey {
     )
 }
 
-/// Tests that a DEREGISTER_AGG_BRIDGE note clears a previously-registered faucet from the faucet
+/// Tests that a DEREGISTER_AGG_FAUCET note clears a previously-registered faucet from the faucet
 /// registry, the token registry, AND the faucet metadata map.
 ///
 /// Flow:
 /// 1. Create admin + bridge accounts
 /// 2. Register a faucet via CONFIG_AGG_BRIDGE
 /// 3. Verify all three maps hold the expected non-zero values
-/// 4. Deregister via DEREGISTER_AGG_BRIDGE
+/// 4. Deregister via DEREGISTER_AGG_FAUCET
 /// 5. Verify all three maps hold [0, 0, 0, 0]
 #[tokio::test]
-async fn test_deregister_agg_bridge_clears_both_registries() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -314,7 +314,7 @@ async fn test_deregister_agg_bridge_clears_both_registries() -> anyhow::Result<(
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    let deregister_note = DeregisterAggBridgeNote::create(
+    let deregister_note = DeregisterAggFaucetNote::create(
         faucet_to_register,
         bridge_admin.id(),
         bridge_account.id(),
@@ -372,7 +372,7 @@ async fn test_deregister_agg_bridge_clears_both_registries() -> anyhow::Result<(
     mock_chain.add_pending_executed_transaction(&register_executed)?;
     mock_chain.prove_next_block()?;
 
-    // ---- TX1: consume DEREGISTER_AGG_BRIDGE to clear ----
+    // ---- TX1: consume DEREGISTER_AGG_FAUCET to clear ----
     let deregister_tx = mock_chain
         .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
         .build()?;
@@ -404,12 +404,12 @@ async fn test_deregister_agg_bridge_clears_both_registries() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that DEREGISTER_AGG_BRIDGE clears a Miden-native (`is_native = true`) faucet just like a
+/// Tests that DEREGISTER_AGG_FAUCET clears a Miden-native (`is_native = true`) faucet just like a
 /// wrapped one. `deregister_faucet` does not branch on `is_native` (it overwrites the whole
 /// `[1, is_native, 0, 0]` registry word with zeros), so this guards against a regression that would
 /// make deregistration `is_native`-dependent.
 #[tokio::test]
-async fn test_deregister_agg_bridge_clears_native_faucet() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -450,7 +450,7 @@ async fn test_deregister_agg_bridge_clears_native_faucet() -> anyhow::Result<()>
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    let deregister_note = DeregisterAggBridgeNote::create(
+    let deregister_note = DeregisterAggFaucetNote::create(
         faucet_to_register,
         bridge_admin.id(),
         bridge_account.id(),
@@ -514,10 +514,10 @@ async fn test_deregister_agg_bridge_clears_native_faucet() -> anyhow::Result<()>
     Ok(())
 }
 
-/// Tests that DEREGISTER_AGG_BRIDGE panics with `ERR_FAUCET_NOT_REGISTERED` when the
+/// Tests that DEREGISTER_AGG_FAUCET panics with `ERR_FAUCET_NOT_REGISTERED` when the
 /// targeted faucet was never registered (or has already been deregistered).
 #[tokio::test]
-async fn test_deregister_agg_bridge_fails_when_not_registered() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_fails_when_not_registered() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -540,7 +540,7 @@ async fn test_deregister_agg_bridge_fails_when_not_registered() -> anyhow::Resul
 
     let faucet_id = AccountId::dummy([7; 15], AccountIdVersion::Version1, AccountType::Public);
 
-    let deregister_note = DeregisterAggBridgeNote::create(
+    let deregister_note = DeregisterAggFaucetNote::create(
         faucet_id,
         bridge_admin.id(),
         bridge_account.id(),
@@ -560,10 +560,10 @@ async fn test_deregister_agg_bridge_fails_when_not_registered() -> anyhow::Resul
     Ok(())
 }
 
-/// Tests that DEREGISTER_AGG_BRIDGE panics with `ERR_SENDER_NOT_BRIDGE_ADMIN` when the note
+/// Tests that DEREGISTER_AGG_FAUCET panics with `ERR_SENDER_NOT_BRIDGE_ADMIN` when the note
 /// sender is not the bridge admin, even if the faucet is currently registered.
 #[tokio::test]
-async fn test_deregister_agg_bridge_fails_when_sender_not_admin() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_fails_when_sender_not_admin() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -608,7 +608,7 @@ async fn test_deregister_agg_bridge_fails_when_sender_not_admin() -> anyhow::Res
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    let attacker_deregister_note = DeregisterAggBridgeNote::create(
+    let attacker_deregister_note = DeregisterAggFaucetNote::create(
         faucet_id,
         attacker.id(),
         bridge_account.id(),
@@ -637,11 +637,11 @@ async fn test_deregister_agg_bridge_fails_when_sender_not_admin() -> anyhow::Res
 }
 
 /// Tests that deregistration revokes the faucet end-to-end: after a faucet is deregistered, the
-/// bridge no longer treats it as registered, so a second DEREGISTER_AGG_BRIDGE for the same faucet
+/// bridge no longer treats it as registered, so a second DEREGISTER_AGG_FAUCET for the same faucet
 /// fails the `assert_faucet_registered` check with `ERR_FAUCET_NOT_REGISTERED`. That is the exact
 /// check in-flight B2AGG / CLAIM notes rely on, so its failure demonstrates the faucet is revoked.
 #[tokio::test]
-async fn test_deregister_agg_bridge_revokes_registration() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_revokes_registration() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -681,13 +681,13 @@ async fn test_deregister_agg_bridge_revokes_registration() -> anyhow::Result<()>
         builder.rng_mut(),
     )?;
     // Two deregister notes for the same faucet: the first revokes it, the second must then fail.
-    let deregister_note = DeregisterAggBridgeNote::create(
+    let deregister_note = DeregisterAggFaucetNote::create(
         faucet_id,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    let second_deregister_note = DeregisterAggBridgeNote::create(
+    let second_deregister_note = DeregisterAggFaucetNote::create(
         faucet_id,
         bridge_admin.id(),
         bridge_account.id(),

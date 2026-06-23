@@ -18,7 +18,7 @@ use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     ConversionMetadata,
-    DeregisterAggBridgeNote,
+    DeregisterAggFaucetNote,
     EthAddress,
     EthEmbeddedAccountId,
     ExitRoot,
@@ -1866,7 +1866,7 @@ async fn test_claim_rejects_deregistered_faucet_via_stale_token_key() -> anyhow:
 
     // Deregister: clears the faucet registry, metadata, and the token key derived from the CURRENT
     // metadata (the re-registered network) — but NOT the stranded leaf-network token key.
-    let deregister_note = DeregisterAggBridgeNote::create(
+    let deregister_note = DeregisterAggFaucetNote::create(
         agglayer_faucet.id(),
         bridge_admin.id(),
         bridge_account.id(),

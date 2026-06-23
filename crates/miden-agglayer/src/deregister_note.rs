@@ -1,6 +1,6 @@
-//! DEREGISTER_AGG_BRIDGE note creation utilities.
+//! DEREGISTER_AGG_FAUCET note creation utilities.
 //!
-//! This module provides helpers for creating DEREGISTER_AGG_BRIDGE notes,
+//! This module provides helpers for creating DEREGISTER_AGG_FAUCET notes,
 //! which are used to deregister faucets from the bridge's faucet registry.
 
 extern crate alloc;
@@ -33,19 +33,19 @@ use miden_utils_sync::LazyLock;
 // NOTE SCRIPT
 // ================================================================================================
 
-// Initialize the DEREGISTER_AGG_BRIDGE note script only once
-static DEREGISTER_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the DEREGISTER_AGG_FAUCET note script only once
+static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/deregister_agg_bridge.masl"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/deregister_agg_faucet.masl"));
     let library = Library::read_from_bytes(bytes)
-        .expect("shipped DEREGISTER_AGG_BRIDGE script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped DEREGISTER_AGG_BRIDGE script is well-formed")
+        .expect("shipped DEREGISTER_AGG_FAUCET script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
 });
 
-// DEREGISTER_AGG_BRIDGE NOTE
+// DEREGISTER_AGG_FAUCET NOTE
 // ================================================================================================
 
-/// DEREGISTER_AGG_BRIDGE note.
+/// DEREGISTER_AGG_FAUCET note.
 ///
 /// This note is used to deregister a faucet from the bridge's faucet registry, token registry,
 /// and faucet metadata. It carries only the faucet account ID; the bridge reads the registered
@@ -56,33 +56,33 @@ static DEREGISTER_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Note that any in-flight notes (B2AGG / CLAIM) targeting the deregistered faucet will fail
 /// after this note is consumed, since `assert_faucet_registered` and
 /// `lookup_faucet_by_token_address` will no longer find the faucet.
-pub struct DeregisterAggBridgeNote;
+pub struct DeregisterAggFaucetNote;
 
-impl DeregisterAggBridgeNote {
+impl DeregisterAggFaucetNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Expected number of storage items for a DEREGISTER_AGG_BRIDGE note.
+    /// Expected number of storage items for a DEREGISTER_AGG_FAUCET note.
     /// Layout: [faucet_id_suffix, faucet_id_prefix]
     pub const NUM_STORAGE_ITEMS: usize = 2;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the DEREGISTER_AGG_BRIDGE note script.
+    /// Returns the DEREGISTER_AGG_FAUCET note script.
     pub fn script() -> NoteScript {
-        DEREGISTER_AGG_BRIDGE_SCRIPT.clone()
+        DEREGISTER_AGG_FAUCET_SCRIPT.clone()
     }
 
-    /// Returns the DEREGISTER_AGG_BRIDGE note script root.
+    /// Returns the DEREGISTER_AGG_FAUCET note script root.
     pub fn script_root() -> NoteScriptRoot {
-        DEREGISTER_AGG_BRIDGE_SCRIPT.root()
+        DEREGISTER_AGG_FAUCET_SCRIPT.root()
     }
 
     // BUILDERS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a DEREGISTER_AGG_BRIDGE note to deregister a faucet from the bridge's registry.
+    /// Creates a DEREGISTER_AGG_FAUCET note to deregister a faucet from the bridge's registry.
     ///
     /// The note storage contains 2 felts:
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
@@ -122,7 +122,7 @@ impl DeregisterAggBridgeNote {
         let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
         let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
-        // DEREGISTER_AGG_BRIDGE notes don't carry assets
+        // DEREGISTER_AGG_FAUCET notes don't carry assets
         let assets = NoteAssets::new(vec![])?;
 
         Ok(Note::with_attachments(assets, metadata, recipient, attachments))

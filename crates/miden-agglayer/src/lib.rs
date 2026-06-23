@@ -46,7 +46,7 @@ pub use claim_note::{
     SmtNode,
 };
 pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
-pub use deregister_note::DeregisterAggBridgeNote;
+pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{

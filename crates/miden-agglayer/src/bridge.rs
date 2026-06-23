@@ -31,7 +31,7 @@ pub use crate::{
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    DeregisterAggBridgeNote,
+    DeregisterAggFaucetNote,
     EthAddress,
     EthAmount,
     EthAmountError,
@@ -171,7 +171,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
-/// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_BRIDGE notes.
+/// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_FAUCET notes.
 ///
 /// Claim validation compares the leaf's `destination_network` to the global MASM constant
 /// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
@@ -317,7 +317,7 @@ impl AggLayerBridge {
             ClaimNote::script_root(),
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
-            DeregisterAggBridgeNote::script_root(),
+            DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
         ])
