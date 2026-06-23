@@ -67,7 +67,6 @@ pub fn setup_chain() -> TestSetup {
     let mut builder = MockChain::builder();
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);
-    // Use P2ANY: a P2ID note must carry at least one asset.
     let note1 = builder
         .add_p2any_note(account1.id(), NoteType::Public, [])
         .expect("adding p2any note1 should work");

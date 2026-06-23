@@ -351,7 +351,6 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    // Use P2ANY: a P2ID note must carry at least one asset.
     let p2id_note = create_p2any_note(account0.id(), NoteType::Private, [], builder.rng_mut());
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
     let mut chain = builder.build()?;

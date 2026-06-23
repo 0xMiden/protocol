@@ -189,7 +189,6 @@ async fn proposed_block_authenticating_unauthenticated_notes() -> anyhow::Result
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    // Use P2ANY: a P2ID note must carry at least one asset.
     let note0 = builder.add_p2any_note(sender_id, NoteType::Private, [])?;
     let note1 = builder.add_p2any_note(sender_id, NoteType::Public, [])?;
     let chain = builder.build()?;
