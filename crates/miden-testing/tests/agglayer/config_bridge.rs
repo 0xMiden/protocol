@@ -16,6 +16,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, StorageMapKey};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -514,56 +515,19 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     Ok(())
 }
 
-/// Tests that DEREGISTER_AGG_FAUCET panics with `ERR_FAUCET_NOT_REGISTERED` when the
-/// targeted faucet was never registered (or has already been deregistered).
+/// Tests that DEREGISTER_AGG_FAUCET rejects invalid deregistrations:
+/// - an unregistered faucet panics with `ERR_FAUCET_NOT_REGISTERED`;
+/// - a non-admin sender panics with `ERR_SENDER_NOT_BRIDGE_ADMIN`, even when the faucet is
+///   registered (so the panic comes from the auth check, not the registration check).
+#[rstest::rstest]
+#[case::unregistered_faucet(false, false, ERR_FAUCET_NOT_REGISTERED)]
+#[case::non_admin_sender(true, true, ERR_SENDER_NOT_BRIDGE_ADMIN)]
 #[tokio::test]
-async fn test_deregister_agg_faucet_fails_when_not_registered() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
-        bridge_admin.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-    );
-    builder.add_account(bridge_account.clone())?;
-
-    let faucet_id = AccountId::dummy([7; 15], AccountIdVersion::Version1, AccountType::Public);
-
-    let deregister_note = DeregisterAggFaucetNote::create(
-        faucet_id,
-        bridge_admin.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
-    let mock_chain = builder.build()?;
-
-    let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FAUCET_NOT_REGISTERED);
-
-    Ok(())
-}
-
-/// Tests that DEREGISTER_AGG_FAUCET panics with `ERR_SENDER_NOT_BRIDGE_ADMIN` when the note
-/// sender is not the bridge admin, even if the faucet is currently registered.
-#[tokio::test]
-async fn test_deregister_agg_faucet_fails_when_sender_not_admin() -> anyhow::Result<()> {
+async fn test_deregister_agg_faucet_rejects_invalid(
+    #[case] register_first: bool,
+    #[case] sender_is_attacker: bool,
+    #[case] expected_err: MasmError,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -587,51 +551,62 @@ async fn test_deregister_agg_faucet_fails_when_sender_not_admin() -> anyhow::Res
     );
     builder.add_account(bridge_account.clone())?;
 
-    let faucet_id = AccountId::dummy([99; 15], AccountIdVersion::Version1, AccountType::Public);
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
-    let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let faucet_id = AccountId::dummy([7; 15], AccountIdVersion::Version1, AccountType::Public);
 
-    // Register the faucet legitimately first, so the panic must come from the auth check rather
-    // than the assert_faucet_registered check.
-    let config_note = ConfigAggBridgeNote::create(
-        ConversionMetadata {
-            faucet_account_id: faucet_id,
-            origin_token_address,
-            scale: 0,
-            origin_network,
-            is_native: false,
-            metadata_hash,
-        },
-        bridge_admin.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    let attacker_deregister_note = DeregisterAggFaucetNote::create(
-        faucet_id,
-        attacker.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
-    builder.add_output_note(RawOutputNote::Full(attacker_deregister_note.clone()));
+    // Register the faucet first only for the non-admin case, so its panic comes from the auth check
+    // rather than the assert_faucet_registered check.
+    let config_note = if register_first {
+        Some(ConfigAggBridgeNote::create(
+            ConversionMetadata {
+                faucet_account_id: faucet_id,
+                origin_token_address: EthAddress::from_hex(
+                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                )
+                .unwrap(),
+                scale: 0,
+                origin_network: 1,
+                is_native: false,
+                metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+            },
+            bridge_admin.id(),
+            bridge_account.id(),
+            builder.rng_mut(),
+        )?)
+    } else {
+        None
+    };
+
+    let sender = if sender_is_attacker {
+        attacker.id()
+    } else {
+        bridge_admin.id()
+    };
+    let deregister_note =
+        DeregisterAggFaucetNote::create(faucet_id, sender, bridge_account.id(), builder.rng_mut())?;
+
+    if let Some(note) = &config_note {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    let register_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
-        .build()?;
-    let register_executed = register_tx.execute().await?;
-    mock_chain.add_pending_executed_transaction(&register_executed)?;
-    mock_chain.prove_next_block()?;
+    if let Some(note) = config_note {
+        let register_executed = mock_chain
+            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+        mock_chain.add_pending_executed_transaction(&register_executed)?;
+        mock_chain.prove_next_block()?;
+    }
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[attacker_deregister_note.id()], &[])?
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_BRIDGE_ADMIN);
+    assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
 }
