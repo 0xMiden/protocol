@@ -419,8 +419,7 @@ pub proc deregister_faucet
     dropw
     # => [pad(16)]
 
-    # --- 4. Clear all four faucet_metadata sub-keys: KEY = [sub_key, 0, suffix, prefix] -> [0; 4] ---
-    # sub_key runs 0..3 (ADDR_LO, ADDR_HI, HASH_LO, HASH_HI), which are consecutive.
+    # --- 4. Clear all four faucet_metadata sub-keys (0..3) to [0; 4]; KEY = [sub_key, 0, suffix, prefix] ---
     push.FAUCET_METADATA_SUBKEY_ADDR_LO
     # => [sub_key, pad(15)]
 
