@@ -74,7 +74,6 @@ pub proc main
     call.bridge_config::deregister_faucet
     # => [pad(18)]
 
-    # Drop the 2 overflow pad felts to bring sdepth back to the 16-minimum.
     drop drop
     # => [pad(16)]
 end
