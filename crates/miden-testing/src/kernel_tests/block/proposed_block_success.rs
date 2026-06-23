@@ -132,10 +132,10 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
     // Create three transactions on the same account that build on top of each other.
     let executed_tx0 = chain.create_authenticated_notes_tx(account1.id(), [note0.id()]).await?;
 
-    account1.apply_delta(executed_tx0.account_delta())?;
+    account1.apply_patch(executed_tx0.account_patch())?;
     let executed_tx1 = chain.create_authenticated_notes_tx(account1.clone(), [note1.id()]).await?;
 
-    account1.apply_delta(executed_tx1.account_delta())?;
+    account1.apply_patch(executed_tx1.account_patch())?;
     let executed_tx2 = chain.create_authenticated_notes_tx(account1.clone(), [note2.id()]).await?;
 
     let [tx0, tx1, tx2] = [executed_tx0, executed_tx1, executed_tx2]
@@ -288,7 +288,7 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
     let mut chain = builder.build()?;
 
     let noop_tx = generate_conditional_tx(&mut chain, account0.id(), noop_note0, false).await;
-    account0.apply_delta(noop_tx.account_delta())?;
+    account0.apply_patch(noop_tx.account_patch())?;
     let state_updating_tx =
         generate_conditional_tx(&mut chain, account0.clone(), noop_note1, true).await;
 

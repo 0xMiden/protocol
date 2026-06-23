@@ -221,7 +221,7 @@ async fn test_multisig_2_of_2_with_note_creation(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(tx_context_execute.account_delta())?;
+    multisig_account.apply_patch(tx_context_execute.account_patch())?;
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -533,14 +533,17 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .await?;
 
     // Verify the transaction executed successfully
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
 
     // Apply the delta to get the updated account with new signers
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify that the public keys were actually updated in storage
     for (i, expected_key) in new_public_keys.iter().enumerate() {
@@ -673,7 +676,10 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .await?;
 
     // Verify the transaction executed successfully with new signers
-    assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx_context_execute_new.account_patch().final_nonce(),
+        Some(updated_multisig_account.nonce() + Felt::ONE)
+    );
 
     Ok(())
 }
@@ -782,14 +788,17 @@ async fn test_multisig_update_signers_remove_owner(
         .await?;
 
     // Verify transaction success
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
 
     // Apply delta to get updated account
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify public keys were updated
     for (i, expected_key) in new_public_keys.iter().enumerate() {
@@ -1137,7 +1146,7 @@ async fn test_multisig_proc_threshold_overrides(
     assert!(tx_result.is_ok(), "Note consumption with 1 signature should succeed");
 
     // Apply the transaction to the account
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -1213,7 +1222,7 @@ async fn test_multisig_proc_threshold_overrides(
     assert!(result.is_ok(), "Transaction should succeed with 2 signatures for note sending");
 
     // Apply the transaction to the account
-    multisig_account.apply_delta(result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -1302,7 +1311,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(set_tx.account_delta())?;
+    multisig_account.apply_patch(set_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&set_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1331,7 +1340,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await
         .expect("override=1 should allow receive_asset with one signature");
-    multisig_account.apply_delta(one_sig_tx.account_delta())?;
+    multisig_account.apply_patch(one_sig_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&one_sig_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1379,7 +1388,7 @@ async fn test_multisig_set_procedure_threshold(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(clear_tx.account_delta())?;
+    multisig_account.apply_patch(clear_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&clear_tx)?;
     mock_chain.prove_next_block()?;
 

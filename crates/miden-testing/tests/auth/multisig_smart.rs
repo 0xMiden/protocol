@@ -133,7 +133,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
     );
 
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -357,7 +357,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Verify the new threshold/num_approvers config is persisted.
     let threshold_config = multisig_account
@@ -455,7 +455,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Policy word layout: [immediate, delayed, note_restrictions, 0]
     let stored_policy = multisig_account

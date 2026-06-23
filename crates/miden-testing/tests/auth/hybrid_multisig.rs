@@ -180,7 +180,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    multisig_account.apply_delta(tx_context_execute.account_delta())?;
+    multisig_account.apply_patch(tx_context_execute.account_patch())?;
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -410,14 +410,17 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .unwrap();
 
     // Verify the transaction executed successfully
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
 
     // Apply the delta to get the updated account with new signers
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify that the public keys were actually updated in storage
     for (i, expected_key) in new_public_keys.iter().enumerate() {
@@ -550,7 +553,10 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .await?;
 
     // Verify the transaction executed successfully with new signers
-    assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx_context_execute_new.account_patch().final_nonce(),
+        Some(updated_multisig_account.nonce() + Felt::ONE)
+    );
 
     Ok(())
 }
@@ -672,14 +678,17 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .unwrap();
 
     // Verify transaction success
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
 
     // Apply delta to get updated account
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify public keys were updated
     for (i, expected_key) in new_public_keys.iter().enumerate() {

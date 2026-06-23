@@ -46,8 +46,8 @@ impl PausableManager {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::pausable::manager";
 
-    pub const PAUSE_PROC_NAME: &'static str = "pause";
-    pub const UNPAUSE_PROC_NAME: &'static str = "unpause";
+    const PAUSE_PROC_NAME: &'static str = "pause";
+    const UNPAUSE_PROC_NAME: &'static str = "unpause";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
