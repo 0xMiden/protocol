@@ -249,11 +249,12 @@ pub proc register_faucet
     loc_storew_le.REG_TOKEN_HASH_LOC dropw
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
 
-    # --- Clear the prior token_registry key when re-registering an existing faucet ---
-    # Re-registering a faucet under a different (origin_token_address, origin_network) rewrites its
-    # token key and metadata below, but the previous token key would otherwise stay pointing at this
-    # faucet forever. Clear it here, reading the prior (address, network) from the not-yet-overwritten
-    # faucet_metadata, so a token_registry entry never outlives the registration that created it.
+    # --- Clear the potentially populated token_registry key from a prior registration ---
+    # If this faucet is already registered (a re-registration under a different
+    # (origin_token_address, origin_network)), the new token key and metadata written below would
+    # otherwise leave the previous token key pointing at this faucet forever. Clear it here, reading
+    # the prior (address, network) from the not-yet-overwritten faucet_metadata, so a token_registry
+    # entry never outlives the registration that created it.
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
     exec.is_faucet_registered
     # => [is_registered, addr0, addr1, addr2, addr3, addr4, pad(11)]
