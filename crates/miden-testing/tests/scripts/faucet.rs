@@ -6,7 +6,14 @@ use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountIdVersion,
+    AccountProcedureRoot,
+    AccountType,
+};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
@@ -195,6 +202,56 @@ fn create_set_burn_policy_note_script(policy_root: Word) -> String {
             push.{policy_root}
             call.policy_manager::set_burn_policy
             dropw dropw dropw dropw
+        end
+        "#
+    )
+}
+
+/// Builds a note script that invokes every `get_*_policy` getter via `call` and asserts each one
+/// uses the 16-felt call ABI.
+fn create_policy_getters_note_script(
+    mint_root: AccountProcedureRoot,
+    burn_root: AccountProcedureRoot,
+    send_root: AccountProcedureRoot,
+    receive_root: AccountProcedureRoot,
+) -> String {
+    let mint_root = mint_root.as_word();
+    let burn_root = burn_root.as_word();
+    let send_root = send_root.as_word();
+    let receive_root = receive_root.as_word();
+    format!(
+        r#"
+        use miden::standards::faucets::policies::policy_manager
+
+        @note_script
+        pub proc main
+            padw padw padw padw
+            call.policy_manager::get_mint_policy
+            # => [MINT_POLICY_ROOT, pad(12)]
+            push.{mint_root}
+            assert_eqw.err="get_mint_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_burn_policy
+            # => [BURN_POLICY_ROOT, pad(12)]
+            push.{burn_root}
+            assert_eqw.err="get_burn_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_send_policy
+            # => [SEND_POLICY_ROOT, pad(12)]
+            push.{send_root}
+            assert_eqw.err="get_send_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_receive_policy
+            # => [RECEIVE_POLICY_ROOT, pad(12)]
+            push.{receive_root}
+            assert_eqw.err="get_receive_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
         end
         "#
     )
@@ -1063,6 +1120,48 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     .await?;
 
     assert_transaction_executor_error!(result, ERR_BURN_POLICY_ROOT_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// Conformance test for the policy getters' 16-felt call ABI.
+#[tokio::test]
+async fn test_network_faucet_policy_getters_works() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    // `add_existing_network_faucet` activates AllowAll for burn, send, and receive, plus the mint
+    // policy passed below, so the active roots are known up front.
+    let getters_note_script = compile_note_script(&create_policy_getters_note_script(
+        MintPolicy::allow_all().root(),
+        BurnPolicy::allow_all().root(),
+        TransferPolicy::allow_all().root(),
+        TransferPolicy::allow_all().root(),
+    ))?;
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(0),
+        MintPolicy::allow_all(),
+        [getters_note_script.root()],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let result = execute_faucet_note_script(
+        &mock_chain,
+        faucet.id(),
+        owner_account_id,
+        getters_note_script,
+        402,
+    )
+    .await?;
+
+    // A clean execution proves every getter returned exactly 16 felts with the expected root.
+    result.map_err(|err| anyhow::anyhow!("policy getter conformance tx failed: {err:?}"))?;
 
     Ok(())
 }

@@ -29,6 +29,7 @@
 - Optimized `rbac::grant_role_internal` and `rbac::revoke_role_internal` by removing the redundant membership read and rearranging the stack ([#3090](https://github.com/0xMiden/protocol/pull/3090)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - Added regression tests ensuring a `TokenPolicyManager` with only reserved send/receive policies installs the protocol reserved asset callback slots, so `has_callbacks` is correct from creation and minted assets carry the callback flag ([#3091](https://github.com/0xMiden/protocol/pull/3091)).
+- Fixed the `TokenPolicyManager` `get_mint_policy` / `get_burn_policy` / `get_send_policy` / `get_receive_policy` getters to align the 16-felt `call` ABI. ([#3114](https://github.com/0xMiden/protocol/pull/3114)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - [BREAKING] Extended `Authority::RbacControlled` to assign roles per authority-gated procedure ([#3072](https://github.com/0xMiden/protocol/pull/3072)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
@@ -43,9 +44,12 @@
 - Added a global emergency switch to `Authority`: owner-gated `freeze` / `unfreeze` procedures toggle an `is_frozen` flag that makes `assert_authorized` block every authority-gated procedure at once, regardless of role or owner membership ([#3102](https://github.com/0xMiden/protocol/pull/3102)).
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - [BREAKING] Removed `AccountDelta` from `ExecutedTransaction` which is replaced by `AccountPatch` ([#3109](https://github.com/0xMiden/protocol/pull/3109)).
+- [BREAKING] Removed `Account::apply_delta` and `AccountDelta::merge` ([#3110](https://github.com/0xMiden/protocol/pull/3110)).
+- [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
 - Added a validation inside `set_max_supply` rejects a new cap above `FUNGIBLE_ASSET_MAX_AMOUNT`, keeping the stored cap consistent with the bound enforced at mint time ([#3118](https://github.com/0xMiden/protocol/pull/3118)).
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
+- Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
