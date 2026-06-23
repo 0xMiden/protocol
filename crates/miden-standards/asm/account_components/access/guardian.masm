@@ -1,0 +1,6 @@
+# The MASM code of the Guardian Account Component.
+#
+# See the `Guardian` Rust type's documentation for more details.
+
+pub use ::miden::standards::access::guardian::get_guardian
+pub use ::miden::standards::access::guardian::set_guardian

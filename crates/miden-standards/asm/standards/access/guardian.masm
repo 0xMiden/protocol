@@ -1,0 +1,185 @@
+# miden::standards::access::guardian
+#
+# Provides a standalone "guardian" actor for account components: a single guardian account ID
+# stored in one value slot, and account-ID equality authorization primitives.
+#
+# The guardian is a second privileged actor, distinct from the owner, intended as a safety brake:
+# other components consult `assert_sender_is_guardian` / `is_sender_guardian` to authorize
+# some actions (e.g. an emergency freeze, or cancelling a scheduled operation). The guardian
+# can never grant roles, move assets, or perform owner-only actions. It is purely an authorization
+# subject checked by the procedures that opt into it.
+#
+# Authorization is a plain account-ID equality check, so this component needs no RBAC
+# infrastructure and behaves the same across all authority modes. If no guardian is assigned the
+# stored ID is the zero address `(0, 0)`, and the equality check returns 0 for every real sender,
+# yielding "no guardian => nobody passes the guardian check" for free.
+#
+# Storage layout (single slot):
+#   Word:  [guardian_suffix, guardian_prefix, 0, 0]
+
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::protocol::active_note
+use miden::protocol::native_account
+use miden::standards::access::authority
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot in this component's storage layout where the guardian account ID is stored.
+const GUARDIAN_SLOT = word("miden::standards::access::guardian::guardian_id")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SENDER_NOT_GUARDIAN = "note sender is not the guardian"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the guardian account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [guardian_suffix, guardian_prefix]
+#!
+#! Where:
+#! - guardian_{suffix, prefix} are the suffix and prefix felts of the guardian account ID. Both
+#!   are zero if no guardian is assigned.
+proc get_guardian_internal
+    push.GUARDIAN_SLOT[0..2] exec.active_account::get_item
+    # => [guardian_suffix, guardian_prefix, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [guardian_suffix, guardian_prefix]
+end
+
+#! Writes the guardian word to storage and drops the old value.
+#!
+#! Inputs:  [guardian_suffix, guardian_prefix, 0, 0]
+#! Outputs: []
+proc save_guardian_info
+    push.GUARDIAN_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, guardian_suffix, guardian_prefix, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_GUARDIAN_WORD]
+
+    dropw
+    # => []
+end
+
+#! Checks if the given account ID is the guardian.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_guardian]
+#!
+#! Where:
+#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
+#! - is_guardian is 1 if the account is the guardian, 0 otherwise.
+proc is_guardian_internal
+    exec.get_guardian_internal
+    # => [guardian_suffix, guardian_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_guardian]
+end
+
+#! Returns 1 if the note sender is the guardian, otherwise 0.
+#!
+#! Inputs:  []
+#! Outputs: [is_sender_guardian]
+#!
+#! Where:
+#! - is_sender_guardian is 1 if the note sender is the guardian, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_sender_guardian
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix]
+
+    exec.is_guardian_internal
+    # => [is_sender_guardian]
+end
+
+#! Asserts that the note sender is the guardian.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the guardian.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_guardian
+    exec.is_sender_guardian
+    # => [is_sender_guardian]
+
+    assert.err=ERR_SENDER_NOT_GUARDIAN
+    # => []
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns the guardian account ID.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [guardian_suffix, guardian_prefix, pad(14)]
+#!
+#! Where:
+#! - guardian_{suffix, prefix} are the suffix and prefix felts of the guardian account ID. Both
+#!   are zero if no guardian is assigned.
+#!
+#! Invocation: call
+pub proc get_guardian
+    exec.get_guardian_internal
+    # => [guardian_suffix, guardian_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [guardian_suffix, guardian_prefix, pad(14)]
+end
+
+#! Sets or clears the guardian account ID.
+#!
+#! Authorized through `authority::assert_authorized`, so the gate is mode-aware. The owner under
+#! `OwnerControlled`, the configured role (or the owner fallback) under `RbacControlled`, and the
+#! account's auth component under `AuthControlled`. Requires the [`Authority`] component to be
+#! installed on the account.
+#!
+#! Clearing behaviour:
+#! - If `new_guardian` is the zero address `(0, 0)`, the guardian is cleared. The zero address is
+#!   treated as a clear value and is not validated as an account ID.
+#! - Otherwise, `new_guardian` is validated and stored as the guardian.
+#!
+#! Inputs:  [new_guardian_suffix, new_guardian_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not authorized.
+#! - new_guardian is non-zero and the account ID is invalid.
+#!
+#! Invocation: call
+pub proc set_guardian
+    exec.authority::assert_authorized
+    # => [new_guardian_suffix, new_guardian_prefix, pad(14)]
+
+    # Detect explicit clear via the zero address. The zero address is not a valid account ID, so
+    # we must check for it before validating.
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [is_zero_address, new_guardian_suffix, new_guardian_prefix, pad(14)]
+
+    if.false
+        # Non-zero new guardian: validate before storing.
+        dup.1 dup.1 exec.account_id::validate
+    end
+    # => [new_guardian_suffix, new_guardian_prefix, pad(14)]
+
+    push.0.0
+    # => [0, 0, new_guardian_suffix, new_guardian_prefix, pad(14)]
+
+    movup.3 movup.3
+    # => [new_guardian_suffix, new_guardian_prefix, 0, 0, pad(14)]
+
+    exec.save_guardian_info
+    # => [pad(16)]
+end
