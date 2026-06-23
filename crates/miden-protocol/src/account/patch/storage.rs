@@ -17,7 +17,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{EMPTY_WORD, Felt, Word, ZERO};
+use crate::{Felt, Word, ZERO};
 
 // ACCOUNT STORAGE PATCH
 // ================================================================================================
@@ -185,7 +185,7 @@ impl AccountStoragePatch {
                         slot_id.suffix(),
                         slot_id.prefix(),
                     ]);
-                    elements.extend_from_slice(EMPTY_WORD.as_elements());
+                    elements.extend_from_slice(Word::empty().as_elements());
                 },
             }
         }
@@ -506,6 +506,8 @@ pub enum StorageMapPatch {
     Create { entries: StorageMapPatchEntries },
 
     /// Records that the entries of an existing map were changed.
+    ///
+    /// The entries should be non-empty, since empty entries are a no-op.
     Update { entries: StorageMapPatchEntries },
 
     /// Records that the map slot was removed.
@@ -645,7 +647,7 @@ impl Deserializable for StorageMapPatch {
 // ================================================================================================
 
 /// The changed entries of a storage map, represented as a map of changed item key
-/// ([`StorageMapKey`]) to value ([`Word`]). For cleared items the value is [`EMPTY_WORD`].
+/// ([`StorageMapKey`]) to value ([`Word`]). For cleared items the value is [`Word::empty`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StorageMapPatchEntries(BTreeMap<StorageMapKey, Word>);
 
@@ -726,7 +728,7 @@ impl From<StorageMap> for StorageMapPatchEntries {
 
 impl Serializable for StorageMapPatchEntries {
     /// Serializes the cleared and updated entries separately. Because the value of a cleared entry
-    /// is always [`EMPTY_WORD`], only its key is written, saving [`Word::SERIALIZED_SIZE`] bytes
+    /// is always [`Word::empty`], only its key is written, saving [`Word::SERIALIZED_SIZE`] bytes
     /// per cleared entry compared to writing the empty value.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_usize(self.cleared_entries().count());
