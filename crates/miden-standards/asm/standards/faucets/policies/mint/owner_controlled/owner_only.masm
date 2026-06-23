@@ -1,3 +1,12 @@
+# miden::standards::faucets::policies::mint::owner_controlled::owner_only
+#
+# Owner-only mint policy: gates minting on the Ownable2Step owner via
+# `ownable2step::assert_sender_is_owner`, rejecting the mint when the note sender is not the
+# current owner.
+#
+# Companion components required on the faucet:
+# - `Ownable2Step` — provides the owner storage slot the auth check reads.
+
 use miden::standards::access::ownable2step
 
 # POLICY PROCEDURES

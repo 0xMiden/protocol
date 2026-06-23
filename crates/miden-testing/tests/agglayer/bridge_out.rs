@@ -84,15 +84,21 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (not used in this test, but distinct from admin)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -364,14 +370,19 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let mut bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
@@ -488,8 +499,13 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (not used in this test, but distinct from admin)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -498,7 +514,8 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -580,18 +597,23 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (not used for GER in this test, but distinct from admin)
+    // CREATE GER INJECTOR ACCOUNT (not used for GER in this test, but distinct from admin)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let mut bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -747,8 +769,13 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // Create a GER manager account (not used in this test, but distinct from admin)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // Create a GER injector account (not used in this test, but distinct from admin)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Create a GER remover account (not used in this test, but distinct from admin and injector)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -756,7 +783,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -861,8 +889,13 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // Create a GER manager account (not used in this test, but distinct from admin)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // Create a GER injector account (not used in this test, but distinct from admin)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Create a GER remover account (not used in this test, but distinct from admin and injector)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -870,7 +903,8 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -883,7 +917,8 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let malicious_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(malicious_account.clone())?;
 
@@ -936,18 +971,23 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // Bridge admin / GER manager / bridge account.
+    // Bridge admin / GER injector / bridge account.
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let mut bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
