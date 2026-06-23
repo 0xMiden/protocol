@@ -54,7 +54,8 @@ impl AccountStoragePatch {
         Self::from_raw(patches)
     }
 
-    /// Returns a new [`AccountStoragePatchBuilder`] for ergonomically constructing a patch in tests.
+    /// Returns a new [`AccountStoragePatchBuilder`] for ergonomically constructing a patch in
+    /// tests.
     pub fn builder() -> AccountStoragePatchBuilder {
         AccountStoragePatchBuilder::new()
     }
@@ -108,12 +109,18 @@ impl AccountStoragePatchBuilder {
 
     /// Records the creation of a value slot with the provided value.
     pub fn create_value(self, slot_name: StorageSlotName, value: Word) -> Self {
-        self.set_unique_slot(slot_name, StorageSlotPatch::Value(StorageValuePatch::Create { value }))
+        self.set_unique_slot(
+            slot_name,
+            StorageSlotPatch::Value(StorageValuePatch::Create { value }),
+        )
     }
 
     /// Records the update of a value slot to the provided value.
     pub fn update_value(self, slot_name: StorageSlotName, value: Word) -> Self {
-        self.set_unique_slot(slot_name, StorageSlotPatch::Value(StorageValuePatch::Update { value }))
+        self.set_unique_slot(
+            slot_name,
+            StorageSlotPatch::Value(StorageValuePatch::Update { value }),
+        )
     }
 
     /// Records the removal of a value slot.
@@ -197,7 +204,11 @@ impl AccountStoragePatchBuilder {
         };
 
         for (key, value) in entries {
-            if existing_entries.as_map().get(&key).is_some_and(|current| *current != Word::empty()) {
+            if existing_entries
+                .as_map()
+                .get(&key)
+                .is_some_and(|current| *current != Word::empty())
+            {
                 panic!("map key `{key:?}` in storage slot `{slot_name}` was already set");
             }
             existing_entries.insert(key, value);
