@@ -359,14 +359,6 @@ end
 #! `lookup_faucet_by_token_address` fail for the faucet, so in-flight B2AGG / CLAIM notes targeting
 #! it are rejected.
 #!
-#! The `token_registry` key is recomputed from the faucet's own `faucet_metadata` (via
-#! `get_faucet_conversion_info`), not from the note, so the cleared key always matches the one
-#! stored at the faucet's current registration.
-#!
-#! A re-registration under a different (origin token address, origin network) can leave a stale
-#! `token_registry` key this proc does not reach. It is inert: `claim` and `bridge_out` both
-#! re-check `assert_faucet_registered`, so deregistration is an unconditional revocation.
-#!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
@@ -431,15 +423,18 @@ pub proc deregister_faucet
     # sub_key runs 0..3 (ADDR_LO, ADDR_HI, HASH_LO, HASH_HI), which are consecutive.
     push.FAUCET_METADATA_SUBKEY_ADDR_LO
     # => [sub_key, pad(15)]
+
     repeat.4
         padw
         loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
         push.0 dup.7
         # => [[sub_key, 0, suffix, prefix], [0, 0, 0, 0], sub_key, pad(7)]
+
         push.FAUCET_METADATA_MAP_SLOT[0..2]
         exec.native_account::set_map_item
         dropw
         # => [sub_key, pad(15)]
+
         add.1
     end
     drop
