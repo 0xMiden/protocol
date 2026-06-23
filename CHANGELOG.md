@@ -46,6 +46,7 @@
 - [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
+- Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
