@@ -753,13 +753,22 @@ impl Deserializable for StorageMapPatchEntries {
 
         let num_cleared = source.read_usize()?;
         for key in source.read_many_iter::<StorageMapKey>(num_cleared)? {
-            entries.insert(key?, EMPTY_WORD);
+            let key = key?;
+            if entries.insert(key, Word::empty()).is_some() {
+                return Err(DeserializationError::InvalidValue(format!(
+                    "duplicate key {key} in storage map patch entries"
+                )));
+            }
         }
 
         let num_updated = source.read_usize()?;
         for entry in source.read_many_iter::<(StorageMapKey, Word)>(num_updated)? {
             let (key, value) = entry?;
-            entries.insert(key, value);
+            if entries.insert(key, value).is_some() {
+                return Err(DeserializationError::InvalidValue(format!(
+                    "duplicate key {key} in storage map patch entries"
+                )));
+            }
         }
 
         Ok(Self::from_raw(entries))
@@ -781,6 +790,7 @@ mod tests {
 
     use super::{
         AccountStoragePatch,
+        ByteWriter,
         Deserializable,
         Serializable,
         StorageMapPatch,
@@ -866,6 +876,25 @@ mod tests {
 
         let err = AccountStoragePatch::read_from_bytes(&bytes).unwrap_err();
         assert_matches!(err, super::DeserializationError::InvalidValue(_));
+    }
+
+    #[test]
+    fn storage_map_patch_entries_deserialize_rejects_duplicate_key() {
+        let key = StorageMapKey::from_array([1, 2, 3, 4]);
+        let value = Word::from([5u32, 6, 7, 8]);
+
+        // One cleared entry and one updated entry sharing the same key, each section
+        // length-prefixed with a count of 1.
+        let mut bytes = Vec::new();
+        bytes.write_usize(1);
+        key.write_into(&mut bytes);
+        bytes.write_usize(1);
+        (key, value).write_into(&mut bytes);
+
+        let err = StorageMapPatchEntries::read_from_bytes(&bytes).unwrap_err();
+        assert_matches!(err, super::DeserializationError::InvalidValue(err) => {
+            assert!(err.contains("duplicate key"))
+        });
     }
 
     #[test]
