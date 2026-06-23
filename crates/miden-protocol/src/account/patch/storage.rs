@@ -672,6 +672,17 @@ impl StorageMapPatchEntries {
         self.0.is_empty()
     }
 
+    /// Returns an iterator over the keys of the cleared entries, i.e. those whose value is
+    /// [`Word::empty`].
+    fn cleared_entries(&self) -> impl Iterator<Item = &StorageMapKey> + Clone {
+        self.0.iter().filter(|(_, value)| value.is_empty()).map(|(key, _)| key)
+    }
+
+    /// Returns an iterator over the updated entries, i.e. those whose value is not [`Word::empty`].
+    fn updated_entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> + Clone {
+        self.0.iter().filter(|(_, value)| !value.is_empty())
+    }
+
     /// Merges `other` into these entries, with the entries of `other` taking precedence.
     fn merge(&mut self, other: Self) {
         self.0.extend(other.0);
@@ -704,23 +715,42 @@ impl From<StorageMap> for StorageMapPatchEntries {
 }
 
 impl Serializable for StorageMapPatchEntries {
+    /// Serializes the cleared and updated entries separately. Because the value of a cleared entry
+    /// is always [`EMPTY_WORD`], only its key is written, saving [`Word::SERIALIZED_SIZE`] bytes
+    /// per cleared entry compared to writing the empty value.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_usize(self.0.len());
-        target.write_many(self.0.iter());
+        target.write_usize(self.cleared_entries().count());
+        target.write_many(self.cleared_entries());
+
+        target.write_usize(self.updated_entries().count());
+        target.write_many(self.updated_entries());
     }
 
     fn get_size_hint(&self) -> usize {
-        self.0.len().get_size_hint()
-            + self.0.len() * (StorageMapKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
+        let num_cleared = self.cleared_entries().count();
+        let num_updated = self.updated_entries().count();
+
+        num_cleared.get_size_hint()
+            + num_cleared * StorageMapKey::SERIALIZED_SIZE
+            + num_updated.get_size_hint()
+            + num_updated * (StorageMapKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
     }
 }
 
 impl Deserializable for StorageMapPatchEntries {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let count = source.read_usize()?;
-        let entries = source
-            .read_many_iter::<(StorageMapKey, Word)>(count)?
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let mut entries = BTreeMap::new();
+
+        let num_cleared = source.read_usize()?;
+        for key in source.read_many_iter::<StorageMapKey>(num_cleared)? {
+            entries.insert(key?, EMPTY_WORD);
+        }
+
+        let num_updated = source.read_usize()?;
+        for entry in source.read_many_iter::<(StorageMapKey, Word)>(num_updated)? {
+            let (key, value) = entry?;
+            entries.insert(key, value);
+        }
 
         Ok(Self::from_raw(entries))
     }
