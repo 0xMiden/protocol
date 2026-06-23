@@ -391,6 +391,12 @@ impl StorageValuePatch {
         self.value().unwrap_or_default()
     }
 
+    /// Maps a [`Word::empty`] value to `None` and any other value to `Some`, so that empty values
+    /// serialize compactly as a single `None` tag instead of a full [`Word`].
+    fn compact_value(value: &Word) -> Option<&Word> {
+        (!value.is_empty()).then_some(value)
+    }
+
     /// Merges `other` into `self`, with `other` taking precedence.
     ///
     /// A slot that was created and then updated remains created (with the updated value).
@@ -448,11 +454,11 @@ impl Serializable for StorageValuePatch {
         match self {
             StorageValuePatch::Create { value } => {
                 target.write_u8(Self::CREATE);
-                target.write(value);
+                target.write(Self::compact_value(value));
             },
             StorageValuePatch::Update { value } => {
                 target.write_u8(Self::UPDATE);
-                target.write(value);
+                target.write(Self::compact_value(value));
             },
             StorageValuePatch::Remove => {
                 target.write_u8(Self::REMOVE);
@@ -463,8 +469,8 @@ impl Serializable for StorageValuePatch {
     fn get_size_hint(&self) -> usize {
         let tag_size = 0u8.get_size_hint();
         match self {
-            StorageValuePatch::Create { .. } | StorageValuePatch::Update { .. } => {
-                tag_size + Word::SERIALIZED_SIZE
+            StorageValuePatch::Create { value } | StorageValuePatch::Update { value } => {
+                tag_size + Self::compact_value(value).get_size_hint()
             },
             StorageValuePatch::Remove => tag_size,
         }
@@ -474,8 +480,12 @@ impl Serializable for StorageValuePatch {
 impl Deserializable for StorageValuePatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
-            Self::CREATE => Ok(Self::Create { value: source.read()? }),
-            Self::UPDATE => Ok(Self::Update { value: source.read()? }),
+            Self::CREATE => Ok(Self::Create {
+                value: source.read::<Option<Word>>()?.unwrap_or_default(),
+            }),
+            Self::UPDATE => Ok(Self::Update {
+                value: source.read::<Option<Word>>()?.unwrap_or_default(),
+            }),
             Self::REMOVE => Ok(Self::Remove),
             other => Err(DeserializationError::InvalidValue(format!(
                 "unknown storage value patch variant {other}"
