@@ -16,7 +16,7 @@ use miden::protocol::asset
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
-use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
+use miden::standards::faucets
 use miden::standards::access::pausable
 
 # =================================================================================================
@@ -73,8 +73,7 @@ end
 #!
 #! Invocation: exec
 proc is_max_supply_mutable_internal
-    push.MUTABILITY_CONFIG_SLOT[0..2]
-    exec.active_account::get_item
+    exec.faucets::get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop drop
     # => [is_max_supply_mutable]
@@ -269,12 +268,12 @@ pub proc mint_and_send
     # ---------------------------------------------------------------------------------------------
 
     push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
+    # => [token_supply, max_supply, decimals, token_symbol, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
     loc_storew_le.TOKEN_CONFIG_SLOT_LOCAL
     swap movup.2 drop movup.2 drop
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
     #
@@ -293,55 +292,55 @@ pub proc mint_and_send
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
-    # => [max_supply, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [max_supply, token_supply, max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # assert that token_supply <= max_supply
     lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
     dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     dup.2 swap dup.2
-    # => [token_supply, max_supply, amount, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [token_supply, max_supply, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
     sub
-    # => [max_mint_amount, amount, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [max_mint_amount, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # assert amount <= max_mint_amount
     lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
-    # => [token_supply, amount, tag, note_type, RECIPIENT]
+    # => [token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # Compute the new token_supply and update in storage.
     # ---------------------------------------------------------------------------------------------
 
     dup.1 add
-    # => [new_token_supply, amount, tag, note_type, RECIPIENT]
+    # => [new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     padw loc_loadw_le.TOKEN_CONFIG_SLOT_LOCAL
-    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, amount, tag, note_type, RECIPIENT]
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     drop movup.3
-    # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
+    # => [[new_token_supply, max_supply, decimals, token_symbol], new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # update the token config slot with the new supply
     push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
-    # => [amount, tag, note_type, RECIPIENT]
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT]
 
     # Create a new note.
     # ---------------------------------------------------------------------------------------------
 
     movdn.6 exec.output_note::create
-    # => [note_idx, amount]
+    # => [note_idx, new_amount]
 
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
     dup movup.2
-    # => [amount, note_idx, note_idx]
+    # => [new_amount, note_idx, note_idx]
 
     # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
     exec.faucet::create_fungible_asset

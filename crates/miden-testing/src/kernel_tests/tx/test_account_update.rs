@@ -27,7 +27,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::testing::account_id::{ACCOUNT_ID_SENDER, AccountIdBuilder};
+use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
@@ -43,30 +43,37 @@ use crate::{Auth, MockChain, TransactionContextBuilder};
 // For the approach to these tests, see `AccountUpdateTest::execute`.
 // ================================================================================================
 
-/// Tests that a noop transaction with [`Auth::Noop`] results in an empty nonce delta with an empty
-/// word as its commitment.
-///
-/// In order to make the account delta empty but the transaction still legal, we consume a note
-/// without assets.
+/// Tests that an empty account delta commits to the empty word.
 #[tokio::test]
 async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::with_mock_libraries()
+        .compile_tx_script(
+            r#"
+      use miden::protocol::native_account
+
+      begin
+          exec.native_account::compute_delta_commitment
+          # => [DELTA_COMMITMENT]
+
+          padw assert_eqw.err="empty account delta should commit to the empty word"
+      end
+      "#,
+        )
+        .context("failed to compile tx script")?;
+
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::Noop)?;
-    let p2any_note =
-        builder.add_p2any_note(AccountId::try_from(ACCOUNT_ID_SENDER)?, NoteType::Public, [])?;
+    // Use IncrNonce to make the transaction non-empty.
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account.id(), &[p2any_note.id()], &[])
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])
         .expect("failed to build tx context")
+        .tx_script(tx_script)
         .build()?
         .execute()
         .await
         .context("failed to execute transaction")?;
-
-    assert_eq!(executed_tx.account_delta().nonce_delta(), ZERO);
-    assert!(executed_tx.account_delta().is_empty());
-    assert_eq!(executed_tx.account_delta().to_commitment(), Word::empty());
 
     Ok(())
 }
@@ -695,7 +702,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_auth_component(delta_check_auth_component())
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
             StorageSlot::with_map(map0_slot_name.clone(), map0.clone()),
@@ -732,19 +739,26 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::new(account.clone())
+    let tx_builder = TransactionContextBuilder::new(account.clone())
         .tx_script(tx_script)
-        .with_source_manager(source_manager)
+        .with_source_manager(source_manager);
+
+    let tx_summary = tx_builder
+        .clone()
+        .auth_args(emit_delta_args())
         .build()?
         .execute()
-        .await?;
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx = tx_builder.build()?.execute().await?;
 
     map2.insert(existing_key, value0)?;
 
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_patch_entries = tx.account_delta().storage().get_map(&slot_name).unwrap().entries();
+        let map_patch_entries = tx.account_patch().storage().get_map(&slot_name).unwrap().entries();
         let expected: BTreeMap<_, _> = expected_map.entries().map(|(k, v)| (*k, *v)).collect();
         assert_eq!(map_patch_entries, &expected, "map delta does not match for slot {slot_name}",);
     }
@@ -755,7 +769,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx_account = Account::try_from(proven_tx_patch)?;
     let exec_tx_account = Account::try_from(tx.account_patch())?;
-    let exec_tx_delta_account = Account::try_from(tx.account_delta())?;
+    let exec_tx_delta_account = Account::try_from(tx_summary.account_delta())?;
 
     assert_eq!(exec_tx_delta_account, exec_tx_account);
     assert_eq!(proven_tx_account.storage(), exec_tx_account.storage());
@@ -766,6 +780,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx_delta_converted = AccountDelta::try_from(proven_tx_account)?;
     let exec_tx_delta_converted = AccountDelta::try_from(exec_tx_account)?;
+    assert_eq!(proven_tx_delta_converted, exec_tx_delta_converted);
 
     // Check that the deltas and patches from proven and executed tx, which were converted from
     // accounts are identical. This is essentially a roundtrip test.
@@ -773,15 +788,21 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     assert_eq!(&proven_tx_patch_converted, tx.account_patch());
     assert_eq!(&exec_tx_patch_converted, tx.account_patch());
 
-    assert_eq!(&exec_tx_delta_converted, tx.account_delta());
-    assert_eq!(&proven_tx_delta_converted, tx.account_delta());
+    assert_eq!(&exec_tx_delta_converted, tx_summary.account_delta());
+    assert_eq!(&proven_tx_delta_converted, tx_summary.account_delta());
 
     // The commitments should match as well.
     assert_eq!(exec_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
     assert_eq!(proven_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
 
-    assert_eq!(exec_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
-    assert_eq!(proven_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
+    assert_eq!(
+        exec_tx_delta_converted.to_commitment(),
+        tx_summary.account_delta().to_commitment()
+    );
+    assert_eq!(
+        proven_tx_delta_converted.to_commitment(),
+        tx_summary.account_delta().to_commitment()
+    );
 
     Ok(())
 }
@@ -875,20 +896,21 @@ async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::R
 /// Tests that recomputing a delta correctly resets the account delta tracked by the host.
 ///
 /// The auth procedure adds `asset0` to the vault, explicitly calls `compute_delta_commitment`,
-/// and then removes `asset0` again. The epilogue then implicitly calls `compute_delta_commitment`
-/// a second time. The net vault delta is empty, so the host's tracked delta must end up empty.
+/// and then removes `asset0` again. It then builds the tx summary (which calls
+/// `compute_delta_commitment` a second time) and emits `AUTH_UNAUTHORIZED_EVENT`, so the can access
+/// the delta via `TransactionSummary::account_delta`.
 ///
 /// Without the reset performed at the start of each `compute_delta_commitment`, this would fail:
 /// - The explicit call iterates the asset delta link map, sees the added `asset0`, and fires
 ///   `on_asset_delta_computation`, which accumulates `asset0` into the host's tracked vault delta.
 /// - Removing `asset0` afterwards turns its link map entry into a net-empty entry.
-/// - The implicit call iterates the link map again, but the net-empty entry does NOT fire
+/// - The summary's call iterates the link map again, but the net-empty entry does NOT fire
 ///   `on_asset_delta_computation`, so the previously accumulated `asset0` would remain in the
 ///   host's vault delta forever, leaving it non-empty even though the actual change is zero.
 ///
 /// With the reset (the `before_asset_delta_computation` event emitted at the start of each
 /// `compute_delta_commitment`), the host clears its vault delta before each iteration, so the
-/// implicit call correctly produces an empty delta.
+/// summary's call correctly produces an empty delta.
 #[tokio::test]
 async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
@@ -909,29 +931,50 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let auth_code = format!(
         "
     use miden::protocol::native_account
+    use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 
     {TEST_ACCOUNT_CONVENIENCE_WRAPPERS}
 
+    #! Inputs:  [[AUTH_ARGS], pad(12)]
+    #! Outputs: [pad(16)]
     @auth_script
     pub proc auth_test
         exec.native_account::incr_nonce drop
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # add asset 0 to the vault
         push.{ASSET0_VALUE} push.{ASSET0_KEY}
         exec.add_asset dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # compute the delta to trigger the host to add the assets to the vault delta
         exec.native_account::compute_delta_commitment
         dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
 
         # remove asset 0 for correct asset preservation
         push.{ASSET0_VALUE}
         push.{ASSET0_KEY}
         exec.remove_asset dropw
-        # => []
+        # => [[AUTH_ARGS], pad(12)]
+
+        # Build the tx summary.
+        # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
+        dropw padw
+        # => [SALT, pad(12)]
+
+        exec.::miden::standards::auth::create_tx_summary
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+        adv.insert_hqword
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+        exec.::miden::standards::auth::hash_tx_summary
+        # => [TX_SUMMARY_COMMITMENT, pad(12)]
+
+        emit.AUTH_UNAUTHORIZED_EVENT
+
+        push.0 assert.err=\"emitting the event should have aborted execution\"
     end
     ",
         ASSET0_KEY = asset0.to_key_word(),
@@ -955,23 +998,19 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    let executed_tx = mock_chain
+    let tx_summary = mock_chain
         .build_tx_context(account, &[], &[])?
         .build()?
         .execute()
         .await
-        .context("failed to execute transaction")?;
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let account_delta = tx_summary.account_delta();
 
-    assert!(
-        executed_tx.account_delta().vault().is_empty(),
-        "vault delta should be effectively empty"
-    );
-    assert!(
-        executed_tx.account_delta().storage().is_empty(),
-        "storage delta should be empty"
-    );
+    assert!(account_delta.vault().is_empty(), "vault delta should be effectively empty");
+    assert!(account_delta.storage().is_empty(), "storage delta should be empty");
     assert_eq!(
-        executed_tx.account_delta().nonce_delta().as_canonical_u64(),
+        account_delta.nonce_delta().as_canonical_u64(),
         1,
         "nonce should have been incremented"
     );
@@ -1184,10 +1223,9 @@ impl AccountUpdateTest {
 
         // Delta path: emit unauthorized so the host's build_tx_summary cross-checks the delta.
         let delta_run = {
-            let auth_args = Word::from([Felt::ONE, ZERO, ZERO, ZERO]);
             let mut tx = mock_chain
                 .build_tx_context(account.id(), &input_note_ids, &[])?
-                .auth_args(auth_args);
+                .auth_args(emit_delta_args());
             if let Some(ref script) = tx_script {
                 tx = tx.tx_script(script.clone());
             }
@@ -1217,4 +1255,8 @@ impl AccountUpdateTest {
 
         Ok(())
     }
+}
+
+fn emit_delta_args() -> Word {
+    Word::from([Felt::ONE, ZERO, ZERO, ZERO])
 }
