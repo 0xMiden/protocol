@@ -214,8 +214,18 @@ impl StoragePatchTracker {
             },
 
             StorageSlotPatch::Map(map_patch) => match map_patch {
-                // Created and removed slots are always retained.
-                StorageMapPatch::Create { .. } | StorageMapPatch::Remove => true,
+              StorageMapPatch::Create { entries } => {
+                // Values of a new map are empty by default, so we can normalize empty words
+                // away.
+                entries.as_map_mut().retain(|_key, value| {
+                  !value.is_empty()
+                });
+
+                  // Created slots are always retained.
+                  true
+                },
+                // Removed slots are always retained.
+                StorageMapPatch::Remove => true,
                 StorageMapPatch::Update { entries } => {
                     // On the key-value level: keep only the key-value pairs whose new value is
                     // different from the initial value.

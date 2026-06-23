@@ -679,7 +679,6 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
 /// - for new accounts in general, the storage map entries must be available in the advice provider
 ///   and the resulting delta must be convertible to a full account.
 /// - it creates an account with two identical storage maps.
-/// - The prover mutates the delta to account for fee logic.
 #[tokio::test]
 async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow::Result<()> {
     // Use two identical maps to test that they are properly handled
@@ -813,9 +812,9 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 }
 
 /// Tests that creating a new account with a slot whose value is empty is correctly included in the
-/// delta and not normalized away.
+/// patch and not normalized away.
 #[tokio::test]
-async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Result<()> {
+async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Result<()> {
     let slot_name0 = StorageSlotName::mock(0);
     let slot_name1 = StorageSlotName::mock(1);
 
@@ -849,34 +848,81 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
 }
 
 /// Tests that creating a new account with a slot whose map is empty is correctly included in the
-/// delta.
+/// patch.
+///
+/// It also sets a map item to a non-empty value and then back to an empty value, which should be
+/// normalized away, leaving the map empty.
 #[tokio::test]
-async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Result<()> {
+async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Result<()> {
     let slot_name0 = StorageSlotName::mock(0);
+    let slot_name1 = StorageSlotName::mock(1);
 
     let mut account = AccountBuilder::new(rand::random())
         .account_type(AccountType::Public)
-        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_map(
-            slot_name0.clone(),
-        )]))
+        .with_component(MockAccountComponent::with_slots(vec![
+            StorageSlot::with_empty_map(slot_name0.clone()),
+            StorageSlot::with_empty_map(slot_name1.clone()),
+        ]))
         .with_auth_component(Auth::IncrNonce)
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account.clone()).build()?.execute().await?;
+    let map_key = StorageMapKey::from_array([1, 2, 3, 4u32]);
+    let non_empty_value = Word::from([5, 6, 7, 8u32]);
+
+    let code = format!(
+        r#"
+      use mock::account
+
+      const MAP_SLOT=word("{slot_name1}")
+
+      begin
+          # Set the key to a non-empty value.
+          push.{non_empty_value}
+          push.{map_key}
+          push.MAP_SLOT[0..2]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
+          call.account::set_map_item
+          # => [OLD_VALUE, pad(12)]
+          dropw
+
+          # Set the same key back to an empty value, which should be normalized away.
+          padw
+          push.{map_key}
+          push.MAP_SLOT[0..2]
+          # => [slot_id_suffix, slot_id_prefix, KEY, EMPTY_VALUE]
+          call.account::set_map_item
+
+          exec.::miden::core::sys::truncate_stack
+      end
+      "#
+    );
+
+    let builder = CodeBuilder::with_mock_libraries();
+    let source_manager = builder.source_manager();
+    let tx_script = builder.compile_tx_script(code)?;
+
+    let tx = TransactionContextBuilder::new(account.clone())
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await?;
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
 
     let patch = proven_tx.account_update().details().unwrap_public();
 
-    assert_eq!(patch.storage().maps().count(), 1);
-    assert!(
-        patch
-            .storage()
-            .get_map(&slot_name0)
-            .unwrap()
-            .entries()
-            .is_some_and(|entries| entries.is_empty())
-    );
+    assert_eq!(patch.storage().maps().count(), 2);
+    for slot_name in [&slot_name0, &slot_name1] {
+        assert!(
+            patch
+                .storage()
+                .get_map(slot_name)
+                .unwrap()
+                .entries()
+                .is_some_and(|entries| entries.is_empty())
+        );
+    }
 
     let recreated_account = Account::try_from(patch)?;
     // The recreated account should match the original account with the nonce incremented (and the
