@@ -825,29 +825,33 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx.account_patch().final_nonce(),
+        Some(Felt::ONE),
+        "new account should have nonce 1"
+    );
 
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name0).unwrap(),
+        tx.account_patch().storage().get(&slot_name0).unwrap(),
         StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name1).unwrap(),
+        tx.account_patch().storage().get(&slot_name1).unwrap(),
         StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name2).unwrap(),
+        tx.account_patch().storage().get(&slot_name2).unwrap(),
         StorageSlotPatch::Map(map_patch) => {
             let expected = &BTreeMap::from_iter(map_entries);
             assert_eq!(expected, map_patch.entries())
         }
     );
 
-    assert!(tx.account_delta().vault().is_empty());
+    assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
@@ -1463,12 +1467,15 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let executed_tx = tx_context.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_tx.account_patch().final_nonce(),
+        Some(native_account.nonce() + Felt::ONE)
+    );
 
     // Make sure that account storage has been updated as per the tx script call.
-    assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
+    assert_eq!(executed_tx.account_patch().storage().values().count(), 1);
     assert_eq!(
-        executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
+        executed_tx.account_patch().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
         &StorageSlotPatch::Value(slot_value),
     );
     Ok(())

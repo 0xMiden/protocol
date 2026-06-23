@@ -383,7 +383,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
     let (
-        account_delta,
         account_patch,
         _input_notes,
         output_notes,
@@ -415,15 +414,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         });
     }
 
-    // Make sure nonce delta was computed correctly.
-    let nonce_delta = final_account.nonce() - initial_account.nonce();
-    if nonce_delta != account_delta.nonce_delta() {
-        return Err(TransactionExecutorError::InconsistentAccountNonceDelta {
-            expected: nonce_delta,
-            actual: account_delta.nonce_delta(),
-        });
-    }
-
     // Introduce generated signatures into the witness inputs.
     advice_inputs.map.extend(generated_signatures);
 
@@ -437,7 +427,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     Ok(ExecutedTransaction::new(
         tx_inputs,
         tx_outputs,
-        account_delta,
         account_patch,
         tx_progress.into(),
     ))
