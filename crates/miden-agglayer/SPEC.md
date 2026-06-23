@@ -287,7 +287,7 @@ Asserts the note sender matches the bridge admin stored in
 
 Asserts the note sender matches the bridge admin stored in
 `agglayer::bridge::admin_account_id` and the faucet is currently registered (via
-`assert_faucet_registered`), then clears every entry `register_faucet` wrote for the faucet:
+`assert_faucet_registered`), then clears all of the faucet's entries:
 
 1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
 2. `token_registry_map`: recomputes the key from the faucet's stored `origin_token_addr` and

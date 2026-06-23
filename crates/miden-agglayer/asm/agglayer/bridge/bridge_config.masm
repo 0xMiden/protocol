@@ -353,7 +353,7 @@ pub proc store_faucet_metadata_hash
     # => [pad(16)]
 end
 
-#! Deregisters a faucet, clearing every entry `register_faucet` wrote for it: the
+#! Deregisters a faucet, clearing all of its entries: the
 #! `faucet_registry`, `token_registry`, and all four `faucet_metadata` sub-keys. Asserts the faucet
 #! is currently registered first. Afterwards `assert_faucet_registered` and
 #! `lookup_faucet_by_token_address` fail for the faucet, so in-flight B2AGG / CLAIM notes targeting
@@ -361,7 +361,7 @@ end
 #!
 #! The `token_registry` key is recomputed from the faucet's own `faucet_metadata` (via
 #! `get_faucet_conversion_info`), not from the note, so the cleared key always matches the one
-#! `register_faucet` wrote for the current registration.
+#! stored at the faucet's current registration.
 #!
 #! A re-registration under a different (origin token address, origin network) can leave a stale
 #! `token_registry` key this proc does not reach. It is inert: `claim` and `bridge_out` both
