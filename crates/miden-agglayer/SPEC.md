@@ -1290,12 +1290,9 @@ the Miden side (enforced by the caller restriction on
 [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
 The bridge admin can also revoke a faucet's authorization via a
-[`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note, which carries only the faucet id and
-calls [`bridge_config::deregister_faucet`](#bridge_configderegister_faucet) to clear the faucet's
-`faucet_registry_map`, `token_registry_map`, and `faucet_metadata_map` entries (see
-[Section 4.4](#44-deregister_agg_faucet)). This retires compromised, broken, or deprecated faucets
-without redeploying the bridge; afterwards in-flight `B2AGG` / `CLAIM` notes for the faucet fail, so
-users should be warned first.
+[`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note (see
+[Section 4.4](#44-deregister_agg_faucet)), which retires compromised, broken, or deprecated faucets
+without redeploying the bridge.
 
 #### Wrapped (`is_native = false`) vs Miden-native (`is_native = true`) faucets
 
