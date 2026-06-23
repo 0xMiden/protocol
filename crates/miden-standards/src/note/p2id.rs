@@ -187,27 +187,6 @@ where
     S::SerialNumber: p2id_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
-    ///
-    /// This and `serial_number` are mutually exclusive: the builder's typestate rejects setting
-    /// the serial number twice at compile time.
-    ///
-    /// ```compile_fail
-    /// # #[allow(dead_code)]
-    /// # fn demo(
-    /// #     sender: miden_protocol::account::AccountId,
-    /// #     target: miden_protocol::account::AccountId,
-    /// #     rng: &mut impl miden_protocol::crypto::rand::FeltRng,
-    /// # ) {
-    /// use miden_protocol::Word;
-    /// use miden_standards::note::P2idNote;
-    ///
-    /// let _ = P2idNote::builder()
-    ///     .sender(sender)
-    ///     .target(target)
-    ///     .serial_number(Word::empty())
-    ///     .generate_serial_number(rng); // serial number already set: compile error
-    /// # }
-    /// ```
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
