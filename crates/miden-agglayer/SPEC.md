@@ -289,29 +289,17 @@ Asserts the note sender matches the bridge admin stored in
 `agglayer::bridge::admin_account_id` and the faucet is currently registered (via
 `assert_faucet_registered`), then clears every entry `register_faucet` wrote for the faucet:
 
-1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]` into the
-   `faucet_registry_map` map slot.
-2. Reads the faucet's registered `origin_token_addr` and `origin_network` back from
-   `faucet_metadata_map` (via `get_faucet_conversion_info`), byte-swaps `origin_network`, hashes
-   `origin_token_addr` (5 felts) concatenated with the swapped network using
-   `Poseidon2::hash_elements`, and writes `hash(origin_token_addr || origin_network) -> [0, 0, 0, 0]`
-   into the `token_registry_map` map slot. Reading the address/network from on-chain metadata
-   (rather than from the note) guarantees the cleared key is byte-identical to the one
-   `register_faucet` wrote for the faucet's current registration, so a note cannot direct the clear
-   at the wrong key. (Caveat: `register_faucet` does not clear a faucet's prior `token_registry`
-   key when the same faucet is re-registered under a different token identity, so a stale token key
-   can survive deregistration. That stale entry is inert: `claim` re-checks
-   `assert_faucet_registered` after the token lookup and `bridge_out` already does, so a
-   deregistered faucet can never mint or unlock through it. Deregistration is an unconditional
-   revocation.)
-3. Clears all four `faucet_metadata_map` sub-keys (origin-address lo/hi, network, scale, and
-   metadata hash lo/hi) for the faucet, so no stale conversion data is left behind.
+1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
+2. `token_registry_map`: recomputes the key from the faucet's stored `origin_token_addr` and
+   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`) and clears it to
+   `[0, 0, 0, 0]`. Recomputing the key from on-chain metadata rather than the note guarantees it
+   matches the faucet's current registration.
+3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
-After deregistration, both `bridge_out` (which calls `assert_faucet_registered`)
-and `claim` (which calls `lookup_faucet_by_token_address`) will fail for any
-in-flight notes referencing the deregistered faucet. The bridge admin should
-warn users before deregistering a faucet that has unprocessed B2AGG or CLAIM
-notes in flight.
+A re-registration under a different token identity can leave a stale `token_registry` key this proc
+does not reach; it is inert because `claim` and `bridge_out` both re-check `assert_faucet_registered`,
+making deregistration an unconditional revocation. After deregistration, in-flight B2AGG / CLAIM
+notes referencing the faucet fail, so the bridge admin should warn users with notes in flight.
 
 #### `bridge_config::update_ger`
 
@@ -1299,16 +1287,11 @@ the Miden side (enforced by the caller restriction on
 
 The bridge admin can also revoke a faucet's authorization via a
 [`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note, which carries only the faucet id and
-calls [`bridge_config::deregister_faucet`](#bridge_configderegister_faucet) to clear every entry
-the faucet's current registration wrote: the `faucet_registry_map`, `token_registry_map`, and
-`faucet_metadata_map`. The token-registry key is recomputed from the faucet's own stored metadata,
-so a note cannot direct the clear at the wrong key. Deregistration is an unconditional revocation:
-`claim` re-checks `assert_faucet_registered` after the token lookup, so even a stale token key left
-by a re-registration cannot mint through a deregistered faucet. This is useful for retiring
-compromised, broken, or deprecated faucets without redeploying the bridge. Note that
-in-flight `B2AGG` and `CLAIM` notes referencing the deregistered faucet will fail
-their existing registration checks after deregistration, so users should be warned
-before a deregistration is performed.
+calls [`bridge_config::deregister_faucet`](#bridge_configderegister_faucet) to clear the faucet's
+`faucet_registry_map`, `token_registry_map`, and `faucet_metadata_map` entries (see
+[Section 4.4](#44-deregister_agg_faucet)). This retires compromised, broken, or deprecated faucets
+without redeploying the bridge; afterwards in-flight `B2AGG` / `CLAIM` notes for the faucet fail, so
+users should be warned first.
 
 #### Wrapped (`is_native = false`) vs Miden-native (`is_native = true`) faucets
 
