@@ -9,6 +9,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachment,
     NoteAttachments,
     NoteRecipient,
     NoteScript,
@@ -39,16 +40,70 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2IDE NOTE
 // ================================================================================================
 
-/// Pay-to-ID Extended (P2IDE) note abstraction.
+/// A Pay-to-ID Extended (P2IDE) note: transfers `assets` from `sender` to the `target` account,
+/// with optional reclaim and timelock constraints.
 ///
-/// A P2IDE note enables transferring assets to a target account specified in the note storage.
-/// The note may optionally include:
+/// - A reclaim height allows the sender to recover the assets if the note remains unconsumed.
+/// - A timelock height prevents consumption before a given block.
 ///
-/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
-/// - A timelock height preventing consumption before a given block
-///
-/// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
-pub struct P2ideNote;
+/// Construct one with the [builder](P2ideNote::builder), which defaults the optional parameters
+/// (private note type, no attachments, no reclaim/timelock height) and requires at least one
+/// asset. Convert a `P2ideNote` into a protocol [`Note`] infallibly via `Note::from`.
+#[derive(Debug, Clone)]
+pub struct P2ideNote {
+    sender: AccountId,
+    storage: P2ideNoteStorage,
+    serial_number: Word,
+    note_type: NoteType,
+    assets: NoteAssets,
+    attachments: NoteAttachments,
+}
+
+#[bon::bon]
+impl P2ideNote {
+    /// Builds a new [`P2ideNote`].
+    ///
+    /// Set the recipient with `.target(account_id)`, add assets with `.asset()` / `.assets()`
+    /// (at least one is required), and optionally add attachments with `.attachment()`, a
+    /// `.reclaim_height()`, and a `.timelock_height()`. The note type defaults to
+    /// [`NoteType::Private`]. The serial number can be set explicitly with `.serial_number(word)`
+    /// or drawn from an RNG with `.generate_serial_number(rng)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No assets were provided ([`NoteError::MissingAsset`]).
+    /// - The assets or attachments exceed their protocol limits (see [`NoteAssets::new`] and
+    ///   [`NoteAttachments::new`]).
+    #[builder]
+    pub fn new(
+        #[builder(field)] assets: Vec<Asset>,
+        #[builder(field)] attachments: Vec<NoteAttachment>,
+        sender: AccountId,
+        target: AccountId,
+        reclaim_height: Option<BlockNumber>,
+        timelock_height: Option<BlockNumber>,
+        serial_number: Word,
+        #[builder(default)] note_type: NoteType,
+    ) -> Result<Self, NoteError> {
+        if assets.is_empty() {
+            return Err(NoteError::MissingAsset);
+        }
+
+        let storage = P2ideNoteStorage::new(target, reclaim_height, timelock_height);
+        let assets = NoteAssets::new(assets)?;
+        let attachments = NoteAttachments::new(attachments)?;
+
+        Ok(Self {
+            sender,
+            storage,
+            serial_number,
+            note_type,
+            assets,
+            attachments,
+        })
+    }
+}
 
 impl P2ideNote {
     // CONSTANTS
@@ -70,33 +125,109 @@ impl P2ideNote {
         P2IDE_SCRIPT.root()
     }
 
-    // BUILDERS
-    // --------------------------------------------------------------------------------------------
+    /// Returns the account ID of the note's sender.
+    pub fn sender(&self) -> AccountId {
+        self.sender
+    }
 
-    /// Generates a P2IDE note using the provided storage configuration.
-    ///
-    /// The note recipient and execution constraints are derived from
-    /// `P2ideNoteStorage`. A random serial number is generated using `rng`,
-    /// and the note tag is set to the storage target account.
-    ///
-    /// # Errors
-    /// Returns an error if construction of the note recipient or asset vault fails.
-    pub fn create<R: FeltRng>(
-        sender: AccountId,
-        storage: P2ideNoteStorage,
-        assets: Vec<Asset>,
-        note_type: NoteType,
-        attachments: NoteAttachments,
-        rng: &mut R,
-    ) -> Result<Note, NoteError> {
-        let serial_num = rng.draw_word();
-        let recipient = storage.into_recipient(serial_num)?;
-        let tag = NoteTag::with_account_target(storage.target());
+    /// Returns the note's storage.
+    pub fn storage(&self) -> P2ideNoteStorage {
+        self.storage
+    }
 
-        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
-        let vault = NoteAssets::new(assets)?;
+    /// Returns the account ID of the note's target (the only account that can consume it).
+    pub fn target(&self) -> AccountId {
+        self.storage.target()
+    }
 
-        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
+    /// Returns the reclaim block height (if any).
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.storage.reclaim_height()
+    }
+
+    /// Returns the timelock block height (if any).
+    pub fn timelock_height(&self) -> Option<BlockNumber> {
+        self.storage.timelock_height()
+    }
+
+    /// Returns the note's serial number.
+    pub fn serial_number(&self) -> Word {
+        self.serial_number
+    }
+
+    /// Returns the note's type.
+    pub fn note_type(&self) -> NoteType {
+        self.note_type
+    }
+
+    /// Returns the assets carried by the note.
+    pub fn assets(&self) -> &NoteAssets {
+        &self.assets
+    }
+
+    /// Returns the attachments carried by the note.
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
+    }
+}
+
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: p2ide_note_builder::State> P2ideNoteBuilder<S> {
+    /// Adds a single asset to the note. At least one asset is required for `.build()` to succeed;
+    /// this can be called multiple times to add several assets.
+    pub fn asset(mut self, asset: impl Into<Asset>) -> Self {
+        self.assets.push(asset.into());
+        self
+    }
+
+    /// Adds multiple assets to the note. Can be combined freely with [`Self::asset`].
+    pub fn assets(mut self, assets: impl IntoIterator<Item = impl Into<Asset>>) -> Self {
+        self.assets.extend(assets.into_iter().map(Into::into));
+        self
+    }
+
+    /// Adds a single attachment to the note. Can be called multiple times to add several
+    /// attachments.
+    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
+        self.attachments.push(attachment.into());
+        self
+    }
+
+    /// Adds multiple attachments to the note. Can be combined freely with [`Self::attachment`].
+    pub fn attachments(
+        mut self,
+        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
+    ) -> Self {
+        self.attachments.extend(attachments.into_iter().map(Into::into));
+        self
+    }
+}
+
+impl<S: p2ide_note_builder::State> P2ideNoteBuilder<S>
+where
+    S::SerialNumber: p2ide_note_builder::IsUnset,
+{
+    /// Draws a serial number from `rng` and sets it on the builder.
+    pub fn generate_serial_number(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> P2ideNoteBuilder<p2ide_note_builder::SetSerialNumber<S>> {
+        self.serial_number(rng.draw_word())
+    }
+}
+
+// CONVERSIONS
+// ================================================================================================
+
+impl From<P2ideNote> for Note {
+    fn from(note: P2ideNote) -> Self {
+        let recipient = note.storage.into_recipient(note.serial_number);
+        let tag = NoteTag::with_account_target(note.storage.target());
+        let metadata = PartialNoteMetadata::new(note.sender, note.note_type).with_tag(tag);
+
+        Note::with_attachments(note.assets, metadata, recipient, note.attachments)
     }
 }
 
@@ -132,9 +263,8 @@ impl P2ideNoteStorage {
     }
 
     /// Consumes the storage and returns a P2IDE [`NoteRecipient`] with the provided serial number.
-    pub fn into_recipient(self, serial_num: Word) -> Result<NoteRecipient, NoteError> {
-        let note_script = P2ideNote::script();
-        Ok(NoteRecipient::new(serial_num, note_script, self.into()))
+    pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
+        NoteRecipient::new(serial_num, P2ideNote::script(), self.into())
     }
 
     /// Returns the target account ID.
@@ -213,16 +343,21 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+    use miden_protocol::asset::FungibleAsset;
     use miden_protocol::block::BlockNumber;
+    use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::errors::NoteError;
+    use miden_protocol::{Felt, Word};
 
     use super::*;
 
     fn dummy_account() -> AccountId {
         AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Private)
     }
+
+    // STORAGE TESTS
+    // --------------------------------------------------------------------------------------------
 
     #[test]
     fn try_from_valid_storage_with_all_fields_succeeds() {
@@ -308,5 +443,123 @@ mod tests {
             .expect_err("overflow timelock height must fail");
 
         assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
+
+    // BUILDER TESTS
+    // --------------------------------------------------------------------------------------------
+
+    fn sender() -> AccountId {
+        AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private)
+    }
+
+    fn target() -> AccountId {
+        AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Private)
+    }
+
+    fn faucet_a() -> AccountId {
+        AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Public)
+    }
+
+    fn faucet_b() -> AccountId {
+        AccountId::dummy([4u8; 15], AccountIdVersion::Version1, AccountType::Public)
+    }
+
+    /// The minimal builder uses defaults for everything but the required fields (no reclaim or
+    /// timelock height, private note type).
+    #[test]
+    fn builder_minimal_uses_defaults() {
+        let note = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+            .build()
+            .unwrap();
+
+        assert_eq!(note.sender(), sender());
+        assert_eq!(note.target(), target());
+        assert_eq!(note.note_type(), NoteType::Private);
+        assert_eq!(note.reclaim_height(), None);
+        assert_eq!(note.timelock_height(), None);
+        assert_eq!(note.assets().num_assets(), 1);
+        assert_eq!(note.attachments().num_attachments(), 0);
+    }
+
+    /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
+    #[test]
+    fn builder_accumulates_assets() {
+        let note = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .asset(FungibleAsset::new(faucet_a(), 100).unwrap())
+            .assets([Asset::from(FungibleAsset::new(faucet_b(), 200).unwrap())])
+            .build()
+            .unwrap();
+
+        assert_eq!(note.assets().num_assets(), 2);
+    }
+
+    /// A P2IDE note must carry at least one asset.
+    #[test]
+    fn builder_rejects_empty_assets() {
+        let err = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .build()
+            .expect_err("a note without assets must be rejected");
+
+        assert!(matches!(err, NoteError::MissingAsset));
+    }
+
+    /// The reclaim and timelock heights are optional and surfaced through the getters.
+    #[test]
+    fn builder_sets_reclaim_and_timelock() {
+        let note = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+            .reclaim_height(BlockNumber::from(42u32))
+            .timelock_height(BlockNumber::from(100u32))
+            .build()
+            .unwrap();
+
+        assert_eq!(note.reclaim_height(), Some(BlockNumber::from(42u32)));
+        assert_eq!(note.timelock_height(), Some(BlockNumber::from(100u32)));
+    }
+
+    /// `.generate_serial_number()` draws the serial from the RNG.
+    #[test]
+    fn builder_generates_serial_number() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let note = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        assert_ne!(note.serial_number(), Word::empty());
+    }
+
+    /// `Note::from(p2ide_note)` is infallible and preserves the assets.
+    #[test]
+    fn into_note_preserves_assets() {
+        let p2ide_note = P2ideNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .asset(FungibleAsset::new(faucet_a(), 42).unwrap())
+            .note_type(NoteType::Public)
+            .build()
+            .unwrap();
+
+        let assets = p2ide_note.assets().clone();
+        let note = Note::from(p2ide_note);
+
+        assert_eq!(note.assets(), &assets);
     }
 }

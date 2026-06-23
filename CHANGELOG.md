@@ -4,6 +4,13 @@
 
 ### Changes
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
+- [BREAKING] Replaced the `P2ideNote` marker type and its `P2ideNote::create` factory with a `P2ideNote` struct built via a `bon` typestate builder (`P2ideNote::builder()`). P2IDE notes must now carry at least one asset (new `NoteError::MissingAsset`); the optional `reclaim_height`/`timelock_height` are set via the builder, `P2ideNoteStorage::into_recipient` is now infallible, and a `P2ideNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
+- Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
+- [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
+- Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
+- [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
+- Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
+
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
