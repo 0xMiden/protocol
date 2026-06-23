@@ -40,15 +40,15 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2IDE NOTE
 // ================================================================================================
 
-/// A Pay-to-ID Extended (P2IDE) note: transfers `assets` from `sender` to the `target` account,
-/// with optional reclaim and timelock constraints.
+/// Pay-to-ID Extended (P2IDE) note abstraction.
 ///
-/// - A reclaim height allows the sender to recover the assets if the note remains unconsumed.
-/// - A timelock height prevents consumption before a given block.
+/// A P2IDE note enables transferring assets to a target account specified in the note storage.
+/// The note may optionally include:
 ///
-/// Construct one with the [builder](P2ideNote::builder), which defaults the optional parameters
-/// (private note type, no attachments, no reclaim/timelock height) and requires at least one
-/// asset. Convert a `P2ideNote` into a protocol [`Note`] infallibly via `Note::from`.
+/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
+/// - A timelock height preventing consumption before a given block
+///
+/// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
 #[derive(Debug, Clone)]
 pub struct P2ideNote {
     sender: AccountId,
@@ -202,27 +202,6 @@ where
     S::SerialNumber: p2ide_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
-    ///
-    /// This and `serial_number` are mutually exclusive: the builder's typestate rejects setting
-    /// the serial number twice at compile time.
-    ///
-    /// ```compile_fail
-    /// # #[allow(dead_code)]
-    /// # fn demo(
-    /// #     sender: miden_protocol::account::AccountId,
-    /// #     target: miden_protocol::account::AccountId,
-    /// #     rng: &mut impl miden_protocol::crypto::rand::FeltRng,
-    /// # ) {
-    /// use miden_protocol::Word;
-    /// use miden_standards::note::P2ideNote;
-    ///
-    /// let _ = P2ideNote::builder()
-    ///     .sender(sender)
-    ///     .target(target)
-    ///     .serial_number(Word::empty())
-    ///     .generate_serial_number(rng); // serial number already set: compile error
-    /// # }
-    /// ```
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
