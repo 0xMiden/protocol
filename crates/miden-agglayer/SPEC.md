@@ -81,8 +81,8 @@ The `CLAIM` note is consumed by the bridge account:
    `NEW_CGI = Keccak256(OLD_CGI, Keccak256(GLOBAL_INDEX, LEAF_VALUE))`.
 5. Checks and sets the claim nullifier to prevent double-claiming.
 6. Looks up the faucet from the `(origin_token_address, origin_network)` pair via the token
-   registry, then asserts the resolved faucet is still registered (`assert_faucet_registered`) so a
-   deregistered faucet reachable via a stale token key cannot mint.
+   registry, then, as defense-in-depth, asserts the resolved faucet is still registered
+   (`assert_faucet_registered`) so a claim only ever mints through a currently-registered faucet.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
 8. Dispatches on the faucet's `is_native` flag:
    - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#49-mint-generated)
@@ -275,6 +275,10 @@ Asserts the note sender matches the bridge admin stored in
    the address alone would let a CLAIM bound to one origin network resolve to the faucet of
    the same address on another network.
 
+If the faucet is already registered (a re-registration under a different token identity), the prior
+`token_registry` key is recomputed from the existing metadata and cleared before the new entry is
+written, so a `token_registry` key never outlives the registration that created it.
+
 #### `bridge_config::deregister_faucet`
 
 | | |
@@ -296,10 +300,10 @@ Asserts the note sender matches the bridge admin stored in
    matches the faucet's current registration.
 3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
-A re-registration under a different token identity can leave a stale `token_registry` key this proc
-does not reach; it is inert because `claim` and `bridge_out` both re-check `assert_faucet_registered`,
-making deregistration an unconditional revocation. After deregistration, in-flight B2AGG / CLAIM
-notes referencing the faucet fail, so the bridge admin should warn users with notes in flight.
+After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so the bridge admin
+should warn users with notes in flight. As defense-in-depth, `claim` and `bridge_out` also re-check
+`assert_faucet_registered` after the token lookup, so a faucet can never mint or unlock through a
+`token_registry` entry once it is deregistered.
 
 #### `bridge_config::update_ger`
 
