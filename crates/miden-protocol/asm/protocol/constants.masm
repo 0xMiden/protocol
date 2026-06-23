@@ -1,0 +1,4 @@
+# CONSTANTS
+# =================================================================================================
+
+pub use miden::protocol_utils::constants::WORD_NUM_ELEMENTS

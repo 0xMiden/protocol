@@ -5,7 +5,7 @@ use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
-use miden::protocol_utils::constants::WORD_NUM_ELEMENTS
+use miden::protocol::constants::WORD_NUM_ELEMENTS
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 

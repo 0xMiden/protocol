@@ -11,6 +11,7 @@ pub use miden::protocol_utils::note::MAX_ATTACHMENT_SCHEME
 pub use miden::protocol_utils::note::MAX_ATTACHMENT_WORDS
 pub use miden::protocol_utils::note::MAX_ATTACHMENT_TOTAL_WORDS
 pub use miden::protocol_utils::note::ATTACHMENT_SCHEME_NONE
+pub use miden::protocol_utils::note::NOTE_METADATA_VERSION_1
 
 # ERRORS
 # =================================================================================================

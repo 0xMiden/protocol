@@ -1,7 +1,7 @@
 use $kernel::account_id
 use $kernel::fungible_asset
 use $kernel::non_fungible_asset
-use miden::protocol_utils::asset->util_asset
+use miden::protocol_utils::asset->asset_utils
 
 # ERRORS
 # =================================================================================================
@@ -93,10 +93,10 @@ end
 pub proc validate_issuer
     # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
 
-    dup.3 dup.3 exec.util_asset::split_suffix_and_metadata
+    dup.3 dup.3 exec.asset_utils::split_suffix_and_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 
-    exec.util_asset::validate_metadata
+    exec.asset_utils::validate_metadata
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 
     exec.account_id::validate
