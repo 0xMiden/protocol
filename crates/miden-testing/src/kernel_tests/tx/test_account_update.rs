@@ -170,9 +170,10 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
     ))?;
 
     // Slots 2 and 3 are absent because their values haven't effectively changed.
-    let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.update_value(slot_0_name.clone(), slot_0_final_value)?;
-    expected_storage_patch.update_value(slot_1_name.clone(), slot_1_final_value)?;
+    let expected_storage_patch = AccountStoragePatch::builder()
+        .update_value(slot_0_name.clone(), slot_0_final_value)
+        .update_value(slot_1_name.clone(), slot_1_final_value)
+        .build();
 
     AccountUpdateTest {
         initial_storage_slots: vec![
@@ -311,10 +312,10 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
     ))?;
 
     // map2 should not appear in the patch since its only change normalized to a no-op.
-    let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.update_map_item(slot_0_name.clone(), key0, key0_final_value)?;
-    expected_storage_patch.update_map_item(slot_0_name.clone(), key1, key1_final_value)?;
-    expected_storage_patch.update_map_item(slot_1_name.clone(), key3, key3_final_value)?;
+    let expected_storage_patch = AccountStoragePatch::builder()
+        .update_map(slot_0_name.clone(), [(key0, key0_final_value), (key1, key1_final_value)])
+        .update_map(slot_1_name.clone(), [(key3, key3_final_value)])
+        .build();
 
     AccountUpdateTest {
         initial_storage_slots: vec![
@@ -644,13 +645,10 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
-    let mut expected_storage_patch = AccountStoragePatch::new();
-    expected_storage_patch.update_value(MOCK_VALUE_SLOT0.clone(), updated_slot_value)?;
-    expected_storage_patch.update_map_item(
-        MOCK_MAP_SLOT.clone(),
-        updated_map_key,
-        updated_map_value,
-    )?;
+    let expected_storage_patch = AccountStoragePatch::builder()
+        .update_value(MOCK_VALUE_SLOT0.clone(), updated_slot_value)
+        .update_map(MOCK_MAP_SLOT.clone(), [(updated_map_key, updated_map_value)])
+        .build();
 
     let expected_vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
 

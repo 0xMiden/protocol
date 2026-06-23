@@ -458,9 +458,6 @@ pub enum AccountPatchError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
-    #[error("storage map {0} cannot be mutated because it's delta operation is set to remove")]
-    StorageMapDeltaOpIsRemove(StorageSlotName),
-
     #[error("storage slot name {0} is assigned to more than one slot patch")]
     DuplicateStorageSlotName(StorageSlotName),
 

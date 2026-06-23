@@ -84,53 +84,12 @@ impl AccountStoragePatch {
     pub fn get_map_value(&self, slot_name: &StorageSlotName, key: &StorageMapKey) -> Option<Word> {
         self.get_map(slot_name)?.entries()?.as_map().get(key).copied()
     }
-
-    // MUTATORS
-    // -------------------------------------------------------------------------------------------
-
-    pub fn add_cleared_items(mut self, items: impl IntoIterator<Item = StorageSlotName>) -> Self {
-        items.into_iter().for_each(|slot_name| {
-            self.update_value(slot_name, Word::empty())
-                .expect("value slot patch should not collide with a map slot patch")
-        });
-
-        self
-    }
-
-    pub fn add_updated_values(
-        mut self,
-        items: impl IntoIterator<Item = (StorageSlotName, Word)>,
-    ) -> Self {
-        items.into_iter().for_each(|(slot_name, value)| {
-            self.update_value(slot_name, value)
-                .expect("value slot patch should not collide with a map slot patch")
-        });
-
-        self
-    }
-
-    pub fn add_updated_maps(
-        mut self,
-        items: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
-    ) -> Self {
-        items.into_iter().for_each(|(slot_name, map_patch)| {
-            if let Some(entries) = map_patch.entries() {
-                for (key, value) in entries.as_map() {
-                    self.update_map_item(slot_name.clone(), *key, *value)
-                        .expect("map slot patch should not collide with a value slot patch")
-                }
-            }
-        });
-
-        self
-    }
 }
 
 // ACCOUNT STORAGE PATCH BUILDER
 // ================================================================================================
 
 /// A builder for ergonomically constructing an [`AccountStoragePatch`] in test code.
-///
 ///
 /// Because it is meant for test code, the methods panic on misuse instead of returning errors:
 /// - Value slots (and whole-slot removals) may be set only once.

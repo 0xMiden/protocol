@@ -117,39 +117,6 @@ impl AccountStoragePatch {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Records the update of a value slot to the provided value.
-    ///
-    /// This does not (and cannot) validate that the slot name _exists_ or that it points to a
-    /// _value_ slot in the corresponding account.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the slot name already points to a map slot patch.
-    pub fn update_value(
-        &mut self,
-        slot_name: StorageSlotName,
-        value: Word,
-    ) -> Result<(), AccountPatchError> {
-        self.set_value_slot(slot_name, StorageValuePatch::Update { value })
-    }
-
-    /// Records the update of a map entry in an updated map slot.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the slot name already points to a value slot patch.
-    /// - the storage map's delta operation is "Remove".
-    pub fn update_map_item(
-        &mut self,
-        slot_name: StorageSlotName,
-        key: StorageMapKey,
-        value: Word,
-    ) -> Result<(), AccountPatchError> {
-        self.map_entries_mut(slot_name, false)?.insert(key, value);
-        Ok(())
-    }
-
     /// Merges another patch into this one, with the entries of `other` taking precedence.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         for (slot_name, slot_patch) in other.patches {
@@ -224,63 +191,6 @@ impl AccountStoragePatch {
         }
     }
 
-    // HELPERS
-    // --------------------------------------------------------------------------------------------
-
-    /// Inserts the provided value slot patch, validating that the slot is not already used as a map
-    /// slot.
-    fn set_value_slot(
-        &mut self,
-        slot_name: StorageSlotName,
-        value_patch: StorageValuePatch,
-    ) -> Result<(), AccountPatchError> {
-        match self.patches.get_mut(&slot_name) {
-            None => {
-                self.patches.insert(slot_name, StorageSlotPatch::Value(value_patch));
-            },
-            Some(StorageSlotPatch::Value(current_value_patch)) => {
-                *current_value_patch = value_patch;
-            },
-            Some(_) => {
-                return Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name));
-            },
-        }
-
-        Ok(())
-    }
-
-    /// Returns a mutable reference to the entries of the map slot patch for the provided slot name,
-    /// inserting a created or updated empty map patch if no patch exists yet.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the slot name already points to a value slot patch.
-    /// - the storage map's delta operation is "Remove".
-    fn map_entries_mut(
-        &mut self,
-        slot_name: StorageSlotName,
-        create: bool,
-    ) -> Result<&mut StorageMapPatchEntries, AccountPatchError> {
-        let slot_patch = self.patches.entry(slot_name.clone()).or_insert_with(|| {
-            let entries = StorageMapPatchEntries::new();
-            let map_patch = if create {
-                StorageMapPatch::Create { entries }
-            } else {
-                StorageMapPatch::Update { entries }
-            };
-            StorageSlotPatch::Map(map_patch)
-        });
-
-        match slot_patch {
-            StorageSlotPatch::Map(map_patch) => map_patch
-                .entries_mut()
-                .ok_or(AccountPatchError::StorageMapDeltaOpIsRemove(slot_name)),
-            StorageSlotPatch::Value(_) => {
-                Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name))
-            },
-        }
-    }
 }
 
 impl Default for AccountStoragePatch {
@@ -629,17 +539,6 @@ impl StorageMapPatch {
     // HELPERS
     // ----------------------------------------------------------------------------------------
 
-    /// Returns a mutable reference to the entries for [`StorageMapPatch::Create`] and
-    /// [`StorageMapPatch::Update`], or `None` for [`StorageMapPatch::Remove`].
-    fn entries_mut(&mut self) -> Option<&mut StorageMapPatchEntries> {
-        match self {
-            StorageMapPatch::Create { entries } | StorageMapPatch::Update { entries } => {
-                Some(entries)
-            },
-            StorageMapPatch::Remove => None,
-        }
-    }
-
     /// Merges `other` into `self`, with `other` taking precedence.
     ///
     /// A map that was created and then updated remains created (with the merged entries).
@@ -852,30 +751,6 @@ mod tests {
     use crate::{ONE, Word};
 
     #[test]
-    fn account_storage_patch_returns_err_on_slot_type_mismatch() {
-        let value_slot_name = StorageSlotName::mock(1);
-        let map_slot_name = StorageSlotName::mock(2);
-
-        let mut patch = AccountStoragePatch::from_iters(
-            [value_slot_name.clone()],
-            [],
-            [(map_slot_name.clone(), StorageMapPatch::from_iters([], []))],
-        );
-
-        let err = patch
-            .update_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
-            .unwrap_err();
-        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
-            assert_eq!(value_slot_name, slot_name)
-        });
-
-        let err = patch.update_value(map_slot_name.clone(), Word::empty()).unwrap_err();
-        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
-            assert_eq!(map_slot_name, slot_name)
-        });
-    }
-
-    #[test]
     fn account_storage_patch_accessors() {
         let value_slot = StorageSlotName::mock(1);
         let map_slot = StorageSlotName::mock(2);
@@ -1040,11 +915,9 @@ mod tests {
         /// Creates a patch containing the item as an update if Some, else with the item cleared.
         fn create_patch(item: Option<u32>) -> AccountStoragePatch {
             let slot_name = StorageSlotName::mock(123);
-            let item = item.map(|value| (slot_name.clone(), Word::from([value, 0, 0, 0])));
+            let value = item.map_or(Word::empty(), |value| Word::from([value, 0, 0, 0]));
 
-            AccountStoragePatch::new()
-                .add_cleared_items(item.is_none().then_some(slot_name.clone()))
-                .add_updated_values(item)
+            AccountStoragePatch::builder().update_value(slot_name, value).build()
         }
 
         let mut patch_x = create_patch(x);
