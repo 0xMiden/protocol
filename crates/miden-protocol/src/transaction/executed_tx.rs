@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use super::{
-    AccountDelta,
     AccountHeader,
     AccountId,
     AdviceInputs,
@@ -42,7 +41,6 @@ pub struct ExecutedTransaction {
     id: TransactionId,
     tx_inputs: TransactionInputs,
     tx_outputs: TransactionOutputs,
-    account_delta: AccountDelta,
     account_patch: AccountPatch,
     tx_measurements: TransactionMeasurements,
 }
@@ -58,7 +56,6 @@ impl ExecutedTransaction {
     pub fn new(
         tx_inputs: TransactionInputs,
         tx_outputs: TransactionOutputs,
-        account_delta: AccountDelta,
         account_patch: AccountPatch,
         tx_measurements: TransactionMeasurements,
     ) -> Self {
@@ -78,7 +75,6 @@ impl ExecutedTransaction {
             id,
             tx_inputs,
             tx_outputs,
-            account_delta,
             account_patch,
             tx_measurements,
         }
@@ -132,11 +128,6 @@ impl ExecutedTransaction {
         self.tx_inputs.block_header()
     }
 
-    /// Returns a description of changes between the initial and final account states.
-    pub fn account_delta(&self) -> &AccountDelta {
-        &self.account_delta
-    }
-
     /// Returns the patch of the transaction that describes the update from the initial to the final
     /// account state.
     pub fn account_patch(&self) -> &AccountPatch {
@@ -166,20 +157,8 @@ impl ExecutedTransaction {
     /// Returns individual components of this transaction.
     pub fn into_parts(
         self,
-    ) -> (
-        TransactionInputs,
-        TransactionOutputs,
-        AccountDelta,
-        AccountPatch,
-        TransactionMeasurements,
-    ) {
-        (
-            self.tx_inputs,
-            self.tx_outputs,
-            self.account_delta,
-            self.account_patch,
-            self.tx_measurements,
-        )
+    ) -> (TransactionInputs, TransactionOutputs, AccountPatch, TransactionMeasurements) {
+        (self.tx_inputs, self.tx_outputs, self.account_patch, self.tx_measurements)
     }
 }
 
@@ -191,7 +170,7 @@ impl From<ExecutedTransaction> for TransactionInputs {
 
 impl From<ExecutedTransaction> for TransactionMeasurements {
     fn from(tx: ExecutedTransaction) -> Self {
-        let (_, _, _, _, tx_progress) = tx.into_parts();
+        let (_, _, _, tx_progress) = tx.into_parts();
         tx_progress
     }
 }
@@ -200,7 +179,6 @@ impl Serializable for ExecutedTransaction {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.tx_inputs.write_into(target);
         self.tx_outputs.write_into(target);
-        self.account_delta.write_into(target);
         self.account_patch.write_into(target);
         self.tx_measurements.write_into(target);
     }
@@ -210,11 +188,10 @@ impl Deserializable for ExecutedTransaction {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let tx_inputs = TransactionInputs::read_from(source)?;
         let tx_outputs = TransactionOutputs::read_from(source)?;
-        let account_delta = AccountDelta::read_from(source)?;
         let account_patch = AccountPatch::read_from(source)?;
         let tx_measurements = TransactionMeasurements::read_from(source)?;
 
-        Ok(Self::new(tx_inputs, tx_outputs, account_delta, account_patch, tx_measurements))
+        Ok(Self::new(tx_inputs, tx_outputs, account_patch, tx_measurements))
     }
 }
 

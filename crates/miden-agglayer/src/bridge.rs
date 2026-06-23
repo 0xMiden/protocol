@@ -22,6 +22,10 @@ use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
 use crate::claim_note::CgiChainHash;
+use crate::utils::Keccak256Output;
+
+/// Removed-GER hash chain representation (32-byte Keccak256 hash)
+pub type RemovedGerHashChain = Keccak256Output;
 pub use crate::{
     B2AggNote,
     ClaimNote,
@@ -37,6 +41,7 @@ pub use crate::{
     LeafData,
     MetadataHash,
     ProofData,
+    RemoveGerNote,
     SmtNode,
     UpdateGerNote,
 };
@@ -56,13 +61,25 @@ static BRIDGE_ADMIN_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::admin_account_id")
         .expect("bridge admin account ID storage slot name should be valid")
 });
-static GER_MANAGER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::ger_manager_account_id")
-        .expect("GER manager account ID storage slot name should be valid")
+static GER_INJECTOR_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::ger_injector_account_id")
+        .expect("GER injector account ID storage slot name should be valid")
+});
+static GER_REMOVER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::ger_remover_account_id")
+        .expect("GER remover account ID storage slot name should be valid")
 });
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::ger_map")
         .expect("GER map storage slot name should be valid")
+});
+static REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::removed_ger_hash_chain_lo")
+        .expect("removed GER hash chain lo storage slot name should be valid")
+});
+static REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::removed_ger_hash_chain_hi")
+        .expect("removed GER hash chain hi storage slot name should be valid")
 });
 static FAUCET_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::faucet_registry_map")
@@ -120,6 +137,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
+/// - `remove_ger`, which removes a GER from the storage map and folds it into the running
+///   removed-GER keccak256 hash chain.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
 ///   AggLayer Faucet.
@@ -127,8 +146,13 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// ## Storage Layout
 ///
 /// - [`Self::bridge_admin_id_slot_name`]: Stores the bridge admin account ID.
-/// - [`Self::ger_manager_id_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::ger_injector_id_slot_name`]: Stores the GER injector account ID.
+/// - [`Self::ger_remover_id_slot_name`]: Stores the GER remover account ID.
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
+/// - [`Self::removed_ger_hash_chain_lo_slot_name`]: Stores the lower 128 bits of the removed-GER
+///   keccak256 hash chain.
+/// - [`Self::removed_ger_hash_chain_hi_slot_name`]: Stores the upper 128 bits of the removed-GER
+///   keccak256 hash chain.
 /// - [`Self::faucet_registry_map_slot_name`]: Stores the faucet registry map.
 /// - [`Self::token_registry_map_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::faucet_metadata_map_slot_name`]: Stores conversion metadata (origin address, origin
@@ -152,7 +176,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[derive(Debug, Clone)]
 pub struct AggLayerBridge {
     bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    ger_injector_id: AccountId,
+    ger_remover_id: AccountId,
 }
 
 impl AggLayerBridge {
@@ -170,8 +195,16 @@ impl AggLayerBridge {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new AggLayer bridge component with the standard configuration.
-    pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId) -> Self {
-        Self { bridge_admin_id, ger_manager_id }
+    pub fn new(
+        bridge_admin_id: AccountId,
+        ger_injector_id: AccountId,
+        ger_remover_id: AccountId,
+    ) -> Self {
+        Self {
+            bridge_admin_id,
+            ger_injector_id,
+            ger_remover_id,
+        }
     }
 
     // PUBLIC ACCESSORS
@@ -184,14 +217,29 @@ impl AggLayerBridge {
         &BRIDGE_ADMIN_ID_SLOT_NAME
     }
 
-    /// Storage slot name for the GER manager account ID.
-    pub fn ger_manager_id_slot_name() -> &'static StorageSlotName {
-        &GER_MANAGER_ID_SLOT_NAME
+    /// Storage slot name for the GER injector account ID.
+    pub fn ger_injector_id_slot_name() -> &'static StorageSlotName {
+        &GER_INJECTOR_ID_SLOT_NAME
+    }
+
+    /// Storage slot name for the GER remover account ID.
+    pub fn ger_remover_id_slot_name() -> &'static StorageSlotName {
+        &GER_REMOVER_ID_SLOT_NAME
     }
 
     /// Storage slot name for the GERs map.
     pub fn ger_map_slot_name() -> &'static StorageSlotName {
         &GER_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the removed-GER keccak256 hash chain.
+    pub fn removed_ger_hash_chain_lo_slot_name() -> &'static StorageSlotName {
+        &REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the upper 128 bits of the removed-GER keccak256 hash chain.
+    pub fn removed_ger_hash_chain_hi_slot_name() -> &'static StorageSlotName {
+        &REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME
     }
 
     /// Storage slot name for the faucet registry map.
@@ -267,6 +315,7 @@ impl AggLayerBridge {
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
             UpdateGerNote::script_root(),
+            RemoveGerNote::script_root(),
         ])
     }
 
@@ -368,24 +417,51 @@ impl AggLayerBridge {
             .get_item(AggLayerBridge::cgi_chain_hash_hi_slot_name())
             .expect("failed to get CGI hash chain hi slot");
 
-        let cgi_chain_hash_bytes = cgi_chain_hash_lo
-            .iter()
-            .chain(cgi_chain_hash_hi.iter())
-            .flat_map(|felt| {
-                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
-                    .to_le_bytes()
-            })
-            .collect::<Vec<u8>>();
+        Ok(CgiChainHash::new(Self::chain_hash_bytes(cgi_chain_hash_lo, cgi_chain_hash_hi)))
+    }
 
-        Ok(CgiChainHash::new(
-            cgi_chain_hash_bytes
-                .try_into()
-                .expect("keccak hash should consist of exactly 32 bytes"),
-        ))
+    /// Returns the removed-GER keccak256 hash chain from the corresponding storage slots.
+    ///
+    /// The chain is the running keccak256 of all removed GERs:
+    /// `chain_n = keccak256(chain_{n-1} || removed_ger_n)` with `chain_0 = 0...0`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn removed_ger_hash_chain(
+        bridge_account: &Account,
+    ) -> Result<RemovedGerHashChain, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(bridge_account)?;
+
+        let chain_lo = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::removed_ger_hash_chain_lo_slot_name())
+            .expect("failed to get removed GER hash chain lo slot");
+        let chain_hi = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::removed_ger_hash_chain_hi_slot_name())
+            .expect("failed to get removed GER hash chain hi slot");
+
+        Ok(RemovedGerHashChain::new(Self::chain_hash_bytes(chain_lo, chain_hi)))
     }
 
     // HELPER FUNCTIONS
     // --------------------------------------------------------------------------------------------
+
+    /// Converts a keccak256 hash stored across two lo/hi storage words into its 32-byte form.
+    fn chain_hash_bytes(lo: Word, hi: Word) -> [u8; 32] {
+        lo.iter()
+            .chain(hi.iter())
+            .flat_map(|felt| {
+                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
+                    .to_le_bytes()
+            })
+            .collect::<Vec<u8>>()
+            .try_into()
+            .expect("keccak hash should consist of exactly 32 bytes")
+    }
 
     /// Checks that the provided account is an [`AggLayerBridge`] account.
     ///
@@ -459,7 +535,10 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_MAP_SLOT_NAME,
             &*FAUCET_METADATA_MAP_SLOT_NAME,
             &*BRIDGE_ADMIN_ID_SLOT_NAME,
-            &*GER_MANAGER_ID_SLOT_NAME,
+            &*GER_INJECTOR_ID_SLOT_NAME,
+            &*GER_REMOVER_ID_SLOT_NAME,
+            &*REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME,
+            &*REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
@@ -470,7 +549,8 @@ impl AggLayerBridge {
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
         let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
-        let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
+        let ger_injector_word = AccountIdKey::new(bridge.ger_injector_id).as_word();
+        let ger_remover_word = AccountIdKey::new(bridge.ger_remover_id).as_word();
 
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
@@ -482,7 +562,10 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
-            StorageSlot::with_value(GER_MANAGER_ID_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_value(GER_INJECTOR_ID_SLOT_NAME.clone(), ger_injector_word),
+            StorageSlot::with_value(GER_REMOVER_ID_SLOT_NAME.clone(), ger_remover_word),
+            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
