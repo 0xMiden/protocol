@@ -17,15 +17,11 @@ const FAUCET_ID_PREFIX = 1
 const ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_FAUCET expects exactly 2 note storage items"
 const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET note attachment target account does not match consuming account"
 
-#! Agglayer Bridge DEREGISTER_AGG_FAUCET script: deregisters a faucet from the bridge's faucet
-#! registry, token registry, and faucet metadata.
+#! Agglayer Bridge DEREGISTER_AGG_FAUCET script: deregisters the faucet with the given ID,
+#! clearing every registry/metadata entry the bridge holds for it.
 #!
-#! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
-#! attachment, and only if the note was sent by the bridge admin.
-#! Upon consumption, it clears every registry/metadata entry the bridge holds for the provided
-#! faucet ID. The origin token address and origin network are not carried by the note: the bridge
-#! reads them back from its own faucet metadata, so the cleared token-registry key matches the one
-#! written at registration.
+#! This note can only be consumed by the Agglayer Bridge account targeted by the note attachment,
+#! and only if it was sent by the bridge admin.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::deregister_faucet procedure.
@@ -36,10 +32,6 @@ const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET
 #! NoteStorage layout (2 felts total):
 #! - faucet_id_suffix [0] : 1 felt
 #! - faucet_id_prefix [1] : 1 felt
-#!
-#! Where:
-#! - faucet_id_suffix: Suffix felt of the faucet account ID to deregister.
-#! - faucet_id_prefix: Prefix felt of the faucet account ID to deregister.
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.

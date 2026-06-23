@@ -47,15 +47,12 @@ static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// DEREGISTER_AGG_FAUCET note.
 ///
-/// This note is used to deregister a faucet from the bridge's faucet registry, token registry,
-/// and faucet metadata. It carries only the faucet account ID; the bridge reads the registered
-/// origin token address and origin network back from its own faucet metadata, so the token
-/// registry key it clears matches the faucet's current registration rather than trusting
-/// note-supplied values. The note is always public.
+/// Deregisters a faucet from the bridge's faucet registry, token registry, and faucet metadata.
+/// Carries only the faucet account ID; the bridge recomputes the token-registry key from its own
+/// stored metadata rather than trusting note-supplied values. The note is always public.
 ///
-/// Note that any in-flight notes (B2AGG / CLAIM) targeting the deregistered faucet will fail
-/// after this note is consumed, since `assert_faucet_registered` and
-/// `lookup_faucet_by_token_address` will no longer find the faucet.
+/// Any in-flight B2AGG / CLAIM notes targeting the faucet fail once this note is consumed, since
+/// `assert_faucet_registered` / `lookup_faucet_by_token_address` no longer find it.
 pub struct DeregisterAggFaucetNote;
 
 impl DeregisterAggFaucetNote {
@@ -87,10 +84,6 @@ impl DeregisterAggFaucetNote {
     /// The note storage contains 2 felts:
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
     /// - `faucet_id_prefix`: The prefix of the faucet account ID
-    ///
-    /// The origin token address and origin network are not supplied here: the bridge reads them
-    /// back from its own faucet metadata when clearing the token registry, so the cleared key is
-    /// always the one written at registration.
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to deregister

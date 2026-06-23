@@ -353,32 +353,19 @@ pub proc store_faucet_metadata_hash
     # => [pad(16)]
 end
 
-#! Deregisters a faucet, clearing every entry `register_faucet` wrote for it.
+#! Deregisters a faucet, clearing every entry `register_faucet` wrote for it: the
+#! `faucet_registry`, `token_registry`, and all four `faucet_metadata` sub-keys. Asserts the faucet
+#! is currently registered first. Afterwards `assert_faucet_registered` and
+#! `lookup_faucet_by_token_address` fail for the faucet, so in-flight B2AGG / CLAIM notes targeting
+#! it are rejected.
 #!
-#! Asserts the faucet is currently registered, then clears it from the `faucet_registry`,
-#! `token_registry`, and `faucet_metadata` maps. After this call, subsequent
-#! `assert_faucet_registered` and `lookup_faucet_by_token_address` calls panic, so any in-flight
-#! notes (B2AGG / CLAIM) targeting the deregistered faucet fail their existing registration checks.
+#! The `token_registry` key is recomputed from the faucet's own `faucet_metadata` (via
+#! `get_faucet_conversion_info`), not from the note, so the cleared key always matches the one
+#! `register_faucet` wrote for the current registration.
 #!
-#! The origin token address and origin network are NOT taken from the note: they are read back
-#! from the faucet's own `faucet_metadata_map` entry (written by `register_faucet`) via
-#! `get_faucet_conversion_info`. This guarantees the `token_registry` key cleared here is exactly
-#! the one `register_faucet` wrote for this faucet's *current* registration, so a note cannot point
-#! the clear at the wrong key.
-#!
-#! Caveat: `register_faucet` does not clear a faucet's previous `token_registry` key when the same
-#! faucet ID is re-registered under a different (origin token address, origin network). Such a
-#! re-registered faucet therefore has a stale `token_registry` entry that this procedure does not
-#! reach (it only clears the key derived from the latest metadata). That stale entry is inert,
-#! however: `bridge_in::claim` re-checks `assert_faucet_registered` after the token lookup, and
-#! `bridge_out` already does, so a deregistered faucet can never mint or unlock even via a stale
-#! key. Deregistration is therefore an unconditional revocation of the faucet.
-#!
-#! 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]` into `faucet_registry`.
-#! 2. Writes `hash(tokenAddress[5] || origin_network) -> [0, 0, 0, 0]` into `token_registry`, where
-#!    the address/network come from `faucet_metadata` and origin_network is byte-swapped before
-#!    hashing (matching `register_faucet` Step 4 and `lookup_faucet_by_token_address`).
-#! 3. Clears all four `faucet_metadata` sub-keys (addr-lo, addr-hi/network/scale, hash-lo, hash-hi).
+#! A re-registration under a different (origin token address, origin network) can leave a stale
+#! `token_registry` key this proc does not reach. It is inert: `claim` and `bridge_out` both
+#! re-check `assert_faucet_registered`, so deregistration is an unconditional revocation.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
@@ -386,6 +373,10 @@ end
 #! Panics if:
 #! - the note sender is not the bridge admin.
 #! - the faucet is not currently registered in the faucet registry.
+#!
+#! Locals:
+#! - 0: faucet_id_suffix
+#! - 1: faucet_id_prefix
 #!
 #! Invocation: call
 @locals(2)
@@ -412,8 +403,7 @@ pub proc deregister_faucet
     movup.6 drop
     # => [origin_token_addr(5), origin_network, pad(9)]
 
-    # Byte-swap origin_network so the hash input matches register_faucet's convention
-    # (`claim_note.rs` LE-packs the leaf's origin_network felt).
+    # Byte-swap origin_network so the hash input matches register_faucet's convention.
     movup.5 exec.utils::swap_u32_bytes movdn.5
     # => [origin_token_addr(5), origin_network_swapped, pad(9)]
 
