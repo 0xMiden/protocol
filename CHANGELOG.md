@@ -44,6 +44,7 @@
 - Added a global emergency switch to `Authority`: owner-gated `freeze` / `unfreeze` procedures toggle an `is_frozen` flag that makes `assert_authorized` block every authority-gated procedure at once, regardless of role or owner membership ([#3102](https://github.com/0xMiden/protocol/pull/3102)).
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - [BREAKING] Removed `AccountDelta` from `ExecutedTransaction` which is replaced by `AccountPatch` ([#3109](https://github.com/0xMiden/protocol/pull/3109)).
+- [BREAKING] Removed `Account::apply_delta` and `AccountDelta::merge` ([#3110](https://github.com/0xMiden/protocol/pull/3110)).
 - [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
