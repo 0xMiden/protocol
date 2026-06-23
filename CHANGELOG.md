@@ -40,6 +40,7 @@
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Renamed the `TransactionEvent::AuthRequest` field from `pub_key_hash: Word` to `pub_key_commitment: PublicKeyCommitment` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
+- Added a global emergency switch to `Authority`: owner-gated `freeze` / `unfreeze` procedures toggle an `is_frozen` flag that makes `assert_authorized` block every authority-gated procedure at once, regardless of role or owner membership ([#3102](https://github.com/0xMiden/protocol/pull/3102)).
 - [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
 - [BREAKING] Removed `AccountDelta` from `ExecutedTransaction` which is replaced by `AccountPatch` ([#3109](https://github.com/0xMiden/protocol/pull/3109)).
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
