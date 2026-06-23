@@ -337,8 +337,7 @@ pub proc deregister_faucet
     # => [pad(16)]
 
     # --- 2. Clear token_registry ---
-    # Read the faucet's registered (origin_token_addr, origin_network) from faucet_metadata so the
-    # cleared key is provably the one register_faucet wrote. Drop the scale we don't need.
+    # Read the faucet's registered (origin_token_addr, origin_network) from faucet_metadata. Drop the scale we don't need.
     loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
     exec.get_faucet_conversion_info
     # => [origin_token_addr(5), origin_network, scale, pad(8)]
