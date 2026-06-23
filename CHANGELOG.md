@@ -46,6 +46,7 @@
 - [BREAKING] Removed `AccountDelta` from `ExecutedTransaction` which is replaced by `AccountPatch` ([#3109](https://github.com/0xMiden/protocol/pull/3109)).
 - [BREAKING] Removed `Account::apply_delta` and `AccountDelta::merge` ([#3110](https://github.com/0xMiden/protocol/pull/3110)).
 - [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
+- Added a validation inside `set_max_supply` rejects a new cap above `FUNGIBLE_ASSET_MAX_AMOUNT`, keeping the stored cap consistent with the bound enforced at mint time ([#3118](https://github.com/0xMiden/protocol/pull/3118)).
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
 - Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
