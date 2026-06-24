@@ -67,7 +67,6 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             # assert the input vault has been updated
             push.{INPUT_VAULT_ROOT_PTR}
             push.{FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::hash_asset_key
             exec.asset_vault::get_asset
             # => [ASSET_VALUE]
 
@@ -257,7 +256,6 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             # assert the input vault has been updated.
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::hash_asset_key
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="vault should contain asset"
@@ -408,7 +406,6 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{INPUT_VAULT_ROOT_PTR}
 
             push.{FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::hash_asset_key
             exec.asset_vault::get_asset
             # => [ASSET_VALUE]
 
@@ -558,7 +555,6 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             # check that the non-fungible asset is presented in the input vault
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::hash_asset_key
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="input vault should contain the asset"
@@ -572,7 +568,6 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             # assert the input vault has been updated and does not have the burnt asset
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::hash_asset_key
             exec.asset_vault::get_asset
             # the returned word should be empty, indicating the asset is absent
             padw assert_eqw.err="input vault should not contain burned asset"

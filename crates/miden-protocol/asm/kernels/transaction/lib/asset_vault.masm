@@ -19,16 +19,20 @@ const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-exi
 # ACCESSORS
 # =================================================================================================
 
-#! Returns the ASSET_VALUE associated with the provided hashed asset vault key.
+#! Returns the ASSET_VALUE associated with the provided asset vault key.
 #!
-#! Inputs:  [ASSET_KEY_HASH, vault_root_ptr]
+#! Inputs:  [ASSET_KEY, vault_root_ptr]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET_KEY_HASH is the hashed asset vault key of the asset to fetch (see hash_asset_key).
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 pub proc get_asset
+    # hash the asset vault key before using it as the SMT key
+    exec.hash_asset_key
+    # => [ASSET_KEY_HASH, vault_root_ptr]
+
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
     # => [ASSET_VAULT_ROOT, ASSET_KEY_HASH]
@@ -455,7 +459,7 @@ end
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [ASSET_KEY_HASH]
-pub proc hash_asset_key
+proc hash_asset_key
     exec.poseidon2::hash
     # => [ASSET_KEY_HASH]
 end
