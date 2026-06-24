@@ -497,7 +497,7 @@ where
                             ExecutionError::CycleLimitExceeded(max_cycles),
                         ) => last_note_interval
                             .start()
-                            .map(|start| *max_cycles as usize - usize::from(start)),
+                            .map(|start| (*max_cycles as usize).saturating_sub(usize::from(start))),
                         _ => None,
                     };
 
