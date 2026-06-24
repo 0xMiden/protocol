@@ -43,15 +43,25 @@ pub struct NoteSyncHint {
     ///
     /// This should be treated as a lower-bound hint: there is no guarantee that the note will
     /// appear on chain, or that it will appear after this block.
-    pub after_block_num: BlockNumber,
+    after_block_num: BlockNumber,
     /// The tag expected to be associated with the note.
-    pub tag: NoteTag,
+    tag: NoteTag,
 }
 
 impl NoteSyncHint {
     /// Returns a new [`NoteSyncHint`] instantiated from the provided parameters.
     pub fn new(after_block_num: BlockNumber, tag: NoteTag) -> Self {
         Self { after_block_num, tag }
+    }
+
+    /// Returns the block after which the note is expected to appear on chain.
+    pub fn after_block_num(&self) -> BlockNumber {
+        self.after_block_num
+    }
+
+    /// Returns the tag expected to be associated with the note.
+    pub fn tag(&self) -> NoteTag {
+        self.tag
     }
 }
 
@@ -72,11 +82,13 @@ pub enum NoteFile {
     /// The note's details and attachments are known, but its metadata must be recovered from the
     /// chain.
     ///
-    /// This is useful for importing an expected note while avoiding an exact [`NoteId`] lookup. The
-    /// importer can use the sync hint to search for matching notes by tag, then, for each returned
-    /// note, recompute the note ID as `NoteId::new(details_commitment, returned_metadata)` using
-    /// this variant's details commitment; the returned note whose recomputed ID matches is the
-    /// expected one. This recovers its metadata without revealing the note ID to the node.
+    /// This is useful for importing an expected note while avoiding an exact [`NoteId`] lookup.
+    /// Looking a note up by its exact ID would reveal to the node which note the importer is
+    /// interested in, leaking the receiver's privacy. Instead, the importer can use the sync hint
+    /// to search for matching notes by tag, then, for each returned note, recompute the note ID as
+    /// `NoteId::new(details_commitment, returned_metadata)` using this variant's details
+    /// commitment; the returned note whose recomputed ID matches is the expected one. This recovers
+    /// its metadata without revealing the note ID to the node.
     ///
     /// Attachments are carried here rather than fetched by ID because attachment content is not
     /// returned by a tag-based sync, so fetching it would otherwise require leaking the note ID.
