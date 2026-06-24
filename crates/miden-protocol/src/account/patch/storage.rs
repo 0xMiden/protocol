@@ -9,7 +9,7 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::errors::AccountDeltaError;
+use crate::errors::{AccountDeltaError, AccountPatchError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -51,6 +51,11 @@ impl AccountStoragePatch {
     /// Returns the patch for the provided slot name, or `None` if no patch exists.
     pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlotPatch> {
         self.patches.get(slot_name)
+    }
+
+    /// Returns the number of slot patches.
+    pub fn num_slots(&self) -> usize {
+        self.patches.len()
     }
 
     /// Returns an iterator over the slot patches.
@@ -143,16 +148,17 @@ impl AccountStoragePatch {
     }
 
     /// Merges another patch into this one, overwriting any existing values.
-    pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
+    pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         for (slot_name, slot_patch) in other.patches {
             match self.patches.entry(slot_name.clone()) {
                 Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(slot_patch);
                 },
                 Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry.get_mut().merge(slot_patch).ok_or_else(|| {
-                        AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
-                    })?;
+                    occupied_entry
+                        .get_mut()
+                        .merge(slot_patch)
+                        .ok_or(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name))?;
                 },
             }
         }
@@ -631,6 +637,35 @@ mod tests {
         assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(map_slot_name, slot_name)
         });
+    }
+
+    #[test]
+    fn account_storage_patch_accessors() {
+        let value_slot = StorageSlotName::mock(1);
+        let map_slot = StorageSlotName::mock(2);
+        let absent_slot = StorageSlotName::mock(3);
+
+        let value = Word::from([1u32, 2, 3, 4]);
+        let map_key = StorageMapKey::from_array([10, 11, 12, 13]);
+        let map_value = Word::from([5u32, 6, 7, 8]);
+        let absent_key = StorageMapKey::from_array([99, 99, 99, 99]);
+
+        let patch = AccountStoragePatch::from_iters(
+            [],
+            [(value_slot.clone(), value)],
+            [(map_slot.clone(), StorageMapPatch::from_iters([], [(map_key, map_value)]))],
+        );
+
+        assert_eq!(patch.get_value(&value_slot), Some(value));
+        assert_eq!(patch.get_value(&absent_slot), None);
+
+        let map_patch = patch.get_map(&map_slot).unwrap();
+        assert_eq!(map_patch.entries().get(&map_key), Some(&map_value));
+        assert_eq!(patch.get_map(&absent_slot), None);
+
+        assert_eq!(patch.get_map_value(&map_slot, &map_key), Some(map_value));
+        assert_eq!(patch.get_map_value(&map_slot, &absent_key), None);
+        assert_eq!(patch.get_map_value(&absent_slot, &map_key), None);
     }
 
     #[test]

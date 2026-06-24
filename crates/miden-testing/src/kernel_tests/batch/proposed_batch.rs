@@ -29,11 +29,12 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     RawOutputNote,
+    TransactionScript,
 };
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -106,8 +107,10 @@ pub async fn setup_circular_note_dependency_test()
     assert_eq!(note_x.metadata().sender(), note_y.metadata().sender());
     assert_ne!(note_x.id(), note_y.id());
 
-    let tx_script_y = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_y.clone())], None)?;
+    let tx_script_y = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_y.clone())],
+    )?);
     // TX 1: consume note_x -> create note_y.
     // The tx script creates note_y with the asset out of thin air.
     let executed_tx1 = chain
@@ -121,10 +124,12 @@ pub async fn setup_circular_note_dependency_test()
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    let tx_script_x = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
     // TX 2: consume note_y -> create note_x (output via tx script).
     let executed_tx2 = chain
         .build_tx_context(updated_account, &[], slice::from_ref(&note_y))?
@@ -908,12 +913,14 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
     assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
 
-    let tx_script_x = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
     // TX 2: create note_x with the asset from the account vault.
     let executed_tx2 = chain
         .build_tx_context(updated_account, &[], &[])?

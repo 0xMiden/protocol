@@ -3,10 +3,10 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::{Account, AccountDelta, AccountStoragePatch, AccountVaultDelta};
+use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
-    ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
+    ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
@@ -105,20 +105,17 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             .collect(),
     )?;
 
-    let account_delta_commitment = AccountDelta::new(
+    let account_patch_commitment = AccountPatch::new(
         tx_context.account().id(),
         AccountStoragePatch::default(),
-        AccountVaultDelta::default(),
-        ONE,
+        AccountVaultPatch::default(),
+        None,
+        Some(final_account.nonce()),
     )?
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
-    let fee_asset = FungibleAsset::new(
-        tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
-        0,
-    )?;
+        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -129,24 +126,16 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().suffix(),
-    );
-    assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().prefix().as_felt()
-    );
-    assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
-            .as_canonical_u64(),
-        fee_asset.amount().as_u64()
-    );
-    assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
             .as_canonical_u64(),
         u64::from(u32::MAX)
+    );
+
+    // Everything after the expiration block number (index 8) must be zero.
+    assert_eq!(
+        exec_output.get_stack_word(8).as_elements()[1..],
+        Word::empty().as_elements()[1..],
     );
     assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
@@ -487,7 +476,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
     assert_transaction_executor_error!(
         result,
-        ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
     );
 
     Ok(())

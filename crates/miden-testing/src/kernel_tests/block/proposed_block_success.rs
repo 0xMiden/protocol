@@ -5,8 +5,7 @@ use std::vec::Vec;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Felt;
-use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountId, AccountType, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
@@ -114,14 +113,17 @@ async fn proposed_block_basic_success() -> anyhow::Result<()> {
 /// Tests that account updates are correctly aggregated into a block-level account update.
 #[tokio::test]
 async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<()> {
-    let asset = FungibleAsset::mock(100);
+    let asset = FungibleAsset::mock(100).unwrap_fungible();
     let sender_id = AccountId::try_from(ACCOUNT_ID_SENDER)?;
 
     let mut builder = MockChain::builder();
     let mut account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let note0 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Private)?;
-    let note1 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Public)?;
-    let note2 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Public)?;
+    let note0 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Private)?;
+    let note1 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Public)?;
+    let note2 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Public)?;
     let mut chain = builder.build()?;
 
     // Add notes to the chain.
@@ -130,10 +132,10 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
     // Create three transactions on the same account that build on top of each other.
     let executed_tx0 = chain.create_authenticated_notes_tx(account1.id(), [note0.id()]).await?;
 
-    account1.apply_delta(executed_tx0.account_delta())?;
+    account1.apply_patch(executed_tx0.account_patch())?;
     let executed_tx1 = chain.create_authenticated_notes_tx(account1.clone(), [note1.id()]).await?;
 
-    account1.apply_delta(executed_tx1.account_delta())?;
+    account1.apply_patch(executed_tx1.account_patch())?;
     let executed_tx2 = chain.create_authenticated_notes_tx(account1.clone(), [note2.id()]).await?;
 
     let [tx0, tx1, tx2] = [executed_tx0, executed_tx1, executed_tx2]
@@ -169,9 +171,11 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
         [tx2.id(), tx0.id(), tx1.id()]
     );
 
-    assert_matches!(account_update.details(), AccountUpdateDetails::Delta(delta) => {
-        assert_eq!(delta.vault().fungible().num_assets(), 1);
-        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().vault_key()).unwrap(), 300);
+    let expected_asset = asset.add(asset)?.add(asset)?;
+
+    assert_matches!(account_update.details(), AccountUpdateDetails::Public(patch) => {
+        assert_eq!(patch.vault().num_assets(), 1);
+        assert_eq!(patch.vault().as_map().get(&asset.vault_key()), Some(&expected_asset.to_value_word()));
     });
 
     Ok(())
@@ -284,7 +288,7 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
     let mut chain = builder.build()?;
 
     let noop_tx = generate_conditional_tx(&mut chain, account0.id(), noop_note0, false).await;
-    account0.apply_delta(noop_tx.account_delta())?;
+    account0.apply_patch(noop_tx.account_patch())?;
     let state_updating_tx =
         generate_conditional_tx(&mut chain, account0.clone(), noop_note1, true).await;
 

@@ -15,7 +15,7 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::AccountComponent;
+use crate::account::{AccountCodeInterface, AccountComponent, AccountId};
 
 pub mod procedure;
 use procedure::{AccountProcedureRoot, PrintableProcedure};
@@ -178,6 +178,13 @@ impl AccountCode {
     /// And then concatenating the resulting elements into a single vector.
     pub fn to_elements(&self) -> Vec<Felt> {
         procedures_as_elements(self.procedures())
+    }
+
+    /// Returns the public interface of this account code: the given account ID and the set of
+    /// procedure roots exposed by this code.
+    pub fn interface(&self, account_id: AccountId) -> AccountCodeInterface {
+        AccountCodeInterface::new(account_id, self.procedures.iter().copied().collect())
+            .expect("account code procedure count is enforced by AccountCode invariants")
     }
 
     /// Returns an iterator of printable representations for all procedures in this account code.

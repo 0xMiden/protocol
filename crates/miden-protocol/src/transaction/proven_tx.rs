@@ -3,9 +3,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{InputNote, ToInputNoteCommitments};
-use crate::account::Account;
-use crate::account::delta::AccountUpdateDetails;
-use crate::asset::FungibleAsset;
+use crate::account::{Account, AccountUpdateDetails};
 use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
@@ -60,9 +58,6 @@ pub struct ProvenTransaction {
     /// The block commitment of the transaction's reference block.
     ref_block_commitment: Word,
 
-    /// The fee of the transaction.
-    fee: FungibleAsset,
-
     /// The block number by which the transaction will expire, as defined by the executed scripts.
     expiration_block_num: BlockNumber,
 
@@ -96,7 +91,6 @@ impl ProvenTransaction {
         output_notes: impl IntoIterator<Item = impl Into<OutputNote>>,
         ref_block_num: BlockNumber,
         ref_block_commitment: Word,
-        fee: FungibleAsset,
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenTransactionError> {
@@ -124,7 +118,6 @@ impl ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
-            fee,
         );
 
         let proven_transaction = Self {
@@ -134,7 +127,6 @@ impl ProvenTransaction {
             output_notes,
             ref_block_num,
             ref_block_commitment,
-            fee,
             expiration_block_num,
             proof,
         };
@@ -185,11 +177,6 @@ impl ProvenTransaction {
         self.ref_block_commitment
     }
 
-    /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
-        self.fee
-    }
-
     /// Returns an iterator of the headers of unauthenticated input notes in this transaction.
     pub fn unauthenticated_notes(&self) -> impl Iterator<Item = &NoteHeader> {
         self.input_notes.iter().filter_map(|note| note.header())
@@ -219,7 +206,7 @@ impl ProvenTransaction {
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
     ///   not match its declared account delta commitment.
-    fn validate(mut self) -> Result<Self, ProvenTransactionError> {
+    fn validate(self) -> Result<Self, ProvenTransactionError> {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
         if self.account_update.initial_state_commitment()
@@ -229,31 +216,20 @@ impl ProvenTransaction {
             return Err(ProvenTransactionError::EmptyTransaction);
         }
 
-        match &mut self.account_update.details {
-            // The delta commitment cannot be validated for private account updates. It will be
+        match &self.account_update.details {
+            // The patch commitment cannot be validated for private account updates. It will be
             // validated as part of transaction proof verification implicitly.
             AccountUpdateDetails::Private => (),
-            AccountUpdateDetails::Delta(post_fee_account_delta) => {
-                // Add the removed fee to the post fee delta to get the pre-fee delta, against which
-                // the delta commitment needs to be validated.
-                post_fee_account_delta.vault_mut().add_asset(self.fee.into()).map_err(|err| {
-                    ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(err))
-                })?;
-
-                let expected_commitment = self.account_update.account_delta_commitment;
-                let actual_commitment = post_fee_account_delta.to_commitment();
+            AccountUpdateDetails::Public(account_patch) => {
+                let expected_commitment = self.account_update.account_patch_commitment;
+                let actual_commitment = account_patch.to_commitment();
                 if expected_commitment != actual_commitment {
-                    return Err(ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(
+                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch(Box::from(
                         format!(
-                            "expected account delta commitment {expected_commitment} but found {actual_commitment}"
+                            "expected account patch commitment {expected_commitment} but found {actual_commitment}"
                         ),
                     )));
                 }
-
-                // Remove the added fee again to recreate the post fee delta.
-                post_fee_account_delta.vault_mut().remove_asset(self.fee.into()).map_err(
-                    |err| ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(err)),
-                )?;
             },
         }
 
@@ -268,7 +244,6 @@ impl Serializable for ProvenTransaction {
         self.output_notes.write_into(target);
         self.ref_block_num.write_into(target);
         self.ref_block_commitment.write_into(target);
-        self.fee.write_into(target);
         self.expiration_block_num.write_into(target);
         self.proof.write_into(target);
     }
@@ -283,7 +258,6 @@ impl Deserializable for ProvenTransaction {
 
         let ref_block_num = BlockNumber::read_from(source)?;
         let ref_block_commitment = Word::read_from(source)?;
-        let fee = FungibleAsset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
 
@@ -292,7 +266,6 @@ impl Deserializable for ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
-            fee,
         );
 
         let proven_transaction = Self {
@@ -302,7 +275,6 @@ impl Deserializable for ProvenTransaction {
             output_notes,
             ref_block_num,
             ref_block_commitment,
-            fee,
             expiration_block_num,
             proof,
         };
@@ -330,20 +302,18 @@ pub struct TxAccountUpdate {
     /// The commitment of the account state after the transaction was executed.
     final_state_commitment: Word,
 
-    /// The commitment to the account delta resulting from the execution of the transaction.
-    ///
-    /// This must be the commitment to the account delta as computed by the transaction kernel in
-    /// the epilogue (the "pre-fee" delta). Notably, this _excludes_ the automatically removed fee
-    /// asset. The account delta possibly contained in [`AccountUpdateDetails`] _includes_ the
-    /// _removed_ fee asset, so that it represents the full account delta of the transaction
-    /// (the "post-fee" delta). This mismatch means that in order to validate the delta, the
-    /// fee asset must be _added_ to the delta before checking its commitment against this
-    /// field.
-    account_delta_commitment: Word,
+    /// The commitment to the [`AccountPatch`](crate::account::AccountPatch) resulting from the
+    /// execution of the transaction, as computed by the transaction kernel in the epilogue. This
+    /// commitment is always set regardless of whether the account is public or private.
+    /// - When `details` is [`AccountUpdateDetails::Public`], it must equal the commitment of the
+    ///   patch carried in that variant.
+    /// - When `details` is [`AccountUpdateDetails::Private`], the patch itself is not transmitted
+    ///   and the commitment is validated implicitly as part of transaction verification.
+    account_patch_commitment: Word,
 
-    /// A set of changes which can be applied the account's state prior to the transaction to
-    /// get the account state after the transaction. For private accounts this is set to
-    /// [AccountUpdateDetails::Private].
+    /// A description of the changes to the account that produces the post-transaction state when
+    /// applied to the pre-transaction state. For private accounts this is set to
+    /// [`AccountUpdateDetails::Private`].
     details: AccountUpdateDetails,
 }
 
@@ -352,12 +322,12 @@ impl TxAccountUpdate {
     ///
     /// Returns an error if:
     /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
-    /// - The transaction was executed against a _new_ account with public state and its account ID
-    ///   does not match the ID in the account update.
+    /// - The transaction was executed against an account with public state and its account ID does
+    ///   not match the ID of the patch in the account update.
     /// - The transaction was executed against a _new_ account with public state and its commitment
     ///   does not match the final state commitment of the account update.
     /// - The transaction creates a _new_ account with public state and the update is of type
-    ///   [`AccountUpdateDetails::Delta`] but the account delta is not a full state delta.
+    ///   [`AccountUpdateDetails::Public`] but the account patch is not a full state patch.
     /// - The transaction was executed against a private account and the account update is _not_ of
     ///   type [`AccountUpdateDetails::Private`].
     /// - The transaction was executed against an account with public state and the update is of
@@ -366,14 +336,14 @@ impl TxAccountUpdate {
         account_id: AccountId,
         init_state_commitment: Word,
         final_state_commitment: Word,
-        account_delta_commitment: Word,
+        account_patch_commitment: Word,
         details: AccountUpdateDetails,
     ) -> Result<Self, ProvenTransactionError> {
         let account_update = Self {
             account_id,
             init_state_commitment,
             final_state_commitment,
-            account_delta_commitment,
+            account_patch_commitment,
             details,
         };
 
@@ -399,24 +369,24 @@ impl TxAccountUpdate {
                     account_update.account_id(),
                 ));
             },
-            AccountUpdateDetails::Delta(delta) => {
+            AccountUpdateDetails::Public(patch) => {
+                if patch.id() != account_id {
+                    return Err(ProvenTransactionError::AccountIdMismatch {
+                        tx_account_id: account_id,
+                        details_account_id: patch.id(),
+                    });
+                }
+
                 let is_new_account = account_update.initial_state_commitment().is_empty();
                 if is_new_account {
                     // Validate that for new accounts, the full account state can be constructed
-                    // from the delta. This will fail if it is not such a full state delta.
-                    let account = Account::try_from(delta).map_err(|err| {
-                        ProvenTransactionError::NewPublicStateAccountRequiresFullStateDelta {
-                            id: delta.id(),
+                    // from the patch. This will fail if it is not such a full state patch.
+                    let account = Account::try_from(patch).map_err(|err| {
+                        ProvenTransactionError::NewPublicStateAccountRequiresFullStatePatch {
+                            id: patch.id(),
                             source: err,
                         }
                     })?;
-
-                    if account.id() != account_id {
-                        return Err(ProvenTransactionError::AccountIdMismatch {
-                            tx_account_id: account_id,
-                            details_account_id: account.id(),
-                        });
-                    }
 
                     if account.to_commitment() != account_update.final_state_commitment {
                         return Err(ProvenTransactionError::AccountFinalCommitmentMismatch {
@@ -446,9 +416,10 @@ impl TxAccountUpdate {
         self.final_state_commitment
     }
 
-    /// Returns the commitment to the account delta resulting from the execution of the transaction.
-    pub fn account_delta_commitment(&self) -> Word {
-        self.account_delta_commitment
+    /// Returns the commitment to the [`AccountPatch`](crate::account::AccountPatch) resulting from
+    /// the execution of the transaction.
+    pub fn account_patch_commitment(&self) -> Word {
+        self.account_patch_commitment
     }
 
     /// Returns the description of the updates for public accounts.
@@ -470,7 +441,7 @@ impl Serializable for TxAccountUpdate {
         self.account_id.write_into(target);
         self.init_state_commitment.write_into(target);
         self.final_state_commitment.write_into(target);
-        self.account_delta_commitment.write_into(target);
+        self.account_patch_commitment.write_into(target);
         self.details.write_into(target);
     }
 }
@@ -480,14 +451,14 @@ impl Deserializable for TxAccountUpdate {
         let account_id = AccountId::read_from(source)?;
         let init_state_commitment = Word::read_from(source)?;
         let final_state_commitment = Word::read_from(source)?;
-        let account_delta_commitment = Word::read_from(source)?;
+        let account_patch_commitment = Word::read_from(source)?;
         let details = AccountUpdateDetails::read_from(source)?;
 
         Self::new(
             account_id,
             init_state_commitment,
             final_state_commitment,
-            account_delta_commitment,
+            account_patch_commitment,
             details,
         )
         .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
@@ -607,24 +578,24 @@ mod tests {
     use alloc::vec::Vec;
 
     use anyhow::Context;
+    use assert_matches::assert_matches;
     use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
 
     use super::ProvenTransaction;
-    use crate::account::delta::AccountUpdateDetails;
     use crate::account::{
         Account,
-        AccountDelta,
         AccountId,
         AccountIdVersion,
+        AccountPatch,
         AccountStoragePatch,
         AccountType,
-        AccountVaultDelta,
+        AccountUpdateDetails,
+        AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
         StorageSlotName,
     };
-    use crate::asset::FungibleAsset;
     use crate::block::BlockNumber;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
@@ -635,7 +606,7 @@ mod tests {
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::transaction::{InputNoteCommitment, OutputNote, TxAccountUpdate};
     use crate::utils::serde::{Deserializable, Serializable};
-    use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, ONE, Word};
+    use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, Felt, Word};
 
     fn check_if_sync<T: Sync>() {}
     fn check_if_send<T: Send>() {}
@@ -662,9 +633,9 @@ mod tests {
             .with_auth_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
-        let delta = AccountDelta::try_from(account.clone())?;
+        let patch = AccountPatch::try_from(account.clone())?;
 
-        let details = AccountUpdateDetails::Delta(delta);
+        let details = AccountUpdateDetails::Public(patch);
 
         TxAccountUpdate::new(
             account.id(),
@@ -690,12 +661,18 @@ mod tests {
         }
         let storage_patch = StorageMapPatch::new(map);
 
-        // A delta that exceeds the limit returns an error.
+        // A patch that exceeds the limit returns an error.
         let storage_patch =
             AccountStoragePatch::from_iters([], [], [(StorageSlotName::mock(4), storage_patch)]);
-        let delta = AccountDelta::new(account_id, storage_patch, AccountVaultDelta::default(), ONE)
-            .unwrap();
-        let details = AccountUpdateDetails::Delta(delta);
+        let patch = AccountPatch::new(
+            account_id,
+            storage_patch,
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2u32)),
+        )
+        .unwrap();
+        let details = AccountUpdateDetails::Public(patch);
         let details_size = details.get_size_hint();
 
         let err = TxAccountUpdate::new(
@@ -712,6 +689,44 @@ mod tests {
         );
     }
 
+    /// Building a [`TxAccountUpdate`] for a public account fails if the account ID in the patch
+    /// does not match the account ID passed to the constructor.
+    #[test]
+    fn account_update_id_mismatch_between_account_id_and_patch() -> anyhow::Result<()> {
+        let patch_account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_auth_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        let patch = AccountPatch::try_from(patch_account.clone())?;
+
+        let other_account_id =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+        assert_ne!(patch_account.id(), other_account_id);
+
+        let err = TxAccountUpdate::new(
+            other_account_id,
+            patch_account.to_commitment(),
+            patch_account.to_commitment(),
+            Word::empty(),
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            err,
+            ProvenTransactionError::AccountIdMismatch {
+                tx_account_id,
+                details_account_id,
+            } => {
+                assert_eq!(tx_account_id, other_account_id);
+                assert_eq!(details_account_id, patch_account.id());
+            }
+        );
+
+        Ok(())
+    }
+
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =
@@ -720,8 +735,8 @@ mod tests {
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =
             [3; 32].try_into().expect("failed to create final account commitment");
-        let account_delta_commitment =
-            [4; 32].try_into().expect("failed to create account delta commitment");
+        let account_patch_commitment =
+            [4; 32].try_into().expect("failed to create account patch commitment");
         let ref_block_num = BlockNumber::from(1);
         let ref_block_commitment = Word::empty();
         let expiration_block_num = BlockNumber::from(2);
@@ -731,7 +746,7 @@ mod tests {
             account_id,
             initial_account_commitment,
             final_account_commitment,
-            account_delta_commitment,
+            account_patch_commitment,
             AccountUpdateDetails::Private,
         )
         .context("failed to build account update")?;
@@ -742,7 +757,6 @@ mod tests {
             Vec::<OutputNote>::new(),
             ref_block_num,
             ref_block_commitment,
-            FungibleAsset::mock(42).unwrap_fungible(),
             expiration_block_num,
             proof,
         )

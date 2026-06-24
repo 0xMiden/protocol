@@ -4,8 +4,8 @@
 # the account-wide `Authority` component via `exec.authority::assert_authorized` — the same
 # pattern that `TokenPolicyManager::set_*_policy` uses. This makes a single PausableManager
 # work uniformly with `Authority::OwnerControlled` (Ownable2Step owner), `Authority::AuthControlled`
-# (account auth scheme), and `Authority::RbacControlled { role }` (a single role gates both
-# pause and unpause).
+# (account auth scheme), and `Authority::RbacControlled` (per-procedure roles: `pause` and
+# `unpause` can be gated by distinct roles, e.g. PAUSER / UNPAUSER, or share one role).
 #
 # Companion components required on the account:
 # - `Authority` — provides the auth dispatch the body calls into.

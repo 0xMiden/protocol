@@ -23,7 +23,7 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #!
 #! This note can only be consumed by the specific agglayer bridge account whose ID is provided
 #! in the note attachment (target_account_id), and only if the note was sent by the global exit root
-#! manager.
+#! injector.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::update_ger procedure.

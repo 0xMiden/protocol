@@ -551,13 +551,13 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(tx.account_patch().final_nonce(), Some(Felt::ONE));
     // except for the nonce, the delta should be empty
-    assert!(tx.account_delta().storage().is_empty());
-    assert!(tx.account_delta().vault().is_empty());
+    assert!(tx.account_patch().storage().is_empty());
+    assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
-    assert_ne!(tx.account_delta().to_commitment(), EMPTY_WORD);
+    assert_ne!(tx.account_patch().to_commitment(), EMPTY_WORD);
 
     Ok(())
 }

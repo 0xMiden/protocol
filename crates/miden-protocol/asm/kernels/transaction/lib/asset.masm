@@ -8,6 +8,12 @@ use $kernel::util::asset->util_asset
 
 const ERR_VAULT_UNSUPPORTED_ASSET_COMPOSITION="asset composition Custom is not yet supported"
 
+const ERR_VAULT_MERGE_COMPOSITION_NONE="assets with composition none cannot be merged"
+
+const ERR_VAULT_SPLIT_COMPOSITION_NONE="assets with composition none cannot be split"
+
+const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be compared"
+
 # CONSTANT ACCESSORS
 # =================================================================================================
 
@@ -160,4 +166,121 @@ pub proc validate
         # => [ASSET_KEY, ASSET_VALUE]
     end
     # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Merges two values for the same asset and returns the combined value.
+#!
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! and have already been validated.
+#!
+#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Outputs: [MERGED_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset whose values are being merged.
+#! - CURRENT_ASSET_VALUE and OTHER_ASSET_VALUE are the two asset values to merge.
+#! - MERGED_ASSET_VALUE is the combined value.
+#!
+#! Panics if:
+#! - the asset's composition is None.
+#! - the asset's composition is Custom (not yet supported).
+#! - the underlying merge operation panics (see fungible_asset::merge).
+pub proc merge
+    exec.key_to_composition
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_MERGE_COMPOSITION_NONE
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    if.true
+        dropw
+        # => [CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+        exec.fungible_asset::merge
+        # => [MERGED_ASSET_VALUE]
+    else
+        push.0 assert.err="merging assets with custom composition is not yet supported"
+    end
+    # => [MERGED_ASSET_VALUE]
+end
+
+#! Computes OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE for the asset identified by ASSET_KEY.
+#!
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! and have already been validated.
+#!
+#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Outputs: [SPLIT_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset whose values are being split.
+#! - CURRENT_ASSET_VALUE is the value subtracted from OTHER_ASSET_VALUE.
+#! - OTHER_ASSET_VALUE is the value being subtracted from.
+#! - SPLIT_ASSET_VALUE is OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE.
+#!
+#! Panics if:
+#! - the asset's composition is None.
+#! - the asset's composition is Custom (not yet supported).
+#! - the underlying split operation panics (see fungible_asset::split).
+pub proc split
+    exec.key_to_composition
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_SPLIT_COMPOSITION_NONE
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    if.true
+        dropw
+        # => [CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+        exec.fungible_asset::split
+        # => [SPLIT_ASSET_VALUE]
+    else
+        push.0 assert.err="splitting assets with custom composition is not yet supported"
+    end
+    # => [SPLIT_ASSET_VALUE]
+end
+
+#! Returns 1 if OTHER_ASSET_VALUE is less than CURRENT_ASSET_VALUE, 0 otherwise.
+#!
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! and have already been validated.
+#!
+#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Outputs: [is_lt]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset whose values are being compared.
+#! - CURRENT_ASSET_VALUE and OTHER_ASSET_VALUE are the two asset values to compare.
+#! - is_lt is 1 if OTHER_ASSET_VALUE < CURRENT_ASSET_VALUE.
+#!
+#! Panics if:
+#! - the asset's composition is None.
+#! - the asset's composition is Custom (not yet supported).
+pub proc lt
+    exec.key_to_composition
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_LT_COMPOSITION_NONE
+    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+    if.true
+        dropw
+        # => [CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+
+        exec.fungible_asset::lt
+        # => [is_lt]
+    else
+        push.0 assert.err="comparing assets with custom composition is not yet supported"
+    end
+    # => [is_lt]
 end
