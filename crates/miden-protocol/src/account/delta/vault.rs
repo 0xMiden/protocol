@@ -321,6 +321,9 @@ impl FungibleAssetDelta {
             if !vault_key.composition().is_fungible() {
                 return Err(AccountDeltaError::NotAFungibleFaucetId(vault_key.faucet_id()));
             }
+            if !vault_key.asset_id().is_empty() {
+                return Err(AccountDeltaError::NotAFungibleFaucetId(vault_key.faucet_id()));
+            }
         }
 
         Ok(())
