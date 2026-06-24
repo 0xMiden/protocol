@@ -53,23 +53,33 @@ static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
 async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
+    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER injector)
     // --------------------------------------------------------------------------------------------
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (note sender)
+    // CREATE GER INJECTOR ACCOUNT (note sender)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
+    // --------------------------------------------------------------------------------------------
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
@@ -82,7 +92,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     ];
     let ger = ExitRoot::from(ger_bytes);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
@@ -277,15 +287,24 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     let ger_bytes: [u8; 32] = [
@@ -297,11 +316,11 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
 
     // CREATE TWO UPDATE_GER NOTES WITH THE SAME GER
     let update_ger_note_1 =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note_1.clone()));
 
     let update_ger_note_2 =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note_2.clone()));
 
     let mut mock_chain = builder.build()?;

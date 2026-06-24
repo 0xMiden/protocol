@@ -106,7 +106,7 @@ impl AccountVaultPatch {
 
     /// Returns an iterator over the keys of assets that were removed (i.e. whose value is
     /// [`Word::empty`]).
-    fn removed_asset_keys(&self) -> impl Iterator<Item = &AssetVaultKey> {
+    pub fn removed_asset_keys(&self) -> impl Iterator<Item = &AssetVaultKey> {
         self.entries
             .iter()
             .filter(|(_key, value)| value.is_empty())
@@ -115,7 +115,7 @@ impl AccountVaultPatch {
 
     /// Returns an iterator over the assets that were added or updated (i.e. whose value is not
     /// [`Word::empty`]).
-    fn added_assets(&self) -> impl Iterator<Item = Asset> {
+    pub fn updated_assets(&self) -> impl Iterator<Item = Asset> {
         self.entries
             .iter()
             .filter(|(_key, value)| !value.is_empty())
@@ -130,15 +130,15 @@ impl Serializable for AccountVaultPatch {
         target.write_usize(self.removed_asset_keys().count());
         target.write_many(self.removed_asset_keys());
 
-        target.write_usize(self.added_assets().count());
-        target.write_many(self.added_assets());
+        target.write_usize(self.updated_assets().count());
+        target.write_many(self.updated_assets());
     }
 
     fn get_size_hint(&self) -> usize {
         let removed_size = AssetVaultKey::SERIALIZED_SIZE * self.removed_asset_keys().count();
-        let added_size: usize = self.added_assets().map(|asset| asset.get_size_hint()).sum();
+        let updated_size: usize = self.updated_assets().map(|asset| asset.get_size_hint()).sum();
 
-        2 * 0usize.get_size_hint() + removed_size + added_size
+        2 * 0usize.get_size_hint() + removed_size + updated_size
     }
 }
 

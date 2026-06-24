@@ -6,7 +6,7 @@ use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, MastForestStore, ProcessorState};
 use miden_protocol::Word;
-use miden_protocol::account::{AccountDelta, AccountPatch, PartialAccount};
+use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
@@ -55,9 +55,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(
-        self,
-    ) -> (AccountDelta, AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         self.base_host.into_parts()
     }
 }

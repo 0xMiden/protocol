@@ -5,28 +5,28 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-const UPDATE_GER_NOTE_NUM_STORAGE_ITEMS = 8
+const REMOVE_GER_NOTE_NUM_STORAGE_ITEMS = 8
 const STORAGE_PTR_GER_LOWER = 0
 const STORAGE_PTR_GER_UPPER = 4
 
 # ERRORS
 # =================================================================================================
 
-const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "UPDATE_GER script expects exactly 8 note storage items"
-const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment target account does not match consuming account"
+const ERR_REMOVE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "REMOVE_GER script expects exactly 8 note storage items"
+const ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH = "REMOVE_GER note attachment target account does not match consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! Agglayer Bridge UPDATE_GER script: updates the GER by calling the bridge_config::update_ger
-#! function.
+#! Agglayer Bridge REMOVE_GER script: removes a GER from the bridge account by calling the
+#! bridge_config::remove_ger function.
 #!
 #! This note can only be consumed by the specific agglayer bridge account whose ID is provided
 #! in the note attachment (target_account_id), and only if the note was sent by the global exit root
-#! injector.
+#! remover.
 #!
 #! Requires that the account exposes:
-#! - agglayer::bridge_config::update_ger procedure.
+#! - agglayer::bridge_config::remove_ger procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -36,10 +36,11 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! - GER_UPPER [4..7] : 4 felts
 #!
 #! Panics if:
-#! - account does not expose update_ger procedure.
+#! - account does not expose remove_ger procedure.
 #! - target account ID does not match the consuming account ID.
 #! - number of note storage items is not exactly 8.
-#! - the GER has already been registered in storage.
+#! - the note sender is not the global exit root remover.
+#! - the GER is not currently registered in the bridge's GER map.
 @note_script
 pub proc main
     dropw
@@ -47,7 +48,7 @@ pub proc main
 
     # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH
+    assert.err=ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # Load note storage to memory
@@ -55,16 +56,16 @@ pub proc main
     # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items
-    push.UPDATE_GER_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    push.REMOVE_GER_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_REMOVE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
     # Load GER_LOWER and GER_UPPER from note storage
     mem_loadw_le.STORAGE_PTR_GER_UPPER
     # => [GER_UPPER[4], pad(12)]
-    
+
     swapw mem_loadw_le.STORAGE_PTR_GER_LOWER
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    call.bridge_config::update_ger
+    call.bridge_config::remove_ger
     # => [pad(16)]
 end

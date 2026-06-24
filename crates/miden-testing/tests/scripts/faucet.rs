@@ -6,7 +6,14 @@ use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountIdVersion,
+    AccountProcedureRoot,
+    AccountType,
+};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
@@ -43,6 +50,7 @@ use miden_standards::errors::standards::{
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
@@ -194,6 +202,56 @@ fn create_set_burn_policy_note_script(policy_root: Word) -> String {
             push.{policy_root}
             call.policy_manager::set_burn_policy
             dropw dropw dropw dropw
+        end
+        "#
+    )
+}
+
+/// Builds a note script that invokes every `get_*_policy` getter via `call` and asserts each one
+/// uses the 16-felt call ABI.
+fn create_policy_getters_note_script(
+    mint_root: AccountProcedureRoot,
+    burn_root: AccountProcedureRoot,
+    send_root: AccountProcedureRoot,
+    receive_root: AccountProcedureRoot,
+) -> String {
+    let mint_root = mint_root.as_word();
+    let burn_root = burn_root.as_word();
+    let send_root = send_root.as_word();
+    let receive_root = receive_root.as_word();
+    format!(
+        r#"
+        use miden::standards::faucets::policies::policy_manager
+
+        @note_script
+        pub proc main
+            padw padw padw padw
+            call.policy_manager::get_mint_policy
+            # => [MINT_POLICY_ROOT, pad(12)]
+            push.{mint_root}
+            assert_eqw.err="get_mint_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_burn_policy
+            # => [BURN_POLICY_ROOT, pad(12)]
+            push.{burn_root}
+            assert_eqw.err="get_burn_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_send_policy
+            # => [SEND_POLICY_ROOT, pad(12)]
+            push.{send_root}
+            assert_eqw.err="get_send_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
+
+            padw padw padw padw
+            call.policy_manager::get_receive_policy
+            # => [RECEIVE_POLICY_ROOT, pad(12)]
+            push.{receive_root}
+            assert_eqw.err="get_receive_policy returned an unexpected root or violated the call ABI"
+            dropw dropw dropw
         end
         "#
     )
@@ -555,11 +613,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         .execute()
         .await?;
 
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
+    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
+
     // Prove, serialize/deserialize and verify the transaction
     prove_and_verify_transaction(executed_transaction.clone()).await?;
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
-    assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
     Ok(())
 }
 
@@ -786,7 +848,10 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     assert_eq!(full_note.id(), expected_note.id());
 
     // Verify nonce was incremented
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
 
     Ok(())
 }
@@ -1055,6 +1120,48 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     .await?;
 
     assert_transaction_executor_error!(result, ERR_BURN_POLICY_ROOT_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// Conformance test for the policy getters' 16-felt call ABI.
+#[tokio::test]
+async fn test_network_faucet_policy_getters_works() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    // `add_existing_network_faucet` activates AllowAll for burn, send, and receive, plus the mint
+    // policy passed below, so the active roots are known up front.
+    let getters_note_script = compile_note_script(&create_policy_getters_note_script(
+        MintPolicy::allow_all().root(),
+        BurnPolicy::allow_all().root(),
+        TransferPolicy::allow_all().root(),
+        TransferPolicy::allow_all().root(),
+    ))?;
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(0),
+        MintPolicy::allow_all(),
+        [getters_note_script.root()],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let result = execute_faucet_note_script(
+        &mock_chain,
+        faucet.id(),
+        owner_account_id,
+        getters_note_script,
+        402,
+    )
+    .await?;
+
+    // A clean execution proves every getter returned exactly 16 felts with the expected root.
+    result.map_err(|err| anyhow::anyhow!("policy getter conformance tx failed: {err:?}"))?;
 
     Ok(())
 }
@@ -1558,7 +1665,10 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
 
     // Verify the transaction was executed successfully
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::ONE)
+    );
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Apply the delta to the faucet account and verify the token issuance decreased
@@ -1682,7 +1792,11 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let executed_transaction = tx_context.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_transaction.account_patch().final_nonce(),
+        Some(faucet.nonce() + Felt::from(2u8),),
+        "nonce should be incremented by 1 in each of the 2 txs"
+    );
 
     Ok(())
 }
@@ -1906,6 +2020,95 @@ async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::R
     let result = tx_context.execute().await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// Builds a network faucet whose `max_supply` is mutable so the owner-gated `set_max_supply`
+/// setter can be exercised.
+fn build_network_faucet_mutable_max_supply(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let max_supply = AssetAmount::new(max_supply)?;
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
+        .is_max_supply_mutable(true)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a note script that calls the owner-gated `set_max_supply` procedure with the given
+/// new cap.
+fn create_set_max_supply_note_script(new_max_supply: u64) -> NoteScript {
+    let code = format!(
+        r#"
+        @note_script
+        pub proc main
+            padw padw padw push.0.0.0
+            push.{new_max_supply}
+            call.::miden::standards::faucets::fungible::set_max_supply
+            dropw dropw dropw dropw
+        end
+        "#
+    );
+    CodeBuilder::default().compile_note_script(&code).unwrap()
+}
+
+/// Tests that `set_max_supply` rejects a cap above `FUNGIBLE_ASSET_MAX_AMOUNT`, keeping the
+/// stored cap consistent with the bound enforced at mint time.
+#[tokio::test]
+async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet =
+        build_network_faucet_mutable_max_supply(&mut builder, "NET", 200, owner_account_id)?;
+
+    // One above the maximum representable fungible asset amount.
+    let new_max_supply = FungibleAsset::MAX_AMOUNT.as_u64() + 1;
+    let set_note_script = create_set_max_supply_note_script(new_max_supply);
+    let mut rng = RandomCoin::new([Felt::from(630u32); 4].into());
+    let set_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .script(set_note_script)
+        .build()?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[set_note.id()], &[])?.build()?;
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
+    );
 
     Ok(())
 }
