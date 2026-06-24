@@ -1,19 +1,16 @@
 extern crate alloc;
 
-use miden_agglayer::errors::{ERR_GER_NOT_FOUND, ERR_SENDER_NOT_GER_REMOVER};
-use miden_agglayer::{
-    AggLayerBridge,
-    ExitRoot,
-    RemoveGerNote,
-    UpdateGerNote,
-    create_existing_bridge_account,
-};
+use miden_agglayer::errors::ERR_GER_NOT_FOUND;
+use miden_agglayer::{AggLayerBridge, ExitRoot, RemoveGerNote, UpdateGerNote};
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+
+use super::test_utils::create_existing_bridge_account_with_roles;
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -36,7 +33,7 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Acco
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -375,7 +372,7 @@ async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_GER_REMOVER);
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }

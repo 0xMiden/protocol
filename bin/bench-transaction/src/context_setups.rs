@@ -3,6 +3,7 @@ pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
+    BridgeRoleMember,
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
@@ -14,7 +15,7 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, StorageMapKey};
+use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
@@ -25,6 +26,30 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
 use rand::Rng;
+
+// BRIDGE ACCOUNT HELPER
+// ================================================================================================
+
+/// Builds an existing bridge account seeded with the three operational roles (`FAUCET_ADMIN`,
+/// `GER_INJECTOR`, `GER_REMOVER`) and a fixed dummy governance owner. Benchmark accounts do not
+/// exercise the owner's role-management powers.
+fn bench_bridge_account(
+    seed: Word,
+    faucet_admin: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+) -> Account {
+    let owner = AccountId::dummy([0xee; 15], AccountIdVersion::Version1, AccountType::Public);
+    create_existing_bridge_account(
+        seed,
+        owner,
+        vec![
+            BridgeRoleMember::FaucetAdmin(faucet_admin),
+            BridgeRoleMember::GerInjector(ger_injector),
+            BridgeRoleMember::GerRemover(ger_remover),
+        ],
+    )
+}
 
 // P2ID NOTE SETUPS
 // ================================================================================================
@@ -194,12 +219,8 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
-        bridge_seed,
-        bridge_admin.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-    );
+    let bridge_account =
+        bench_bridge_account(bridge_seed, bridge_admin.id(), ger_injector.id(), ger_remover.id());
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON
@@ -412,7 +433,7 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
     })?;
 
     // CREATE BRIDGE ACCOUNT
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = bench_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_injector.id(),

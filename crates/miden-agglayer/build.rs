@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -12,7 +12,7 @@ use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -328,14 +328,25 @@ fn generate_agglayer_constants(
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
         let auth_component = AuthNetworkAccount::with_allowed_notes(placeholder_allowlist)
             .expect("placeholder allowlist is non-empty");
+        // Use a dummy owner for commitment computation - the actual owner is set at runtime. Only
+        // the component code (not storage) contributes to the code commitment.
+        let dummy_owner = miden_protocol::account::AccountId::try_from(
+            miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        )
+        .unwrap();
+
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(auth_component), agglayer_component];
-        if lib_name == "faucet" {
-            // Use a dummy owner for commitment computation - the actual owner is set at runtime
-            let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-            )
-            .unwrap();
+        if lib_name == "bridge" {
+            // The bridge installs the RBAC access-control stack (Ownable2Step + RBAC +
+            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. Empty
+            // role config / members suffice here since only component code affects the commitment.
+            components.extend(AccessControl::Rbac {
+                owner: dummy_owner,
+                roles: BTreeMap::new(),
+                members: Vec::new(),
+            });
+        } else if lib_name == "faucet" {
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));

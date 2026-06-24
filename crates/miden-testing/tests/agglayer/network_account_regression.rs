@@ -11,12 +11,7 @@
 
 use core::slice;
 
-use miden_agglayer::{
-    ExitRoot,
-    UpdateGerNote,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_agglayer_faucet};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -28,6 +23,8 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+use super::test_utils::create_existing_bridge_account_with_roles;
 
 /// Attack note script: trivial body whose root falls outside the bridge's allowlist.
 const ATTACK_NOTE_CODE: &str = "\
@@ -56,7 +53,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -107,7 +104,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),

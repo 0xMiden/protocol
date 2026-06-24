@@ -1,15 +1,13 @@
 extern crate alloc;
 
-use miden_agglayer::{
-    AggLayerFaucet,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{AggLayerFaucet, create_existing_agglayer_faucet};
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_testing::{Auth, MockChain};
+
+use super::test_utils::create_existing_bridge_account_with_roles;
 
 #[test]
 fn test_faucet_helper_methods() -> anyhow::Result<()> {
@@ -25,7 +23,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_injector.id(),

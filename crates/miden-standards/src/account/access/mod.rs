@@ -1,5 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
 
@@ -20,7 +21,8 @@ pub mod rbac;
 ///   setter gate enforces `sender == owner`.
 /// - [`AccessControl::Rbac`] → [`Ownable2Step`] + [`RoleBasedAccessControl`] +
 ///   [`Authority::RbacControlled`]. The `roles` map assigns a role to individual gated procedures
-///   (keyed by procedure root); procedures without a mapping fall back to the `owner` check.
+///   (keyed by procedure root); procedures without a mapping fall back to the `owner` check. The
+///   `members` list seeds initial role holders at account creation.
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
@@ -33,8 +35,11 @@ pub mod rbac;
 /// use miden_standards::account::access::AccessControl;
 /// # let owner: miden_protocol::account::AccountId = unimplemented!();
 /// # let init_seed = [0u8; 32];
-/// AccountBuilder::new(init_seed)
-///     .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new() });
+/// AccountBuilder::new(init_seed).with_components(AccessControl::Rbac {
+///     owner,
+///     roles: BTreeMap::new(),
+///     members: Vec::new(),
+/// });
 /// ```
 ///
 /// For accounts that don't use the [`AccessControl`] convenience but want to install the
@@ -50,11 +55,14 @@ pub enum AccessControl {
     ///
     /// `roles` assigns a role to individual authority-gated procedures, keyed by procedure root
     /// (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` → `UNPAUSER`). A gated
-    /// procedure without an entry in `roles` falls back to the `owner` check. Role membership is
-    /// managed through the standard RBAC API on the [`RoleBasedAccessControl`] component.
+    /// procedure without an entry in `roles` falls back to the `owner` check. `members` seeds the
+    /// initial role holders at account creation (equivalent to the owner calling `grant_role` for
+    /// each member). Role membership is otherwise managed through the standard RBAC API on the
+    /// [`RoleBasedAccessControl`] component.
     Rbac {
         owner: AccountId,
         roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+        members: Vec<RoleAssignment>,
     },
 }
 
@@ -70,9 +78,11 @@ impl IntoIterator for AccessControl {
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
-            AccessControl::Rbac { owner, roles } => vec![
+            AccessControl::Rbac { owner, roles, members } => vec![
                 Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::empty().into(),
+                RoleBasedAccessControl::with_roles(members)
+                    .expect("initial RBAC role assignments should be valid")
+                    .into(),
                 Authority::RbacControlled { roles }.into(),
             ]
             .into_iter(),
@@ -83,4 +93,4 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::RoleBasedAccessControl;
+pub use rbac::{RbacError, RoleAssignment, RoleBasedAccessControl};

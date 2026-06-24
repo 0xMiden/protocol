@@ -305,7 +305,7 @@ fn add_rbac_faucet_with_pause(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { owner, roles })
+        .with_components(AccessControl::Rbac { owner, roles, members: Vec::new() })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 

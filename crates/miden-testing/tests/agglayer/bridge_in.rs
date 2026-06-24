@@ -26,7 +26,6 @@ use miden_agglayer::{
     UpdateGerNote,
     agglayer_library,
     create_existing_agglayer_faucet,
-    create_existing_bridge_account,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -58,6 +57,7 @@ use super::test_utils::{
     ClaimDataSource,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    create_existing_bridge_account_with_roles,
 };
 
 // CONSTANTS
@@ -161,7 +161,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -455,7 +455,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -657,7 +657,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -803,7 +803,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -970,7 +970,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -1118,7 +1118,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -1382,7 +1382,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -1622,7 +1622,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),

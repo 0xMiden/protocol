@@ -1,4 +1,6 @@
+use alloc::collections::BTreeSet;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
     AccountComponentCode,
@@ -10,11 +12,15 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
+    AccountId,
+    RoleSymbol,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
@@ -107,7 +113,38 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// [`RoleSymbol`]: miden_protocol::account::RoleSymbol
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RoleBasedAccessControl;
+pub struct RoleBasedAccessControl {
+    /// Initial role assignments seeded at account creation. Empty for a runtime-populated
+    /// component (see [`RoleBasedAccessControl::empty`]).
+    roles: Vec<RoleAssignment>,
+}
+
+/// A single initial role assignment used to seed a [`RoleBasedAccessControl`] component at
+/// account creation.
+///
+/// Seeding a role with these members is equivalent to the owner calling `grant_role` for each
+/// member at runtime: it sets each member's membership flag and the role's member count. Seeded
+/// roles are owner-managed (no delegated admin); delegated admins can be configured later via the
+/// `set_role_admin` procedure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleAssignment {
+    /// The role to grant.
+    pub role: RoleSymbol,
+    /// The accounts that initially hold the role. Must be non-empty and free of duplicates.
+    pub members: Vec<AccountId>,
+}
+
+impl RoleAssignment {
+    /// Creates a role assignment granting `role` to the given `members`.
+    pub fn new(role: RoleSymbol, members: Vec<AccountId>) -> Self {
+        Self { role, members }
+    }
+
+    /// Creates a role assignment granting `role` to a single `member`.
+    pub fn single(role: RoleSymbol, member: AccountId) -> Self {
+        Self { role, members: vec![member] }
+    }
+}
 
 impl RoleBasedAccessControl {
     pub const NAME: &'static str = "miden::standards::components::access::rbac";
@@ -125,7 +162,48 @@ impl RoleBasedAccessControl {
     /// Returns an empty RBAC component. Roles are populated at runtime via the
     /// `grant_role`, `set_role_admin`, etc. procedures exposed by the component.
     pub fn empty() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Returns an RBAC component seeded with the given initial role assignments.
+    ///
+    /// Each [`RoleAssignment`] grants its role to one or more accounts at account creation,
+    /// exactly as if the owner had called `grant_role` for each member at runtime. All seeded
+    /// roles are owner-managed; delegated admins can be configured later via `set_role_admin`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a role is assigned more than once, an assignment has no members, the
+    /// same account is listed twice for a role, or a role has more members than `u32::MAX`.
+    pub fn with_roles(roles: Vec<RoleAssignment>) -> Result<Self, RbacError> {
+        let mut seen_roles = BTreeSet::new();
+        for assignment in &roles {
+            let role_key = Felt::from(&assignment.role).as_canonical_u64();
+            if !seen_roles.insert(role_key) {
+                return Err(RbacError::DuplicateRole(assignment.role.clone()));
+            }
+            if assignment.members.is_empty() {
+                return Err(RbacError::EmptyRole(assignment.role.clone()));
+            }
+            if u32::try_from(assignment.members.len()).is_err() {
+                return Err(RbacError::TooManyMembers(assignment.role.clone()));
+            }
+            let mut seen_members = BTreeSet::new();
+            for member in &assignment.members {
+                let member_key = (
+                    member.suffix().as_canonical_u64(),
+                    member.prefix().as_felt().as_canonical_u64(),
+                );
+                if !seen_members.insert(member_key) {
+                    return Err(RbacError::DuplicateMember {
+                        role: assignment.role.clone(),
+                        account: *member,
+                    });
+                }
+            }
+        }
+
+        Ok(Self { roles })
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -177,14 +255,50 @@ impl RoleBasedAccessControl {
 }
 
 impl From<RoleBasedAccessControl> for AccountComponent {
-    fn from(_rbac: RoleBasedAccessControl) -> Self {
+    fn from(rbac: RoleBasedAccessControl) -> Self {
+        // Build the per-role config and membership map entries from the seeded assignments. The
+        // key/value layout mirrors what the RBAC MASM writes via `grant_role`:
+        // - role_config:     [0, 0, 0, role] -> [member_count, admin_role_symbol(=0), 0, 0]
+        // - role_membership: [0, role, account_suffix, account_prefix] -> [1, 0, 0, 0]
+        let mut config_entries = Vec::new();
+        let mut membership_entries = Vec::new();
+
+        for assignment in &rbac.roles {
+            let role_felt = Felt::from(&assignment.role);
+            let member_count = u32::try_from(assignment.members.len())
+                .expect("member count fits into u32 (validated in with_roles)");
+
+            config_entries.push((
+                StorageMapKey::from_raw(Word::from([
+                    Felt::ZERO,
+                    Felt::ZERO,
+                    Felt::ZERO,
+                    role_felt,
+                ])),
+                Word::from([Felt::from(member_count), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            ));
+
+            for member in &assignment.members {
+                membership_entries.push((
+                    StorageMapKey::from_raw(Word::from([
+                        Felt::ZERO,
+                        role_felt,
+                        member.suffix(),
+                        member.prefix().as_felt(),
+                    ])),
+                    Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+                ));
+            }
+        }
+
         let role_config_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_config_slot().clone(),
-            StorageMap::with_entries(vec![]).expect("empty role config map should be valid"),
+            StorageMap::with_entries(config_entries).expect("role config map should be valid"),
         );
         let role_membership_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_membership_slot().clone(),
-            StorageMap::with_entries(vec![]).expect("empty role membership map should be valid"),
+            StorageMap::with_entries(membership_entries)
+                .expect("role membership map should be valid"),
         );
 
         AccountComponent::new(
@@ -194,4 +308,20 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         )
         .expect("RBAC component should satisfy the requirements of a valid account component")
     }
+}
+
+// RBAC ERROR
+// ================================================================================================
+
+/// Errors that can occur when seeding a [`RoleBasedAccessControl`] component with initial roles.
+#[derive(Debug, thiserror::Error)]
+pub enum RbacError {
+    #[error("role {0} is assigned more than once in the initial role assignments")]
+    DuplicateRole(RoleSymbol),
+    #[error("role {0} has no initial members")]
+    EmptyRole(RoleSymbol),
+    #[error("account {account} is listed more than once for role {role}")]
+    DuplicateMember { role: RoleSymbol, account: AccountId },
+    #[error("role {0} has more members than the u32 maximum")]
+    TooManyMembers(RoleSymbol),
 }

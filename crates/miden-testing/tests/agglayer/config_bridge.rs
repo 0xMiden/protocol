@@ -8,7 +8,6 @@ use miden_agglayer::{
     ConversionMetadata,
     EthAddress,
     MetadataHash,
-    create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, StorageMapKey};
@@ -17,6 +16,8 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_testing::{Auth, MockChain};
+
+use super::test_utils::create_existing_bridge_account_with_roles;
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -27,6 +28,32 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
     let origin_network_packed = u32::from_le_bytes(origin_network.to_be_bytes());
     elements.push(Felt::from(origin_network_packed));
     StorageMapKey::from_raw(Hasher::hash_elements(&elements))
+}
+
+/// Pins the bridge's procedure-to-role authorization map: each role-gated procedure must map to
+/// the expected role. Resolving the procedure roots also exercises the component-library lookup,
+/// so a broken namespace or missing export would fail here.
+#[test]
+fn test_bridge_procedure_roles_mapping() {
+    let roles = AggLayerBridge::procedure_roles();
+
+    assert_eq!(roles.len(), 4, "exactly the four role-gated procedures must be mapped");
+    assert_eq!(
+        roles.get(&AggLayerBridge::register_faucet_root()),
+        Some(&AggLayerBridge::faucet_admin_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::store_faucet_metadata_hash_root()),
+        Some(&AggLayerBridge::faucet_admin_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::update_ger_root()),
+        Some(&AggLayerBridge::ger_injector_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::remove_ger_root()),
+        Some(&AggLayerBridge::ger_remover_role()),
+    );
 }
 
 /// Tests that a CONFIG_AGG_BRIDGE note registers a faucet in the bridge's faucet registry.
@@ -57,7 +84,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     })?;
 
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_injector.id(),
@@ -150,7 +177,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),

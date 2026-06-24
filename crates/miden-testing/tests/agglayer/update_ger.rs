@@ -5,13 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::errors::ERR_GER_ALREADY_REGISTERED;
-use miden_agglayer::{
-    AggLayerBridge,
-    ExitRoot,
-    UpdateGerNote,
-    agglayer_library,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
@@ -25,7 +19,10 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
-use super::test_utils::execute_program_with_default_host;
+use super::test_utils::{
+    create_existing_bridge_account_with_roles,
+    execute_program_with_default_host,
+};
 
 // EXIT ROOT TEST VECTORS
 // ================================================================================================
@@ -74,7 +71,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),
@@ -299,7 +296,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin.id(),
         ger_injector.id(),

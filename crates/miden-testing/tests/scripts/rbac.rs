@@ -17,7 +17,12 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{AccessControl, Ownable2Step, RoleBasedAccessControl};
+use miden_standards::account::access::{
+    AccessControl,
+    Ownable2Step,
+    RoleAssignment,
+    RoleBasedAccessControl,
+};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ROLE_SYMBOL_ZERO,
@@ -34,7 +39,24 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new() })
+        .with_components(AccessControl::Rbac {
+            owner,
+            roles: BTreeMap::new(),
+            members: Vec::new(),
+        })
+        .build_existing()?;
+
+    Ok(account)
+}
+
+fn create_rbac_account_with_members(
+    owner: AccountId,
+    members: Vec<RoleAssignment>,
+) -> anyhow::Result<Account> {
+    let account = AccountBuilder::new([9; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new(), members })
         .build_existing()?;
 
     Ok(account)
@@ -334,6 +356,45 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
 
 // TESTS
 // ================================================================================================
+
+/// Seeding initial role members at construction (`with_roles` via `AccessControl::Rbac`) must
+/// produce identical on-chain RBAC storage to building an empty component and granting the same
+/// members at runtime.
+#[tokio::test]
+async fn test_rbac_with_roles_matches_runtime_grants() -> anyhow::Result<()> {
+    let owner = test_account_id(101);
+    let alice = test_account_id(102);
+    let bob = test_account_id(103);
+
+    let minter = role("MINTER");
+
+    // Account seeded with two MINTER members at construction.
+    let seeded = create_rbac_account_with_members(
+        owner,
+        vec![RoleAssignment::new(minter.clone(), vec![alice, bob])],
+    )?;
+
+    // Account built empty, then granted the same two members at runtime.
+    let empty = create_rbac_account_with_owner(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(empty.clone())?;
+    let mock_chain = builder.build()?;
+
+    let grant_alice = build_note(owner, grant_role_script(&minter, alice))?;
+    let granted = execute_note_and_apply(&mock_chain, &empty, &grant_alice).await?;
+    let grant_bob = build_note(owner, grant_role_script(&minter, bob))?;
+    let granted = execute_note_and_apply(&mock_chain, &granted, &grant_bob).await?;
+
+    // The two accounts must have byte-identical RBAC storage.
+    assert_eq!(seeded.storage().to_commitment(), granted.storage().to_commitment());
+
+    // Spot-check the seeded entries directly.
+    assert_eq!(get_role_config(&seeded, &minter)?.0, Felt::from(2u32));
+    assert!(is_role_member(&seeded, &minter, alice)?);
+    assert!(is_role_member(&seeded, &minter, bob)?);
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn test_rbac_owner_role_management_and_lookup() -> anyhow::Result<()> {
