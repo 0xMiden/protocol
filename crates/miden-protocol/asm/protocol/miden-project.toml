@@ -7,7 +7,7 @@ namespace = "miden::protocol"
 path      = "mod.masm"
 
 [dependencies]
+miden-core.workspace  = true
 miden-utils.workspace = true
-miden-core.workspace = true
 # Linked as a kernel automatically, as `tx-kernel` defines a kernel target.
 tx-kernel.workspace = true
