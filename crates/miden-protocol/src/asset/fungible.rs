@@ -36,7 +36,7 @@ impl FungibleAsset {
     /// Specifies the maximum amount a fungible asset can represent.
     ///
     /// This number was chosen so that it can be represented as a positive and negative number in a
-    /// field element. See `account_delta.masm` for more details on how this number was chosen.
+    /// field element. See `account_update.masm` for more details on how this number was chosen.
     pub const MAX_AMOUNT: AssetAmount = AssetAmount::MAX;
 
     /// The serialized size of a [`FungibleAsset`] in bytes.

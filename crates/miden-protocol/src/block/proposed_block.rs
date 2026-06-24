@@ -17,6 +17,7 @@ use crate::block::{
     BlockNumber,
     OutputNoteBatch,
 };
+use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::transaction::{
@@ -72,6 +73,12 @@ pub struct ProposedBlock {
     ///
     /// As part of proving the block, this header will be added to the next partial blockchain.
     prev_block_header: BlockHeader,
+    /// The validator public key authorized to sign the *next* block, which is committed to in this
+    /// block's header.
+    ///
+    /// Defaults to the previous block's `validator_key` (i.e. no rotation). Set a different key
+    /// via [`ProposedBlock::with_next_validator_key`] to rotate the validator key.
+    next_validator_key: PublicKey,
 }
 
 impl ProposedBlock {
@@ -238,6 +245,8 @@ impl ProposedBlock {
         // Build proposed blocks from parts.
         // --------------------------------------------------------------------------------------------
 
+        let next_validator_key = prev_block_header.validator_key().clone();
+
         Ok(Self {
             batches: OrderedBatches::new(batches),
             timestamp,
@@ -246,6 +255,7 @@ impl ProposedBlock {
             created_nullifiers: nullifier_witnesses,
             partial_blockchain,
             prev_block_header,
+            next_validator_key,
         })
     }
 
@@ -271,6 +281,21 @@ impl ProposedBlock {
         let timestamp = timestamp_now.max(block_inputs.prev_block_header().timestamp() + 1);
 
         Self::new_at(block_inputs, batches, timestamp)
+    }
+
+    // BUILDERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Sets the validator key that this block commits to as the signer of the *next* block,
+    /// rotating away from the previous block's validator key.
+    ///
+    /// The block this proposed block produces is still signed by the current validator (the key
+    /// committed to by the previous block); the provided key only takes effect for the following
+    /// block.
+    #[must_use]
+    pub fn with_next_validator_key(mut self, next_validator_key: PublicKey) -> Self {
+        self.next_validator_key = next_validator_key;
+        self
     }
 
     // ACCESSORS
@@ -324,6 +349,11 @@ impl ProposedBlock {
     /// Returns the timestamp of this block.
     pub fn timestamp(&self) -> u32 {
         self.timestamp
+    }
+
+    /// Returns the validator key committed to by this block as the signer of the next block.
+    pub fn next_validator_key(&self) -> &PublicKey {
+        &self.next_validator_key
     }
 
     // COMMITMENT COMPUTATIONS
@@ -456,9 +486,6 @@ impl ProposedBlock {
     /// - the transaction commitment; and
     /// - the chain commitment.
     ///
-    /// The returned block header contains the same validator public key as the previous block, as
-    /// provided by the proposed block.
-    ///
     /// # Errors
     ///
     /// Returns an error if any of the following conditions are met.
@@ -483,6 +510,7 @@ impl ProposedBlock {
         let block_num = self.block_num();
         let timestamp = self.timestamp();
         let prev_block_header = self.prev_block_header().clone();
+        let next_validator_key = self.next_validator_key.clone();
 
         // Insert the state commitments of updated accounts into the account tree to compute its new
         // root.
@@ -527,7 +555,7 @@ impl ProposedBlock {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            prev_block_header.validator_key().clone(),
+            next_validator_key,
             fee_parameters,
             timestamp,
         );
@@ -570,6 +598,7 @@ impl Serializable for ProposedBlock {
         self.created_nullifiers.write_into(target);
         self.partial_blockchain.write_into(target);
         self.prev_block_header.write_into(target);
+        self.next_validator_key.write_into(target);
     }
 }
 
@@ -583,6 +612,7 @@ impl Deserializable for ProposedBlock {
             created_nullifiers: <BTreeMap<Nullifier, NullifierWitness>>::read_from(source)?,
             partial_blockchain: PartialBlockchain::read_from(source)?,
             prev_block_header: BlockHeader::read_from(source)?,
+            next_validator_key: PublicKey::read_from(source)?,
         };
 
         Ok(block)

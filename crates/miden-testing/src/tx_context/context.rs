@@ -15,7 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -83,30 +83,21 @@ impl TransactionContext {
     ///
     /// - If the provided `code` is not a valid program.
     pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        // Fetch all witnesses for note assets and the fee asset.
-        let mut asset_vault_keys = self
+        // Fetch all witnesses for note assets.
+        let asset_vault_keys = self
             .tx_inputs
             .input_notes()
             .iter()
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
 
-        let (account, block_header, _blockchain) = self
+        let (account, _block_header, _blockchain) = self
             .get_transaction_inputs(
                 self.tx_inputs.account().id(),
                 BTreeSet::from_iter([self.tx_inputs.block_header().block_num()]),
             )
             .await
             .expect("failed to fetch transaction inputs");
-
-        // Add the vault key for the fee asset to the list of asset vault keys which may need to be
-        // accessed at the end of the transaction.
-        let fee_asset_vault_key = AssetVaultKey::new_fungible(
-            block_header.fee_parameters().fee_faucet_id(),
-            // Assume fee asset is callback-disabled.
-            AssetCallbackFlag::Disabled,
-        );
-        asset_vault_keys.insert(fee_asset_vault_key);
 
         // Fetch the witnesses for all asset vault keys.
         let asset_witnesses = self
@@ -155,9 +146,6 @@ impl TransactionContext {
             account_procedure_idx_map,
             None,
             ref_block,
-            // We don't need to set the initial balance in this context under the assumption that
-            // fees are zero.
-            0u64,
             self.source_manager(),
         );
 

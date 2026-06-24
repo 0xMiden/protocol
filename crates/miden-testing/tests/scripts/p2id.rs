@@ -175,7 +175,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
 
     let executed_transaction = tx_context.execute().await?;
 
-    account.apply_delta(executed_transaction.account_delta())?;
+    account.apply_patch(executed_transaction.account_patch())?;
     let resulting_asset = account.vault().assets().next().unwrap();
     if let Asset::Fungible(asset) = resulting_asset {
         assert_eq!(asset.amount().as_u64(), 123);
@@ -292,7 +292,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
-    account.apply_delta(executed_transaction.account_delta())?;
+    account.apply_patch(executed_transaction.account_patch())?;
 
     assert_eq!(account.vault().get_balance(input_note_asset_1.vault_key())?.as_u64(), 111);
     assert_eq!(account.vault().get_balance(asset_1.vault_key())?.as_u64(), 5);

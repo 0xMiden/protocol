@@ -170,18 +170,9 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
-    )]
-    ApplyFullStateDeltaToAccount,
-    #[error(
         "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
     )]
     ApplyFullStatePatchToAccount,
-    #[error("delta is for account ID {delta_id} but is being applied to account {account_id}")]
-    DeltaAccountIdMismatch {
-        account_id: AccountId,
-        delta_id: AccountId,
-    },
     #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
     PatchAccountIdMismatch {
         account_id: AccountId,
@@ -189,6 +180,8 @@ pub enum AccountError {
     },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
+    #[error("assets cannot be removed from a new account with an empty asset vault")]
+    AssetsRemovedFromNewAccount,
     #[error("only account patches representing a full account can be converted to a full account")]
     PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
@@ -441,14 +434,6 @@ pub enum AccountDeltaError {
     },
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
-    #[error(
-        "account nonce increment {current} plus the other nonce increment {increment} overflows a felt to {new}"
-    )]
-    NonceIncrementOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
     #[error(
         "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
     )]
@@ -935,8 +920,6 @@ pub enum TransactionOutputError {
     DuplicateOutputNote(NoteId),
     #[error("final account commitment is not in the advice map")]
     FinalAccountCommitmentMissingInAdviceMap,
-    #[error("fee asset is not a fungible asset")]
-    FeeAssetNotFungibleAsset(#[source] AssetError),
     #[error("failed to parse final account header")]
     FinalAccountHeaderParseFailure(#[source] AccountError),
     #[error(

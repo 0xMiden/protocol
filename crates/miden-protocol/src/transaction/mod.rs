@@ -1,4 +1,4 @@
-use super::account::{AccountDelta, AccountHeader, AccountId};
+use super::account::{AccountHeader, AccountId};
 use super::note::{NoteId, Nullifier};
 use super::vm::AdviceInputs;
 use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};

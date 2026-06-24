@@ -631,11 +631,11 @@ async fn proposed_block_fails_on_inconsistent_account_state_transition() -> anyh
     // Create three transactions on the same account that build on top of each other.
     let executed_tx0 = chain.create_authenticated_notes_tx(account.clone(), [note0.id()]).await?;
 
-    account.apply_delta(executed_tx0.account_delta())?;
+    account.apply_patch(executed_tx0.account_patch())?;
     // Builds a tx on top of the account state from tx0.
     let executed_tx1 = chain.create_authenticated_notes_tx(account.clone(), [note1.id()]).await?;
 
-    account.apply_delta(executed_tx1.account_delta())?;
+    account.apply_patch(executed_tx1.account_patch())?;
     // Builds a tx on top of the account state from tx1.
     let executed_tx2 = chain.create_authenticated_notes_tx(account.clone(), [note2.id()]).await?;
 

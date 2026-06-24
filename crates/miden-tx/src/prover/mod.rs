@@ -53,7 +53,6 @@ impl LocalTransactionProver {
         ref_block_commitment: Word,
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let fee = tx_outputs.fee();
         let expiration_block_num = tx_outputs.expiration_block_num();
         let (account_header, output_notes) = tx_outputs.into_parts();
 
@@ -89,7 +88,6 @@ impl LocalTransactionProver {
             output_notes,
             ref_block_num,
             ref_block_commitment,
-            fee,
             expiration_block_num,
             proof,
         )
@@ -147,7 +145,7 @@ impl LocalTransactionProver {
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         // Extract transaction outputs and process transaction data.
-        let (_account_delta, account_patch, input_notes, output_notes) = host.into_parts();
+        let (account_patch, input_notes, output_notes) = host.into_parts();
         let tx_outputs =
             TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
                 .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
@@ -170,8 +168,7 @@ impl LocalTransactionProver {
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let (tx_inputs, tx_outputs, _account_delta, account_patch, _) =
-            executed_transaction.into_parts();
+        let (tx_inputs, tx_outputs, account_patch, _) = executed_transaction.into_parts();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
 

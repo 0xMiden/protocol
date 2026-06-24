@@ -403,7 +403,6 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 Vec::<OutputNote>::new(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
-                FungibleAsset::mock(500).unwrap_fungible(),
                 BlockNumber::from(u32::MAX),
                 ExecutionProof::new_dummy(),
             )

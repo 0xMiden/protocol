@@ -56,9 +56,8 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #!   account_id_suffix, account_id_prefix, block_num, pad(1)
 #! ]
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-#!   fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num,
-#!   pad(4)
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num,
+#!   pad(7)
 #! ]
 #!
 #! Where:
@@ -70,9 +69,6 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
-#! - fee_amount is the computed fee amount of the transaction denominated in the fee asset.
-#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   fee asset.
 #! - tx_expiration_block_num is the transaction expiration block number.
 @locals(1)
 proc main
@@ -175,13 +171,13 @@ proc main
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-    #     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, pad(16)]
 
     # truncate the stack to contain 16 elements in total
-    repeat.3 movupw.3 dropw end
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-    #     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num, pad(4)]
+    # the epilogue leaves 9 output elements on top of the 16 padding elements (depth 25), so drop
+    # the 9 deepest padding elements: two full words followed by a single element
+    repeat.2 movupw.3 dropw end movup.15 drop
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, pad(7)]
 
     emit.EPILOGUE_END_EVENT
 end
