@@ -387,19 +387,25 @@ impl AccountStorage {
 
     /// Creates the provided slot, maintaining the slots' sort order by [`StorageSlotName`].
     ///
+    /// If a slot with the same name already exists, it is replaced in place. This re-creation is
+    /// equivalent to removing the existing slot and creating the new one, and lets a `Create` patch
+    /// be applied to a slot that a prior patch already created.
+    ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - A slot with the same name already exists.
-    /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
+    /// Returns an error if adding a new slot would exceed
+    /// [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
     fn create_slot(&mut self, slot: StorageSlot) -> Result<(), AccountError> {
-        if self.slots.len() >= Self::MAX_NUM_STORAGE_SLOTS {
-            return Err(AccountError::StorageTooManySlots(self.slots.len() as u64 + 1));
-        }
-
         match self.slots.binary_search_by(|existing| existing.name().cmp(slot.name())) {
-            Ok(_) => Err(AccountError::DuplicateStorageSlotName(slot.name().clone())),
+            Ok(index) => {
+                self.slots[index] = slot;
+                Ok(())
+            },
             Err(index) => {
+                if self.slots.len() >= Self::MAX_NUM_STORAGE_SLOTS {
+                    return Err(AccountError::StorageTooManySlots(self.slots.len() as u64 + 1));
+                }
+
                 self.slots.insert(index, slot);
                 Ok(())
             },
@@ -562,17 +568,19 @@ mod tests {
     }
 
     #[test]
-    fn create_value_slot_rejects_duplicate() -> anyhow::Result<()> {
+    fn create_value_slot_recreates_existing() -> anyhow::Result<()> {
         let slot_name = StorageSlotName::mock(4);
         let mut storage = AccountStorage::new(vec![StorageSlot::with_value(
             slot_name.clone(),
             Word::from([1u32, 2, 3, 4]),
         )])?;
 
-        let err = storage.create_value_slot(slot_name.clone(), Word::empty()).unwrap_err();
-        assert_matches!(err, AccountError::DuplicateStorageSlotName(name) => {
-            assert_eq!(name, slot_name);
-        });
+        // Creating a slot that already exists re-creates it, replacing the previous value.
+        let new_value = Word::from([5u32, 6, 7, 8]);
+        storage.create_value_slot(slot_name.clone(), new_value)?;
+
+        assert_eq!(storage.num_slots(), 1);
+        assert_eq!(storage.get_item(&slot_name)?, new_value);
 
         Ok(())
     }

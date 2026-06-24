@@ -7,17 +7,26 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 
 use crate::account::{
+    Account,
+    AccountCode,
+    AccountId,
+    AccountPatch,
+    AccountStorage,
     AccountStoragePatch,
+    AccountVaultPatch,
     StorageMapKey,
     StorageMapPatch,
     StorageMapPatchEntries,
+    StorageSlot,
     StorageSlotName,
     StorageSlotPatch,
     StorageValuePatch,
 };
+use crate::asset::AssetVault;
 use crate::errors::AccountPatchError;
+use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use crate::utils::serde::{ByteWriter, Deserializable, DeserializationError, Serializable};
-use crate::{ONE, Word};
+use crate::{Felt, ONE, Word};
 
 static TEST_MAP_ENTRIES: LazyLock<StorageMapPatchEntries> = LazyLock::new(|| {
     StorageMapPatchEntries::from_iters(
@@ -395,6 +404,81 @@ fn merge_map_accumulates_entries() -> anyhow::Result<()> {
     assert_eq!(merged.get(&shared_key), Some(&incoming_shared_value));
     assert_eq!(merged.get(&current_only_key), Some(&current_only_value));
     assert_eq!(merged.get(&incoming_only_key), Some(&incoming_only_value));
+
+    Ok(())
+}
+
+// MERGE-VS-APPLY EQUIVALENCE
+// --------------------------------------------------------------------------------------------
+
+/// The slot that the re-creation scenario churns. Already present in the initial account.
+static RECREATED_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| StorageSlotName::mock(5));
+static ACCOUNT_ID: LazyLock<AccountId> = LazyLock::new(|| {
+    AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap()
+});
+
+/// Builds an account that already contains [`RECREATED_SLOT`] as a value slot, with nonce 1.
+fn initial_account_with_slot() -> anyhow::Result<Account> {
+    let storage = AccountStorage::new(Vec::from([StorageSlot::with_value(
+        RECREATED_SLOT.clone(),
+        Word::from([1, 2, 3, 4u32]),
+    )]))?;
+
+    Ok(Account::new_existing(
+        *ACCOUNT_ID,
+        AssetVault::default(),
+        storage,
+        AccountCode::mock(),
+        ONE,
+    ))
+}
+
+/// Wraps a single value-slot patch in an [`AccountPatch`] carrying the given final nonce.
+fn value_slot_account_patch(
+    value_patch: StorageValuePatch,
+    final_nonce: u32,
+) -> anyhow::Result<AccountPatch> {
+    let storage = single_slot_patch(RECREATED_SLOT.clone(), StorageSlotPatch::Value(value_patch));
+
+    Ok(AccountPatch::new(
+        *ACCOUNT_ID,
+        storage,
+        AccountVaultPatch::default(),
+        None,
+        Some(Felt::from(final_nonce)),
+    )?)
+}
+
+/// Applying remove / create individually must yield the same account as applying their merge in one
+/// shot.
+///
+/// The slot already exists in the initial account, so the first `Create` re-creates an existing
+/// slot. This should be allowed and behave as removal followed by creation; otherwise the two paths
+/// diverge (or error) instead of converging on the same account.
+#[test]
+fn merge_then_apply_equals_apply_individually_for_recreated_slot() -> anyhow::Result<()> {
+    let patches = [
+        value_slot_account_patch(StorageValuePatch::Remove, 3)?,
+        value_slot_account_patch(
+            StorageValuePatch::Create { value: Word::from([30u32, 0, 0, 0]) },
+            4,
+        )?,
+    ];
+
+    // Path A: apply each patch to the initial account in order.
+    let mut account_a = initial_account_with_slot()?;
+    for patch in patches.clone() {
+        account_a.apply_patch(&patch)?;
+    }
+
+    // Path B: merge patches first, then apply the single merged patch.
+    let [mut merged, second] = patches;
+    merged.merge(second)?;
+
+    let mut account_b = initial_account_with_slot()?;
+    account_b.apply_patch(&merged)?;
+
+    assert_eq!(account_a, account_b);
 
     Ok(())
 }
