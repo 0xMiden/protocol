@@ -185,9 +185,7 @@ impl StoragePatchTracker {
 
                     if let Some(init_map) = init_map {
                         map_patch.as_map_mut().retain(|key, new_value| {
-                            let initial_value = init_map.get(key).expect(
-                              "the initial value should be present for every value that was updated",
-                            );
+                            let Some(initial_value) = init_map.get(key) else { return true; };
                             new_value != initial_value
                         });
                     }
