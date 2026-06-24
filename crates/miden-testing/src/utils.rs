@@ -6,11 +6,9 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -321,22 +319,4 @@ fn note_script_that_creates_notes<'note>(
     out.push_str("repeat.5 dropw end\nend");
 
     Ok((out, advice_map))
-}
-
-/// Generates a P2ID note - Pay-to-ID note with an exact serial number
-pub fn create_p2id_note_exact(
-    sender: AccountId,
-    target: AccountId,
-    assets: Vec<Asset>,
-    note_type: NoteType,
-    serial_num: Word,
-) -> Result<Note, NoteError> {
-    let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
-
-    let tag = NoteTag::with_account_target(target);
-
-    let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
-    let vault = NoteAssets::new(assets)?;
-
-    Ok(Note::new(vault, metadata, recipient))
 }

@@ -54,9 +54,8 @@ use miden_standards::errors::standards::{
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{
     AccountState,
     Auth,
@@ -914,14 +913,16 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
-    let p2id_mint_output_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        NoteType::Private,
-        serial_num,
-    )
-    .unwrap();
+    let p2id_mint_output_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(NoteType::Private)
+            .serial_number(serial_num)
+            .build()
+            .unwrap(),
+    );
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
@@ -1011,13 +1012,15 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
-    let p2id_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        NoteType::Private,
-        Word::default(),
-    )?;
+    let p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(NoteType::Private)
+            .serial_number(Word::default())
+            .build()?,
+    );
     let recipient = p2id_note.recipient().digest();
 
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
@@ -1193,13 +1196,15 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
-    let p2id_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        NoteType::Private,
-        Word::default(),
-    )?;
+    let p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(NoteType::Private)
+            .serial_number(Word::default())
+            .build()?,
+    );
     let recipient = p2id_note.recipient().digest();
 
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
@@ -1319,13 +1324,15 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
-    let p2id_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        NoteType::Private,
-        Word::default(),
-    )?;
+    let p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(NoteType::Private)
+            .serial_number(Word::default())
+            .build()?,
+    );
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
@@ -2147,14 +2154,16 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
-    let p2id_mint_output_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        note_type,
-        serial_num,
-    )
-    .unwrap();
+    let p2id_mint_output_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(note_type)
+            .serial_number(serial_num)
+            .build()
+            .unwrap(),
+    );
 
     // Create MINT note based on note type
     let mint_storage = match note_type {
@@ -2428,14 +2437,16 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
-    let p2id_mint_output_note = create_p2id_note_exact(
-        faucet.id(),
-        target_account.id(),
-        vec![mint_asset.into()],
-        NoteType::Private,
-        serial_num,
-    )
-    .unwrap();
+    let p2id_mint_output_note = Note::from(
+        P2idNote::builder()
+            .sender(faucet.id())
+            .target(target_account.id())
+            .assets(vec![mint_asset])
+            .note_type(NoteType::Private)
+            .serial_number(serial_num)
+            .build()
+            .unwrap(),
+    );
     let recipient = p2id_mint_output_note.recipient().digest();
 
     let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
