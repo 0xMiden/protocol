@@ -112,6 +112,46 @@ impl AccountStoragePatch {
     // --------------------------------------------------------------------------------------------
 
     /// Merges another patch into this one, with the entries of `other` taking precedence.
+    ///
+    /// Each patch represents an atomic state change of account storage. This state change could be
+    /// from a transaction, batch or block, as the latter two merge individual patches into a single
+    /// one. Since the transaction is the lowest member in this hierarchy, the merge behavior is
+    /// modelled so that whatever is valid (or invalid) to do in one transaction after another is
+    /// also valid (or invalid) to merge.
+    ///
+    /// In general the operations have the following meaning:
+    /// - `Create` takes the slot from absent to present.
+    /// - `Update` requires the slot is present and updates it.
+    /// - `Remove` takes the slot from present to absent.
+    ///
+    /// The nine permutations of `(current, incoming)` resolve as follows:
+    ///
+    /// - `(Create, Create)`: Errors because the second create assumes the slot is absent, but the
+    ///   first already makes it present.
+    /// - `(Create, Update)`: Merged to `Create`. The slot stays newly created, but carries the
+    ///   updated value.
+    /// - `(Create, Remove)`: Merged to `Remove`. A slot created and then removed validly results in
+    ///   the slot being absent. Since the base state never had the slot, the resulting `Remove` is
+    ///   applied to a slot that does not exist which is a no-op.
+    /// - `(Update, Create)`: Errors because the create assumes the slot is absent, but the update
+    ///   already requires it is present.
+    /// - `(Update, Update)`: Merged to `Update`, keeping the latest value.
+    /// - `(Update, Remove)`: Merged to `Remove`.
+    /// - `(Remove, Create)`: Merged to `Create`. A slot removed and then re-created nets to a
+    ///   (re-)creation carrying the new value. The resulting `Create` is applied to a base state
+    ///   that still has the slot, so this re-creates an existing slot with the carried value.
+    /// - `(Remove, Update)`: Errors because the update requires a present slot, but the remove left
+    ///   it absent.
+    /// - `(Remove, Remove)`: Errors because the second remove requires a present slot, but the
+    ///   first already makes it absent.
+    ///
+    /// Value and map slots behave the same at the operation level, but map entries are merged
+    /// entry-wise instead of being fully replaced.
+    ///
+    /// The error cases never occur when merging patches coming out of transactions or patches that
+    /// were aggregated from transactions, as these are exactly the cases that would not be allowed
+    /// by the transaction kernel. For instance, updating a slot in tx 2 when tx 1 removed it would
+    /// be rejected in tx 2, since it would not exist.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         for (slot_name, slot_patch) in other.patches {
             match self.patches.get_mut(&slot_name) {
