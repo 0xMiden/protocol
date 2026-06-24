@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Replaced the AggLayer bridge's hard-coded admin/injector/remover account-ID authorization with an RBAC access-control stack (`Ownable2Step` + `RoleBasedAccessControl` + `Authority`); `create_bridge_account` now takes `(seed, owner, Vec<BridgeRoleMember>)`, `AggLayerBridge::new()` is now stateless, and `AccessControl::Rbac` gains a `members` field for seeding initial role holders ([#3130](https://github.com/0xMiden/protocol/pull/3130)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
