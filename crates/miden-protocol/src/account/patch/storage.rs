@@ -241,16 +241,16 @@ impl Serializable for AccountStoragePatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let num_cleared_values = self.cleared_values().count();
         let num_cleared_values =
-            u8::try_from(num_cleared_values).expect("number of slots should fit in u8");
+            u8::try_from(num_cleared_values).unwrap_or(u8::MAX);
         let cleared_values = self.cleared_values();
 
         let num_updated_values = self.updated_values().count();
         let num_updated_values =
-            u8::try_from(num_updated_values).expect("number of slots should fit in u8");
+            u8::try_from(num_updated_values).unwrap_or(u8::MAX);
         let updated_values = self.updated_values();
 
         let num_maps = self.maps().count();
-        let num_maps = u8::try_from(num_maps).expect("number of slots should fit in u8");
+        let num_maps = u8::try_from(num_maps).unwrap_or(u8::MAX);
         let maps = self.maps();
 
         target.write_u8(num_cleared_values);
