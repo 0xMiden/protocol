@@ -7,14 +7,7 @@ use std::{
 };
 
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{
-    Note,
-    NoteAttachments,
-    NoteDetails,
-    NoteId,
-    NoteInclusionProof,
-    NoteTag,
-};
+use miden_protocol::note::{Note, NoteDetails, NoteId, NoteInclusionProof, NoteTag};
 #[cfg(feature = "std")]
 use miden_protocol::utils::serde::SliceReader;
 use miden_protocol::utils::serde::{
@@ -79,7 +72,7 @@ pub enum NoteFile {
     /// A client can import all the note details from the network. As such, the note that the ID
     /// commits to should be public.
     NoteId(NoteId),
-    /// The note's details and attachments are known, but its metadata must be recovered from the
+    /// The note's details are known, but its metadata and attachments must be recovered from the
     /// chain.
     ///
     /// This is useful for importing an expected note while avoiding an exact [`NoteId`] lookup.
@@ -90,11 +83,12 @@ pub enum NoteFile {
     /// commitment; the returned note whose recomputed ID matches is the expected one. This recovers
     /// its metadata without revealing the note ID to the node.
     ///
-    /// Attachments are carried here rather than fetched by ID because attachment content is not
-    /// returned by a tag-based sync, so fetching it would otherwise require leaking the note ID.
+    /// Only the note's details are carried here, as they may be private. Metadata and attachments
+    /// are always public, so they are recovered from the chain rather than carried: once the note
+    /// is found via the tag-based sync, its attachments can be fetched for the whole returned set
+    /// (e.g. via `get_notes_by_id`) without revealing which note is the expected one.
     ExpectedNote {
         details: NoteDetails,
-        attachments: NoteAttachments,
         sync_hint: NoteSyncHint,
     },
     /// The note has been committed to the chain and its inclusion proof is known.
@@ -122,10 +116,9 @@ impl NoteFile {
 
 impl From<Note> for NoteFile {
     fn from(note: Note) -> Self {
-        let (assets, metadata, recipient, attachments) = note.into_parts();
+        let (assets, metadata, recipient, _attachments) = note.into_parts();
         NoteFile::ExpectedNote {
             details: NoteDetails::new(assets, recipient),
-            attachments,
             sync_hint: NoteSyncHint::new(0.into(), metadata.tag()),
         }
     }
@@ -148,10 +141,9 @@ impl Serializable for NoteFile {
                 target.write_u8(0);
                 note_id.write_into(target);
             },
-            NoteFile::ExpectedNote { details, attachments, sync_hint } => {
+            NoteFile::ExpectedNote { details, sync_hint } => {
                 target.write_u8(1);
                 details.write_into(target);
-                attachments.write_into(target);
                 sync_hint.write_into(target);
             },
             NoteFile::Committed { note, proof } => {
@@ -186,9 +178,8 @@ impl Deserializable for NoteFile {
             0 => Ok(NoteFile::NoteId(NoteId::read_from(source)?)),
             1 => {
                 let details = NoteDetails::read_from(source)?;
-                let attachments = NoteAttachments::read_from(source)?;
                 let sync_hint = NoteSyncHint::read_from(source)?;
-                Ok(NoteFile::ExpectedNote { details, attachments, sync_hint })
+                Ok(NoteFile::ExpectedNote { details, sync_hint })
             },
             2 => {
                 let note = Note::read_from(source)?;
@@ -224,9 +215,6 @@ mod tests {
     use miden_protocol::note::{
         Note,
         NoteAssets,
-        NoteAttachment,
-        NoteAttachmentScheme,
-        NoteAttachments,
         NoteDetails,
         NoteInclusionProof,
         NoteRecipient,
@@ -261,33 +249,6 @@ mod tests {
         Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient)
     }
 
-    fn create_example_note_with_attachment() -> Note {
-        let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-        let target =
-            AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
-
-        let serial_num = Word::from([0, 1, 2, 3u32]);
-        let script = NoteScript::mock();
-        let note_storage = NoteStorage::new(vec![target.prefix().into()]).unwrap();
-        let recipient = NoteRecipient::new(serial_num, script, note_storage);
-
-        let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
-        let metadata =
-            PartialNoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
-        let attachment = NoteAttachment::with_word(
-            NoteAttachmentScheme::new(42).unwrap(),
-            Word::from([10, 20, 30, 40u32]),
-        );
-        let attachments = NoteAttachments::from(attachment);
-
-        Note::with_attachments(
-            NoteAssets::new(vec![asset]).unwrap(),
-            metadata,
-            recipient,
-            attachments,
-        )
-    }
-
     #[test]
     fn serialized_note_magic() {
         let note = create_example_note();
@@ -314,18 +275,6 @@ mod tests {
         let note = create_example_note();
         assert_roundtrip(NoteFile::ExpectedNote {
             details: NoteDetails::from(&note),
-            attachments: NoteAttachments::empty(),
-            sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
-        });
-    }
-
-    #[test]
-    fn serialize_expected_note_with_attachments() {
-        let note = create_example_note_with_attachment();
-        assert!(!note.attachments().is_empty());
-        assert_roundtrip(NoteFile::ExpectedNote {
-            details: NoteDetails::from(&note),
-            attachments: note.attachments().clone(),
             sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
         });
     }
