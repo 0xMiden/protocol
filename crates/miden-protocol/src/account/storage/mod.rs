@@ -238,7 +238,7 @@ impl AccountStorage {
                 self.set_item(slot_name, *value)?;
             },
             StorageValuePatch::Remove => {
-                self.remove_slot(slot_name)?;
+                self.remove_slot(slot_name);
             },
         }
 
@@ -268,7 +268,7 @@ impl AccountStorage {
                 storage_map.apply_patch(entries)?;
             },
             StorageMapPatch::Remove => {
-                self.remove_slot(slot_name)?;
+                self.remove_slot(slot_name);
             },
         }
 
@@ -372,24 +372,18 @@ impl AccountStorage {
 
     /// Removes the storage slot with the given name.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if a slot with the provided name does not exist.
-    fn remove_slot(&mut self, slot_name: &StorageSlotName) -> Result<(), AccountError> {
-        match self.slots.iter().position(|slot| slot.name().id() == slot_name.id()) {
-            Some(index) => {
-                self.slots.remove(index);
-                Ok(())
-            },
-            None => Err(AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() }),
+    /// Removing a slot that does not exist is a no-op. See also [`AccountStoragePatch::merge`].
+    fn remove_slot(&mut self, slot_name: &StorageSlotName) {
+        if let Some(index) = self.slots.iter().position(|slot| slot.name().id() == slot_name.id()) {
+            self.slots.remove(index);
         }
     }
 
     /// Creates the provided slot, maintaining the slots' sort order by [`StorageSlotName`].
     ///
     /// If a slot with the same name already exists, it is replaced in place. This re-creation is
-    /// equivalent to removing the existing slot and creating the new one, and lets a `Create` patch
-    /// be applied to a slot that a prior patch already created.
+    /// equivalent to removing the existing slot and creating the new one. See also
+    /// [`AccountStoragePatch::merge`].
     ///
     /// # Errors
     ///
@@ -586,14 +580,16 @@ mod tests {
     }
 
     #[test]
-    fn remove_slot_rejects_absent() -> anyhow::Result<()> {
+    fn remove_slot_absent_is_noop() -> anyhow::Result<()> {
+        let present = StorageSlotName::mock(1);
         let absent = StorageSlotName::new("miden::test::absent")?;
-        let mut storage = AccountStorage::default();
+        let mut storage =
+            AccountStorage::new(vec![StorageSlot::with_value(present.clone(), Word::empty())])?;
 
-        let err = storage.remove_slot(&absent).unwrap_err();
-        assert_matches!(err, AccountError::StorageSlotNameNotFound { slot_name } => {
-            assert_eq!(slot_name, absent);
-        });
+        // Removing an absent slot leaves the storage untouched.
+        storage.remove_slot(&absent);
+        assert_eq!(storage.num_slots(), 1);
+        assert!(storage.get(&present).is_some());
 
         Ok(())
     }
@@ -625,7 +621,7 @@ mod tests {
         assert_eq!(storage.get_item(&existing0)?, value, "existing slot should remain accessible");
         assert_eq!(storage.get_item(&existing1)?, value, "existing slot should remain accessible");
 
-        storage.remove_slot(&created)?;
+        storage.remove_slot(&created);
         assert_eq!(storage.num_slots(), 2);
         assert_matches!(
             storage.get_item(&created).unwrap_err(),

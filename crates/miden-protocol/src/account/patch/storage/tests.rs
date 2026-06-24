@@ -433,6 +433,17 @@ fn initial_account_with_slot() -> anyhow::Result<Account> {
     ))
 }
 
+/// Builds an account that does not contain [`RECREATED_SLOT`], with nonce 1.
+fn initial_account_without_slot() -> anyhow::Result<Account> {
+    Ok(Account::new_existing(
+        *ACCOUNT_ID,
+        AssetVault::default(),
+        AccountStorage::new(Vec::new())?,
+        AccountCode::mock(),
+        ONE,
+    ))
+}
+
 /// Wraps a single value-slot patch in an [`AccountPatch`] carrying the given final nonce.
 fn value_slot_account_patch(
     value_patch: StorageValuePatch,
@@ -476,6 +487,41 @@ fn merge_then_apply_equals_apply_individually_for_recreated_slot() -> anyhow::Re
     merged.merge(second)?;
 
     let mut account_b = initial_account_with_slot()?;
+    account_b.apply_patch(&merged)?;
+
+    assert_eq!(account_a, account_b);
+
+    Ok(())
+}
+
+/// Applying create / remove individually must yield the same account as applying their merge in one
+/// shot.
+///
+/// The slot is absent from the initial account, so `(Create, Remove)` merges to a single `Remove`
+/// that is applied to a base state which never had the slot. This relies on removing an absent slot
+/// being a no-op.
+#[test]
+fn merge_then_apply_equals_apply_individually_for_created_then_removed_slot() -> anyhow::Result<()>
+{
+    let patches = [
+        value_slot_account_patch(
+            StorageValuePatch::Create { value: Word::from([30u32, 0, 0, 0]) },
+            2,
+        )?,
+        value_slot_account_patch(StorageValuePatch::Remove, 3)?,
+    ];
+
+    // Path A: apply each patch to the initial account in order.
+    let mut account_a = initial_account_without_slot()?;
+    for patch in patches.clone() {
+        account_a.apply_patch(&patch)?;
+    }
+
+    // Path B: merge patches first, then apply the single merged patch.
+    let [mut merged, second] = patches;
+    merged.merge(second)?;
+
+    let mut account_b = initial_account_without_slot()?;
     account_b.apply_patch(&merged)?;
 
     assert_eq!(account_a, account_b);
