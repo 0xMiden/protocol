@@ -8,5 +8,6 @@ path      = "mod.masm"
 
 [dependencies]
 miden-utils.workspace = true
+miden-core.workspace = true
 # Linked as a kernel automatically, as `tx-kernel` defines a kernel target.
 tx-kernel.workspace = true

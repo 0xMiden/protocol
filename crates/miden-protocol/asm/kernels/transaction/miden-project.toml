@@ -16,3 +16,4 @@ path = "tx_script_main.masm"
 
 [dependencies]
 miden-utils.workspace = true
+miden-core.workspace = true

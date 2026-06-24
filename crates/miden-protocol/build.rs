@@ -10,12 +10,13 @@ use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{
     Assembler,
     KernelLibrary,
+    Library,
     ModuleParser,
     ProjectSourceInputs,
     ProjectTargetSelector,
 };
 use miden_core::events::EventId;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, PackageId, TargetType, Version};
 use miden_package_registry::NoPackageStore;
 use regex::Regex;
 use walkdir::WalkDir;
@@ -98,6 +99,9 @@ fn main() -> Result<()> {
 
     // copy the shared modules to the kernel and protocol library folders
     copy_shared_modules(&source_dir)?;
+
+    // write the preassembled miden-core library so the projects can depend on it
+    write_core_package(&source_dir)?;
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -276,7 +280,8 @@ fn compile_kernel_testing_lib(
         utils_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?
     };
 
-    let mut assembler = build_assembler(source_manager.clone())?;
+    let mut assembler = build_assembler(source_manager.clone())?
+        .with_dynamic_library(miden_core_lib::CoreLibrary::default())?;
     assembler.link_package(utils_package, Linkage::Static)?;
 
     let modules = parse_kernel_modules(&source_dir.join(ASM_TX_KERNEL_DIR), source_manager)?;
@@ -388,11 +393,24 @@ fn compile_protocol_lib(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a new [Assembler] using the provided source manager, loaded with miden-core-lib.
+/// Returns a new [Assembler] using the provided source manager.
 fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Result<Assembler> {
-    Assembler::new(source_manager)
-        .with_warnings_as_errors(true)
-        .with_dynamic_library(miden_core_lib::CoreLibrary::default())
+    Ok(Assembler::new(source_manager).with_warnings_as_errors(true))
+}
+
+/// Loads the `miden-core` library and stores it as a `.masp` package in `{source_dir}`.
+fn write_core_package(source_dir: &Path) -> Result<()> {
+    // TODO: once miden_core_lib gets updated to v0.24, `CoreLibrary` will be a `Package` so we
+    // won't need to add the dummy metadata.
+    let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
+    let package = Package::from_library(
+        PackageId::from("miden-core"),
+        Version::new(0, 0, 0),
+        TargetType::Library,
+        library,
+        core::iter::empty(),
+    );
+    package.write_masp_file(source_dir).into_diagnostic()
 }
 
 /// Writes the package to the `{target_dir}/{name}.masp` file.
