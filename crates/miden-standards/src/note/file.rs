@@ -6,11 +6,18 @@ use std::{
     vec::Vec,
 };
 
-use super::{Note, NoteAttachments, NoteDetails, NoteId, NoteInclusionProof, NoteTag};
-use crate::block::BlockNumber;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{
+    Note,
+    NoteAttachments,
+    NoteDetails,
+    NoteId,
+    NoteInclusionProof,
+    NoteTag,
+};
 #[cfg(feature = "std")]
-use crate::utils::serde::SliceReader;
-use crate::utils::serde::{
+use miden_protocol::utils::serde::SliceReader;
+use miden_protocol::utils::serde::{
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -198,31 +205,32 @@ impl Deserializable for NoteSyncHint {
 mod tests {
     use alloc::vec::Vec;
 
-    use crate::Word;
-    use crate::account::AccountId;
-    use crate::asset::{Asset, FungibleAsset};
-    use crate::block::BlockNumber;
-    use crate::note::{
+    use miden_protocol::Word;
+    use miden_protocol::account::AccountId;
+    use miden_protocol::asset::{Asset, FungibleAsset};
+    use miden_protocol::block::BlockNumber;
+    use miden_protocol::note::{
         Note,
         NoteAssets,
         NoteAttachment,
         NoteAttachmentScheme,
         NoteAttachments,
-        NoteFile,
+        NoteDetails,
         NoteInclusionProof,
         NoteRecipient,
         NoteScript,
         NoteStorage,
-        NoteSyncHint,
         NoteTag,
         NoteType,
         PartialNoteMetadata,
     };
-    use crate::testing::account_id::{
+    use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     };
-    use crate::utils::serde::{Deserializable, Serializable};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
+
+    use super::{NoteFile, NoteSyncHint};
 
     fn create_example_note() -> Note {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
@@ -293,7 +301,7 @@ mod tests {
     fn serialize_expected_note() {
         let note = create_example_note();
         assert_roundtrip(NoteFile::ExpectedNote {
-            details: note.details.clone(),
+            details: NoteDetails::from(&note),
             attachments: NoteAttachments::empty(),
             sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
         });
@@ -304,7 +312,7 @@ mod tests {
         let note = create_example_note_with_attachment();
         assert!(!note.attachments().is_empty());
         assert_roundtrip(NoteFile::ExpectedNote {
-            details: note.details.clone(),
+            details: NoteDetails::from(&note),
             attachments: note.attachments().clone(),
             sync_hint: NoteSyncHint::new(456.into(), NoteTag::from(123)),
         });

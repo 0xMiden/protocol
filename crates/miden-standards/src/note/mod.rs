@@ -12,6 +12,9 @@ pub use burn::BurnNote;
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
+mod file;
+pub use file::{NoteFile, NoteSyncHint};
+
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
