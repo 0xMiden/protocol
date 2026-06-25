@@ -35,13 +35,16 @@ pub trait CodeBuilderLibrary {
     fn as_code_builder_library(&self) -> &Library;
 }
 
-impl CodeBuilderLibrary for Library {
+impl<T> CodeBuilderLibrary for &T
+where
+    T: CodeBuilderLibrary + ?Sized,
+{
     fn as_code_builder_library(&self) -> &Library {
-        self
+        (*self).as_code_builder_library()
     }
 }
 
-impl CodeBuilderLibrary for &Library {
+impl CodeBuilderLibrary for Library {
     fn as_code_builder_library(&self) -> &Library {
         self
     }
@@ -53,19 +56,7 @@ impl CodeBuilderLibrary for Box<Library> {
     }
 }
 
-impl CodeBuilderLibrary for &Box<Library> {
-    fn as_code_builder_library(&self) -> &Library {
-        self
-    }
-}
-
 impl CodeBuilderLibrary for AccountComponentCode {
-    fn as_code_builder_library(&self) -> &Library {
-        self.as_library()
-    }
-}
-
-impl CodeBuilderLibrary for &AccountComponentCode {
     fn as_code_builder_library(&self) -> &Library {
         self.as_library()
     }
@@ -80,29 +71,14 @@ pub trait CodeBuilderNoteScriptSource {
     ) -> Result<Box<Module>, Report>;
 }
 
-struct NoteScriptSource<T>(T);
-
-impl<T> Parse for NoteScriptSource<T>
-where
-    T: CodeBuilderNoteScriptSource,
-{
-    fn parse(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        self.0.parse_note_script(warnings_as_errors, source_manager)
-    }
-}
-
 fn parse_note_script_str(
-    source: impl ToString,
+    source: impl AsRef<str>,
     warnings_as_errors: bool,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<Box<Module>, Report> {
     let mut parser = ModuleParser::new(Some(ModuleKind::Library));
     parser.set_warnings_as_errors(warnings_as_errors);
-    parser.parse_str(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), source, source_manager)
+    parser.parse_str(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), source.as_ref(), source_manager)
 }
 
 fn set_default_note_script_path(mut module: Box<Module>) -> Box<Module> {
@@ -112,55 +88,23 @@ fn set_default_note_script_path(mut module: Box<Module>) -> Box<Module> {
     module
 }
 
-impl CodeBuilderNoteScriptSource for &str {
-    fn parse_note_script(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        parse_note_script_str(self, warnings_as_errors, source_manager)
-    }
+macro_rules! impl_note_script_source_for_str {
+    ($($source:ty),* $(,)?) => {
+        $(
+            impl CodeBuilderNoteScriptSource for $source {
+                fn parse_note_script(
+                    self,
+                    warnings_as_errors: bool,
+                    source_manager: Arc<dyn SourceManager>,
+                ) -> Result<Box<Module>, Report> {
+                    parse_note_script_str(self, warnings_as_errors, source_manager)
+                }
+            }
+        )*
+    };
 }
 
-impl CodeBuilderNoteScriptSource for &String {
-    fn parse_note_script(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        parse_note_script_str(self, warnings_as_errors, source_manager)
-    }
-}
-
-impl CodeBuilderNoteScriptSource for String {
-    fn parse_note_script(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        parse_note_script_str(self, warnings_as_errors, source_manager)
-    }
-}
-
-impl CodeBuilderNoteScriptSource for Box<str> {
-    fn parse_note_script(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        parse_note_script_str(self, warnings_as_errors, source_manager)
-    }
-}
-
-impl CodeBuilderNoteScriptSource for Cow<'_, str> {
-    fn parse_note_script(
-        self,
-        warnings_as_errors: bool,
-        source_manager: Arc<dyn SourceManager>,
-    ) -> Result<Box<Module>, Report> {
-        parse_note_script_str(self, warnings_as_errors, source_manager)
-    }
-}
+impl_note_script_source_for_str!(&str, &String, String, Box<str>, Cow<'_, str>);
 
 impl CodeBuilderNoteScriptSource for Arc<SourceFile> {
     fn parse_note_script(
@@ -618,10 +562,19 @@ impl CodeBuilder {
         self,
         source: impl CodeBuilderNoteScriptSource,
     ) -> Result<NoteScript, CodeBuilderError> {
-        let CodeBuilder { assembler, advice_map, .. } = self;
+        let CodeBuilder { assembler, source_manager, advice_map } = self;
+
+        let module = source
+            .parse_note_script(assembler.warnings_as_errors(), source_manager)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse note script library",
+                    err,
+                )
+            })?;
 
         let note_script_lib = assembler
-            .assemble_library("note-script", NoteScriptSource(source), None::<Box<Module>>)
+            .assemble_library("note-script", module, None::<Box<Module>>)
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
                     "failed to parse note script library",
