@@ -1,5 +1,5 @@
 [package]
-name              = "tx-kernel"
+name              = "miden-tx-kernel"
 version.workspace = true
 
 [lib]
@@ -15,5 +15,5 @@ name = "tx-script-main"
 path = "tx_script_main.masm"
 
 [dependencies]
-miden-core.workspace  = true
-miden-utils.workspace = true
+miden-core.workspace           = true
+miden-protocol-utils.workspace = true

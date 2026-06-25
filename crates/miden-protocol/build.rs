@@ -49,7 +49,7 @@ const TX_KERNEL_API_FILE: &str = "api.masm";
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
 const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
-const BATCH_KERNEL_TARGET: &str = "batch-kernel";
+const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
@@ -288,7 +288,7 @@ fn compile_kernel_testing_lib(
     let library = assembler.assemble_library(modules)?;
 
     let package = Package::from_library(
-        "tx-kernel-testing".into(),
+        "miden-tx-kernel-testing".into(),
         package_version()?,
         TargetType::Library,
         library,

@@ -1,5 +1,5 @@
 [package]
-name              = "batch-kernel"
+name              = "miden-batch-kernel"
 version.workspace = true
 
 [[bin]]

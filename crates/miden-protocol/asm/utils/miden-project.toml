@@ -1,5 +1,5 @@
 [package]
-name              = "miden-utils"
+name              = "miden-protocol-utils"
 version.workspace = true
 
 [lib]
