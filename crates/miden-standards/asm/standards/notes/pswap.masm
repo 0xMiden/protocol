@@ -62,7 +62,7 @@ const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
 
 # calculate_output_amount locals
 const CALC_FILL_AMOUNT = 0
-const CALC_FULL_FILL_AMOUNT = 1
+const CALC_FILL_REFERENCE = 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -91,7 +91,7 @@ const EXEC_OFFERED_FAUCET_SUFFIX = 6
 const EXEC_OFFERED_FAUCET_PREFIX = 7
 const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
 const EXEC_AMT_REQUESTED_NOTE_FILL = 9
-const EXEC_AMT_FULL_FILL_AMOUNT = 10
+const EXEC_AMT_FILL_REFERENCE = 10
 
 # Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
 # write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
@@ -136,29 +136,29 @@ end
 
 #! Computes the proportional amount of offered tokens for a given fill amount.
 #!
-#! Formula: `payout = floor((offered * fill_amount) / full_fill_amount)`, where the caller passes
-#! `full_fill_amount = max(total_fill, requested)` so an over-fill divides by the fill itself
+#! Formula: `payout = floor((offered * fill_amount) / fill_reference)`, where the caller passes
+#! `fill_reference = max(total_fill, requested)` so an over-fill divides by the fill itself
 #! (whole offered side) rather than `requested` (see `execute_pswap`).
 #!
 #! The intermediate product `offered * fill_amount` is computed as a full
-#! u128 via `u64::widening_mul`, then divided by `full_fill_amount` (extended to
+#! u128 via `u64::widening_mul`, then divided by `fill_reference` (extended to
 #! u128) via `u128::div`. This gives exact integer precision with one floor
 #! division at the end, each input is safe
 #! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
 #! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
 #! limb check below).
 #!
-#! Inputs: [offered, full_fill_amount, fill_amount] (offered on top)
+#! Inputs: [offered, fill_reference, fill_amount] (offered on top)
 #! Outputs: [payout_amount]
 #!
 @locals(2)
 # CALC_FILL_AMOUNT:      this leg's fill amount
-# CALC_FULL_FILL_AMOUNT: max(total_fill, requested) — the fill that maps to the whole offered side
+# CALC_FILL_REFERENCE: max(total_fill, requested) — the fill that maps to the whole offered side
 proc calculate_output_amount
     movup.2 loc_store.CALC_FILL_AMOUNT
-    # => [offered, full_fill_amount]
+    # => [offered, fill_reference]
 
-    swap loc_store.CALC_FULL_FILL_AMOUNT
+    swap loc_store.CALC_FILL_REFERENCE
     # => [offered]
 
     u32split
@@ -170,11 +170,11 @@ proc calculate_output_amount
     exec.u64::widening_mul
     # => [p0, p1, p2, p3]
 
-    loc_load.CALC_FULL_FILL_AMOUNT u32split
-    # => [full_fill_lo, full_fill_hi, p0, p1, p2, p3]
+    loc_load.CALC_FILL_REFERENCE u32split
+    # => [fill_ref_lo, fill_ref_hi, p0, p1, p2, p3]
 
     push.0 movdn.2 push.0 movdn.3
-    # => [full_fill_lo, full_fill_hi, 0, 0, p0, p1, p2, p3]
+    # => [fill_ref_lo, fill_ref_hi, 0, 0, p0, p1, p2, p3]
 
     exec.u128::div
     # => [q0, q1, q2, q3]  (quotient, little-endian limbs)
@@ -558,9 +558,9 @@ end
 #! - `total_fill <= requested_amount`: the consumer takes a proportional share of the offered
 #!   side, and a remainder note carries the unfilled balance.
 #! - `total_fill > requested_amount` (over-fill): the whole offered side is paid out and no
-#!   remainder is created. A single-sided fill sends it all to the consumer; a two-sided fill
-#!   credits the consumer their `account_fill` share and the cross-swap counterparty absorbs
-#!   the rest. Either way the creator banks the surplus requested tokens.
+#!   remainder is created. The consumer takes the `account_fill` share; any `note_fill` share
+#!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
+#!   surplus requested tokens.
 #!
 #! Account fill and note fill payouts are computed separately (rather than summing
 #! first) because the account fill portion must be credited to the consumer's vault
@@ -580,7 +580,7 @@ end
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
-# EXEC_AMT_FULL_FILL_AMOUNT       : max(total_fill, requested)
+# EXEC_AMT_FILL_REFERENCE       : max(total_fill, requested)
 proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
@@ -631,22 +631,21 @@ proc execute_pswap
     swap mul.MAX_U32 add
     # => [fill_amount]
 
-    # full_fill_amount = max(fill, requested). For an over-fill (fill > requested) this is the
-    # fill itself, so the whole offered side is paid out and no remainder note is created.
+    # fill_reference = max(fill, requested).
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
 
     exec.max
-    # => [full_fill_amount]
+    # => [fill_reference]
 
-    loc_store.EXEC_AMT_FULL_FILL_AMOUNT
+    loc_store.EXEC_AMT_FILL_REFERENCE
     # => []
 
     # Payout for account_fill_amount
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
-    loc_load.EXEC_AMT_FULL_FILL_AMOUNT
+    loc_load.EXEC_AMT_FILL_REFERENCE
     loc_load.EXEC_AMT_OFFERED
-    # => [offered, full_fill_amount, account_fill_amount]
+    # => [offered, fill_reference, account_fill_amount]
 
     exec.calculate_output_amount
     # => [account_fill_payout]
@@ -656,9 +655,9 @@ proc execute_pswap
 
     # Payout for note_fill_amount
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
-    loc_load.EXEC_AMT_FULL_FILL_AMOUNT
+    loc_load.EXEC_AMT_FILL_REFERENCE
     loc_load.EXEC_AMT_OFFERED
-    # => [offered, full_fill_amount, note_fill_amount]
+    # => [offered, fill_reference, note_fill_amount]
 
     exec.calculate_output_amount
     # => [note_fill_payout]

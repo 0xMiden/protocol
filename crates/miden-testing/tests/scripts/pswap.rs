@@ -642,16 +642,9 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
 }
 
 /// Cross-swap that fills Alice's PSWAP from both `account_fill` (Charlie's vault) and `note_fill`
-/// (Bob's offered leg) in one transaction. `requested_amount` is a minimum, so this covers an exact
-/// full fill and an over-fill:
-/// - `full_fill`: account_fill 20 + note_fill 30 = 50 = Alice's 50 ETH minimum. The 100 USDC
-///   offered splits 40 (Charlie) / 60 (Bob); two P2IDs, no remainder.
-/// - `over_fill`: account_fill 20 + note_fill 50 = 70 > 50. The 100 USDC splits against denom=70:
-///   floor(100*20/70)=28 to Charlie, residual 72 to Bob (proportional note share 71 + 1 rounding
-///   unit). Alice's P2ID carries the full 70 ETH (she banks the surplus); no remainder.
-///
-/// In both, Charlie nets -account_fill ETH / +his USDC share; Bob's offered ETH flows entirely into
-/// Alice's note_fill leg via inflight, never touching Charlie's vault.
+/// (Bob's offered leg) in one transaction. The `full_fill` and `over_fill` cases (amounts in the
+/// `#[case]` rows) both produce two P2IDs and no remainder; Bob's offered ETH flows through
+/// inflight into Alice's note_fill leg, never touching Charlie's vault.
 #[rstest]
 #[case::full_fill(20, 30, 60, 40)]
 #[case::over_fill(20, 50, 72, 28)]
@@ -667,8 +660,8 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(200))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(100))?;
 
-    // Alice offers 100 USDC for a 50 ETH minimum. Bob offers exactly the note_fill leg's ETH and
-    // requests `bob_requested_amount` USDC, drawn from Alice's offered side via the cross-swap.
+    // Bob offers exactly the note_fill leg's ETH and requests `bob_requested_amount` USDC, drawn
+    // from Alice's offered side via the cross-swap.
     let alice_offered = FungibleAsset::new(usdc_faucet.id(), 100)?;
     let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
     let bob_offered = FungibleAsset::new(eth_faucet.id(), note_fill)?;
@@ -676,7 +669,7 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
 
     let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), account_fill)?;
     // Alice's P2ID carries the whole fill (account_fill + note_fill ETH); the creator banks any
-    // amount above the 50 ETH minimum.
+    // amount above her requested minimum.
     let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), account_fill + note_fill)?;
     let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), charlie_payout_amount)?;
 
@@ -743,9 +736,9 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         "Bob's P2ID ({bob_requested:?}) not found",
     );
 
-    // Charlie's vault: -account_fill ETH and +his account-share USDC
-    // (floor(100 * account_fill / total_fill)). The note_fill legs flow through inflight and never
-    // touch his vault.
+    // Charlie's vault: -account_fill ETH and +his account-share of the offered USDC
+    // (floor(offered * account_fill / total_fill)). The note_fill legs flow through inflight and
+    // never touch his vault.
     let vault_patch = executed_transaction.account_patch().vault();
     assert_vault_patch(vault_patch, [charlie_payout_usdc, FungibleAsset::new(eth_faucet.id(), 0)?]);
 

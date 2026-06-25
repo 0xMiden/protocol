@@ -470,24 +470,21 @@ impl PswapNote {
         let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
 
         // `requested_amount` is a minimum: each fill's share is computed against
-        // `full_fill_amount = max(fill_amount, requested)`. At or below requested this is
+        // `fill_reference = max(fill_amount, requested)`. At or below requested this is
         // `requested` (proportional, leaving a remainder); for an over-fill it is the fill
         // itself, so the whole offered side is paid out and no remainder is created.
-        let full_fill_amount = fill_amount.max(total_requested_amount);
+        let fill_reference = fill_amount.max(total_requested_amount);
 
         // Calculate payout amounts separately for account fill and note fill, matching the MASM
         // which calls calculate_output_amount twice: the account fill portion is credited to the
         // consumer's vault while the total determines the remainder note's offered amount.
         let payout_for_account_fill = Self::calculate_output_amount(
             total_offered_amount,
-            full_fill_amount,
+            fill_reference,
             account_fill_amount,
         )?;
-        let payout_for_note_fill = Self::calculate_output_amount(
-            total_offered_amount,
-            full_fill_amount,
-            note_fill_amount,
-        )?;
+        let payout_for_note_fill =
+            Self::calculate_output_amount(total_offered_amount, fill_reference, note_fill_amount)?;
         let offered_amount_for_fill = payout_for_account_fill + payout_for_note_fill;
 
         let payback_note =
@@ -542,8 +539,8 @@ impl PswapNote {
         let total_requested = self.storage.requested_asset_amount();
         let total_offered = self.offered_asset.amount().as_u64();
 
-        let full_fill_amount = fill_amount.max(total_requested);
-        Self::calculate_output_amount(total_offered, full_fill_amount, fill_amount)
+        let fill_reference = fill_amount.max(total_requested);
+        Self::calculate_output_amount(total_offered, fill_reference, fill_amount)
     }
 
     // LINEAGE DISCOVERY
@@ -702,9 +699,9 @@ impl PswapNote {
     }
 
     /// Computes a fill's proportional share of the offered tokens:
-    /// `floor((offered_total * fill_amount) / full_fill_amount)`, computed via a u128 intermediate.
+    /// `floor((offered_total * fill_amount) / fill_reference)`, computed via a u128 intermediate.
     ///
-    /// The caller passes `full_fill_amount = max(total_fill, requested)`, so for an over-fill the
+    /// The caller passes `fill_reference = max(total_fill, requested)`, so for an over-fill the
     /// shares scale by the actual fill rather than `requested` (see [`Self::execute`]).
     ///
     /// # Errors
@@ -712,11 +709,11 @@ impl PswapNote {
     /// Returns an error if the result does not fit in a valid [`AssetAmount`].
     fn calculate_output_amount(
         offered_total: u64,
-        full_fill_amount: u64,
+        fill_reference: u64,
         fill_amount: u64,
     ) -> Result<u64, NoteError> {
         let product = (offered_total as u128) * (fill_amount as u128);
-        let quotient = product / (full_fill_amount as u128);
+        let quotient = product / (fill_reference as u128);
         let amount = u64::try_from(quotient)
             .map_err(|_| NoteError::other("payout quotient does not fit in u64"))?;
         // Validate the result is a valid fungible asset amount.
