@@ -39,6 +39,23 @@ pub proc is_equal
     # => [is_id_equal]
 end
 
+#! Returns a boolean indicating whether the given account ID is the zero address `(0, 0)`, without
+#! consuming the ID.
+#!
+#! The zero address is not a valid account ID, so this can be used to detect an unassigned or
+#! cleared account ID.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_zero, account_id_suffix, account_id_prefix]
+#!
+#! Where:
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
+#! - is_zero is a boolean indicating whether the account ID is the zero address.
+pub proc testz
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [is_zero, account_id_suffix, account_id_prefix]
+end
+
 #! Validates an account ID.
 #!
 #! Note that this does not validate anything about the account type, since any 1-bit pattern is a

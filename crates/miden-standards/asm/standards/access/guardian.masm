@@ -53,11 +53,14 @@ proc get_guardian_internal
     # => [guardian_suffix, guardian_prefix]
 end
 
-#! Writes the guardian word to storage and drops the old value.
+#! Builds the guardian word, writes it to storage and drops the old value.
 #!
-#! Inputs:  [guardian_suffix, guardian_prefix, 0, 0]
+#! Inputs:  [guardian_suffix, guardian_prefix]
 #! Outputs: []
 proc save_guardian_info
+    push.0.0 movup.3 movup.3
+    # => [guardian_suffix, guardian_prefix, 0, 0]
+
     push.GUARDIAN_SLOT[0..2]
     # => [slot_suffix, slot_prefix, guardian_suffix, guardian_prefix, 0, 0]
 
@@ -83,6 +86,9 @@ proc is_guardian_internal
     exec.account_id::is_equal
     # => [is_guardian]
 end
+
+# PUBLIC INTERFACE
+# ================================================================================================
 
 #! Returns 1 if the note sender is the guardian, otherwise 0.
 #!
@@ -117,9 +123,6 @@ pub proc assert_sender_is_guardian
     assert.err=ERR_SENDER_NOT_GUARDIAN
     # => []
 end
-
-# PUBLIC INTERFACE
-# ================================================================================================
 
 #! Returns the guardian account ID.
 #!
@@ -165,7 +168,7 @@ pub proc set_guardian
 
     # Detect explicit clear via the zero address. The zero address is not a valid account ID, so
     # we must check for it before validating.
-    dup.1 eq.0 dup.1 eq.0 and
+    exec.account_id::testz
     # => [is_zero_address, new_guardian_suffix, new_guardian_prefix, pad(14)]
 
     if.false
@@ -173,12 +176,6 @@ pub proc set_guardian
         dup.1 dup.1 exec.account_id::validate
     end
     # => [new_guardian_suffix, new_guardian_prefix, pad(14)]
-
-    push.0.0
-    # => [0, 0, new_guardian_suffix, new_guardian_prefix, pad(14)]
-
-    movup.3 movup.3
-    # => [new_guardian_suffix, new_guardian_prefix, 0, 0, pad(14)]
 
     exec.save_guardian_info
     # => [pad(16)]

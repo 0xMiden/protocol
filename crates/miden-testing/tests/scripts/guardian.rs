@@ -97,7 +97,7 @@ fn read_guardian(
     faucet_id: AccountId,
 ) -> anyhow::Result<Option<AccountId>> {
     let account = mock_chain.committed_account(faucet_id)?;
-    Ok(Guardian::try_from_storage(account.storage())?.guardian())
+    Ok(Guardian::try_from_storage(account.storage())?.account_id())
 }
 
 // TESTS

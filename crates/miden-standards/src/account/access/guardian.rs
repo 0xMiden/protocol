@@ -42,8 +42,7 @@ static GUARDIAN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The guardian data is stored in a single word:
 ///
 /// ```text
-/// Word:  [guardian_suffix, guardian_prefix, 0, 0]
-///         word[0]          word[1]           word[2] word[3]
+/// [guardian_suffix, guardian_prefix, 0, 0]
 /// ```
 pub struct Guardian {
     /// The current guardian. `None` when no guardian is assigned.
@@ -122,8 +121,8 @@ impl Guardian {
         )
     }
 
-    /// Returns the current guardian, or `None` if no guardian is assigned.
-    pub fn guardian(&self) -> Option<AccountId> {
+    /// Returns the current guardian account ID, or `None` if no guardian is assigned.
+    pub fn account_id(&self) -> Option<AccountId> {
         self.guardian
     }
 
