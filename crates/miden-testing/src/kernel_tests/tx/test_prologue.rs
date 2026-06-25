@@ -88,13 +88,7 @@ use rand_chacha::ChaCha20Rng;
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
-use crate::{
-    Auth,
-    MockChain,
-    TransactionContext,
-    TransactionContextBuilder,
-    assert_execution_error,
-};
+use crate::{Auth, MockChain, TestTransactionBuilder, TransactionContext, assert_execution_error};
 
 #[tokio::test]
 async fn test_transaction_prologue() -> anyhow::Result<()> {
@@ -113,7 +107,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(111)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note_1, input_note_2, input_note_3])
             .build()?
     };
@@ -545,7 +539,7 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
@@ -567,7 +561,7 @@ async fn create_simple_account() -> anyhow::Result<()> {
 pub async fn create_account_test(
     account: Account,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    TransactionContextBuilder::new(account).build().unwrap().execute().await
+    TestTransactionBuilder::new(account).build().unwrap().execute().await
 }
 
 pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
@@ -613,16 +607,12 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .with_component(BasicWallet)
         .build()?;
 
-    let tx_inputs = mock_chain
-        .get_transaction_inputs(&account, &[], &[])
-        .expect("failed to get transaction inputs from mock chain");
-
     // override the seed with an invalid seed to ensure the kernel fails
     let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_inputs(tx_inputs)
+    let tx_context = mock_chain
+        .build_tx_context(account, &[], &[])?
         .extend_advice_inputs(adv_inputs)
         .build()?;
 
@@ -643,7 +633,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_version() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
     use $kernel::memory
     use $kernel::prologue
@@ -669,7 +659,7 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_timestamp() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
     use $kernel::memory
     use $kernel::prologue
