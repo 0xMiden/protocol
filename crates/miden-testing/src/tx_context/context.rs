@@ -392,7 +392,7 @@ mod tests {
     use miden_standards::code_builder::CodeBuilder;
 
     use super::*;
-    use crate::TransactionContextBuilder;
+    use crate::TestTransactionBuilder;
 
     #[tokio::test]
     async fn test_get_note_scripts() {
@@ -410,7 +410,7 @@ mod tests {
         let script_root2 = note_script2.root();
 
         // Build a transaction context with both note scripts
-        let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        let tx_context = TestTransactionBuilder::with_existing_mock_account()
             .add_note_script(note_script1.clone())
             .add_note_script(note_script2.clone())
             .build()

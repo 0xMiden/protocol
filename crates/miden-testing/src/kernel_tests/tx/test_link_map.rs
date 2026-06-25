@@ -9,7 +9,7 @@ use miden_protocol::{EMPTY_WORD, Felt, Word};
 use miden_tx::{LinkMap, MemoryViewer};
 use rand::seq::IteratorRandom;
 
-use crate::TransactionContextBuilder;
+use crate::TestTransactionBuilder;
 
 /// Tests the following properties:
 /// - Insertion into an empty map.
@@ -172,7 +172,7 @@ async fn insertion() -> anyhow::Result<()> {
     "#
     );
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
@@ -531,7 +531,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     "#
     );
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 

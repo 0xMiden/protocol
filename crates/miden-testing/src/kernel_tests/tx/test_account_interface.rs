@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::field::PrimeField64;
@@ -27,7 +27,6 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, Word};
 use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
-use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
@@ -35,7 +34,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TransactionContextBuilder, TxContextInput};
+use crate::{Auth, MockChain, TestTransactionBuilder, TxContextInput};
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
@@ -58,7 +57,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .into();
 
     let notes = vec![p2id_note, p2ide_note];
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_input_notes(notes.clone())
         .build()?;
 
@@ -94,28 +93,18 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 async fn check_note_consumability_custom_notes_success(
     #[case] notes: Vec<Note>,
 ) -> anyhow::Result<()> {
-    let tx_context = {
-        use miden_protocol::account::auth::AuthScheme;
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
 
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let (_, authenticator) = Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        }
-        .build_component();
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(notes.clone())
-            .authenticator(authenticator)
-            .build()?
-    };
+    let tx_context = mock_chain.build_tx_context(account, &[], &notes)?.build()?;
 
     let account_id = tx_context.account().id();
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor = TransactionExecutor::new(&tx_context)
-        .with_authenticator(tx_context.authenticator().unwrap())
-        .with_tracing();
+    let executor =
+        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
