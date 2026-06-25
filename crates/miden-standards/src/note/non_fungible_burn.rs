@@ -46,8 +46,7 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// `non_fungible::receive_and_burn`. BURN notes are always public.
 ///
 /// Build one with [`NonFungibleBurnNote::builder`], then convert it into a [`Note`] via
-/// [`From`]. Attachments can be appended one at a time with
-/// [`attachment`](NonFungibleBurnNoteBuilder::attachment).
+/// [`From`]. Attachments can be appended one at a time with the builder's `attachment` method.
 #[derive(Debug, Clone)]
 pub struct NonFungibleBurnNote {
     sender: AccountId,

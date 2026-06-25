@@ -46,8 +46,7 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// carry no assets and are always public.
 ///
 /// Build one with [`NonFungibleMintNote::builder`], then convert it into a [`Note`] via [`From`].
-/// Attachments can be appended one at a time with
-/// [`attachment`](NonFungibleMintNoteBuilder::attachment).
+/// Attachments can be appended one at a time with the builder's `attachment` method.
 #[derive(Debug, Clone)]
 pub struct NonFungibleMintNote {
     sender: AccountId,
