@@ -929,13 +929,13 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        faucet_owner_account_id,
-        mint_storage,
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(faucet_owner_account_id)
+        .mint_storage(mint_storage)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     // Add the MINT note to the mock chain
     builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
@@ -1026,13 +1026,13 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        owner_account_id,
-        mint_inputs,
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(owner_account_id)
+        .mint_storage(mint_inputs)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
     let executed_transaction = tx_context.execute().await?;
@@ -1211,13 +1211,13 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
 
     // Create mint note from NON-OWNER
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        non_owner_account_id,
-        mint_inputs,
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(non_owner_account_id)
+        .mint_storage(mint_inputs)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
     let result = tx_context.execute().await;
@@ -1339,13 +1339,13 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        initial_owner_account_id,
-        mint_inputs.clone(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(initial_owner_account_id)
+        .mint_storage(mint_inputs.clone())
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
@@ -2184,13 +2184,13 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     };
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        faucet_owner_account_id,
-        mint_storage.clone(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(faucet_owner_account_id)
+        .mint_storage(mint_storage.clone())
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -2452,13 +2452,13 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet.id(),
-        faucet_owner_account_id,
-        mint_storage,
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let mint_note: Note = MintNote::builder()
+        .faucet_id(faucet.id())
+        .sender(faucet_owner_account_id)
+        .mint_storage(mint_storage)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mock_chain = builder.build()?;
