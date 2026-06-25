@@ -108,7 +108,10 @@ impl StoragePatchTracker {
         Self {
             storage_header: account.storage().header().clone(),
             init_maps,
-            patch: AccountStoragePatch::from_raw(patches),
+            // The patches are derived from the account's storage slots, which are bounded by
+            // `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so this cannot exceed the limit.
+            patch: AccountStoragePatch::from_raw(patches)
+                .expect("number of slot patches is bounded by the account's storage slots"),
         }
     }
 
@@ -127,7 +130,10 @@ impl StoragePatchTracker {
         let update_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
             slot_name,
             StorageSlotPatch::Value(StorageValuePatch::Update { value: new_value }),
-        )]));
+        )]))
+        .map_err(|source| {
+            TransactionKernelError::other_with_source("failed to build set_item patch", source)
+        })?;
 
         self.patch.merge(update_patch).map_err(|source| {
             TransactionKernelError::other_with_source("failed to set_item on patch", source)
@@ -156,7 +162,13 @@ impl StoragePatchTracker {
                 StorageSlotPatch::Map(StorageMapPatch::Update {
                     entries: StorageMapPatchEntries::from_iter([(key, new_value)]),
                 }),
-            )]));
+            )]))
+            .map_err(|source| {
+                TransactionKernelError::other_with_source(
+                    "failed to build set_map_item patch",
+                    source,
+                )
+            })?;
 
             self.patch.merge(update_patch).map_err(|source| {
                 TransactionKernelError::other_with_source("failed to set_map_item on patch", source)
@@ -245,7 +257,10 @@ impl StoragePatchTracker {
             },
         });
 
+        // Normalization only removes patches, so the count cannot exceed the limit that the
+        // input patch already satisfied.
         AccountStoragePatch::from_raw(patches)
+            .expect("normalization does not increase the number of slot patches")
     }
 }
 

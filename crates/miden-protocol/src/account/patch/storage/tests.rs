@@ -261,6 +261,7 @@ fn build_slot_patch(slot_type: SlotType, op: Op, seed: u32) -> StorageSlotPatch 
 /// Wraps a single slot patch in an [`AccountStoragePatch`].
 fn single_slot_patch(slot_name: StorageSlotName, patch: StorageSlotPatch) -> AccountStoragePatch {
     AccountStoragePatch::from_raw(BTreeMap::from([(slot_name, patch)]))
+        .expect("single slot patch is within limits")
 }
 
 #[rstest::rstest]
@@ -525,6 +526,58 @@ fn merge_then_apply_equals_apply_individually_for_created_then_removed_slot() ->
     account_b.apply_patch(&merged)?;
 
     assert_eq!(account_a, account_b);
+
+    Ok(())
+}
+
+/// Builds a map of `num_slots` distinct value slot patches.
+fn distinct_value_patches(num_slots: usize) -> BTreeMap<StorageSlotName, StorageSlotPatch> {
+    (0..num_slots)
+        .map(|index| {
+            (
+                StorageSlotName::mock(index),
+                StorageSlotPatch::Value(StorageValuePatch::Create { value: Word::empty() }),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn from_raw_rejects_too_many_patches() -> anyhow::Result<()> {
+    let num_slots = AccountStorage::MAX_NUM_STORAGE_SLOTS + 1;
+    let patches = distinct_value_patches(num_slots);
+
+    let err = AccountStoragePatch::from_raw(patches)
+        .err()
+        .context("from_raw should reject too many patches")?;
+    assert_matches!(
+        err,
+        AccountPatchError::TooManyStorageSlotPatches(count) => assert_eq!(count, num_slots)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn merge_rejects_exceeding_max_patches() -> anyhow::Result<()> {
+    // A patch with the maximum number of slots is still valid.
+    let mut current_patch = AccountStoragePatch::from_raw(distinct_value_patches(
+        AccountStorage::MAX_NUM_STORAGE_SLOTS,
+    ))?;
+
+    // Merging a single, disjoint slot pushes the total over the limit.
+    let incoming_patch = single_slot_patch(
+        StorageSlotName::mock(AccountStorage::MAX_NUM_STORAGE_SLOTS),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value: Word::empty() }),
+    );
+
+    let err = current_patch.merge(incoming_patch).err().context("merge should fail")?;
+    assert_matches!(
+        err,
+        AccountPatchError::TooManyStorageSlotPatches(count) => {
+            assert_eq!(count, AccountStorage::MAX_NUM_STORAGE_SLOTS + 1)
+        }
+    );
 
     Ok(())
 }

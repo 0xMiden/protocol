@@ -2,7 +2,13 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::{StorageMapPatch, StorageSlotName, StorageSlotPatch, StorageValuePatch};
+use crate::account::{
+    AccountStorage,
+    StorageMapPatch,
+    StorageSlotName,
+    StorageSlotPatch,
+    StorageValuePatch,
+};
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
     ByteReader,
@@ -47,8 +53,19 @@ impl AccountStoragePatch {
     /// Because the input is already a map keyed by slot name, slot name uniqueness holds by
     /// construction. Use [`AccountStoragePatch::from_entries`] to build a patch from a sequence
     /// that may contain duplicates.
-    pub fn from_raw(patches: BTreeMap<StorageSlotName, StorageSlotPatch>) -> Self {
-        Self { patches }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the number of patches exceeds
+    /// [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
+    pub fn from_raw(
+        patches: BTreeMap<StorageSlotName, StorageSlotPatch>,
+    ) -> Result<Self, AccountPatchError> {
+        if patches.len() > AccountStorage::MAX_NUM_STORAGE_SLOTS {
+            return Err(AccountPatchError::TooManyStorageSlotPatches(patches.len()));
+        }
+
+        Ok(Self { patches })
     }
 
     /// Creates a new storage patch from the provided sequence of slot patches.
@@ -66,7 +83,7 @@ impl AccountStoragePatch {
             }
         }
 
-        Ok(Self::from_raw(patches))
+        Self::from_raw(patches)
     }
 
     // ACCESSORS
@@ -162,6 +179,10 @@ impl AccountStoragePatch {
                     existing.merge(&slot_name, slot_patch)?;
                 },
             }
+        }
+
+        if self.patches.len() > AccountStorage::MAX_NUM_STORAGE_SLOTS {
+            return Err(AccountPatchError::TooManyStorageSlotPatches(self.patches.len()));
         }
 
         Ok(())

@@ -461,6 +461,9 @@ pub enum AccountPatchError {
     #[error("storage slot name {0} is assigned to more than one slot patch")]
     DuplicateStorageSlotName(StorageSlotName),
 
+    #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
+    TooManyStorageSlotPatches(usize),
+
     #[error("cannot merge two full state patches")]
     MergingFullStatePatches,
 

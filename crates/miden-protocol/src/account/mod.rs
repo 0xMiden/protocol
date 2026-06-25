@@ -410,7 +410,10 @@ impl TryFrom<Account> for AccountDelta {
             .map(StorageSlot::into_parts)
             .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_patch = AccountStoragePatch::from_raw(slot_deltas);
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
+            .expect("number of slot patches is bounded by the account's storage slots");
 
         let mut fungible_delta = FungibleAssetDelta::default();
         let mut non_fungible_delta = NonFungibleAssetDelta::default();
@@ -469,7 +472,10 @@ impl TryFrom<Account> for AccountPatch {
             .map(StorageSlot::into_parts)
             .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_patch = AccountStoragePatch::from_raw(slot_patches);
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_patches)
+            .expect("number of slot patches is bounded by the account's storage slots");
 
         let mut vault_patch = AccountVaultPatch::default();
         for asset in vault.assets() {

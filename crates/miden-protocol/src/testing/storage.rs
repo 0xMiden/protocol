@@ -51,7 +51,7 @@ impl AccountStoragePatch {
             )
             .collect();
 
-        Self::from_raw(patches)
+        Self::from_raw(patches).expect("number of slot patches should be within limits")
     }
 
     /// Returns a new [`AccountStoragePatchBuilder`] for ergonomically constructing a patch in
@@ -158,6 +158,7 @@ impl AccountStoragePatchBuilder {
     /// Consumes the builder and returns the assembled [`AccountStoragePatch`].
     pub fn build(self) -> AccountStoragePatch {
         AccountStoragePatch::from_raw(self.patches)
+            .expect("number of slot patches should be within limits")
     }
 
     // HELPERS

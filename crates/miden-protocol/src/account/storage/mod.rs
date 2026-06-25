@@ -656,7 +656,7 @@ mod tests {
             ),
             (removed.clone(), StorageSlotPatch::Value(StorageValuePatch::Remove)),
         ]);
-        let patch = AccountStoragePatch::from_raw(patches);
+        let patch = AccountStoragePatch::from_raw(patches)?;
 
         storage.apply_patch(&patch)?;
 
