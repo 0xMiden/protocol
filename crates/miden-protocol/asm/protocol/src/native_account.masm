@@ -1,11 +1,11 @@
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_INCR_NONCE_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_SET_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_SET_MAP_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_ADD_ASSET_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_REMOVE_ASSET_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
+use {ACCOUNT_GET_ID_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_INCR_NONCE_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_SET_ITEM_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_SET_MAP_ITEM_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_ADD_ASSET_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_REMOVE_ASSET_OFFSET} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET} from miden::protocol::kernel_proc_offsets
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================

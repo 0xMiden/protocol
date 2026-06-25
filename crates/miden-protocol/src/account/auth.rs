@@ -143,7 +143,7 @@ impl AuthSecretKey {
 
     /// Generates an Falcon512Poseidon2 secrete key using the provided random number generator.
     pub fn new_falcon512_poseidon2_with_rng<R: Rng>(rng: &mut R) -> Self {
-        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng(rng))
+        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng::<R>(rng))
     }
 
     /// Generates an EcdsaK256Keccak secret key from the OS-provided randomness.
@@ -162,7 +162,7 @@ impl AuthSecretKey {
     /// time and therefore does not provide public-key privacy. See
     /// [`AuthScheme::EcdsaK256Keccak`] for details.
     pub fn new_ecdsa_k256_keccak_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
-        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng(rng))
+        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng::<R>(rng))
     }
 
     /// Generates a new secret key for the specified authentication scheme using the provided

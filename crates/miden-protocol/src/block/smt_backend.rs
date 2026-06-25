@@ -169,13 +169,21 @@ where
     }
 
     fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_> {
-        Box::new(LargeSmt::leaves(self).expect("Only IO can error out here"))
+        Box::new(
+            LargeSmt::leaves(self)
+                .expect("Only IO can error out here")
+                .map(|leaf| leaf.expect("Only IO can error out here")),
+        )
     }
 
     fn entries(&self) -> Box<dyn Iterator<Item = (Word, Word)> + '_> {
         // SAFETY: We expect here as only I/O errors can occur. Storage failures are considered
         // unrecoverable at this layer. See issue #2010 for future error handling improvements.
-        Box::new(LargeSmt::entries(self).expect("Storage I/O error accessing entries"))
+        Box::new(
+            LargeSmt::entries(self)
+                .expect("Storage I/O error accessing entries")
+                .map(|entry| entry.expect("Storage I/O error accessing entries")),
+        )
     }
 
     fn open(&self, key: &Word) -> SmtProof {

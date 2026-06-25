@@ -71,7 +71,11 @@ impl<H: Host> CodeExecutor<H> {
         // Virtual file name should be unique.
         let virtual_source_file =
             source_manager.load(SourceLanguage::Masm, Uri::new("_user_code"), code.to_owned());
-        let program = assembler.assemble_program(virtual_source_file).unwrap();
+        let program = assembler
+            .assemble_program("tx-context-code", virtual_source_file)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
 
         self.execute_program(program).await
     }
@@ -89,8 +93,7 @@ impl<H: Host> CodeExecutor<H> {
             .map_err(ExecError::new)?
             .with_options(self.execution_options.unwrap_or_default())
             .map_err(ExecutionError::advice_error_no_context)
-            .map_err(ExecError::new)?
-            .with_debugging(true);
+            .map_err(ExecError::new)?;
 
         let execution_output =
             processor.execute(&program, &mut self.host).await.map_err(ExecError::new)?;

@@ -13,6 +13,9 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
 
+pub mod fungible
+pub mod policies
+
 # =================================================================================================
 # CONSTANTS — slot names
 # =================================================================================================

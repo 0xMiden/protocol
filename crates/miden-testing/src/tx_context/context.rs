@@ -3,8 +3,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::mast::MastForest;
-use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
+use miden_processor::{ExecutionOutput, FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -120,7 +119,7 @@ impl TransactionContext {
                 .into();
 
         let program = assembler
-            .assemble_program(virtual_source_file)
+            .assemble_program("tx-context-code", virtual_source_file)
             .expect("code was not well formed");
 
         // Load transaction kernel and the program into the mast forest in self.
@@ -128,6 +127,7 @@ impl TransactionContext {
         // TransactionContextBuilder.
         self.mast_store.insert(TransactionKernel::library().mast_forest().clone());
         self.mast_store.insert(program.mast_forest().clone());
+        let program = program.try_into_program().expect("program package should be executable");
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(
             [tx_inputs.account().code()]
@@ -379,7 +379,7 @@ impl DataStore for TransactionContext {
 }
 
 impl MastForestStore for TransactionContext {
-    fn get(&self, procedure_hash: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

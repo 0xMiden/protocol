@@ -206,7 +206,7 @@ async fn not_binary_value_if() {
     assert_execution_error!(
         r,
         matches ExecutionError::OperationError {
-            err: OperationError::NotBinaryValueIf { .. },
+            err: OperationError::NotBinaryValue { .. },
             ..
         }
     );
@@ -218,7 +218,7 @@ async fn not_binary_value_loop() {
     assert_execution_error!(
         r,
         matches ExecutionError::OperationError {
-            err: OperationError::NotBinaryValueLoop { .. },
+            err: OperationError::NotBinaryValue { .. },
             ..
         }
     );
@@ -260,8 +260,8 @@ async fn cycle_limit_exceeded() {
     // Set max_cycles to MIN_TRACE_LEN (64); 100×push body trips it.
     let body = "push.0 ".repeat(100);
     let src = format!("begin {body} end");
-    let options = ExecutionOptions::new(Some(64), 64, 4096, false, false)
-        .expect("max_cycles=64 satisfies MIN_TRACE_LEN");
+    let options =
+        ExecutionOptions::new(Some(64), 64, 4096).expect("max_cycles=64 satisfies MIN_TRACE_LEN");
     let r = run_masm_with_options(&src, options).await;
     assert_execution_error!(r, matches ExecutionError::CycleLimitExceeded(_));
 }

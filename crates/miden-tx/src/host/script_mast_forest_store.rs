@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-use miden_processor::MastForestStore;
+use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::Word;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::note::NoteScript;
@@ -62,7 +62,7 @@ impl ScriptMastForestStore {
 // ================================================================================================
 
 impl MastForestStore for ScriptMastForestStore {
-    fn get(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
-        self.mast_forests.get(procedure_root).cloned()
+    fn get(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
+        self.mast_forests.get(procedure_root).cloned().map(LoadedMastForest::new)
     }
 }

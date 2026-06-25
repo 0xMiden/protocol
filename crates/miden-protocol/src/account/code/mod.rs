@@ -419,11 +419,11 @@ fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
 
 #[cfg(test)]
 mod tests {
-
     use alloc::sync::Arc;
 
     use assert_matches::assert_matches;
-    use miden_assembly::Assembler;
+    use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, Path, ast};
+    use miden_mast_package::Package as Library;
 
     use super::{AccountCode, Deserializable, Serializable};
     use crate::account::AccountComponent;
@@ -432,6 +432,17 @@ mod tests {
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
     use crate::testing::noop_auth_component::NoopAuthComponent;
+
+    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
+            .parse_str(Some(Path::new(path)), source, source_manager.clone())
+            .unwrap();
+
+        *Assembler::new(source_manager)
+            .assemble_library(name, root, None::<&str>)
+            .unwrap()
+    }
 
     #[test]
     fn test_serde_account_code() {
@@ -457,7 +468,8 @@ mod tests {
 
     #[test]
     fn test_account_code_no_auth_component() {
-        let library = Arc::unwrap_or_clone(Assembler::default().assemble_library([CODE]).unwrap());
+        let library =
+            assemble_test_library("test-account-code-no-auth", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::no_auth");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
@@ -477,8 +489,6 @@ mod tests {
 
     #[test]
     fn test_account_component_multiple_auth_procedures() {
-        use miden_assembly::Assembler;
-
         let code_with_multiple_auth = "
             @auth_script
             pub proc auth_basic
@@ -491,8 +501,10 @@ mod tests {
             end
         ";
 
-        let library = Arc::unwrap_or_clone(
-            Assembler::default().assemble_library([code_with_multiple_auth]).unwrap(),
+        let library = assemble_test_library(
+            "test-account-code-multiple-auth",
+            "test::account_code_multiple_auth",
+            code_with_multiple_auth,
         );
         let metadata = AccountComponentMetadata::new("test::multiple_auth");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();

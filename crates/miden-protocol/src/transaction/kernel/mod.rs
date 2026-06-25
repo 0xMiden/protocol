@@ -7,7 +7,7 @@ use crate::account::{AccountHeader, AccountId};
 #[cfg(any(feature = "testing", test))]
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
-use crate::assembly::{Assembler, DefaultSourceManager};
+use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
@@ -148,14 +148,15 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        let kernel_lib = Self::package()
-            .try_into_kernel_library()
-            .expect("transaction kernel package should contain a kernel library");
-        Assembler::with_kernel(source_manager, kernel_lib)
-            .with_dynamic_library(CoreLibrary::default())
-            .expect("failed to load std-lib")
-            .with_dynamic_library(ProtocolLib::default())
-            .expect("failed to load miden-lib")
+        let mut assembler = Assembler::with_kernel(source_manager, Self::kernel())
+            .expect("failed to load transaction kernel");
+        assembler
+            .link_package(CoreLibrary::default().package(), Linkage::Dynamic)
+            .expect("failed to load std-lib");
+        assembler
+            .link_package(Arc::new(ProtocolLib::default().into()), Linkage::Dynamic)
+            .expect("failed to load miden-lib");
+        assembler
     }
 
     // STACK INPUTS / OUTPUTS

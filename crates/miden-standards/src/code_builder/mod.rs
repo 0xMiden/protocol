@@ -1,14 +1,23 @@
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountComponentCode;
+use miden_protocol::assembly::diagnostics::Report;
 use miden_protocol::assembly::{
     Assembler,
     DefaultSourceManager,
     Library,
+    Linkage,
+    Module,
+    ModuleKind,
+    ModuleParser,
     Parse,
-    ParseOptions,
     Path,
+    SourceFile,
+    SourceManager,
     SourceManagerSync,
 };
 use miden_protocol::note::NoteScript;
@@ -18,6 +27,206 @@ use miden_protocol::{Felt, Word};
 
 use crate::errors::CodeBuilderError;
 use crate::standards_lib::StandardsLib;
+
+const NOTE_SCRIPT_MODULE_PATH: &str = "::note_script";
+
+/// A value that can provide a compiled Miden library to the code builder.
+pub trait CodeBuilderLibrary {
+    fn as_code_builder_library(&self) -> &Library;
+}
+
+impl CodeBuilderLibrary for Library {
+    fn as_code_builder_library(&self) -> &Library {
+        self
+    }
+}
+
+impl CodeBuilderLibrary for &Library {
+    fn as_code_builder_library(&self) -> &Library {
+        self
+    }
+}
+
+impl CodeBuilderLibrary for Box<Library> {
+    fn as_code_builder_library(&self) -> &Library {
+        self
+    }
+}
+
+impl CodeBuilderLibrary for &Box<Library> {
+    fn as_code_builder_library(&self) -> &Library {
+        self
+    }
+}
+
+impl CodeBuilderLibrary for AccountComponentCode {
+    fn as_code_builder_library(&self) -> &Library {
+        self.as_library()
+    }
+}
+
+impl CodeBuilderLibrary for &AccountComponentCode {
+    fn as_code_builder_library(&self) -> &Library {
+        self.as_library()
+    }
+}
+
+/// A source value that can be compiled into a note script.
+pub trait CodeBuilderNoteScriptSource {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report>;
+}
+
+struct NoteScriptSource<T>(T);
+
+impl<T> Parse for NoteScriptSource<T>
+where
+    T: CodeBuilderNoteScriptSource,
+{
+    fn parse(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        self.0.parse_note_script(warnings_as_errors, source_manager)
+    }
+}
+
+fn parse_note_script_str(
+    source: impl ToString,
+    warnings_as_errors: bool,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<Box<Module>, Report> {
+    let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+    parser.set_warnings_as_errors(warnings_as_errors);
+    parser.parse_str(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), source, source_manager)
+}
+
+fn set_default_note_script_path(mut module: Box<Module>) -> Box<Module> {
+    if module.path().is_empty() {
+        module.set_path(Path::new(NOTE_SCRIPT_MODULE_PATH));
+    }
+    module
+}
+
+impl CodeBuilderNoteScriptSource for &str {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        parse_note_script_str(self, warnings_as_errors, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for &String {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        parse_note_script_str(self, warnings_as_errors, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for String {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        parse_note_script_str(self, warnings_as_errors, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Box<str> {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        parse_note_script_str(self, warnings_as_errors, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Cow<'_, str> {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        parse_note_script_str(self, warnings_as_errors, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Arc<SourceFile> {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        parser.set_warnings_as_errors(warnings_as_errors);
+        parser.parse(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), self, source_manager)
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Module {
+    fn parse_note_script(
+        self,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_note_script_path(Box::new(self)))
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Box<Module> {
+    fn parse_note_script(
+        self,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_note_script_path(self))
+    }
+}
+
+impl CodeBuilderNoteScriptSource for Arc<Module> {
+    fn parse_note_script(
+        self,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_note_script_path(Box::new(Arc::unwrap_or_clone(self))))
+    }
+}
+
+#[cfg(feature = "std")]
+impl CodeBuilderNoteScriptSource for &std::path::Path {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        parser.set_warnings_as_errors(warnings_as_errors);
+        parser.parse_file(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), self, source_manager)
+    }
+}
+
+#[cfg(feature = "std")]
+impl CodeBuilderNoteScriptSource for std::path::PathBuf {
+    fn parse_note_script(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        self.as_path().parse_note_script(warnings_as_errors, source_manager)
+    }
+}
 
 // CODE BUILDER
 // ================================================================================================
@@ -101,8 +310,10 @@ impl CodeBuilder {
     /// # Arguments
     /// * `source_manager` - The source manager to use with the internal `Assembler`
     pub fn with_source_manager(source_manager: Arc<dyn SourceManagerSync>) -> Self {
-        let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone())
-            .with_dynamic_library(StandardsLib::default())
+        let mut assembler =
+            TransactionKernel::assembler_with_source_manager(source_manager.clone());
+        assembler
+            .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
             .expect("linking std lib should work");
         Self {
             assembler,
@@ -143,14 +354,14 @@ impl CodeBuilder {
     pub fn link_module(
         &mut self,
         module_path: impl AsRef<str>,
-        module_code: impl Parse,
+        module_code: impl ToString,
     ) -> Result<(), CodeBuilderError> {
-        let mut parse_options = ParseOptions::for_library();
-        parse_options.path = Some(Path::new(module_path.as_ref()).into());
-
-        let module = module_code.parse_with_options(self.source_manager(), parse_options).map_err(
-            |err| CodeBuilderError::build_error_with_report("failed to parse module code", err),
-        )?;
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let module = parser
+            .parse_str(Some(Path::new(module_path.as_ref())), module_code, self.source_manager())
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse module code", err)
+            })?;
 
         self.assembler.compile_and_statically_link(module).map_err(|err| {
             CodeBuilderError::build_error_with_report("failed to assemble module", err)
@@ -171,9 +382,11 @@ impl CodeBuilder {
     /// Returns an error if:
     /// - adding the library to the assembler failed
     pub fn link_static_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
-        self.assembler.link_static_library(library).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to add static library", err)
-        })
+        self.assembler
+            .link_package(Arc::new(library.clone()), Linkage::Static)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to add static library", err)
+            })
     }
 
     /// Dynamically links a library.
@@ -190,9 +403,11 @@ impl CodeBuilder {
     /// # Errors
     /// Returns an error if the library cannot be added to the assembler
     pub fn link_dynamic_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
-        self.assembler.link_dynamic_library(library).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to add dynamic library", err)
-        })
+        self.assembler
+            .link_package(Arc::new(library.clone()), Linkage::Dynamic)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to add dynamic library", err)
+            })
     }
 
     /// Builder-style method to statically link a library and return the modified builder.
@@ -223,9 +438,9 @@ impl CodeBuilder {
     /// Returns an error if the library cannot be added to the assembler
     pub fn with_dynamically_linked_library(
         mut self,
-        library: impl AsRef<Library>,
+        library: impl CodeBuilderLibrary,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_dynamic_library(library.as_ref())?;
+        self.link_dynamic_library(library.as_code_builder_library())?;
         Ok(self)
     }
 
@@ -242,7 +457,7 @@ impl CodeBuilder {
     pub fn with_linked_module(
         mut self,
         module_path: impl AsRef<str>,
-        module_code: impl Parse,
+        module_code: impl ToString,
     ) -> Result<Self, CodeBuilderError> {
         self.link_module(module_path, module_code)?;
         Ok(self)
@@ -334,27 +549,25 @@ impl CodeBuilder {
     pub fn compile_component_code(
         self,
         component_path: impl AsRef<str>,
-        component_code: impl Parse,
+        component_code: impl ToString,
     ) -> Result<AccountComponentCode, CodeBuilderError> {
         let CodeBuilder { assembler, source_manager, advice_map } = self;
 
-        let mut parse_options = ParseOptions::for_library();
-        parse_options.path = Some(Path::new(component_path.as_ref()).into());
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let module = parser
+            .parse_str(Some(Path::new(component_path.as_ref())), component_code, source_manager)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse component code", err)
+            })?;
 
-        let module =
-            component_code
-                .parse_with_options(source_manager, parse_options)
-                .map_err(|err| {
-                    CodeBuilderError::build_error_with_report("failed to parse component code", err)
-                })?;
-
-        let library = assembler.assemble_library([module]).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse component code", err)
-        })?;
+        let library = assembler
+            .assemble_library("account-component", module, None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse component code", err)
+            })?;
 
         Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(library),
+            advice_map, *library,
         )))
     }
 
@@ -374,9 +587,18 @@ impl CodeBuilder {
     ) -> Result<TransactionScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(tx_script).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
-        })?;
+        let program = assembler
+            .assemble_program("transaction-script", tx_script)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
+            })?
+            .try_into_program()
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to convert transaction script package",
+                    err,
+                )
+            })?;
 
         Ok(TransactionScript::new(Self::apply_advice_map(advice_map, program)))
     }
@@ -392,23 +614,28 @@ impl CodeBuilder {
     /// # Errors
     /// Returns an error if:
     /// - The note script compiling fails
-    pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
+    pub fn compile_note_script(
+        self,
+        source: impl CodeBuilderNoteScriptSource,
+    ) -> Result<NoteScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let note_script_lib = assembler.assemble_library([source]).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse note script library", err)
-        })?;
+        let note_script_lib = assembler
+            .assemble_library("note-script", NoteScriptSource(source), None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse note script library",
+                    err,
+                )
+            })?;
 
-        NoteScript::from_library(&Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(note_script_lib),
-        ))
-        .map_err(|err| {
-            CodeBuilderError::build_error_with_source(
-                "failed to create note script from library",
-                err,
-            )
-        })
+        NoteScript::from_library(&Self::apply_advice_map_to_library(advice_map, *note_script_lib))
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_source(
+                    "failed to create note script from library",
+                    err,
+                )
+            })
     }
 
     // ACCESSORS
@@ -431,11 +658,7 @@ impl CodeBuilder {
     /// separately, we can invoke procedures from the kernel library to test them individually.
     #[cfg(any(feature = "testing", test))]
     pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
-        let mut builder = Self::with_source_manager(source_manager);
-        builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
-        builder
+        Self::with_source_manager(source_manager)
     }
 
     /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` libraries.
@@ -473,11 +696,6 @@ impl CodeBuilder {
         // standards library.
         let mut builder = Self::with_source_manager(source_manager);
 
-        // Expose kernel procedures under `miden::tx_kernel_core` for testing.
-        builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
-
         // Add mock account/faucet libs (built in debug mode) and mock util.
         for library in Self::mock_libraries() {
             builder
@@ -510,7 +728,6 @@ impl From<CodeBuilder> for Assembler {
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
-    use miden_protocol::assembly::diagnostics::NamedSource;
     use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 
     use super::*;
@@ -694,15 +911,31 @@ mod tests {
         ";
 
         // Create libraries using the assembler
-        let temp_assembler = TransactionKernel::assembler();
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let static_module = parser
+            .parse_str(
+                Some(Path::new("contracts::static_contract")),
+                account_code_1,
+                source_manager.clone(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to parse static library: {}", e))?;
+        let dynamic_module = parser
+            .parse_str(
+                Some(Path::new("contracts::dynamic_contract")),
+                account_code_2,
+                source_manager.clone(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to parse dynamic library: {}", e))?;
+        let temp_assembler = TransactionKernel::assembler_with_source_manager(source_manager);
 
         let static_lib = temp_assembler
             .clone()
-            .assemble_library([NamedSource::new("contracts::static_contract", account_code_1)])
+            .assemble_library("static-contract", static_module, None::<&str>)
             .map_err(|e| anyhow::anyhow!("failed to assemble static library: {}", e))?;
 
         let dynamic_lib = temp_assembler
-            .assemble_library([NamedSource::new("contracts::dynamic_contract", account_code_2)])
+            .assemble_library("dynamic-contract", dynamic_module, None::<&str>)
             .map_err(|e| anyhow::anyhow!("failed to assemble dynamic library: {}", e))?;
 
         // Test linking both static and dynamic libraries

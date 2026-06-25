@@ -2,10 +2,10 @@
 #
 # See the `RoleBasedAccessControl` Rust type's documentation for more details.
 
-pub use ::miden::standards::access::rbac::has_role
-pub use ::miden::standards::access::rbac::get_role_admin
-pub use ::miden::standards::access::rbac::get_role_member_count
-pub use ::miden::standards::access::rbac::set_role_admin
-pub use ::miden::standards::access::rbac::grant_role
-pub use ::miden::standards::access::rbac::revoke_role
-pub use ::miden::standards::access::rbac::renounce_role
+pub use {has_role} from ::miden::standards::access::rbac
+pub use {get_role_admin} from ::miden::standards::access::rbac
+pub use {get_role_member_count} from ::miden::standards::access::rbac
+pub use {set_role_admin} from ::miden::standards::access::rbac
+pub use {grant_role} from ::miden::standards::access::rbac
+pub use {revoke_role} from ::miden::standards::access::rbac
+pub use {renounce_role} from ::miden::standards::access::rbac

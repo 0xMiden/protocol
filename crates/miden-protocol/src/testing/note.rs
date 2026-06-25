@@ -1,7 +1,8 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::assembly::Assembler;
+use crate::assembly::{Assembler, DefaultSourceManager, ModuleKind, ModuleParser, Path};
 use crate::asset::FungibleAsset;
 use crate::note::{
     Note,
@@ -42,8 +43,17 @@ impl Note {
 
 impl NoteScript {
     pub fn mock() -> Self {
-        let assembler = Assembler::default();
-        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ModuleKind::Library))
+            .parse_str(
+                Some(Path::new("miden::testing::note")),
+                DEFAULT_NOTE_SCRIPT,
+                source_manager.clone(),
+            )
+            .expect("mock note script should parse");
+        let library = Assembler::new(source_manager)
+            .assemble_library("miden-testing-note", root, None::<&str>)
+            .unwrap();
         Self::from_library(&library).unwrap()
     }
 }

@@ -46,7 +46,7 @@ use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
-use rand::Rng;
+use rand::RngExt;
 
 use super::test_utils::{
     ClaimDataSource,

@@ -5,24 +5,24 @@
 # (name, description, logo URI, external link, mutability config) into a single component.
 
 # Fungible token minting and burning
-pub use ::miden::standards::faucets::fungible::mint_and_send
-pub use ::miden::standards::faucets::fungible::receive_and_burn
+pub use {mint_and_send} from ::miden::standards::faucets::fungible
+pub use {receive_and_burn} from ::miden::standards::faucets::fungible
 
 # Fungible token configuration
-pub use ::miden::standards::faucets::fungible::get_decimals
-pub use ::miden::standards::faucets::fungible::get_token_symbol
-pub use ::miden::standards::faucets::fungible::get_token_supply
-pub use ::miden::standards::faucets::fungible::get_max_supply
-pub use ::miden::standards::faucets::fungible::set_max_supply
-pub use ::miden::standards::faucets::fungible::is_max_supply_mutable
-pub use ::miden::standards::faucets::fungible::get_token_config
+pub use {get_decimals} from ::miden::standards::faucets::fungible
+pub use {get_token_symbol} from ::miden::standards::faucets::fungible
+pub use {get_token_supply} from ::miden::standards::faucets::fungible
+pub use {get_max_supply} from ::miden::standards::faucets::fungible
+pub use {set_max_supply} from ::miden::standards::faucets::fungible
+pub use {is_max_supply_mutable} from ::miden::standards::faucets::fungible
+pub use {get_token_config} from ::miden::standards::faucets::fungible
 
 # Token metadata: mandatory name + optional description, logo, external link.
-pub use ::miden::standards::faucets::get_name
-pub use ::miden::standards::faucets::get_mutability_config
-pub use ::miden::standards::faucets::is_description_mutable
-pub use ::miden::standards::faucets::is_logo_uri_mutable
-pub use ::miden::standards::faucets::is_external_link_mutable
-pub use ::miden::standards::faucets::set_description
-pub use ::miden::standards::faucets::set_logo_uri
-pub use ::miden::standards::faucets::set_external_link
+pub use {get_name} from ::miden::standards::faucets
+pub use {get_mutability_config} from ::miden::standards::faucets
+pub use {is_description_mutable} from ::miden::standards::faucets
+pub use {is_logo_uri_mutable} from ::miden::standards::faucets
+pub use {is_external_link_mutable} from ::miden::standards::faucets
+pub use {set_description} from ::miden::standards::faucets
+pub use {set_logo_uri} from ::miden::standards::faucets
+pub use {set_external_link} from ::miden::standards::faucets

@@ -12,6 +12,8 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 
+pub mod manager
+
 # CONSTANTS
 # ================================================================================================
 

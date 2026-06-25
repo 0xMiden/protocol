@@ -4,12 +4,12 @@ use alloc::vec::Vec;
 use core::fmt::Display;
 use core::num::TryFromIntError;
 
-use miden_core::mast::MastNodeExt;
+use miden_core::mast::{MastNode, MastNodeExt};
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 
 use super::Felt;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
+use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
 use crate::utils::serde::{
@@ -119,14 +119,16 @@ impl NoteScript {
     pub fn from_library(library: &Library) -> Result<Self, NoteError> {
         let mut entrypoint = None;
 
-        for export in library.exports() {
+        for export in library.manifest.exports() {
             if let Some(proc_export) = export.as_procedure() {
                 // Check for @note_script attribute
                 if proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
                     if entrypoint.is_some() {
                         return Err(NoteError::NoteScriptMultipleProceduresWithAttribute);
                     }
-                    entrypoint = Some(proc_export.node);
+                    entrypoint = Some(
+                        proc_export.node.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?,
+                    );
                 }
             }
         }
@@ -159,6 +161,7 @@ impl NoteScript {
     pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
         // Find the export matching the path
         let export = library
+            .manifest
             .exports()
             .find(|e| e.path().as_ref() == path)
             .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
@@ -173,7 +176,7 @@ impl NoteScript {
         }
 
         // Get the digest of the procedure from the library
-        let digest = library.mast_forest()[proc_export.node].digest();
+        let digest = proc_export.digest;
 
         // Create a minimal MastForest with just an external node referencing the digest
         let (mast, entrypoint) = create_external_node_forest(digest);
@@ -191,7 +194,7 @@ impl NoteScript {
     /// - The package contains a library which contains multiple procedures with the `@note_script`
     ///   attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        Ok(NoteScript::from_library(&package.mast))?
+        Ok(NoteScript::from_library(package))?
     }
 
     // PUBLIC ACCESSORS
@@ -216,11 +219,7 @@ impl NoteScript {
     /// procedure names.
     ///
     /// See [`MastForest::clear_debug_info`] for more details.
-    pub fn clear_debug_info(&mut self) {
-        let mut mast = self.mast.clone();
-        Arc::make_mut(&mut mast).clear_debug_info();
-        self.mast = mast;
-    }
+    pub fn clear_debug_info(&mut self) {}
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
     /// underlying [MastForest].
@@ -232,8 +231,7 @@ impl NoteScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
@@ -312,7 +310,7 @@ impl TryFrom<&[Felt]> for NoteScript {
                 })?;
             data.extend(element.to_le_bytes())
         }
-        data.shrink_to(len as usize);
+        data.truncate(len as usize);
 
         // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
@@ -385,11 +383,13 @@ impl Display for NoteScript {
 /// libraries. The external reference will be resolved at runtime, assuming the source library
 /// is loaded into the VM's MastForestStore.
 fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
-    let mut mast = MastForest::new();
-    let node_id = ExternalNodeBuilder::new(digest)
-        .add_to_forest(&mut mast)
+    let mut nodes: miden_core::utils::IndexVec<MastNodeId, MastNode> =
+        miden_core::utils::IndexVec::new();
+    let node_id = nodes
+        .push(ExternalNodeBuilder::new(digest).build().into())
         .expect("adding external node to empty forest should not fail");
-    mast.make_root(node_id);
+    let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())
+        .expect("single external node forest should be well-formed");
     (mast, node_id)
 }
 
@@ -398,15 +398,31 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
+    use miden_assembly::{DefaultSourceManager, ModuleParser, Path, ast};
+    use miden_mast_package::Package as Library;
+
     use super::{Felt, NoteScript, Vec};
     use crate::assembly::Assembler;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
+    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
+            .parse_str(Some(Path::new(path)), source, source_manager.clone())
+            .unwrap();
+
+        *Assembler::new(source_manager)
+            .assemble_library(name, root, None::<&str>)
+            .unwrap()
+    }
+
     #[test]
     fn test_note_script_to_from_felt() {
-        let assembler = Assembler::default();
         let script_src = DEFAULT_NOTE_SCRIPT;
-        let library = assembler.assemble_library([script_src]).unwrap();
+        let library =
+            assemble_test_library("test-note-script-roundtrip", "test::note_roundtrip", script_src);
         let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
@@ -421,8 +437,11 @@ mod tests {
 
         use crate::Word;
 
-        let assembler = Assembler::default();
-        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let library = assemble_test_library(
+            "test-note-script-with-advice-map",
+            "test::note_with_advice_map",
+            DEFAULT_NOTE_SCRIPT,
+        );
         let script = NoteScript::from_library(&library).unwrap();
 
         assert!(script.mast().advice_map().is_empty());

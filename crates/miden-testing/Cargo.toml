@@ -36,7 +36,7 @@ miden-processor = { workspace = true }
 # External dependencies
 anyhow      = { workspace = true }
 itertools   = { default-features = false, features = ["use_alloc"], version = "0.14" }
-rand        = { features = ["os_rng", "small_rng"], workspace = true }
+rand        = { features = ["sys_rng"], workspace = true }
 rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
 

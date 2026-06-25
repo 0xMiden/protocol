@@ -387,8 +387,7 @@ impl TransactionScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
@@ -439,7 +438,11 @@ mod tests {
         use crate::assembly::Assembler;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
+        let program = assembler
+            .assemble_program("test-transaction-script", "begin nop end")
+            .unwrap()
+            .try_into_program()
+            .unwrap();
         let script = TransactionScript::new(program);
 
         assert!(script.mast().advice_map().is_empty());

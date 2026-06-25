@@ -17,7 +17,7 @@
 #! - the amount about to be burned is greater than the outstanding supply of the asset.
 #!
 #! Invocation: call
-pub use ::miden::standards::faucets::fungible::receive_and_burn
+pub use {receive_and_burn} from ::miden::standards::faucets::fungible
 
 #! Re-export the fungible faucet's `mint_and_send` procedure.
 #!
@@ -27,4 +27,4 @@ pub use ::miden::standards::faucets::fungible::receive_and_burn
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Invocation: call
-pub use ::miden::standards::faucets::fungible::mint_and_send
+pub use {mint_and_send} from ::miden::standards::faucets::fungible

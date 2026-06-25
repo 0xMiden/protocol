@@ -37,14 +37,11 @@ pub use protocol::ProtocolLib;
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
     pub use miden_assembly::debuginfo::SourceManagerSync;
-    pub use miden_assembly::library::LibraryExport;
     pub use miden_assembly::{
         Assembler,
         DefaultSourceManager,
-        KernelLibrary,
-        Library,
-        Parse,
-        ParseOptions,
+        Linkage,
+        ModuleParser,
         Path,
         SourceFile,
         SourceId,
@@ -53,6 +50,13 @@ pub mod assembly {
         debuginfo,
         diagnostics,
         mast,
+    };
+    pub use miden_assembly_syntax::Parse;
+    pub use miden_mast_package::{
+        Package as KernelLibrary,
+        Package as Library,
+        PackageExport as LibraryExport,
+        ProcedureExport,
     };
 }
 

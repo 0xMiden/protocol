@@ -8,10 +8,10 @@
 # emergency switch (`freeze` / `unfreeze`) as `call` entrypoints.
 
 use miden::protocol::active_account
-use miden::standards::access::authority::AUTHORITY_SLOT
+use {AUTHORITY_SLOT} from miden::standards::access::authority
 
-pub use ::miden::standards::access::authority::freeze
-pub use ::miden::standards::access::authority::unfreeze
+pub use {freeze} from ::miden::standards::access::authority
+pub use {unfreeze} from ::miden::standards::access::authority
 
 #! Returns the authority discriminator stored on the account.
 #!

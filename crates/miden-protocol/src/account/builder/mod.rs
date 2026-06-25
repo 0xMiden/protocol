@@ -312,12 +312,14 @@ mod tests {
     use std::sync::{Arc, LazyLock};
 
     use assert_matches::assert_matches;
-    use miden_assembly::{Assembler, Library};
+    use miden_assembly::{DefaultSourceManager, ModuleParser, Path, ast};
     use miden_core::mast::MastNodeExt;
+    use miden_mast_package::Package as Library;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
+    use crate::assembly::Assembler;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
@@ -334,19 +336,22 @@ mod tests {
           ";
 
     static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE1])
-                .expect("code should be valid"),
-        )
+        assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
     });
     static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE2])
-                .expect("code should be valid"),
-        )
+        assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
+
+    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
+            .parse_str(Some(Path::new(path)), source, source_manager.clone())
+            .expect("code should parse");
+
+        *Assembler::new(source_manager)
+            .assemble_library(name, root, None::<&str>)
+            .expect("code should be valid")
+    }
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         StorageSlotName::new("custom::component1::slot0")
@@ -434,11 +439,11 @@ mod tests {
         // The merged code should have one procedure from each library.
         assert_eq!(account.code.procedure_roots().count(), 3);
 
-        let foo_root = CUSTOM_LIBRARY1.mast_forest()
-            [CUSTOM_LIBRARY1.get_export_node_id(CUSTOM_LIBRARY1.exports().next().unwrap().path())]
+        let foo_root = CUSTOM_LIBRARY1.mast_forest()[CUSTOM_LIBRARY1
+            .get_export_node_id(CUSTOM_LIBRARY1.manifest.exports().next().unwrap().path())]
         .digest();
-        let bar_root = CUSTOM_LIBRARY2.mast_forest()
-            [CUSTOM_LIBRARY2.get_export_node_id(CUSTOM_LIBRARY2.exports().next().unwrap().path())]
+        let bar_root = CUSTOM_LIBRARY2.mast_forest()[CUSTOM_LIBRARY2
+            .get_export_node_id(CUSTOM_LIBRARY2.manifest.exports().next().unwrap().path())]
         .digest();
 
         assert!(account.code().procedures().contains(&AccountProcedureRoot::from_raw(foo_root)));

@@ -97,8 +97,6 @@ where
                 Some(MAX_TX_EXECUTION_CYCLES),
                 MIN_TX_EXECUTION_CYCLES,
                 ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
-                false,
-                false,
             )
             .expect("Must not fail while max cycles is more than min trace length"),
             _executor: PhantomData,
@@ -176,8 +174,7 @@ where
     /// account code) will be compiled and executed in debug mode. This will ensure that all debug
     /// instructions present in the original source code are executed.
     #[must_use]
-    pub fn with_debug_mode(mut self) -> Self {
-        self.exec_options = self.exec_options.with_debugging(true);
+    pub fn with_debug_mode(self) -> Self {
         self
     }
 
@@ -188,8 +185,7 @@ where
     /// transaction kernel complete. This enables collecting basic stats about how long different
     /// stages of transaction execution take.
     #[must_use]
-    pub fn with_tracing(mut self) -> Self {
-        self.exec_options = self.exec_options.with_tracing(true);
+    pub fn with_tracing(self) -> Self {
         self
     }
 

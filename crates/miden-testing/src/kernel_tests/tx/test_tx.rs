@@ -19,8 +19,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::assembly::diagnostics::NamedSource;
+use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
@@ -275,7 +274,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         "\
-        use miden::standards::wallets::basic->wallet
+        use miden::standards::wallets::basic as wallet
         use miden::protocol::output_note
         use mock::util
 
@@ -588,11 +587,13 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
         end
     ";
 
-    let source = NamedSource::new("test::module_1", test_module_source);
     let source_manager = Arc::new(DefaultSourceManager::default());
     let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
+    let source = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new("test::module_1")), test_module_source, source_manager.clone())
+        .unwrap();
 
-    let library = assembler.assemble_library([source]).unwrap();
+    let library = assembler.assemble_library("test-tx-view-script", source, None::<&str>).unwrap();
 
     let source = "
     use test::module_1
@@ -806,7 +807,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         "#;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(component_code.as_library())?
+        .with_dynamically_linked_library(component_code)?
         .compile_tx_script(script)?;
 
     assert!(tx_script.mast().advice_map().get(&Word::try_from([1u64, 2, 3, 4])?).is_some());

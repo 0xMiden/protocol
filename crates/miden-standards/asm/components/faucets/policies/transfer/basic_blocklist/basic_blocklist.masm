@@ -5,4 +5,4 @@
 # storage map (defined by the sibling `blocklist` primitive); admin updates go through a
 # companion auth-gated component (see `blocklist/owner_controlled.masm`).
 
-pub use ::miden::standards::faucets::policies::transfer::basic_blocklist::check_policy
+pub use {check_policy} from ::miden::standards::faucets::policies::transfer::basic_blocklist

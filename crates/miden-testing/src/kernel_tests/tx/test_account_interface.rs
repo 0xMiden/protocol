@@ -24,13 +24,13 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
@@ -135,7 +135,6 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     let failing_note_2 = NoteBuilder::new(
@@ -143,7 +142,6 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.2 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     let successful_note_1 = builder.add_p2id_note(
@@ -300,14 +298,12 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.1 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
     let failing_note_1 = NoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     // Create a note that causes epilogue failure. Adds assets to the transaction without moving

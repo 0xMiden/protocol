@@ -3,10 +3,9 @@
 
 use alloc::sync::Arc;
 
-use miden_assembly::Assembler;
-
 use crate::account::component::AccountComponentMetadata;
 use crate::account::{AccountCode, AccountComponent};
+use crate::assembly::{Assembler, DefaultSourceManager, ModuleKind, ModuleParser, Path};
 use crate::testing::noop_auth_component::NoopAuthComponent;
 
 pub const CODE: &str = "
@@ -24,11 +23,17 @@ pub const CODE: &str = "
 impl AccountCode {
     /// Creates a mock [AccountCode] with default assembler and mock code
     pub fn mock() -> AccountCode {
-        let library = Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CODE])
-                .expect("mock account component should assemble"),
-        );
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ModuleKind::Library))
+            .parse_str(
+                Some(Path::new("miden::testing::mock_account")),
+                CODE,
+                source_manager.clone(),
+            )
+            .expect("mock account component should parse");
+        let library = *Assembler::new(source_manager)
+            .assemble_library("miden-testing-mock-account", root, None::<&str>)
+            .expect("mock account component should assemble");
         let metadata = AccountComponentMetadata::new("miden::testing::mock");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 

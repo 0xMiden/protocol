@@ -5,4 +5,4 @@
 # storage map (defined by the sibling `allowlist` primitive); admin updates go through a
 # companion auth-gated component (see `allowlist/owner_controlled.masm`).
 
-pub use ::miden::standards::faucets::policies::transfer::basic_allowlist::check_policy
+pub use {check_policy} from ::miden::standards::faucets::policies::transfer::basic_allowlist

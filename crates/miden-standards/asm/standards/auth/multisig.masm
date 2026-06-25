@@ -3,7 +3,7 @@
 # See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
-use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth
 use miden::standards::auth::signature

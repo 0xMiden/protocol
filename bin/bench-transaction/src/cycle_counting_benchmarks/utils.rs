@@ -119,7 +119,7 @@ impl From<TraceLenSummary> for TraceMeasurements {
         );
         let ace_rows = chiplets.trace_len().saturating_sub(known + 1);
         Self {
-            core_rows: summary.main_trace_len(),
+            core_rows: summary.trace_len(),
             chiplets_rows: chiplets.trace_len(),
             range_rows: summary.range_trace_len(),
             chiplets_shape: ChipletsTraceShape {

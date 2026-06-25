@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
-use crate::assembly::{Assembler, Library};
+use crate::assembly::{Assembler, DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
 use crate::utils::sync::LazyLock;
 
 // ADD COMPONENT
@@ -16,11 +16,14 @@ const ADD_CODE: &str = "
 ";
 
 static ADD_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Arc::unwrap_or_clone(
-        Assembler::default()
-            .assemble_library([ADD_CODE])
-            .expect("add code should be valid"),
-    )
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let root = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new("miden::testing::add")), ADD_CODE, source_manager.clone())
+        .expect("add code should parse");
+
+    *Assembler::new(source_manager)
+        .assemble_library("miden-testing-add", root, None::<&str>)
+        .expect("add code should be valid")
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.

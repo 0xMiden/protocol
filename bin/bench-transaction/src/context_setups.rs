@@ -24,7 +24,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
-use rand::Rng;
+use rand::RngExt;
 
 // P2ID NOTE SETUPS
 // ================================================================================================

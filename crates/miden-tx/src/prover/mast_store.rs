@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-use miden_processor::MastForestStore;
+use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::transaction::TransactionKernel;
@@ -75,8 +75,8 @@ impl TransactionMastStore {
 // ================================================================================================
 
 impl MastForestStore for TransactionMastStore {
-    fn get(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
-        self.mast_forests.read().get(procedure_root).cloned()
+    fn get(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
+        self.mast_forests.read().get(procedure_root).cloned().map(LoadedMastForest::new)
     }
 }
 

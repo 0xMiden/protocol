@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-use miden_assembly::{Assembler, Library, ProjectTargetSelector};
+use miden_assembly::{Assembler, ProjectTargetSelector};
 use miden_core_lib::CoreLibrary;
-use miden_mast_package::{Package, PackageId, TargetType, Version};
+use miden_mast_package::Package;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
@@ -82,23 +82,10 @@ fn main() -> Result<()> {
 fn build_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
 
-    // The protocol and kernel packages both declare a dependency on the `miden-core` library, so it
-    // must be seeded into the registry for dependency resolution to succeed. This must be
-    // constructed identically to the `miden-core` package in miden-protocol's build script so that
-    // its digest matches the one recorded in those dependencies.
-    let core_library = Arc::new(Library::from(CoreLibrary::default()));
-    let core_package = Package::from_library(
-        PackageId::from("miden-core"),
-        Version::new(0, 23, 4),
-        TargetType::Library,
-        core_library,
-        core::iter::empty(),
-    );
-
-    // The protocol package declares a dependency on the `miden-tx-kernel` package, so all three
-    // must be available in the registry for dependency resolution to succeed.
+    // The protocol package declares dependencies on the kernel and core packages, so all three
+    // must be available in the registry for project dependency resolution to succeed.
     for package in [
-        Arc::from(core_package),
+        CoreLibrary::default().package(),
         Arc::new(Package::from(ProtocolLib::default())),
         TransactionKernel::package(),
     ] {

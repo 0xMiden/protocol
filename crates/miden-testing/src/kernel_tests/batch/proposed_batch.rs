@@ -37,7 +37,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::proven_tx_builder::MockProvenTxBuilder;
 use crate::utils::create_p2any_note;
