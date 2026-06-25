@@ -426,14 +426,14 @@ impl PswapNote {
     /// provided.
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
-    /// `None` when the fill equals the total requested amount (full fill).
+    /// `None` when the fill is at least the total requested amount (full fill or over-fill).
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Both assets are `None`.
     /// - The fill amount is zero.
-    /// - The fill amount exceeds the total requested amount.
+    /// - The combined fill amount overflows or exceeds the maximum fungible asset amount.
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
@@ -465,30 +465,25 @@ impl PswapNote {
         if fill_amount == 0 {
             return Err(NoteError::other("Fill amount must be greater than 0"));
         }
-        if fill_amount > total_requested_amount {
-            return Err(NoteError::other(alloc::format!(
-                "Fill amount {} exceeds requested amount {}",
-                fill_amount,
-                total_requested_amount
-            )));
-        }
 
-        // Calculate payout amounts separately for account fill and note fill, matching the
-        // MASM which calls calculate_tokens_offered_for_requested twice. This is necessary
-        // because the account fill portion goes to the consumer's vault while the total
-        // determines the remainder note's offered amount.
         let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
         let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
-        let payout_for_account_fill = Self::calculate_output_amount(
-            total_offered_amount,
-            total_requested_amount,
-            account_fill_amount,
-        )?;
-        let payout_for_note_fill = Self::calculate_output_amount(
-            total_offered_amount,
-            total_requested_amount,
-            note_fill_amount,
-        )?;
+
+        // `requested_amount` is a minimum, not an exact amount, so each fill's share of the
+        // offered side is computed against `denom = max(fill_amount, requested)`. For a fill at
+        // or below requested this is `requested` (proportional, leaving a remainder); for an
+        // over-fill it is the fill itself, so the shares sum to the whole offered side, no
+        // remainder is created, and the creator banks the surplus. This holds for any fill
+        // source (account fill, note fill, or a mix).
+        let denominator = fill_amount.max(total_requested_amount);
+
+        // Calculate payout amounts separately for account fill and note fill, matching the MASM
+        // which calls calculate_output_amount twice: the account fill portion is credited to the
+        // consumer's vault while the total determines the remainder note's offered amount.
+        let payout_for_account_fill =
+            Self::calculate_output_amount(total_offered_amount, denominator, account_fill_amount)?;
+        let payout_for_note_fill =
+            Self::calculate_output_amount(total_offered_amount, denominator, note_fill_amount)?;
         let offered_amount_for_fill = payout_for_account_fill + payout_for_note_fill;
 
         let payback_note =
@@ -532,6 +527,10 @@ impl PswapNote {
     /// Returns how many offered tokens a consumer receives for `fill_amount` of the
     /// requested asset, based on this note's current offered/requested ratio.
     ///
+    /// `requested_amount` is a minimum: an over-fill (`fill_amount` greater than the requested
+    /// amount) takes the whole offered side, so the divisor is `max(fill_amount, requested)`
+    /// (see [`Self::execute`]).
+    ///
     /// # Errors
     ///
     /// Returns an error if the calculated payout is not a valid asset amount.
@@ -539,7 +538,8 @@ impl PswapNote {
         let total_requested = self.storage.requested_asset_amount();
         let total_offered = self.offered_asset.amount().as_u64();
 
-        Self::calculate_output_amount(total_offered, total_requested, fill_amount)
+        let denominator = fill_amount.max(total_requested);
+        Self::calculate_output_amount(total_offered, denominator, fill_amount)
     }
 
     // LINEAGE DISCOVERY
@@ -697,20 +697,23 @@ impl PswapNote {
         NoteTag::new(tag)
     }
 
-    /// Computes `floor((offered_total * fill_amount) / requested_total)` via a
-    /// u128 intermediate, mirroring `u64::widening_mul` + `u128::div` on the
-    /// MASM side.
+    /// Computes a fill's proportional share of the offered tokens:
+    /// `floor((offered_total * fill_amount) / denominator)`, computed via a u128 intermediate,
+    /// mirroring `u64::widening_mul` + `u128::div` on the MASM side.
+    ///
+    /// The caller passes `max(total_fill, requested)` as the denominator, so for an over-fill
+    /// the shares scale by the actual fill rather than `requested` (see [`Self::execute`]).
     ///
     /// # Errors
     ///
     /// Returns an error if the result does not fit in a valid [`AssetAmount`].
     fn calculate_output_amount(
         offered_total: u64,
-        requested_total: u64,
+        denominator: u64,
         fill_amount: u64,
     ) -> Result<u64, NoteError> {
         let product = (offered_total as u128) * (fill_amount as u128);
-        let quotient = product / (requested_total as u128);
+        let quotient = product / (denominator as u128);
         let amount = u64::try_from(quotient)
             .map_err(|_| NoteError::other("payout quotient does not fit in u64"))?;
         // Validate the result is a valid fungible asset amount.
@@ -1026,10 +1029,28 @@ mod tests {
         assert_eq!(PswapNote::calculate_output_amount(100, 100, 50).unwrap(), 50); // Equal ratio
         assert_eq!(PswapNote::calculate_output_amount(200, 100, 50).unwrap(), 100); // 2:1 ratio
         assert_eq!(PswapNote::calculate_output_amount(100, 200, 50).unwrap(), 25); // 1:2 ratio
+        // fill == denominator yields the whole offered side.
+        assert_eq!(PswapNote::calculate_output_amount(100, 100, 100).unwrap(), 100);
 
         // Non-integer ratio (100/73)
         let result = PswapNote::calculate_output_amount(100, 73, 7).unwrap();
         assert!(result > 0, "Should produce non-zero output");
+    }
+
+    #[test]
+    fn calculate_offered_for_requested_over_fill() {
+        // Offered 50 for a minimum of 25 requested. `requested` is a floor, so the divisor is
+        // `max(fill, requested)`: any fill at or above the minimum takes the whole offered side.
+        let offered = FungibleAsset::new(dummy_faucet_id(0xaa), 50).unwrap();
+        let requested = FungibleAsset::new(dummy_faucet_id(0xbb), 25).unwrap();
+        let (pswap, _note) = build_pswap_note(offered, requested, dummy_creator_id());
+
+        // Below the minimum stays proportional: floor(50 * 5 / 25) = 10.
+        assert_eq!(pswap.calculate_offered_for_requested(5).unwrap(), 10);
+        // Exact fill and any over-fill both yield the full offered amount.
+        assert_eq!(pswap.calculate_offered_for_requested(25).unwrap(), 50);
+        assert_eq!(pswap.calculate_offered_for_requested(30).unwrap(), 50);
+        assert_eq!(pswap.calculate_offered_for_requested(50).unwrap(), 50);
     }
 
     #[test]

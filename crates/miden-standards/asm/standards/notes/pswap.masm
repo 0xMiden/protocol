@@ -62,7 +62,7 @@ const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
 
 # calculate_output_amount locals
 const CALC_FILL_AMOUNT = 0
-const CALC_REQUESTED = 1
+const CALC_DENOM = 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -91,6 +91,7 @@ const EXEC_OFFERED_FAUCET_SUFFIX = 6
 const EXEC_OFFERED_FAUCET_PREFIX = 7
 const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
 const EXEC_AMT_REQUESTED_NOTE_FILL = 9
+const EXEC_AMT_DENOM = 10
 
 # Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
 # write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
@@ -102,7 +103,6 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
-const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
@@ -136,27 +136,29 @@ end
 
 #! Computes the proportional amount of offered tokens for a given fill amount.
 #!
-#! Formula: `payout = floor((offered * fill_amount) / requested)`.
+#! Formula: `payout = floor((offered * fill_amount) / denom)`, where the caller passes
+#! `denom = max(total_fill, requested)` so an over-fill divides by the fill itself
+#! (whole offered side) rather than `requested` (see `execute_pswap`).
 #!
 #! The intermediate product `offered * fill_amount` is computed as a full
-#! u128 via `u64::widening_mul`, then divided by `requested` (extended to
+#! u128 via `u64::widening_mul`, then divided by `denom` (extended to
 #! u128) via `u128::div`. This gives exact integer precision with one floor
 #! division at the end, each input is safe
 #! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
 #! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
 #! limb check below).
 #!
-#! Inputs: [offered, requested, fill_amount] (offered on top)
+#! Inputs: [offered, denom, fill_amount] (offered on top)
 #! Outputs: [payout_amount]
 #!
 @locals(2)
 # CALC_FILL_AMOUNT: fill amount
-# CALC_REQUESTED:   requested amount
+# CALC_DENOM:       denominator = max(total_fill, requested)
 proc calculate_output_amount
     movup.2 loc_store.CALC_FILL_AMOUNT
-    # => [offered, requested]
+    # => [offered, denom]
 
-    swap loc_store.CALC_REQUESTED
+    swap loc_store.CALC_DENOM
     # => [offered]
 
     u32split
@@ -168,11 +170,11 @@ proc calculate_output_amount
     exec.u64::widening_mul
     # => [p0, p1, p2, p3]
 
-    loc_load.CALC_REQUESTED u32split
-    # => [req_lo, req_hi, p0, p1, p2, p3]
+    loc_load.CALC_DENOM u32split
+    # => [denom_lo, denom_hi, p0, p1, p2, p3]
 
     push.0 movdn.2 push.0 movdn.3
-    # => [req_lo, req_hi, 0, 0, p0, p1, p2, p3]
+    # => [denom_lo, denom_hi, 0, 0, p0, p1, p2, p3]
 
     exec.u128::div
     # => [q0, q1, q2, q3]  (quotient, little-endian limbs)
@@ -238,9 +240,7 @@ proc create_p2id_note
     loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
-    # The add cannot overflow: `execute_pswap` asserts
-    # `amt_account_fill + amt_note_fill <= requested_amount` before calling
-    # this procedure, and `requested_amount` itself fits in a felt.
+    # The add cannot overflow: `execute_pswap` overflow-checks and validates the fill sum first.
     loc_load.P2ID_NOTE_IDX
     # => [note_idx]
 
@@ -534,9 +534,9 @@ end
 #! Sends offered tokens to consumer, requested tokens to creator via P2ID,
 #! and creates a remainder note if partially filled.
 #!
-#! The total fill (account fill + note fill) must not exceed the requested amount:
-#! overfilling is disallowed because the consumer would lose the excess tokens with
-#! no change returned, and it is almost always unintentional.
+#! `requested_amount` is a minimum: the total fill (account_fill + note_fill) may exceed it
+#! from any source, paying out the whole offered side (no remainder) and banking the surplus
+#! to the creator. Fills at or below it are proportional and leave a remainder note.
 #!
 #! Account fill and note fill payouts are computed separately (rather than summing
 #! first) because the account fill portion must be credited to the consumer's vault
@@ -545,7 +545,7 @@ end
 #! Inputs: [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
-@locals(10)
+@locals(11)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_REQUESTED              : amt_requested
 # EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
@@ -556,6 +556,7 @@ end
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
+# EXEC_AMT_DENOM                  : max(fill, requested)
 proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
@@ -589,8 +590,7 @@ proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED
     # => []
 
-    # Assert (account_fill + note_fill) <= requested.
-    # account_fill and note_fill are user-provided, so use overflow-checked add.
+    # Total fill = account_fill + note_fill; user-provided, so overflow-check and validate it.
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
     # => [nf_lo, nf_hi, af_lo, af_hi]
@@ -607,17 +607,30 @@ proc execute_pswap
     swap mul.MAX_U32 add
     # => [fill_amount]
 
+    # denom = max(fill, requested): an over-fill divides by the fill (whole offered side, no remainder).
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
-    
-    lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
+
+    dup.1 dup.1 lt
+    # => [fill_lt_requested, requested, fill_amount]
+
+    if.true
+        swap drop
+        # => [requested]
+    else
+        drop
+        # => [fill_amount]
+    end
+    # => [denom]
+
+    loc_store.EXEC_AMT_DENOM
     # => []
 
     # Payout for account_fill_amount
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
-    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_DENOM
     loc_load.EXEC_AMT_OFFERED
-    # => [offered, requested, account_fill_amount]
+    # => [offered, denom, account_fill_amount]
 
     exec.calculate_output_amount
     # => [account_fill_payout]
@@ -627,9 +640,9 @@ proc execute_pswap
 
     # Payout for note_fill_amount
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
-    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_DENOM
     loc_load.EXEC_AMT_OFFERED
-    # => [offered, requested, note_fill_amount]
+    # => [offered, denom, note_fill_amount]
 
     exec.calculate_output_amount
     # => [note_fill_payout]
@@ -693,8 +706,8 @@ proc execute_pswap
     loc_load.EXEC_AMT_REQUESTED
     # => [total_requested, total_in]
 
-    dup.1 dup.1 neq
-    # => [is_partial, total_requested, total_in]
+    dup.1 dup.1 lt
+    # => [is_partial, total_requested, total_in]   (is_partial = total_in < total_requested)
 
     if.true
         # remaining_requested = total_requested - total_in
@@ -767,7 +780,7 @@ end
 #! Panics if:
 #! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
 #! - the note does not carry exactly one offered asset.
-#! - the total fill amount (account fill + note fill) exceeds the requested amount.
+#! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
 pub proc main
