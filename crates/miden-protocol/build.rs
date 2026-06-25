@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -6,9 +6,9 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, KernelLibrary, Library, ProjectTargetSelector};
+use miden_assembly::{Assembler, Library, ProjectTargetSelector};
 use miden_core::events::EventId;
-use miden_mast_package::{Package, PackageId, TargetType, Version};
+use miden_mast_package::{Package, PackageExport, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
@@ -165,7 +165,7 @@ fn compile_tx_kernel(
     kernel_package.write_masp_file(target_dir).into_diagnostic()?;
 
     // generate kernel `procedures.rs` file
-    generate_kernel_proc_hash_file(kernel_package.try_into_kernel_library()?, build_dir)?;
+    generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
 
     // Assemble the executable targets and write their packages to the `target_dir`.
     //
@@ -210,29 +210,44 @@ fn compile_kernel_testing_lib(
 /// Generates kernel `procedures.rs` file based on the kernel library.
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
-fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Result<()> {
-    let (_, module_info, _) = kernel.into_parts();
-
-    let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
+fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
     let offsets_filename = Path::new(ASM_DIR)
         .join(ASM_PROTOCOL_DIR)
         .join("src")
         .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    let generated_procs: BTreeMap<usize, String> = module_info
-        .procedures()
-        .filter(|(_, proc_info)| !to_exclude.contains::<str>(proc_info.name.as_ref()))
-        .map(|(_, proc_info)| {
-            let name = proc_info.name.to_string();
-
-            let Some(&offset) = offsets.get(&name) else {
-                panic!("Offset constant for function `{name}` not found in `{offsets_filename:?}`");
-            };
-
-            (offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest))
+    let exported_procs: Vec<_> = kernel
+        .manifest
+        .exports()
+        .filter_map(|export| match export {
+            PackageExport::Procedure(proc_info) => Some(proc_info),
+            _ => None,
         })
         .collect();
+
+    let generated_procs: BTreeMap<usize, String> = offsets
+        .iter()
+        .map(|(name, &offset)| {
+            let mut matching_exports =
+                exported_procs.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
+            let proc_info = matching_exports.next().ok_or_else(|| {
+                miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` does not match any exported procedure"
+                )
+            })?;
+
+            if let Some(other_proc_info) = matching_exports.next() {
+                return Err(miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` matches multiple exported procedures: `{}` and `{}`",
+                    proc_info.path,
+                    other_proc_info.path,
+                ));
+            }
+
+            Ok((offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest)))
+        })
+        .collect::<Result<_>>()?;
 
     let proc_count = generated_procs.len();
     let generated_procs: String = generated_procs.into_iter().enumerate().map(|(index, (offset, txt))| {

@@ -215,11 +215,22 @@ impl NoteScript {
         self.entrypoint
     }
 
-    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
-    /// procedure names.
+    /// Compacts this script's [`MastForest`], removing duplicate and unreachable nodes while
+    /// preserving the script root.
     ///
-    /// See [`MastForest::clear_debug_info`] for more details.
-    pub fn clear_debug_info(&mut self) {}
+    /// Note script minification used to clear debug metadata from the forest. As of
+    /// `miden-core` v0.24, debug metadata is no longer stored in [`MastForest`], so minification
+    /// compacts the forest instead.
+    pub fn clear_debug_info(&mut self) {
+        let root = self.root();
+        let (mast, root_map) = (*self.mast).clone().compact();
+        self.entrypoint = root_map
+            .map_root(0, &self.entrypoint)
+            .expect("entrypoint should be preserved when compacting a note script MAST forest");
+        self.mast = Arc::new(mast);
+
+        debug_assert_eq!(self.root(), root);
+    }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
     /// underlying [MastForest].
