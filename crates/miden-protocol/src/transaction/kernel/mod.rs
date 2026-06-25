@@ -37,7 +37,7 @@ pub use tx_event_id::TransactionEventId;
 // Initialize the kernel library only once
 static KERNEL_LIB: LazyLock<KernelLibrary> = LazyLock::new(|| {
     let kernel_package_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masp"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
     Package::read_from_bytes(kernel_package_bytes)
         .expect("failed to deserialize transaction kernel package")
         .try_into_kernel_library()
@@ -47,7 +47,7 @@ static KERNEL_LIB: LazyLock<KernelLibrary> = LazyLock::new(|| {
 // Initialize the kernel main program only once
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let kernel_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel_main.masp"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
     Package::read_from_bytes(kernel_main_bytes)
         .expect("failed to deserialize transaction kernel main package")
         .try_into_program()
@@ -56,8 +56,10 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 
 // Initialize the transaction script executor program only once
 static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let tx_script_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_script_main.masp"));
+    let tx_script_main_bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
+    ));
     Package::read_from_bytes(tx_script_main_bytes)
         .expect("failed to deserialize tx script executor package")
         .try_into_program()
@@ -438,7 +440,7 @@ impl TransactionKernel {
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
     const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masp"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-testing.masp"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {

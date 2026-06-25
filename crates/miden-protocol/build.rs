@@ -140,7 +140,7 @@ fn compile_batch_kernel(
     let batch_kernel_package = project_assembler
         .assemble(ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET), BUILD_PROFILE)?;
 
-    write_package(&batch_kernel_package, target_dir, "batch_kernel")
+    batch_kernel_package.write_masp_file(target_dir).into_diagnostic()
 }
 
 // COMPILE TRANSACTION KERNEL
@@ -180,7 +180,7 @@ fn compile_tx_kernel(
     // assemble the kernel library and write it to the "tx_kernel.masp" file
     let kernel_package =
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-    write_package(&kernel_package, target_dir, "tx_kernel")?;
+    kernel_package.write_masp_file(target_dir).into_diagnostic()?;
 
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(kernel_package.try_into_kernel_library()?, build_dir)?;
@@ -191,9 +191,9 @@ fn compile_tx_kernel(
     // Executable targets are assembled under the `$exec` namespace, but the kernel executables
     // `exec` kernel modules directly, expecting them under `$kernel`. To support this, the kernel
     // modules are parsed under the `$kernel` namespace and provided to the assembler explicitly.
-    for (target_name, root_file, artifact_name) in [
-        (TX_KERNEL_MAIN_TARGET, "main.masm", "tx_kernel_main"),
-        (TX_SCRIPT_MAIN_TARGET, "tx_script_main.masm", "tx_script_main"),
+    for (target_name, root_file) in [
+        (TX_KERNEL_MAIN_TARGET, "main.masm"),
+        (TX_SCRIPT_MAIN_TARGET, "tx_script_main.masm"),
     ] {
         let mut parser = ModuleParser::new(ModuleKind::Executable);
         parser.set_warnings_as_errors(true);
@@ -209,7 +209,7 @@ fn compile_tx_kernel(
             BUILD_PROFILE,
             ProjectSourceInputs { root, support },
         )?;
-        write_package(&package, target_dir, artifact_name)?;
+        package.write_masp_file(target_dir).into_diagnostic()?;
     }
 
     // make sure the store is released before it is borrowed again below
@@ -292,7 +292,7 @@ fn compile_kernel_testing_lib(
         [],
     );
 
-    write_package(&package, target_dir, "kernel_library")
+    package.write_masp_file(target_dir).into_diagnostic()
 }
 
 /// Generates kernel `procedures.rs` file based on the kernel library.
@@ -384,7 +384,7 @@ fn compile_protocol_lib(
     let protocol_package =
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-    write_package(&protocol_package, target_dir, "protocol")
+    protocol_package.write_masp_file(target_dir).into_diagnostic()
 }
 
 // HELPER FUNCTIONS
@@ -412,13 +412,6 @@ fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
     registry.cache_package(Arc::from(package)).into_diagnostic()?;
     Ok(registry)
-}
-
-/// Writes the package to the `{target_dir}/{name}.masp` file.
-fn write_package(package: &Package, target_dir: &Path, name: &str) -> Result<()> {
-    fs::create_dir_all(target_dir).into_diagnostic()?;
-    let output_file = target_dir.join(name).with_extension(Package::EXTENSION);
-    package.write_to_file(output_file).into_diagnostic()
 }
 
 /// Returns the version of this crate as the package version.

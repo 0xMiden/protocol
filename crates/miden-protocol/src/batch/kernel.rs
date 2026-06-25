@@ -12,7 +12,10 @@ use crate::{Felt, Word};
 // ================================================================================================
 
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masp"));
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/kernels/miden-batch-kernel:miden-batch-kernel.masp"
+    ));
     Package::read_from_bytes(bytes)
         .expect("failed to deserialize batch kernel package")
         .try_into_program()

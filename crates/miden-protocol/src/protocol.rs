@@ -10,7 +10,7 @@ use crate::vm::Package;
 // ================================================================================================
 
 const PROTOCOL_PACKAGE_BYTES: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masp"));
+    include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-protocol.masp"));
 
 // PROTOCOL LIBRARY
 // ================================================================================================
