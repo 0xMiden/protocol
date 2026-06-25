@@ -62,35 +62,76 @@ impl AccountStoragePatch {
 
     // ACCESSORS
     // -------------------------------------------------------------------------------------------
+    //
+    // These accessors are op-specific: each returns the payload only if the slot is patched with
+    // the matching operation, letting a test assert both the operation and the value in one call.
 
-    /// TODO
-    pub fn get_created_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+    /// Returns the value of the slot if it is patched with a [`StorageValuePatch::Create`], or
+    /// `None` if the slot is absent, a map slot, or patched with a different operation.
+    pub fn created_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
         match self.get(slot_name) {
             Some(StorageSlotPatch::Value(StorageValuePatch::Create { value })) => Some(*value),
             _ => None,
         }
     }
-    /// Returns the value patched into the given slot, or `None` if the slot is absent, removed, or
-    /// a map slot.
-    pub fn get_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
-        match self.get(slot_name)? {
-            StorageSlotPatch::Value(value_patch) => value_patch.value(),
-            StorageSlotPatch::Map(_) => None,
+
+    /// Returns the value of the slot if it is patched with a [`StorageValuePatch::Update`], or
+    /// `None` if the slot is absent, a map slot, or patched with a different operation.
+    pub fn updated_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Value(StorageValuePatch::Update { value })) => Some(*value),
+            _ => None,
         }
     }
 
-    /// Returns the map patch for the given slot, or `None` if the slot is absent or a value slot.
-    pub fn get_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatch> {
-        match self.get(slot_name)? {
-            StorageSlotPatch::Map(map_patch) => Some(map_patch),
-            StorageSlotPatch::Value(_) => None,
+    /// Returns `true` if the slot is patched with a [`StorageValuePatch::Remove`], and `false` if
+    /// the slot is absent, a map slot, or patched with a different operation.
+    pub fn is_value_removed(&self, slot_name: &StorageSlotName) -> bool {
+        matches!(self.get(slot_name), Some(StorageSlotPatch::Value(StorageValuePatch::Remove)))
+    }
+
+    /// Returns the entries of the slot if it is patched with a [`StorageMapPatch::Create`], or
+    /// `None` if the slot is absent, a value slot, or patched with a different operation.
+    pub fn created_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatchEntries> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Map(StorageMapPatch::Create { entries })) => Some(entries),
+            _ => None,
         }
     }
 
-    /// Returns the value patched for the given map entry, or `None` if the slot, key, or entries
-    /// are absent.
-    pub fn get_map_value(&self, slot_name: &StorageSlotName, key: &StorageMapKey) -> Option<Word> {
-        self.get_map(slot_name)?.entries()?.as_map().get(key).copied()
+    /// Returns the entries of the slot if it is patched with a [`StorageMapPatch::Update`], or
+    /// `None` if the slot is absent, a value slot, or patched with a different operation.
+    pub fn updated_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatchEntries> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Map(StorageMapPatch::Update { entries })) => Some(entries),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if the slot is patched with a [`StorageMapPatch::Remove`], and `false` if the
+    /// slot is absent, a value slot, or patched with a different operation.
+    pub fn is_map_removed(&self, slot_name: &StorageSlotName) -> bool {
+        matches!(self.get(slot_name), Some(StorageSlotPatch::Map(StorageMapPatch::Remove)))
+    }
+
+    /// Returns the value for `key` if the slot is patched with a [`StorageMapPatch::Create`], or
+    /// `None` if the slot, key, or entries are absent.
+    pub fn created_map_item(
+        &self,
+        slot_name: &StorageSlotName,
+        key: &StorageMapKey,
+    ) -> Option<Word> {
+        self.created_map(slot_name)?.as_map().get(key).copied()
+    }
+
+    /// Returns the value for `key` if the slot is patched with a [`StorageMapPatch::Update`], or
+    /// `None` if the slot, key, or entries are absent.
+    pub fn updated_map_item(
+        &self,
+        slot_name: &StorageSlotName,
+        key: &StorageMapKey,
+    ) -> Option<Word> {
+        self.updated_map(slot_name)?.as_map().get(key).copied()
     }
 }
 

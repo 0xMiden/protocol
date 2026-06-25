@@ -946,7 +946,7 @@ mod tests {
         patch.merge(other)?;
 
         assert_eq!(patch.storage().num_slots(), 1);
-        assert_eq!(patch.storage().get_value(&slot_name), Some(updated_value));
+        assert_eq!(patch.storage().updated_value(&slot_name), Some(updated_value));
 
         Ok(())
     }
@@ -986,11 +986,9 @@ mod tests {
         patch.merge(other)?;
 
         assert_eq!(patch.storage().num_slots(), 1);
-        let merged_map = patch.storage().get_map(&map_slot).expect("map slot should be present");
-        let merged_entries = merged_map.entries().expect("map patch should have entries");
-        assert_eq!(merged_entries.as_map().len(), 2);
-        assert_eq!(merged_entries.as_map().get(&key_self).copied(), Some(value_self));
-        assert_eq!(merged_entries.as_map().get(&key_other).copied(), Some(value_other));
+        assert_eq!(patch.storage().updated_map(&map_slot).unwrap().num_entries(), 2);
+        assert_eq!(patch.storage().updated_map_item(&map_slot, &key_self), Some(value_self));
+        assert_eq!(patch.storage().updated_map_item(&map_slot, &key_other), Some(value_other));
 
         Ok(())
     }
@@ -1033,7 +1031,7 @@ mod tests {
         assert_eq!(patch.code(), Some(&code));
         assert_eq!(patch.final_nonce(), Some(Felt::from(2u32)));
         assert!(!patch.storage().contains_updates());
-        assert_eq!(patch.storage().get_created_value(&slot_name), Some(updated_value));
+        assert_eq!(patch.storage().created_value(&slot_name), Some(updated_value));
 
         Ok(())
     }
