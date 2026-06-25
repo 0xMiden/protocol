@@ -669,14 +669,14 @@ impl MockChainBuilder {
         asset: &[Asset],
         note_type: NoteType,
     ) -> Result<Note, NoteError> {
-        let note = P2idNote::create(
-            sender_account_id,
-            target_account_id,
-            asset.to_vec(),
-            note_type,
-            NoteAttachments::default(),
-            &mut self.rng,
-        )?;
+        let note: Note = P2idNote::builder()
+            .sender(sender_account_id)
+            .target(target_account_id)
+            .assets(asset.iter().copied())
+            .note_type(note_type)
+            .generate_serial_number(&mut self.rng)
+            .build()?
+            .into();
         self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
