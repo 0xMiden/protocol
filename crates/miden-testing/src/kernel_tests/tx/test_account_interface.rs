@@ -26,13 +26,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, Word};
-use miden_standards::note::{
-    NoteConsumptionStatus,
-    P2idNote,
-    P2ideNote,
-    P2ideNoteStorage,
-    StandardNote,
-};
+use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
@@ -53,18 +47,14 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .build()?
         .into();
 
-    let p2ide_note = P2ideNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        P2ideNoteStorage::new(
-            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-            None,
-            None,
-        ),
-        vec![FungibleAsset::mock(10)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([2u32; 4])),
-    )?;
+    let p2ide_note: Note = P2ideNote::builder()
+        .sender(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(10))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .build()?
+        .into();
 
     let notes = vec![p2id_note, p2ide_note];
     let tx_context = TestTransactionBuilder::with_existing_mock_account()
