@@ -335,6 +335,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::block::BlockNumber;
@@ -504,7 +505,9 @@ mod tests {
             .build()
             .expect_err("a note without assets must be rejected");
 
-        assert!(matches!(err, NoteError::Other { .. }));
+        assert_matches!(err, NoteError::Other { error_msg, .. } => {
+            assert!(error_msg.contains("note must contain at least one asset"))
+        });
     }
 
     /// The reclaim and timelock heights are optional and surfaced through the getters.
