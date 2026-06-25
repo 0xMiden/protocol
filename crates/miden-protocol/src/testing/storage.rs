@@ -63,6 +63,13 @@ impl AccountStoragePatch {
     // ACCESSORS
     // -------------------------------------------------------------------------------------------
 
+    /// TODO
+    pub fn get_created_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Value(StorageValuePatch::Create { value })) => Some(*value),
+            _ => None,
+        }
+    }
     /// Returns the value patched into the given slot, or `None` if the slot is absent, removed, or
     /// a map slot.
     pub fn get_value(&self, slot_name: &StorageSlotName) -> Option<Word> {

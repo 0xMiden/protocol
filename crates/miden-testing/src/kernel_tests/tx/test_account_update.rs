@@ -1282,6 +1282,7 @@ impl AccountUpdateTest {
             account.id(),
             expected_storage_patch.clone(),
             expected_vault_delta,
+            None,
             expected_nonce_delta,
         )?;
         let expected_patch = AccountPatch::new(

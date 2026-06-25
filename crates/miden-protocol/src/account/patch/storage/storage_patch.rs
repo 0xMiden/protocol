@@ -126,6 +126,12 @@ impl AccountStoragePatch {
         self.patches.is_empty()
     }
 
+    /// Returns `true` if any slot patch updates an existing slot (a
+    /// [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update)).
+    pub(in crate::account) fn contains_updates(&self) -> bool {
+        self.patches.values().any(|slot_patch| slot_patch.patch_op().is_update())
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
