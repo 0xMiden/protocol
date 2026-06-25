@@ -107,9 +107,7 @@ async fn check_note_consumability_custom_notes_success(
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
-        .build()?;
+    let tx_context = mock_chain.build_tx_context(account, &[], &notes)?.build()?;
 
     let account_id = tx_context.account().id();
     let block_ref = tx_context.tx_inputs().block_header().block_num();
