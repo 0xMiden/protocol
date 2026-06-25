@@ -11,6 +11,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
@@ -136,7 +137,8 @@ pub struct NonFungibleFaucet {
 impl NonFungibleFaucet {
     /// Returns a builder for [`NonFungibleFaucet`].
     ///
-    /// Required setters: [`name`], [`symbol`]. `max_supply` defaults to `0` (unlimited). Optional
+    /// Required setters: [`name`], [`symbol`]. `max_supply` is optional: `None` (the default)
+    /// leaves the cap at the maximum representable value ([`Self::MAX_MAX_SUPPLY`]). Optional
     /// string fields default to `None`; mutability flags default to `false`. The collection
     /// metadata pointer is named `contract_uri` (it reuses the shared `external_link` storage).
     ///
@@ -146,7 +148,7 @@ impl NonFungibleFaucet {
     pub fn new(
         name: TokenName,
         symbol: TokenSymbol,
-        #[builder(default)] max_supply: u64,
+        max_supply: Option<u64>,
         description: Option<Description>,
         logo_uri: Option<LogoURI>,
         contract_uri: Option<ExternalLink>,
@@ -173,13 +175,9 @@ impl NonFungibleFaucet {
         }
         metadata = metadata.with_max_supply_mutable(is_max_supply_mutable);
 
-        // 0 means unlimited, encoded as the maximum field element so the on-chain mint check is a
-        // single `current_supply < max_supply` comparison that also rules out supply overflow.
-        let max_supply = if max_supply == 0 {
-            Self::UNLIMITED_MAX_SUPPLY
-        } else {
-            max_supply
-        };
+        // An unset cap defaults to the maximum representable value, which keeps the on-chain mint
+        // check a single `current_supply < max_supply` comparison that also rules out overflow.
+        let max_supply = max_supply.unwrap_or(Self::MAX_MAX_SUPPLY);
 
         Self::new_validated(symbol, 0, max_supply, metadata)
     }
@@ -197,8 +195,9 @@ impl NonFungibleFaucet {
         AccountComponentName::from_static_str(Self::NAME)
     }
 
-    /// The `max_supply` value (the maximum field element) that encodes an unlimited supply.
-    pub const UNLIMITED_MAX_SUPPLY: u64 = 0xffff_ffff_0000_0000;
+    /// The maximum representable max supply (the maximum field element). A faucet whose cap is set
+    /// to this value is, for all practical purposes, uncapped.
+    pub const MAX_MAX_SUPPLY: u64 = 0xffff_ffff_0000_0000;
 
     const MINT_AND_SEND_PROC_NAME: &'static str = "mint_and_send";
     const RECEIVE_AND_BURN_PROC_NAME: &'static str = "receive_and_burn";
@@ -217,10 +216,10 @@ impl NonFungibleFaucet {
         max_supply: u64,
         metadata: TokenMetadata,
     ) -> Result<Self, NonFungibleFaucetError> {
-        if max_supply > Self::UNLIMITED_MAX_SUPPLY {
+        if max_supply > Self::MAX_MAX_SUPPLY {
             return Err(NonFungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply,
-                max: Self::UNLIMITED_MAX_SUPPLY,
+                max: Self::MAX_MAX_SUPPLY,
             });
         }
 
@@ -292,7 +291,8 @@ impl NonFungibleFaucet {
         self.current_supply
     }
 
-    /// Returns the maximum supply ([`Self::UNLIMITED_MAX_SUPPLY`] means unlimited).
+    /// Returns the maximum supply. A value of [`Self::MAX_MAX_SUPPLY`] means the faucet is
+    /// effectively uncapped.
     pub fn max_supply(&self) -> u64 {
         self.max_supply
     }
@@ -355,7 +355,9 @@ impl NonFungibleFaucet {
         (
             Self::asset_status_slot().clone(),
             StorageSlotSchema::map(
-                "Asset status registry: asset id (suffix, prefix) -> status",
+                "Asset status registry. Key is the asset id padded to a word \
+                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status padded to a word \
+                 `[status, 0, 0, 0]` (status: 0 = not issued, 1 = issued, 2 = burned).",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -383,17 +385,14 @@ impl NonFungibleFaucet {
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
-        slots.push(StorageSlot::with_map(
-            Self::asset_status_slot().clone(),
-            StorageMap::with_entries(vec![]).expect("empty asset status map should be valid"),
-        ));
+        slots.push(StorageSlot::with_map(Self::asset_status_slot().clone(), StorageMap::default()));
         slots.extend(self.metadata.into_storage_slots());
         slots
     }
 
     /// Returns the single storage slot for the token config word.
     pub fn token_config_slot_value(&self) -> StorageSlot {
-        // current_supply <= max_supply <= UNLIMITED_MAX_SUPPLY, which is a valid field element.
+        // current_supply <= max_supply <= MAX_MAX_SUPPLY, which is a valid field element.
         let word = Word::new([
             Felt::new(self.current_supply).expect("current_supply is a valid felt"),
             Felt::new(self.max_supply).expect("max_supply is a valid felt"),
@@ -405,6 +404,23 @@ impl NonFungibleFaucet {
 
     // INTERFACE EXTRACTION
     // --------------------------------------------------------------------------------------------
+
+    /// Checks that the account exposes the full non-fungible faucet interface before
+    /// reconstructing it from storage.
+    ///
+    /// The storage slots alone are enough to rebuild the struct, but the conversion should only
+    /// succeed when the account actually installs the [`NonFungibleFaucet`] component, so callers
+    /// can rely on it to answer "does this account have the non-fungible faucet interface?".
+    fn try_from_interface(
+        interface: AccountCodeInterface,
+        storage: &AccountStorage,
+    ) -> Result<Self, NonFungibleFaucetError> {
+        if !interface.contains(NonFungibleFaucet::code().procedure_roots()) {
+            return Err(NonFungibleFaucetError::NotANonFungibleFaucetAccount);
+        }
+
+        NonFungibleFaucet::try_from(storage)
+    }
 
     /// Reconstructs from the token config word and the embedded [`TokenMetadata`].
     pub(crate) fn from_token_config_word_and_token_metadata(
@@ -454,11 +470,19 @@ impl TryFrom<&AccountStorage> for NonFungibleFaucet {
     }
 }
 
+impl TryFrom<Account> for NonFungibleFaucet {
+    type Error = NonFungibleFaucetError;
+
+    fn try_from(account: Account) -> Result<Self, Self::Error> {
+        NonFungibleFaucet::try_from_interface(account.code_interface(), account.storage())
+    }
+}
+
 impl TryFrom<&Account> for NonFungibleFaucet {
     type Error = NonFungibleFaucetError;
 
     fn try_from(account: &Account) -> Result<Self, Self::Error> {
-        NonFungibleFaucet::try_from(account.storage())
+        NonFungibleFaucet::try_from_interface(account.code_interface(), account.storage())
     }
 }
 

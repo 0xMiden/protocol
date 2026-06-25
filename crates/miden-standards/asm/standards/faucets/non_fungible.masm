@@ -105,15 +105,22 @@ proc build_status_value
     # => [status, 0, 0, 0]
 end
 
-#! Reads the status word registered for a status key from the asset-status registry.
+#! Reads the status registered for a status key from the asset-status registry.
 #!
 #! Inputs:  [STATUS_KEY]
-#! Outputs: [STATUS_WORD]
+#! Outputs: [status]
+#!
+#! Where:
+#! - status is the first element of the registry value word; the other elements are always zero.
 #!
 #! Invocation: exec
 proc get_status_by_key
     push.ASSET_STATUS_SLOT[0..2]
     exec.active_account::get_map_item
+    # => [status, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [status]
 end
 
 #! Extracts the is_max_supply_mutable flag from the mutability config word.
@@ -137,12 +144,16 @@ end
 #! Returns the token config (current_supply, max_supply, symbol).
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [current_supply, max_supply, symbol, 0, pad(12)]
+#! Outputs: [current_supply, max_supply, symbol, pad(13)]
 #!
 #! Invocation: call
 pub proc get_token_config
     exec.get_token_config_internal
+    # => [current_supply, max_supply, symbol, 0, pad(16)]
+
+    # the stored 4th element is always zero, so it is treated as padding and not surfaced
     swapw dropw
+    # => [current_supply, max_supply, symbol, pad(13)]
 end
 
 #! Returns the current (live) supply.
@@ -183,7 +194,7 @@ pub proc get_symbol
     exec.get_token_config_internal
     # => [current_supply, max_supply, symbol, 0, pad(16)]
 
-    drop drop swap drop
+    movup.2 movdn.4 dropw
     # => [symbol, pad(15)]
 end
 
@@ -220,9 +231,6 @@ pub proc get_asset_status
     # => [STATUS_KEY, pad(14)]
 
     exec.get_status_by_key
-    # => [STATUS_WORD, pad(12)]
-
-    movdn.3 drop drop drop
     # => [status, pad(15)]
 end
 
@@ -314,69 +322,69 @@ pub proc mint_and_send
 
     # supply check: current_supply < max_supply (max_supply is the max felt value when unlimited)
     exec.get_token_config_internal
-    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(6)]
+    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(10)]
 
     loc_storew_le.CONFIG_LOCAL
-    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(6)]
+    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(10)]
 
     dup dup.2
     # => [max_supply, current_supply, current_supply, max_supply, symbol, 0, ...]
 
     lt assert.err=ERR_NFT_MAX_SUPPLY_EXCEEDED
-    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(6)]
+    # => [current_supply, max_supply, symbol, 0, tag, note_type, RECIPIENT, pad(10)]
 
     dropw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     # build the status key from the asset id (commitment elements 0 and 1)
     padw loc_loadw_le.ASSET_VALUE_LOCAL
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
-    movup.3 drop movup.2 drop
-    # => [asset_id_suffix, asset_id_prefix, tag, note_type, RECIPIENT, pad(6)]
+    exec.asset::non_fungible_value_into_asset_id
+    # => [asset_id_suffix, asset_id_prefix, tag, note_type, RECIPIENT, pad(10)]
 
     exec.create_status_key
-    # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(6)]
+    # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
 
     # build the ISSUED status value and write it, asserting the commitment was not already issued
     push.STATUS_ISSUED exec.build_status_value
-    # => [STATUS_VALUE, STATUS_KEY, tag, note_type, RECIPIENT, pad(2)]
+    # => [STATUS_VALUE, STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
 
     swapw
-    # => [STATUS_KEY, STATUS_VALUE, tag, note_type, RECIPIENT, pad(2)]
+    # => [STATUS_KEY, STATUS_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
     push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_STATUS_WORD, tag, note_type, RECIPIENT, pad(6)]
+    # => [OLD_STATUS_WORD, tag, note_type, RECIPIENT, pad(10)]
 
     exec.word::eqz assert.err=ERR_NFT_ALREADY_ISSUED
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     # create the output note (keep a second note_idx for add_asset)
     exec.output_note::create dup
-    # => [note_idx, note_idx, pad(14)]
+    # => [note_idx, note_idx, pad(15)]
 
     # build the asset from the commitment, mint it, add it to the note
     padw loc_loadw_le.ASSET_VALUE_LOCAL
-    # => [ASSET_VALUE, note_idx, note_idx, pad(10)]
+    # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.faucet::create_non_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.faucet::mint
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.output_note::add_asset
     # => [note_idx, pad(15)]
 
     # current_supply += 1 (cannot overflow: current_supply < max_supply <= max felt value)
     padw loc_loadw_le.CONFIG_LOCAL
-    # => [current_supply, max_supply, symbol, 0, note_idx, pad(11)]
+    # => [current_supply, max_supply, symbol, 0, note_idx, pad(15)]
 
     add.1
-    # => [current_supply+1, max_supply, symbol, 0, note_idx, pad(11)]
+    # => [current_supply+1, max_supply, symbol, 0, note_idx, pad(15)]
 
     push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
     # => [note_idx, pad(15)]
@@ -412,37 +420,37 @@ pub proc receive_and_burn
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # run the active burn policy on a copy of the asset
     dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # build the status key from the asset id without disturbing [ASSET_KEY, ASSET_VALUE]
     dupw.1
-    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(4)]
+    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
 
-    movup.3 drop movup.2 drop
-    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY, ASSET_VALUE, pad(4)]
+    exec.asset::non_fungible_value_into_asset_id
+    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     exec.create_status_key
-    # => [STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(4)]
+    # => [STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # write BURNED and assert the commitment was ISSUED (old status element)
     push.STATUS_BURNED exec.build_status_value
-    # => [STATUS_VALUE, STATUS_KEY, ASSET_KEY, ASSET_VALUE]
+    # => [STATUS_VALUE, STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     swapw
-    # => [STATUS_KEY, STATUS_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [STATUS_KEY, STATUS_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_STATUS_WORD, ASSET_KEY, ASSET_VALUE, pad(4)]
+    # => [OLD_STATUS_WORD, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     movdn.3 drop drop drop
-    # => [old_status, ASSET_KEY, ASSET_VALUE, pad(4)]
+    # => [old_status, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     eq.STATUS_ISSUED assert.err=ERR_NFT_NOT_ISSUED
-    # => [ASSET_KEY, ASSET_VALUE, pad(4)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # burn the asset (validates faucet origin), consuming [ASSET_KEY, ASSET_VALUE]
     exec.faucet::burn

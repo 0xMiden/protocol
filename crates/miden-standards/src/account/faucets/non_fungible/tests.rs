@@ -1,9 +1,9 @@
 use miden_protocol::asset::TokenSymbol;
 
 use super::NonFungibleFaucet;
-use crate::account::faucets::{NonFungibleFaucetError, TokenName};
+use crate::account::faucets::TokenName;
 
-/// Building a faucet and round-tripping its storage slots reconstructs the same config.
+/// Building a faucet exposes the configured fields.
 #[test]
 fn non_fungible_faucet_storage_round_trip() -> anyhow::Result<()> {
     let faucet = NonFungibleFaucet::builder()
@@ -16,21 +16,18 @@ fn non_fungible_faucet_storage_round_trip() -> anyhow::Result<()> {
     assert_eq!(faucet.current_supply(), 0);
     assert_eq!(faucet.symbol(), &TokenSymbol::new("EC")?);
 
-    // building the component must not panic
-    let _component: miden_protocol::account::AccountComponent = faucet.into();
-
     Ok(())
 }
 
-/// A `max_supply` of 0 is stored as the unlimited sentinel (the maximum field element).
+/// An unset `max_supply` defaults to the maximum representable cap.
 #[test]
-fn non_fungible_faucet_unlimited_supply() -> anyhow::Result<()> {
+fn non_fungible_faucet_uncapped_supply() -> anyhow::Result<()> {
     let faucet = NonFungibleFaucet::builder()
-        .name(TokenName::new("Unlimited")?)
-        .symbol(TokenSymbol::new("UNL")?)
+        .name(TokenName::new("Uncapped")?)
+        .symbol(TokenSymbol::new("UNC")?)
         .build()?;
 
-    assert_eq!(faucet.max_supply(), NonFungibleFaucet::UNLIMITED_MAX_SUPPLY);
+    assert_eq!(faucet.max_supply(), NonFungibleFaucet::MAX_MAX_SUPPLY);
 
     Ok(())
 }
@@ -49,9 +46,4 @@ fn compute_asset_commitment_is_salt_sensitive() {
 
     assert_eq!(c_a, NonFungibleFaucet::compute_asset_commitment(data, salt_a));
     assert_ne!(c_a, c_b);
-}
-
-#[allow(unused)]
-fn _error_is_constructible(e: NonFungibleFaucetError) -> NonFungibleFaucetError {
-    e
 }
