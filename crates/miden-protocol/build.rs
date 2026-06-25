@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -211,26 +211,45 @@ fn compile_kernel_testing_lib(
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
 fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
+    let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
     let offsets_filename = Path::new(ASM_DIR)
         .join(ASM_PROTOCOL_DIR)
         .join("src")
         .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    let exported_procs: Vec<_> = kernel
+    // Only `$kernel::api::<proc>` exports are dynamic kernel API procedures. Public support
+    // modules also appear in package exports as `$kernel::api::<module>::<proc>`, but those are
+    // not invoked through `exec_kernel_proc` and therefore do not belong in `KERNEL_PROCEDURES`.
+    let kernel_api_exports: Vec<_> = kernel
         .manifest
         .exports()
         .filter_map(|export| match export {
             PackageExport::Procedure(proc_info) => Some(proc_info),
             _ => None,
         })
+        .filter(|proc_info| proc_info.path.len() == 3)
         .collect();
+
+    for proc_info in kernel_api_exports.iter() {
+        let name = proc_info.path.last().unwrap();
+        if to_exclude.contains::<str>(name) {
+            continue;
+        }
+
+        if !offsets.contains_key(name) {
+            return Err(miette::miette!(
+                "Offset constant for kernel procedure `{}` not found in `{offsets_filename:?}`",
+                proc_info.path,
+            ));
+        }
+    }
 
     let generated_procs: BTreeMap<usize, String> = offsets
         .iter()
         .map(|(name, &offset)| {
             let mut matching_exports =
-                exported_procs.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
+                kernel_api_exports.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
             let proc_info = matching_exports.next().ok_or_else(|| {
                 miette::miette!(
                     "Kernel procedure offset `{name}` in `{offsets_filename:?}` does not match any exported procedure"
