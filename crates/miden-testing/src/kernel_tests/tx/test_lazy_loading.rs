@@ -3,7 +3,7 @@
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -26,9 +26,13 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let faucet_id1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
-    let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
-    let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
+    let fungible_asset1 = FungibleAsset::new(
+        faucet_id1,
+        FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT,
+        AssetCallbackFlag::Disabled,
+    )?;
+    let fungible_asset2 =
+        FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT, AssetCallbackFlag::Disabled)?;
 
     // Build a note that adds the assets to the input vault of the transaction. This is necessary
     // to adhere to asset preservation rules.
@@ -83,9 +87,13 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
     let faucet_id1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
-    let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
-    let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
+    let fungible_asset1 = FungibleAsset::new(
+        faucet_id1,
+        FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT,
+        AssetCallbackFlag::Disabled,
+    )?;
+    let fungible_asset2 =
+        FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT, AssetCallbackFlag::Disabled)?;
 
     let code = format!(
         "

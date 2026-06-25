@@ -172,7 +172,7 @@ async fn allow_receive_asset_succeeds_when_account_pre_allowed() -> anyhow::Resu
         [target_account.id()],
     )?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -202,7 +202,7 @@ async fn allow_receive_asset_fails_when_recipient_not_allowed() -> anyhow::Resul
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -232,7 +232,7 @@ async fn allow_then_receive_succeeds() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -267,7 +267,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
 
     let mock_chain = builder.build()?;
 
@@ -323,8 +323,7 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
     )?;
 
     let amount: u64 = 50;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Enabled)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -407,8 +406,7 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
     let amount: u64 = 25;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Enabled)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         other_account.id(),

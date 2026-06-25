@@ -52,20 +52,16 @@ impl NonFungibleAsset {
     /// Returns a non-fungible asset created from the specified asset details.
     pub fn new(details: &NonFungibleAssetDetails) -> Self {
         let data_hash = Hasher::hash(details.asset_data());
-        Self::from_parts(details.faucet_id(), data_hash)
+        Self::from_parts(details.faucet_id(), data_hash, details.callbacks())
     }
 
-    /// Return a non-fungible asset created from the specified faucet and using the provided
-    /// hash of the asset's data.
+    /// Return a non-fungible asset created from the specified faucet and callback flag, using the
+    /// provided hash of the asset's data.
     ///
     /// Hash of the asset's data is expected to be computed from the binary representation of the
     /// asset's data.
-    pub fn from_parts(faucet_id: AccountId, value: Word) -> Self {
-        Self {
-            faucet_id,
-            value,
-            callbacks: AssetCallbackFlag::default(),
-        }
+    pub fn from_parts(faucet_id: AccountId, value: Word, callbacks: AssetCallbackFlag) -> Self {
+        Self { faucet_id, value, callbacks }
     }
 
     /// Creates a non-fungible asset from the provided key and value.
@@ -93,10 +89,7 @@ impl NonFungibleAsset {
             });
         }
 
-        let mut asset = Self::from_parts(key.faucet_id(), value);
-        asset.callbacks = key.callback_flag();
-
-        Ok(asset)
+        Ok(Self::from_parts(key.faucet_id(), value, key.callback_flag()))
     }
 
     /// Creates a non-fungible asset from the provided key and value.
@@ -110,12 +103,6 @@ impl NonFungibleAsset {
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
         Self::from_key_value(vault_key, value)
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
-        self.callbacks = callbacks;
-        self
     }
 
     // ACCESSORS
@@ -209,7 +196,7 @@ impl NonFungibleAsset {
         let value: Word = source.read()?;
         let callbacks: AssetCallbackFlag = source.read()?;
 
-        Ok(NonFungibleAsset::from_parts(faucet_id, value).with_callbacks(callbacks))
+        Ok(NonFungibleAsset::from_parts(faucet_id, value, callbacks))
     }
 }
 
@@ -223,12 +210,14 @@ impl NonFungibleAsset {
 pub struct NonFungibleAssetDetails {
     faucet_id: AccountId,
     asset_data: Vec<u8>,
+    callbacks: AssetCallbackFlag,
 }
 
 impl NonFungibleAssetDetails {
-    /// Returns asset details instantiated from the specified faucet ID and asset data.
-    pub fn new(faucet_id: AccountId, asset_data: Vec<u8>) -> Self {
-        Self { faucet_id, asset_data }
+    /// Returns asset details instantiated from the specified faucet ID, asset data and callback
+    /// flag.
+    pub fn new(faucet_id: AccountId, asset_data: Vec<u8>, callbacks: AssetCallbackFlag) -> Self {
+        Self { faucet_id, asset_data, callbacks }
     }
 
     /// Returns ID of the faucet which issued this asset.
@@ -239,6 +228,11 @@ impl NonFungibleAssetDetails {
     /// Returns asset data in binary format.
     pub fn asset_data(&self) -> &[u8] {
         &self.asset_data
+    }
+
+    /// Returns the [`AssetCallbackFlag`] of this asset.
+    pub fn callbacks(&self) -> AssetCallbackFlag {
+        self.callbacks
     }
 }
 
@@ -302,7 +296,11 @@ mod tests {
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
         ] {
             let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
+            let details = NonFungibleAssetDetails::new(
+                account_id,
+                vec![1, 2, 3],
+                AssetCallbackFlag::Disabled,
+            );
             let non_fungible_asset = NonFungibleAsset::new(&details);
             assert_eq!(
                 non_fungible_asset,

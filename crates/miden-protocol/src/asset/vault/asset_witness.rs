@@ -192,7 +192,7 @@ mod tests {
     use miden_crypto::merkle::smt::Smt;
 
     use super::*;
-    use crate::asset::{AssetVault, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{AssetCallbackFlag, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
@@ -226,10 +226,17 @@ mod tests {
     /// present (in hashed form) in the SMT proof.
     #[test]
     fn create_asset_witness_fails_on_missing_key() -> anyhow::Result<()> {
-        let asset_in_vault =
-            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?, 200)?;
-        let other_key =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?.vault_key();
+        let asset_in_vault = FungibleAsset::new(
+            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?,
+            200,
+            AssetCallbackFlag::Disabled,
+        )?;
+        let other_key = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
+            100,
+            AssetCallbackFlag::Disabled,
+        )?
+        .vault_key();
 
         let vault = AssetVault::new(&[asset_in_vault.into()])?;
         let proof = vault.open(asset_in_vault.vault_key()).proof().clone();
@@ -246,10 +253,16 @@ mod tests {
 
     #[test]
     fn asset_witness_authenticates_asset_vault_key() -> anyhow::Result<()> {
-        let fungible_asset0 =
-            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?, 200)?;
-        let fungible_asset1 =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?;
+        let fungible_asset0 = FungibleAsset::new(
+            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?,
+            200,
+            AssetCallbackFlag::Disabled,
+        )?;
+        let fungible_asset1 = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
+            100,
+            AssetCallbackFlag::Disabled,
+        )?;
 
         let vault = AssetVault::new(&[fungible_asset0.into()])?;
         let witness0 = vault.open(fungible_asset0.vault_key());

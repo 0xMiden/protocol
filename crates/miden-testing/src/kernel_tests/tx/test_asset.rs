@@ -38,7 +38,11 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
         TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .build()?;
-    let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
+    let expected_asset = FungibleAsset::new(
+        tx_context.account().id(),
+        FUNGIBLE_ASSET_AMOUNT,
+        AssetCallbackFlag::Disabled,
+    )?;
 
     let code = format!(
         "
@@ -76,6 +80,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let non_fungible_asset_details = NonFungibleAssetDetails::new(
         NonFungibleAsset::mock_issuer(),
         NON_FUNGIBLE_ASSET_DATA.to_vec(),
+        AssetCallbackFlag::Disabled,
     );
     let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
 

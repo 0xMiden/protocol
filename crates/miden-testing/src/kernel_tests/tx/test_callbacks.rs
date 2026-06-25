@@ -270,13 +270,14 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // Create a P2ID note with a callbacks-enabled asset from this faucet.
     // The faucet does not have the callback slot, but the asset has callbacks enabled.
     let asset = match asset_composition {
-        AssetComposition::Fungible => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
-        AssetComposition::None => {
-            Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1])))
+        AssetComposition::Fungible => {
+            Asset::from(FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?)
         },
+        AssetComposition::None => Asset::from(NonFungibleAsset::new(
+            &NonFungibleAssetDetails::new(faucet.id(), vec![1], AssetCallbackFlag::Enabled),
+        )),
         _ => unreachable!("test does not use custom composition"),
-    }
-    .with_callbacks(AssetCallbackFlag::Enabled);
+    };
 
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
@@ -352,8 +353,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let faucet = add_faucet_with_callbacks(&mut builder, Some(&account_callback_masm), None)?;
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Enabled)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -381,13 +381,14 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 #[rstest::rstest]
 #[case::fungible(
     |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(FungibleAsset::new(faucet_id, 100, AssetCallbackFlag::Enabled)?.into())
     }
 )]
 #[case::non_fungible(
     |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
-        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
+        let details =
+            NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4], AssetCallbackFlag::Enabled);
+        Ok(NonFungibleAsset::new(&details).into())
     }
 )]
 #[tokio::test]
@@ -430,13 +431,14 @@ async fn test_blocked_account_cannot_receive_asset(
 #[rstest::rstest]
 #[case::fungible(
     |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(FungibleAsset::new(faucet_id, 100, AssetCallbackFlag::Enabled)?.into())
     }
 )]
 #[case::non_fungible(
     |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
-        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
+        let details =
+            NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4], AssetCallbackFlag::Enabled);
+        Ok(NonFungibleAsset::new(&details).into())
     }
 )]
 #[tokio::test]
@@ -555,8 +557,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
     // Consuming this note adds the asset to the wallet's vault.
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Enabled)?;
     let asset = Asset::Fungible(fungible_asset);
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;

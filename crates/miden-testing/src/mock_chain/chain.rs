@@ -132,7 +132,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// # use miden_protocol::{
 /// #    Felt,
 /// #    account::auth::AuthScheme,
-/// #    asset::{Asset, FungibleAsset},
+/// #    asset::{Asset, AssetCallbackFlag, FungibleAsset},
 /// #    note::NoteType
 /// # };
 /// # use miden_testing::{Auth, MockChain, TransactionContextBuilder};
@@ -148,7 +148,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///     "USDT",
 ///     100_000,
 /// )?;
-/// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
+/// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10, AssetCallbackFlag::Disabled)?);
 ///
 /// let sender = builder.create_new_wallet(Auth::BasicAuth {
 ///     auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -1266,7 +1266,7 @@ impl From<Account> for TxContextInput {
 mod tests {
     use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountType};
-    use miden_protocol::asset::{Asset, FungibleAsset};
+    use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -1359,7 +1359,9 @@ mod tests {
         let note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
-            &[Asset::Fungible(FungibleAsset::new(faucet_id, 1000u64).unwrap())],
+            &[Asset::Fungible(
+                FungibleAsset::new(faucet_id, 1000u64, AssetCallbackFlag::Disabled).unwrap(),
+            )],
             NoteType::Private,
         )?;
 
@@ -1407,6 +1409,7 @@ mod tests {
                         FungibleAsset::new(
                             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
                             1000u64,
+                            AssetCallbackFlag::Disabled,
                         )
                         .unwrap(),
                     )],

@@ -448,7 +448,7 @@ mod tests {
         StorageMapPatch,
         StorageSlotName,
     };
-    use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
     use crate::errors::{AccountError, AccountPatchError};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -461,7 +461,12 @@ mod tests {
     fn account_patch_serde() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let asset_0 = FungibleAsset::mock(100);
-        let asset_1 = FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_1 = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
+            500_000,
+            AssetCallbackFlag::Disabled,
+        )?
+        .into();
         let asset_2 = NonFungibleAsset::mock(&[10]);
         let asset_3 = NonFungibleAsset::mock(&[20]);
         let vault_patch = AccountVaultPatch::with_assets([asset_0, asset_1, asset_2, asset_3]);

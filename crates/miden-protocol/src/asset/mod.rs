@@ -144,16 +144,6 @@ impl Asset {
         Self::from_key_value(vault_key, value)
     }
 
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(self, callbacks: AssetCallbackFlag) -> Self {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.with_callbacks(callbacks).into(),
-            Asset::NonFungible(non_fungible_asset) => {
-                non_fungible_asset.with_callbacks(callbacks).into()
-            },
-        }
-    }
-
     /// Returns true if this asset is the same as the specified asset.
     ///
     /// Two assets are defined to be the same if their vault keys match.
@@ -321,7 +311,8 @@ mod tests {
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
         ] {
             let account_id = AccountId::try_from(fungible_account_id).unwrap();
-            let fungible_asset: Asset = FungibleAsset::new(account_id, 10).unwrap().into();
+            let fungible_asset: Asset =
+                FungibleAsset::new(account_id, 10, AssetCallbackFlag::Disabled).unwrap().into();
             assert_eq!(fungible_asset, Asset::read_from_bytes(&fungible_asset.to_bytes()).unwrap());
             assert_eq!(
                 fungible_asset,
@@ -338,7 +329,11 @@ mod tests {
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
         ] {
             let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
+            let details = NonFungibleAssetDetails::new(
+                account_id,
+                vec![1, 2, 3],
+                AssetCallbackFlag::Disabled,
+            );
             let non_fungible_asset: Asset = NonFungibleAsset::new(&details).into();
             assert_eq!(
                 non_fungible_asset,

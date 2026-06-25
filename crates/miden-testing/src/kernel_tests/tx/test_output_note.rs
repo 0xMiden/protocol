@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
@@ -428,7 +428,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_id);
-    let asset = FungibleAsset::new(faucet_id, 10)?;
+    let asset = FungibleAsset::new(faucet_id, 10, AssetCallbackFlag::Disabled)?;
 
     let code = format!(
         "
@@ -494,10 +494,10 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_2);
 
-    let asset = FungibleAsset::new(faucet, 10)?;
-    let asset_2 = FungibleAsset::new(faucet_2, 20)?;
-    let asset_3 = FungibleAsset::new(faucet_2, 30)?;
-    let asset_2_plus_3 = FungibleAsset::new(faucet_2, 50)?;
+    let asset = FungibleAsset::new(faucet, 10, AssetCallbackFlag::Disabled)?;
+    let asset_2 = FungibleAsset::new(faucet_2, 20, AssetCallbackFlag::Disabled)?;
+    let asset_3 = FungibleAsset::new(faucet_2, 30, AssetCallbackFlag::Disabled)?;
+    let asset_2_plus_3 = FungibleAsset::new(faucet_2, 50, AssetCallbackFlag::Disabled)?;
 
     let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
 
@@ -863,6 +863,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
             5,
+            AssetCallbackFlag::Disabled,
         )
         .expect("asset is invalid"),
     );
@@ -873,6 +874,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).expect("id should be valid"),
             5,
+            AssetCallbackFlag::Disabled,
         )
         .expect("asset is invalid"),
     );

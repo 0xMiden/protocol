@@ -876,6 +876,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
+            AssetCallbackFlag::Disabled,
         )
         .context("fungible_asset_0 is invalid")?,
     );
@@ -952,7 +953,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).context("id should be valid")?;
 
     let fungible_asset_for_account = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 10, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
         crate::Auth::BasicAuth {
@@ -962,11 +964,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 7, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
 
     let fungible_asset_for_note_new = Asset::Fungible(
-        FungibleAsset::new(faucet_new_asset, 20).context("fungible_asset_1 is invalid")?,
+        FungibleAsset::new(faucet_new_asset, 20, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_1 is invalid")?,
     );
 
     let p2id_note_existing_asset = builder.add_p2id_note(
@@ -1095,7 +1099,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
     let fungible_asset_for_account = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 10, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
         crate::Auth::BasicAuth {
@@ -1105,7 +1110,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 7, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
 
     let mut mock_chain = builder.build()?;
@@ -1186,7 +1192,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
     let fungible_asset_for_account = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 10, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
         crate::Auth::BasicAuth {
@@ -1196,7 +1203,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
-        FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
+        FungibleAsset::new(faucet_existing_asset, 7, AssetCallbackFlag::Disabled)
+            .context("fungible_asset_0 is invalid")?,
     );
 
     let mut mock_chain = builder.build()?;

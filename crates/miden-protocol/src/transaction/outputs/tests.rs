@@ -5,7 +5,7 @@ use assert_matches::assert_matches;
 use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor};
-use crate::asset::FungibleAsset;
+use crate::asset::{AssetCallbackFlag, FungibleAsset};
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
@@ -51,8 +51,8 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
     let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
 
-    let asset_1 = FungibleAsset::new(faucet_id_1, 100)?.into();
-    let asset_2 = FungibleAsset::new(faucet_id_2, 200)?.into();
+    let asset_1 = FungibleAsset::new(faucet_id_1, 100, AssetCallbackFlag::Disabled)?.into();
+    let asset_2 = FungibleAsset::new(faucet_id_2, 200, AssetCallbackFlag::Disabled)?.into();
 
     let assets = NoteAssets::new(vec![asset_1, asset_2])?;
 
@@ -105,7 +105,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
 
     // Create a public note (NoteType::Public is required for PublicOutputNote)
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
-    let asset = FungibleAsset::new(faucet_id, 100)?.into();
+    let asset = FungibleAsset::new(faucet_id, 100, AssetCallbackFlag::Disabled)?.into();
     let assets = NoteAssets::new(vec![asset])?;
 
     let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public)

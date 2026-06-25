@@ -2,7 +2,7 @@ use anyhow::Context;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType};
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::{Note, NoteDetails, NoteId, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -240,8 +240,8 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // Create two different assets for the swap
     let faucet0 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let faucet1 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-    let asset_a = FungibleAsset::new(faucet0, 10_777)?.into();
-    let asset_b = FungibleAsset::new(faucet1, 10)?.into();
+    let asset_a = FungibleAsset::new(faucet0, 10_777, AssetCallbackFlag::Disabled)?.into();
+    let asset_b = FungibleAsset::new(faucet1, 10, AssetCallbackFlag::Disabled)?.into();
 
     let mut builder = MockChain::builder();
 
@@ -331,7 +331,7 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
         .account_type(AccountType::Private)
         .build_with_seed([5; 32]);
 
-    let offered_asset = FungibleAsset::new(faucet_id, 2000)?.into();
+    let offered_asset = FungibleAsset::new(faucet_id, 2000, AssetCallbackFlag::Disabled)?.into();
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
     let mut builder = MockChain::builder();

@@ -2,7 +2,7 @@ use anyhow::Context;
 use miden_processor::{ContextId, ExecutionOutput};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -115,6 +115,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             10,
+            AssetCallbackFlag::Disabled,
         )
         .context("fungible_asset_0 is invalid")?,
     );
@@ -124,6 +125,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
+            AssetCallbackFlag::Disabled,
         )
         .context("fungible_asset_0 is invalid")?,
     );
@@ -132,6 +134,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
                 .context("id should be valid")?,
             10,
+            AssetCallbackFlag::Disabled,
         )
         .context("fungible_asset_1 is invalid")?,
     );

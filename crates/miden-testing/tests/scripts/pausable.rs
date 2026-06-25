@@ -518,7 +518,7 @@ async fn pausable_transfer_succeeds_when_unpaused() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
@@ -547,7 +547,7 @@ async fn pausable_transfer_fails_when_paused() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
@@ -583,7 +583,7 @@ async fn pausable_transfer_resumes_after_unpause() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Enabled)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
@@ -673,7 +673,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
     // Pre-stage a burn note carrying an asset issued by this faucet.
-    let burn_asset = FungibleAsset::new(faucet.id(), 50)?;
+    let burn_asset = FungibleAsset::new(faucet.id(), 50, AssetCallbackFlag::Disabled)?;
     let burn_note_script_code = r#"
         @note_script
         pub proc main

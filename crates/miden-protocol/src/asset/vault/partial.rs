@@ -262,7 +262,7 @@ mod tests {
     use miden_crypto::merkle::smt::Smt;
 
     use super::*;
-    use crate::asset::{FungibleAsset, NonFungibleAsset};
+    use crate::asset::{AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
 
     #[test]
@@ -318,8 +318,12 @@ mod tests {
     fn partial_vault_with_witnesses_fails_on_root_mismatch() -> anyhow::Result<()> {
         // Two single-asset vaults rooted at different SMT roots.
         let asset_a = FungibleAsset::mock(500);
-        let asset_b: Asset =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?.into();
+        let asset_b: Asset = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
+            100,
+            AssetCallbackFlag::Disabled,
+        )?
+        .into();
         let vault_a = AssetVault::new(&[asset_a])?;
         let vault_b = AssetVault::new(&[asset_b])?;
         assert_ne!(vault_a.root(), vault_b.root());
@@ -359,8 +363,12 @@ mod tests {
     fn partial_vault_add_is_atomic_on_failure() -> anyhow::Result<()> {
         // Build two distinct vaults so the second witness's root disagrees with the first.
         let asset_a = FungibleAsset::mock(500);
-        let asset_b: Asset =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?.into();
+        let asset_b: Asset = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
+            100,
+            AssetCallbackFlag::Disabled,
+        )?
+        .into();
         let vault_a = AssetVault::new(&[asset_a])?;
         let vault_b = AssetVault::new(&[asset_b])?;
 

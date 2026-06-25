@@ -51,21 +51,22 @@ impl FungibleAsset {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a fungible asset instantiated with the provided faucet ID and amount.
+    /// Returns a fungible asset instantiated with the provided faucet ID, amount and callback
+    /// flag.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The provided amount is greater than [`FungibleAsset::MAX_AMOUNT`].
-    pub fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
+    pub fn new(
+        faucet_id: AccountId,
+        amount: u64,
+        callbacks: AssetCallbackFlag,
+    ) -> Result<Self, AssetError> {
         // TODO: Take AssetAmount as input, then make the function infallible.
         let amount = AssetAmount::new(amount)?;
 
-        Ok(Self {
-            faucet_id,
-            amount,
-            callbacks: AssetCallbackFlag::default(),
-        })
+        Ok(Self { faucet_id, amount, callbacks })
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -95,10 +96,7 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        let mut asset = Self::new(key.faucet_id(), value[0].as_canonical_u64())?;
-        asset.callbacks = key.callback_flag();
-
-        Ok(asset)
+        Self::new(key.faucet_id(), value[0].as_canonical_u64(), key.callback_flag())
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -112,12 +110,6 @@ impl FungibleAsset {
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
         Self::from_key_value(vault_key, value)
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
-        self.callbacks = callbacks;
-        self
     }
 
     // PUBLIC ACCESSORS
@@ -271,11 +263,8 @@ impl FungibleAsset {
         let amount: u64 = source.read()?;
         let callbacks = source.read()?;
 
-        let asset = FungibleAsset::new(faucet_id, amount)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?
-            .with_callbacks(callbacks);
-
-        Ok(asset)
+        FungibleAsset::new(faucet_id, amount, callbacks)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -358,7 +347,8 @@ mod tests {
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
         ] {
             let account_id = AccountId::try_from(fungible_account_id).unwrap();
-            let fungible_asset = FungibleAsset::new(account_id, 10).unwrap();
+            let fungible_asset =
+                FungibleAsset::new(account_id, 10, AssetCallbackFlag::Disabled).unwrap();
             assert_eq!(
                 fungible_asset,
                 FungibleAsset::read_from_bytes(&fungible_asset.to_bytes()).unwrap()

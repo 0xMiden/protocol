@@ -21,7 +21,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetCallbackFlag,
+    AssetVault,
+    FungibleAsset,
+    NonFungibleAsset,
+};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
 use miden_protocol::note::{
@@ -217,6 +223,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         FungibleAsset::new(
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().expect("id is valid"),
             FUNGIBLE_ASSET_AMOUNT,
+            AssetCallbackFlag::Disabled,
         )
         .expect("asset is valid"),
     );
@@ -225,6 +232,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         FungibleAsset::new(
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().expect("id is valid"),
             FUNGIBLE_ASSET_AMOUNT / 2,
+            AssetCallbackFlag::Disabled,
         )
         .expect("asset is valid"),
     );

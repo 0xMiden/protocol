@@ -1,6 +1,6 @@
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{NoteAttachments, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
@@ -25,8 +25,12 @@ use crate::prove_and_verify_transaction;
 async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     // Create assets
     let fungible_asset_1: Asset = FungibleAsset::mock(123);
-    let fungible_asset_2: Asset =
-        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 456)?.into();
+    let fungible_asset_2: Asset = FungibleAsset::new(
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?,
+        456,
+        AssetCallbackFlag::Disabled,
+    )?
+    .into();
 
     let mut builder = MockChain::builder();
 
@@ -199,9 +203,11 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     )?;
 
     let input_note_faucet_id = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
-    let input_note_asset_1: Asset = FungibleAsset::new(input_note_faucet_id, 11)?.into();
+    let input_note_asset_1: Asset =
+        FungibleAsset::new(input_note_faucet_id, 11, AssetCallbackFlag::Disabled)?.into();
 
-    let input_note_asset_2: Asset = FungibleAsset::new(input_note_faucet_id, 100)?.into();
+    let input_note_asset_2: Asset =
+        FungibleAsset::new(input_note_faucet_id, 100, AssetCallbackFlag::Disabled)?.into();
 
     let input_note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,

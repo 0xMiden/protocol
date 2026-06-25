@@ -165,9 +165,8 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             .map_err(|e| NoteError::other_with_source("failed to parse requested faucet ID", e))?;
 
         let amount = note_storage[3].as_canonical_u64();
-        let requested_asset = FungibleAsset::new(faucet_id, amount)
-            .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?
-            .with_callbacks(callbacks);
+        let requested_asset = FungibleAsset::new(faucet_id, amount, callbacks)
+            .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?;
 
         // [4] = payback_note_type
         let payback_note_type = NoteType::try_from(
@@ -412,9 +411,12 @@ impl PswapNote {
         let requested_faucet_id = self.storage.requested_faucet_id();
         let total_requested_amount = self.storage.requested_asset_amount();
 
-        let fill_asset = FungibleAsset::new(requested_faucet_id, total_requested_amount)
-            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?
-            .with_callbacks(self.storage.requested_asset().callbacks());
+        let fill_asset = FungibleAsset::new(
+            requested_faucet_id,
+            total_requested_amount,
+            self.storage.requested_asset().callbacks(),
+        )
+        .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?;
 
         self.create_payback_note(consumer_account_id, fill_asset, total_requested_amount)
     }
@@ -499,22 +501,21 @@ impl PswapNote {
             let remaining_offered = total_offered_amount - offered_amount_for_fill;
             let remaining_requested = total_requested_amount - fill_amount;
 
-            let remaining_offered_asset =
-                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered)
-                    .map_err(|e| {
-                        NoteError::other_with_source("failed to create remainder asset", e)
-                    })?
-                    .with_callbacks(self.offered_asset.callbacks());
+            let remaining_offered_asset = FungibleAsset::new(
+                self.offered_asset.faucet_id(),
+                remaining_offered,
+                self.offered_asset.callbacks(),
+            )
+            .map_err(|e| NoteError::other_with_source("failed to create remainder asset", e))?;
 
-            let remaining_requested_asset =
-                FungibleAsset::new(requested_faucet_id, remaining_requested)
-                    .map_err(|e| {
-                        NoteError::other_with_source(
-                            "failed to create remaining requested asset",
-                            e,
-                        )
-                    })?
-                    .with_callbacks(self.storage.requested_asset().callbacks());
+            let remaining_requested_asset = FungibleAsset::new(
+                requested_faucet_id,
+                remaining_requested,
+                self.storage.requested_asset().callbacks(),
+            )
+            .map_err(|e| {
+                NoteError::other_with_source("failed to create remaining requested asset", e)
+            })?;
 
             Some(self.create_remainder_pswap_note(
                 consumer_account_id,
@@ -576,10 +577,12 @@ impl PswapNote {
         let recipient =
             P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial);
 
-        let fill_asset =
-            FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(attachment.amount()))
-                .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?
-                .with_callbacks(self.storage.requested_asset().callbacks());
+        let fill_asset = FungibleAsset::new(
+            self.storage.requested_faucet_id(),
+            u64::from(attachment.amount()),
+            self.storage.requested_asset().callbacks(),
+        )
+        .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
         let assets = NoteAssets::new(vec![fill_asset.into()])?;
 
         let metadata =
@@ -629,14 +632,18 @@ impl PswapNote {
             self.serial_number[3] + Felt::from(depth),
         ]);
 
-        let requested_asset =
-            FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(remaining_requested))
-                .map_err(|e| NoteError::other_with_source("invalid remaining_requested amount", e))?
-                .with_callbacks(self.storage.requested_asset().callbacks());
-        let offered_asset =
-            FungibleAsset::new(self.offered_asset.faucet_id(), u64::from(remaining_offered))
-                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?
-                .with_callbacks(self.offered_asset.callbacks());
+        let requested_asset = FungibleAsset::new(
+            self.storage.requested_faucet_id(),
+            u64::from(remaining_requested),
+            self.storage.requested_asset().callbacks(),
+        )
+        .map_err(|e| NoteError::other_with_source("invalid remaining_requested amount", e))?;
+        let offered_asset = FungibleAsset::new(
+            self.offered_asset.faucet_id(),
+            u64::from(remaining_offered),
+            self.offered_asset.callbacks(),
+        )
+        .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?;
 
         let new_storage = PswapNoteStorage::builder()
             .requested_asset(requested_asset)
@@ -949,8 +956,10 @@ mod tests {
     #[test]
     fn pswap_note_creation_and_script() {
         let creator_id = dummy_creator_id();
-        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 1000).unwrap();
-        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 500).unwrap();
+        let offered_asset =
+            FungibleAsset::new(dummy_faucet_id(0xaa), 1000, AssetCallbackFlag::Disabled).unwrap();
+        let requested_asset =
+            FungibleAsset::new(dummy_faucet_id(0xbb), 500, AssetCallbackFlag::Disabled).unwrap();
 
         let (pswap, note) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
@@ -972,8 +981,10 @@ mod tests {
     #[test]
     fn pswap_note_builder() {
         let creator_id = dummy_creator_id();
-        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 1000).unwrap();
-        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 500).unwrap();
+        let offered_asset =
+            FungibleAsset::new(dummy_faucet_id(0xaa), 1000, AssetCallbackFlag::Disabled).unwrap();
+        let requested_asset =
+            FungibleAsset::new(dummy_faucet_id(0xbb), 500, AssetCallbackFlag::Disabled).unwrap();
 
         let (pswap, note) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
@@ -1001,6 +1012,7 @@ mod tests {
         let offered_asset = FungibleAsset::new(
             AccountId::dummy(offered_faucet_bytes, AccountIdVersion::Version1, AccountType::Public),
             100,
+            AssetCallbackFlag::Disabled,
         )
         .unwrap();
         let requested_asset = FungibleAsset::new(
@@ -1010,6 +1022,7 @@ mod tests {
                 AccountType::Public,
             ),
             200,
+            AssetCallbackFlag::Disabled,
         )
         .unwrap();
 
@@ -1035,7 +1048,8 @@ mod tests {
     #[test]
     fn pswap_note_storage_try_from() {
         let creator_id = dummy_creator_id();
-        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
+        let requested_asset =
+            FungibleAsset::new(dummy_faucet_id(0xaa), 500, AssetCallbackFlag::Disabled).unwrap();
 
         let storage_items = vec![
             Felt::from(requested_asset.callbacks().as_u8()),
@@ -1055,7 +1069,8 @@ mod tests {
     #[test]
     fn pswap_note_storage_roundtrip() {
         let creator_id = dummy_creator_id();
-        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
+        let requested_asset =
+            FungibleAsset::new(dummy_faucet_id(0xaa), 500, AssetCallbackFlag::Disabled).unwrap();
 
         let storage = PswapNoteStorage::builder()
             .requested_asset(requested_asset)
@@ -1081,13 +1096,17 @@ mod tests {
         let requested_faucet = dummy_faucet_id(0xbb);
 
         // Offer 100 offered, request 50 requested → 2:1 ratio.
-        let offered_asset = FungibleAsset::new(offered_faucet, 100).unwrap();
-        let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let offered_asset =
+            FungibleAsset::new(offered_faucet, 100, AssetCallbackFlag::Disabled).unwrap();
+        let requested_asset =
+            FungibleAsset::new(requested_faucet, 50, AssetCallbackFlag::Disabled).unwrap();
         let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
         // Account fill = 10, note fill = 20 → total fill = 30 (< 50, so partial).
-        let account_fill = FungibleAsset::new(requested_faucet, 10).unwrap();
-        let note_fill = FungibleAsset::new(requested_faucet, 20).unwrap();
+        let account_fill =
+            FungibleAsset::new(requested_faucet, 10, AssetCallbackFlag::Disabled).unwrap();
+        let note_fill =
+            FungibleAsset::new(requested_faucet, 20, AssetCallbackFlag::Disabled).unwrap();
 
         let (payback, remainder) =
             pswap.execute(consumer_id, Some(account_fill), Some(note_fill)).unwrap();
@@ -1119,13 +1138,17 @@ mod tests {
         let offered_faucet = dummy_faucet_id(0xaa);
         let requested_faucet = dummy_faucet_id(0xbb);
 
-        let offered_asset = FungibleAsset::new(offered_faucet, 100).unwrap();
-        let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let offered_asset =
+            FungibleAsset::new(offered_faucet, 100, AssetCallbackFlag::Disabled).unwrap();
+        let requested_asset =
+            FungibleAsset::new(requested_faucet, 50, AssetCallbackFlag::Disabled).unwrap();
         let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
         // Account fill = 30, note fill = 20 → total fill = 50 (exactly requested).
-        let account_fill = FungibleAsset::new(requested_faucet, 30).unwrap();
-        let note_fill = FungibleAsset::new(requested_faucet, 20).unwrap();
+        let account_fill =
+            FungibleAsset::new(requested_faucet, 30, AssetCallbackFlag::Disabled).unwrap();
+        let note_fill =
+            FungibleAsset::new(requested_faucet, 20, AssetCallbackFlag::Disabled).unwrap();
 
         let (payback, remainder) =
             pswap.execute(consumer_id, Some(account_fill), Some(note_fill)).unwrap();
@@ -1155,18 +1178,15 @@ mod tests {
         let offered_faucet = dummy_faucet_id(0xaa);
         let requested_faucet = dummy_faucet_id(0xbb);
 
-        let offered_asset = FungibleAsset::new(offered_faucet, 100)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
-        let requested_asset = FungibleAsset::new(requested_faucet, 50)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
+        let offered_asset =
+            FungibleAsset::new(offered_faucet, 100, AssetCallbackFlag::Enabled).unwrap();
+        let requested_asset =
+            FungibleAsset::new(requested_faucet, 50, AssetCallbackFlag::Enabled).unwrap();
         let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
         // --- execute() (partial fill) ---
-        let account_fill = FungibleAsset::new(requested_faucet, 20)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
+        let account_fill =
+            FungibleAsset::new(requested_faucet, 20, AssetCallbackFlag::Enabled).unwrap();
         let (payback, remainder) = pswap.execute(consumer_id, Some(account_fill), None).unwrap();
 
         let Asset::Fungible(fa) = payback.assets().iter().next().unwrap() else {

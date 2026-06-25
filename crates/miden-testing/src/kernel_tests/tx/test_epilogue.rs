@@ -4,7 +4,7 @@ use std::borrow::ToOwned;
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
@@ -244,10 +244,16 @@ async fn epilogue_fails_when_assets_arent_preserved(
     #[case] input_amount: u64,
     #[case] output_amount: u64,
 ) -> anyhow::Result<()> {
-    let input_asset =
-        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, input_amount)?;
-    let output_asset =
-        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, output_amount)?;
+    let input_asset = FungibleAsset::new(
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?,
+        input_amount,
+        AssetCallbackFlag::Disabled,
+    )?;
+    let output_asset = FungibleAsset::new(
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?,
+        output_amount,
+        AssetCallbackFlag::Disabled,
+    )?;
 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;

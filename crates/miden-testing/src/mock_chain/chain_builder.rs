@@ -24,7 +24,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     StorageSlot,
 };
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
@@ -792,7 +792,8 @@ impl MockChainBuilder {
 
     /// Constructs a fungible asset based on the fee faucet ID and the provided amount.
     fn fee_asset(&self, amount: u64) -> anyhow::Result<FungibleAsset> {
-        FungibleAsset::new(self.fee_faucet_id, amount).context("failed to create fee asset")
+        FungibleAsset::new(self.fee_faucet_id, amount, AssetCallbackFlag::Disabled)
+            .context("failed to create fee asset")
     }
 }
 

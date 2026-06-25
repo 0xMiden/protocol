@@ -144,7 +144,7 @@ mod tests {
 
     use crate::Word;
     use crate::account::AccountId;
-    use crate::asset::{Asset, FungibleAsset};
+    use crate::asset::{Asset, AssetCallbackFlag, FungibleAsset};
     use crate::block::BlockNumber;
     use crate::note::{
         Note,
@@ -174,7 +174,8 @@ mod tests {
         let note_storage = NoteStorage::new(vec![target.prefix().into()]).unwrap();
         let recipient = NoteRecipient::new(serial_num, script, note_storage);
 
-        let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
+        let asset =
+            Asset::Fungible(FungibleAsset::new(faucet, 100, AssetCallbackFlag::Disabled).unwrap());
         let metadata =
             PartialNoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
 

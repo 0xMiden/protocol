@@ -22,7 +22,7 @@ use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType, StorageMapKey};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -154,7 +154,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         let eth_address = EthAddress::from_hex(&vectors.destination_addresses[i])
             .expect("valid destination address");
 
-        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+        let bridge_asset: Asset =
+            FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Disabled)
+                .unwrap()
+                .into();
         let note = B2AggNote::create(
             destination_network,
             eth_address,
@@ -204,7 +207,11 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         };
         burn_note_ids.push(burn_note.id());
 
-        let expected_asset = Asset::from(FungibleAsset::new(faucet.id(), expected_amounts[i])?);
+        let expected_asset = Asset::from(FungibleAsset::new(
+            faucet.id(),
+            expected_amounts[i],
+            AssetCallbackFlag::Disabled,
+        )?);
         assert!(
             burn_note.assets().iter().any(|asset| asset == &expected_asset),
             "BURN note after consume #{} should contain the bridged asset",
@@ -425,7 +432,9 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let destination_network = vectors.destination_networks[0];
     let eth_address =
         EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount, AssetCallbackFlag::Disabled)
+        .unwrap()
+        .into();
     let b2agg_note = B2AggNote::create(
         destination_network,
         eth_address,
@@ -534,7 +543,9 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new_unchecked(100);
     let bridge_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
@@ -658,7 +669,9 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new_unchecked(100);
     let bridge_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
     let eth_address =
         EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
 
@@ -793,7 +806,10 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
     let amount = AssetAmount::from(50_u32);
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_u64()).unwrap().into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_u64(), AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -923,7 +939,9 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new_unchecked(50);
     let bridge_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -1029,7 +1047,10 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
 
     // B2AGG note carrying a native asset.
     let amount = 42u64;
-    let bridge_asset: Asset = FungibleAsset::new(native_faucet.id(), amount).unwrap().into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(native_faucet.id(), amount, AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
     let destination_network = 1u32;
     let destination_address = EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
         .expect("valid destination address");

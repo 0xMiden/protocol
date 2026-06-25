@@ -25,7 +25,13 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::asset::{
+    Asset,
+    AssetCallbackFlag,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
@@ -361,20 +367,20 @@ async fn fungible_asset_update() -> anyhow::Result<()> {
 
     let max_amount = FungibleAsset::MAX_AMOUNT.as_u64();
 
-    let original_asset0 = FungibleAsset::new(faucet0, 300)?;
-    let original_asset1 = FungibleAsset::new(faucet1, 200)?;
-    let original_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let original_asset3 = FungibleAsset::new(faucet3, max_amount)?;
+    let original_asset0 = FungibleAsset::new(faucet0, 300, AssetCallbackFlag::Disabled)?;
+    let original_asset1 = FungibleAsset::new(faucet1, 200, AssetCallbackFlag::Disabled)?;
+    let original_asset2 = FungibleAsset::new(faucet2, 100, AssetCallbackFlag::Disabled)?;
+    let original_asset3 = FungibleAsset::new(faucet3, max_amount, AssetCallbackFlag::Disabled)?;
 
-    let added_asset0 = FungibleAsset::new(faucet0, 100)?;
-    let added_asset1 = FungibleAsset::new(faucet1, 100)?;
-    let added_asset2 = FungibleAsset::new(faucet2, 200)?;
-    let added_asset4 = FungibleAsset::new(faucet4, max_amount)?;
+    let added_asset0 = FungibleAsset::new(faucet0, 100, AssetCallbackFlag::Disabled)?;
+    let added_asset1 = FungibleAsset::new(faucet1, 100, AssetCallbackFlag::Disabled)?;
+    let added_asset2 = FungibleAsset::new(faucet2, 200, AssetCallbackFlag::Disabled)?;
+    let added_asset4 = FungibleAsset::new(faucet4, max_amount, AssetCallbackFlag::Disabled)?;
 
-    let removed_asset0 = FungibleAsset::new(faucet0, 200)?;
-    let removed_asset1 = FungibleAsset::new(faucet1, 100)?;
-    let removed_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let removed_asset3 = FungibleAsset::new(faucet3, max_amount)?;
+    let removed_asset0 = FungibleAsset::new(faucet0, 200, AssetCallbackFlag::Disabled)?;
+    let removed_asset1 = FungibleAsset::new(faucet1, 100, AssetCallbackFlag::Disabled)?;
+    let removed_asset2 = FungibleAsset::new(faucet2, 100, AssetCallbackFlag::Disabled)?;
+    let removed_asset3 = FungibleAsset::new(faucet3, max_amount, AssetCallbackFlag::Disabled)?;
 
     let tx_script = parse_tx_script(format!(
         "
@@ -466,18 +472,22 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet0,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
     let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet1,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
     let asset2 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet2,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
     let asset3 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet3,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
 
     let tx_script = parse_tx_script(format!(
@@ -561,17 +571,19 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
     let faucet_2: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
     let faucet_3: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
 
-    let asset_0: Asset = FungibleAsset::new(faucet_0, 1000)?.into();
+    let asset_0: Asset = FungibleAsset::new(faucet_0, 1000, AssetCallbackFlag::Disabled)?.into();
     let asset_1: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet_1,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ))
     .into();
 
-    let asset_2: Asset = FungibleAsset::new(faucet_2, 500)?.into();
+    let asset_2: Asset = FungibleAsset::new(faucet_2, 500, AssetCallbackFlag::Disabled)?.into();
     let asset_3: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet_3,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ))
     .into();
 
@@ -922,10 +934,12 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet0,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
     let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet1,
         rng.random::<[u8; 32]>().to_vec(),
+        AssetCallbackFlag::Disabled,
     ));
 
     let auth_code = format!(

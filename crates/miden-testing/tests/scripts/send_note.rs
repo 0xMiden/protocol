@@ -168,9 +168,8 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
         .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(
-        FungibleAsset::new(sender_fungible_faucet_account.id(), 10)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled),
+        FungibleAsset::new(sender_fungible_faucet_account.id(), 10, AssetCallbackFlag::Enabled)
+            .unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();

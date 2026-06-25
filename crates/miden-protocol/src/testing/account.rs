@@ -1,7 +1,7 @@
 use super::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use crate::Felt;
 use crate::account::{Account, AccountCode, AccountId, AccountStorage};
-use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+use crate::asset::{Asset, AssetCallbackFlag, AssetVault, FungibleAsset, NonFungibleAsset};
 use crate::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -41,16 +41,22 @@ impl AssetVault {
     /// - ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET
     pub fn mock() -> Self {
         let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-        let fungible_asset =
-            Asset::Fungible(FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT).unwrap());
+        let fungible_asset = Asset::Fungible(
+            FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT, AssetCallbackFlag::Disabled)
+                .unwrap(),
+        );
 
         let faucet_id_1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap();
-        let fungible_asset_1 =
-            Asset::Fungible(FungibleAsset::new(faucet_id_1, FUNGIBLE_ASSET_AMOUNT).unwrap());
+        let fungible_asset_1 = Asset::Fungible(
+            FungibleAsset::new(faucet_id_1, FUNGIBLE_ASSET_AMOUNT, AssetCallbackFlag::Disabled)
+                .unwrap(),
+        );
 
         let faucet_id_2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
-        let fungible_asset_2 =
-            Asset::Fungible(FungibleAsset::new(faucet_id_2, FUNGIBLE_ASSET_AMOUNT).unwrap());
+        let fungible_asset_2 = Asset::Fungible(
+            FungibleAsset::new(faucet_id_2, FUNGIBLE_ASSET_AMOUNT, AssetCallbackFlag::Disabled)
+                .unwrap(),
+        );
 
         let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
         AssetVault::new(&[fungible_asset, fungible_asset_1, fungible_asset_2, non_fungible_asset])

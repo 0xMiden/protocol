@@ -145,9 +145,12 @@ pub fn verify_minted_output_note(
 ) -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0).clone();
 
-    let fungible_asset: Asset = FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let fungible_asset: Asset = FungibleAsset::new(
+        faucet.id(),
+        params.amount.as_canonical_u64(),
+        AssetCallbackFlag::Enabled,
+    )?
+    .into();
     let assets = NoteAssets::new(vec![fungible_asset])?;
 
     let partial_metadata =
@@ -574,7 +577,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         Some(token_supply.into()),
     )?;
 
-    let fungible_asset = FungibleAsset::new(faucet.id(), 100).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet.id(), 100, AssetCallbackFlag::Disabled).unwrap();
 
     // need to create a note with the fungible asset to be burned
     let burn_note_script_code = "
@@ -643,7 +646,8 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     // Try to burn 100 tokens when only 50 have been issued
     let burn_amount = 100u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
 
     let burn_note_script_code = "
         # burn the asset
@@ -726,8 +730,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let output_script_root = note_recipient.script().root();
 
     let callbacks_flag = AssetCallbackFlag::Enabled;
-    let asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.with_callbacks(callbacks_flag);
+    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), callbacks_flag)?;
     let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -823,8 +826,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         executed_transaction,
         note_type: NoteType::Public,
         sender: faucet.id(),
-        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-            .with_callbacks(AssetCallbackFlag::Enabled)],
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?],
     );
 
     let output_note = executed_transaction.output_notes().get_note(0);
@@ -908,9 +910,9 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let amount = Felt::new_unchecked(75);
     // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
-        .unwrap()
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)
+            .unwrap();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -950,8 +952,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let expected_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?;
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
     let details_commitment =
         NoteDetailsCommitment::from_raw_commitments(recipient, assets.commitment());
@@ -1007,8 +1009,8 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1189,8 +1191,8 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1315,8 +1317,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1635,7 +1637,8 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     )?;
 
     let burn_amount = 100u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
 
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
@@ -1710,7 +1713,8 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         .code(set_policy_note_script.as_str())
         .build()?;
     let burn_amount = 10u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
     let mut rng = RandomCoin::new([Felt::from(501u32); 4].into());
     let burn_note = BurnNote::create(
         non_owner_account_id,
@@ -1765,7 +1769,8 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         .code(set_policy_note_script.as_str())
         .build()?;
     let burn_amount = 10u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
     let mut rng = RandomCoin::new([Felt::from(511u32); 4].into());
     let burn_note = BurnNote::create(
         owner_account_id,
@@ -1849,7 +1854,8 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
 
     // Burn amount of 10 is below the configured minimum of 50.
     let burn_amount = 10u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
     let burn_note = BurnNote::create(
         owner_account_id,
@@ -1889,7 +1895,8 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
 
     // Burn amount equal to the configured minimum of 50 meets the threshold.
     let burn_amount = 50u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
     let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
     let burn_note = BurnNote::create(
         owner_account_id,
@@ -1945,7 +1952,8 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
 
     // A burn of 10 is below the original threshold (50) but at/above the new one (5).
     let burn_amount = 10u64;
-    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), burn_amount, AssetCallbackFlag::Disabled).unwrap();
     let mut rng = RandomCoin::new([Felt::from(611u32); 4].into());
     let burn_note = BurnNote::create(
         owner_account_id,
@@ -2141,9 +2149,9 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let amount = Felt::new_unchecked(75);
     // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
-        .unwrap()
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)
+            .unwrap();
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
@@ -2224,8 +2232,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     target_account_mut.apply_patch(consume_executed_transaction.account_patch())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let expected_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)?;
     let balance = target_account_mut.vault().get_balance(expected_asset.vault_key())?;
     assert_eq!(balance, expected_asset.amount());
 
@@ -2317,9 +2325,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
     // Verify first note has exactly amount_1 tokens.
-    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let expected_asset_1: Asset =
+        FungibleAsset::new(faucet.id(), amount_1, AssetCallbackFlag::Enabled)?.into();
     let output_note_1 = executed_transaction.output_notes().get_note(0);
     let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
     let details_commitment_1 =
@@ -2328,9 +2335,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(output_note_1.id(), expected_id_1);
 
     // Verify second note has exactly amount_2 tokens.
-    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let expected_asset_2: Asset =
+        FungibleAsset::new(faucet.id(), amount_2, AssetCallbackFlag::Enabled)?.into();
     let output_note_2 = executed_transaction.output_notes().get_note(1);
     let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
     let details_commitment_2 =
@@ -2422,9 +2428,9 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     // The blocklist faucet has asset callbacks enabled, so the asset embedded in the MINT
     // note must carry the matching callback flag: `mint_and_send` binds the mint to the
     // full ASSET_KEY derived for the faucet, which encodes that flag.
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
-        .unwrap()
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let mint_asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64(), AssetCallbackFlag::Enabled)
+            .unwrap();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());

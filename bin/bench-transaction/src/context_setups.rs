@@ -15,7 +15,7 @@ use miden_agglayer::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
@@ -464,7 +464,8 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
     let destination_network = vectors.destination_networks[0];
     let destination_address =
         EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), bridge_amount)?.into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), bridge_amount, AssetCallbackFlag::Disabled)?.into();
     let b2agg_note = B2AggNote::create(
         destination_network,
         destination_address,

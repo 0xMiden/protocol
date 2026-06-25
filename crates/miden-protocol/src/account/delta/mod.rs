@@ -497,6 +497,7 @@ mod tests {
     };
     use crate::asset::{
         Asset,
+        AssetCallbackFlag,
         AssetVault,
         FungibleAsset,
         NonFungibleAsset,
@@ -568,6 +569,7 @@ mod tests {
                 .account_type(AccountType::Public)
                 .build_with_rng(&mut rand::rng()),
             vec![6],
+            AssetCallbackFlag::Disabled,
         ))
         .into();
         let fungible_2: Asset = FungibleAsset::new(
@@ -575,6 +577,7 @@ mod tests {
                 .account_type(AccountType::Public)
                 .build_with_rng(&mut rand::rng()),
             10,
+            AssetCallbackFlag::Disabled,
         )
         .unwrap()
         .into();

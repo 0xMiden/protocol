@@ -163,7 +163,7 @@ impl Deserializable for AccountVaultPatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset::{FungibleAsset, NonFungibleAsset};
+    use crate::asset::{AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 
     #[test]
@@ -175,8 +175,12 @@ mod tests {
         assert_eq!(empty_patch.get_size_hint(), serialized.len());
 
         let asset_0: Asset = FungibleAsset::mock(100);
-        let asset_1: Asset =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_1: Asset = FungibleAsset::new(
+            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
+            500_000,
+            AssetCallbackFlag::Disabled,
+        )?
+        .into();
         let asset_2: Asset = NonFungibleAsset::mock(&[10]);
         let asset_3: Asset = NonFungibleAsset::mock(&[20]);
         let patch = AccountVaultPatch::from_iters([asset_0, asset_1, asset_2], [asset_3]);

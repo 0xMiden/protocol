@@ -1,7 +1,7 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::TransactionScript;
@@ -48,6 +48,7 @@ fn create_multisig_smart_account(
     let asset = FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
         starting_balance,
+        AssetCallbackFlag::Disabled,
     )?;
 
     let multisig_account = AccountBuilder::new([0; 32])

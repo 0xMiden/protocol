@@ -378,11 +378,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     );
 
     // Verify full note ID construction
-    let expected_asset: Asset =
-        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled)
-            .into();
+    let expected_asset: Asset = FungibleAsset::new(
+        agglayer_faucet.id(),
+        miden_claim_amount.as_canonical_u64(),
+        AssetCallbackFlag::Enabled,
+    )
+    .unwrap()
+    .into();
     let expected_output_p2id_note = create_p2id_note_exact(
         agglayer_faucet.id(),
         destination_account_id,
@@ -1194,7 +1196,9 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // B2AGG note that will seed the bridge's vault with `miden_claim_amount_u64` of native asset.
     let bridge_asset: Asset =
-        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64).unwrap().into();
+        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64, AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
     let b2agg_destination_address =
         EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
             .expect("valid destination address");
@@ -1286,7 +1290,9 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     };
 
     let expected_asset: Asset =
-        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64).unwrap().into();
+        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64, AssetCallbackFlag::Disabled)
+            .unwrap()
+            .into();
 
     assert_eq!(output_note.metadata().sender(), bridge_account.id());
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
@@ -1452,10 +1458,13 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
 
     // Lock 2x the claim amount so the bridge vault could (if nullifier were broken) serve the
     // replayed claim.
-    let bridge_asset: Asset =
-        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64.saturating_mul(2))
-            .unwrap()
-            .into();
+    let bridge_asset: Asset = FungibleAsset::new(
+        native_faucet.id(),
+        miden_claim_amount_u64.saturating_mul(2),
+        AssetCallbackFlag::Disabled,
+    )
+    .unwrap()
+    .into();
     let b2agg_destination_address =
         EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
             .expect("valid destination address");

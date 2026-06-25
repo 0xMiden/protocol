@@ -1,5 +1,12 @@
 use crate::account::AccountId;
-use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use crate::asset::{
+    Asset,
+    AssetCallbackFlag,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
+use crate::errors::AssetError;
 use crate::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -11,6 +18,7 @@ impl NonFungibleAsset {
         let non_fungible_asset_details = NonFungibleAssetDetails::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
             asset_data.to_vec(),
+            AssetCallbackFlag::Disabled,
         );
         let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
         Asset::NonFungible(non_fungible_asset)
@@ -30,9 +38,26 @@ impl FungibleAsset {
             FungibleAsset::new(
                 AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
                 amount,
+                AssetCallbackFlag::Disabled,
             )
             .expect("asset is valid"),
         )
+    }
+
+    /// Returns a fungible asset with the provided faucet ID and amount and callbacks enabled.
+    ///
+    /// This is a convenience constructor for testing; production code should pass the
+    /// [`AssetCallbackFlag`] explicitly to [`FungibleAsset::new`].
+    pub fn with_callbacks(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
+        FungibleAsset::new(faucet_id, amount, AssetCallbackFlag::Enabled)
+    }
+
+    /// Returns a fungible asset with the provided faucet ID and amount and callbacks disabled.
+    ///
+    /// This is a convenience constructor for testing; production code should pass the
+    /// [`AssetCallbackFlag`] explicitly to [`FungibleAsset::new`].
+    pub fn without_callbacks(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
+        FungibleAsset::new(faucet_id, amount, AssetCallbackFlag::Disabled)
     }
 
     /// Returns a mocked asset account ID ([ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET]).

@@ -84,9 +84,12 @@ impl AccountVaultDelta {
             .filter(|&(_, &value)| value >= 0)
             .map(|(vault_key, &diff)| {
                 Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
+                    FungibleAsset::new(
+                        vault_key.faucet_id(),
+                        diff.unsigned_abs(),
+                        vault_key.callback_flag(),
+                    )
+                    .unwrap(),
                 )
             })
             .chain(
@@ -104,9 +107,12 @@ impl AccountVaultDelta {
             .filter(|&(_, &value)| value < 0)
             .map(|(vault_key, &diff)| {
                 Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
+                    FungibleAsset::new(
+                        vault_key.faucet_id(),
+                        diff.unsigned_abs(),
+                        vault_key.callback_flag(),
+                    )
+                    .unwrap(),
                 )
             })
             .chain(
@@ -510,7 +516,7 @@ pub enum NonFungibleDeltaAction {
 mod tests {
     use super::{AccountVaultDelta, Deserializable, Serializable};
     use crate::account::AccountId;
-    use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     #[test]
@@ -527,7 +533,8 @@ mod tests {
     #[test]
     fn test_is_empty_account_vault() {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-        let asset: Asset = FungibleAsset::new(faucet, 123).unwrap().into();
+        let asset: Asset =
+            FungibleAsset::new(faucet, 123, AssetCallbackFlag::Disabled).unwrap().into();
 
         assert!(AccountVaultDelta::default().is_empty());
         assert!(!AccountVaultDelta::from_iters([asset], []).is_empty());

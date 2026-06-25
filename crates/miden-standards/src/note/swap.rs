@@ -261,7 +261,12 @@ impl From<SwapNoteStorage> for NoteStorage {
 mod tests {
 
     use miden_protocol::account::{AccountIdVersion, AccountType};
-    use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+    use miden_protocol::asset::{
+        AssetCallbackFlag,
+        FungibleAsset,
+        NonFungibleAsset,
+        NonFungibleAssetDetails,
+    };
     use miden_protocol::note::{NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -279,11 +284,17 @@ mod tests {
     }
 
     fn fungible_asset() -> Asset {
-        Asset::Fungible(FungibleAsset::new(fungible_faucet(), 1000).unwrap())
+        Asset::Fungible(
+            FungibleAsset::new(fungible_faucet(), 1000, AssetCallbackFlag::Disabled).unwrap(),
+        )
     }
 
     fn non_fungible_asset() -> Asset {
-        let details = NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]);
+        let details = NonFungibleAssetDetails::new(
+            non_fungible_faucet(),
+            vec![0xaa, 0xbb],
+            AssetCallbackFlag::Disabled,
+        );
         Asset::NonFungible(NonFungibleAsset::new(&details))
     }
 
@@ -352,6 +363,7 @@ mod tests {
                     AccountType::Public,
                 ),
                 2500,
+                AssetCallbackFlag::Disabled,
             )
             .unwrap(),
         );
@@ -364,6 +376,7 @@ mod tests {
                     AccountType::Public,
                 ),
                 vec![0xaa, 0xbb, 0xcc, 0xdd],
+                AssetCallbackFlag::Disabled,
             )));
 
         // The fungible ID starts with 0xcdb1.
