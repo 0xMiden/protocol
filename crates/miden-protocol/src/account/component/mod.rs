@@ -26,7 +26,7 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 // ACCOUNT COMPONENT
 // ================================================================================================
 
-/// An [`AccountComponent`] defines a [`Library`](miden_assembly::Library) of code and the initial
+/// An [`AccountComponent`] defines a [`Library`](crate::assembly::Library) of code and the initial
 /// value and types of the [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
@@ -84,7 +84,7 @@ impl AccountComponent {
     ///
     /// # Arguments
     ///
-    /// * `package` - The package containing the [`Library`](miden_assembly::Library) and account
+    /// * `package` - The package containing the [`Library`](crate::assembly::Library) and account
     ///   component metadata
     /// * `init_storage_data` - The initialization data for storage slots
     ///
