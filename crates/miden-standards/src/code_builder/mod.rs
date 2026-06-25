@@ -212,14 +212,15 @@ impl CodeBuilderNoteScriptSource for std::path::PathBuf {
 /// ```no_run
 /// # use anyhow::Context;
 /// # use miden_standards::code_builder::CodeBuilder;
+/// # use miden_standards::StandardsLib;
 /// # use miden_protocol::assembly::Library;
-/// # use miden_protocol::CoreLibrary;
+/// # use miden_protocol::ProtocolLib;
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
 /// # let script_code = "begin nop end";
 /// # // Create sample libraries for the example
-/// # let my_lib: Library = CoreLibrary::default().into(); // Convert CoreLibrary to Library
-/// # let fpi_lib: Library = CoreLibrary::default().into();
+/// # let my_lib: Library = StandardsLib::default().into();
+/// # let fpi_lib: Library = ProtocolLib::default().into();
 /// let script = CodeBuilder::default()
 ///     .with_linked_module("my::module", module_code).context("failed to link module")?
 ///     .with_statically_linked_library(&my_lib).context("failed to link static library")?
