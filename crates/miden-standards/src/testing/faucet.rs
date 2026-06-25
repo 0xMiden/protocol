@@ -6,7 +6,15 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::errors::AccountError;
 
 use crate::account::access::PausableManager;
-use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSigAcl,
+    AuthSingleSigAclConfig,
+    GuardianConfig,
+};
 use crate::account::faucets::FungibleFaucet;
 use crate::account::policies::TokenPolicyManager;
 
@@ -50,4 +58,39 @@ pub fn user_faucet_single_sig_acl(
             .with_auth_trigger_procedures(all_authority_gated_setter_roots())
             .with_allow_unauthorized_input_notes(true),
     )
+}
+
+/// Convenience constructor for a multisig user-account fungible faucet auth component: an
+/// [`AuthMultisig`] over `approvers` with the given `default_threshold`, with every
+/// authority-gated setter (see [`all_authority_gated_setter_roots`]) pinned to that same
+/// threshold via per-procedure thresholds.
+pub fn user_faucet_multisig(
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+    default_threshold: u32,
+) -> Result<AuthMultisig, AccountError> {
+    let proc_thresholds = all_authority_gated_setter_roots()
+        .into_iter()
+        .map(|root| (root, default_threshold))
+        .collect();
+    let config = AuthMultisigConfig::new(approvers, default_threshold)?
+        .with_proc_thresholds(proc_thresholds)?;
+    AuthMultisig::new(config)
+}
+
+/// Convenience constructor for a guardian-backed multisig user-account fungible faucet auth
+/// component: an [`AuthGuardedMultisig`] over `approvers` with the given `default_threshold` and
+/// `guardian`, with every authority-gated setter (see [`all_authority_gated_setter_roots`]) pinned
+/// to that same threshold via per-procedure thresholds.
+pub fn user_faucet_guarded(
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+    default_threshold: u32,
+    guardian: GuardianConfig,
+) -> Result<AuthGuardedMultisig, AccountError> {
+    let proc_thresholds = all_authority_gated_setter_roots()
+        .into_iter()
+        .map(|root| (root, default_threshold))
+        .collect();
+    let config = AuthGuardedMultisigConfig::new(approvers, default_threshold, guardian)?
+        .with_proc_thresholds(proc_thresholds)?;
+    AuthGuardedMultisig::new(config)
 }

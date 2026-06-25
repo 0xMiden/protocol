@@ -6,13 +6,32 @@ use miden_protocol::account::{AccountBuilder, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
-use super::{FungibleFaucet, create_network_fungible_faucet, create_user_fungible_faucet};
+use super::{
+    FungibleFaucet,
+    create_guarded_user_fungible_faucet,
+    create_multisig_user_fungible_faucet,
+    create_network_fungible_faucet,
+    create_singlesig_user_fungible_faucet,
+};
 use crate::account::access::{AccessControl, PausableManager};
-use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    GuardianConfig,
+};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
-use crate::testing::faucet::user_faucet_single_sig_acl;
+use crate::testing::faucet::{
+    all_authority_gated_setter_roots,
+    user_faucet_guarded,
+    user_faucet_multisig,
+    user_faucet_single_sig_acl,
+};
+use crate::tx_script::ExpirationTransactionScript;
 
 /// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
 fn allow_all_policy_manager() -> TokenPolicyManager {
@@ -70,7 +89,7 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let auth_component =
         user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2).unwrap();
 
-    let faucet_account = create_user_fungible_faucet(
+    let faucet_account = create_singlesig_user_fungible_faucet(
         init_seed,
         sample_faucet(),
         auth_component,
@@ -130,6 +149,100 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
+/// Builds `n` distinct approver `(PublicKeyCommitment, AuthScheme)` pairs for multisig tests.
+fn sample_approvers(n: u32) -> alloc::vec::Vec<(PublicKeyCommitment, AuthScheme)> {
+    (0..n)
+        .map(|i| {
+            (
+                PublicKeyCommitment::from(Word::new([Felt::from(i + 1); 4])),
+                AuthScheme::Falcon512Poseidon2,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn user_fungible_faucet_with_multisig() {
+    let auth_component = user_faucet_multisig(sample_approvers(3), 2).unwrap();
+
+    let faucet_account = create_multisig_user_fungible_faucet(
+        [3u8; 32],
+        sample_faucet(),
+        auth_component,
+        allow_all_policy_manager(),
+        AccountType::Private,
+    )
+    .unwrap();
+
+    // Threshold config slot layout: [threshold, num_approvers, 0, 0].
+    assert_eq!(
+        faucet_account
+            .storage()
+            .get_item(AuthMultisig::threshold_config_slot())
+            .unwrap(),
+        [Felt::from(2_u32), Felt::from(3_u32), Felt::ZERO, Felt::ZERO].into()
+    );
+
+    // Every authority-gated setter requires the configured multisig threshold.
+    let expected_threshold: Word = [Felt::from(2_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+    for root in all_authority_gated_setter_roots() {
+        let stored = faucet_account
+            .storage()
+            .get_map_item(
+                AuthMultisig::procedure_thresholds_slot(),
+                StorageMapKey::new(root.as_word()),
+            )
+            .unwrap();
+        assert_eq!(stored, expected_threshold);
+    }
+
+    // The faucet component round-trips from the built account.
+    let _faucet_component = FungibleFaucet::try_from(faucet_account).unwrap();
+}
+
+#[test]
+fn user_fungible_faucet_with_guarded_multisig() {
+    let guardian = GuardianConfig::new(
+        PublicKeyCommitment::from(Word::new([Felt::from(99_u32); 4])),
+        AuthScheme::Falcon512Poseidon2,
+    );
+    let auth_component = user_faucet_guarded(sample_approvers(3), 2, guardian).unwrap();
+
+    let faucet_account = create_guarded_user_fungible_faucet(
+        [4u8; 32],
+        sample_faucet(),
+        auth_component,
+        allow_all_policy_manager(),
+        AccountType::Private,
+    )
+    .unwrap();
+
+    // Threshold config slot layout: [threshold, num_approvers, 0, 0].
+    assert_eq!(
+        faucet_account
+            .storage()
+            .get_item(AuthGuardedMultisig::threshold_config_slot())
+            .unwrap(),
+        [Felt::from(2_u32), Felt::from(3_u32), Felt::ZERO, Felt::ZERO].into()
+    );
+
+    // Every authority-gated setter requires the configured multisig threshold.
+    let expected_threshold: Word = [Felt::from(2_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+    for root in all_authority_gated_setter_roots() {
+        let stored = faucet_account
+            .storage()
+            .get_map_item(
+                AuthGuardedMultisig::procedure_thresholds_slot(),
+                StorageMapKey::new(root.as_word()),
+            )
+            .unwrap();
+        assert_eq!(stored, expected_threshold);
+    }
+
+    // The faucet component round-trips from the built account.
+    let _faucet_component = FungibleFaucet::try_from(faucet_account).unwrap();
+}
+
 /// `create_network_fungible_faucet` with `Ownable2Step` builds a valid account. The factory
 /// constructs `AuthNetworkAccount` internally; the setter gate is enforced in-procedure by
 /// `assert_sender_is_owner`.
@@ -149,6 +262,36 @@ fn network_fungible_faucet_with_ownable2step() {
         allow_all_policy_manager(),
     )
     .expect("Ownable2Step network faucet should be accepted");
+}
+
+/// `create_network_fungible_faucet` allowlists the canonical `ExpirationTransactionScript` in the
+/// tx-script allowlist so submitters can shorten their transaction's expiration.
+#[test]
+fn network_fungible_faucet_allowlists_expiration_tx_script() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = miden_protocol::account::AccountId::try_from(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    )
+    .unwrap();
+
+    let account = create_network_fungible_faucet(
+        [8u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        allow_all_policy_manager(),
+    )
+    .unwrap();
+
+    // The expiration tx-script root is flagged as allowed ([1, 0, 0, 0]) in the allowlist map.
+    let stored = account
+        .storage()
+        .get_map_item(
+            AuthNetworkAccount::allowed_tx_scripts_slot(),
+            StorageMapKey::new(ExpirationTransactionScript::script_root().as_word()),
+        )
+        .unwrap();
+    assert_eq!(stored, [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
 }
 
 #[test]
