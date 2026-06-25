@@ -4,6 +4,7 @@
 
 ### Changes
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
+- [BREAKING] Replaced the `BurnNote` marker type and its `BurnNote::create` factory with a struct built via a `bon` typestate builder (`BurnNote::builder()`); a `BurnNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
