@@ -17,7 +17,7 @@ use miden_assembly::{
 };
 use miden_core::events::EventId;
 use miden_mast_package::{Package, PackageId, TargetType, Version};
-use miden_package_registry::NoPackageStore;
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -100,14 +100,11 @@ fn main() -> Result<()> {
     // copy the shared modules to the kernel and protocol library folders
     copy_shared_modules(&source_dir)?;
 
-    // write the preassembled miden-core library so the projects can depend on it
-    write_core_package(&source_dir)?;
-
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    // all project dependencies are resolved from workspace sources, so no package store is needed
-    let mut store = NoPackageStore;
+    // The miden-core library is provided through an in-memory registry
+    let mut store = core_package_registry()?;
 
     // compile transaction kernel
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
@@ -133,7 +130,7 @@ fn main() -> Result<()> {
 fn compile_batch_kernel(
     source_dir: &Path,
     target_dir: &Path,
-    store: &mut NoPackageStore,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -172,7 +169,7 @@ fn compile_tx_kernel(
     source_dir: &Path,
     target_dir: &Path,
     build_dir: &str,
-    store: &mut NoPackageStore,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let project_dir = source_dir.join(ASM_TX_KERNEL_DIR);
 
@@ -266,7 +263,7 @@ fn parse_kernel_modules(
 fn compile_kernel_testing_lib(
     source_dir: &Path,
     target_dir: &Path,
-    store: &mut NoPackageStore,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     use miden_mast_package::TargetType;
     use miden_project::Linkage;
@@ -377,7 +374,7 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
 fn compile_protocol_lib(
     source_dir: &Path,
     target_dir: &Path,
-    store: &mut NoPackageStore,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -398,10 +395,11 @@ fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Result<Assembler> 
     Ok(Assembler::new(source_manager).with_warnings_as_errors(true))
 }
 
-/// Loads the `miden-core` library and stores it as a `.masp` package in `{source_dir}`.
-fn write_core_package(source_dir: &Path) -> Result<()> {
+/// Builds an in-memory package registry loaded with the `miden-core` library, so the projects can
+/// just declare it by version in the manifest.
+fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     // TODO: once miden_core_lib gets updated to v0.24, `CoreLibrary` will be a `Package` so we
-    // won't need to add the dummy metadata.
+    // won't need to add the dummy metadata
     let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
     let package = Package::from_library(
         PackageId::from("miden-core"),
@@ -410,7 +408,10 @@ fn write_core_package(source_dir: &Path) -> Result<()> {
         library,
         core::iter::empty(),
     );
-    package.write_masp_file(source_dir).into_diagnostic()
+
+    let mut registry = InMemoryPackageRegistry::default();
+    registry.cache_package(Arc::from(package)).into_diagnostic()?;
+    Ok(registry)
 }
 
 /// Writes the package to the `{target_dir}/{name}.masp` file.
