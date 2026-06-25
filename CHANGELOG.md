@@ -50,6 +50,7 @@
 - Fixed misleading documentation in the faucet and transfer policy procedures ([#3119](https://github.com/0xMiden/protocol/pull/3119)).
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
 - Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
+- [BREAKING] PSWAP notes now treat the requested asset amount as a minimum rather than an exact cap: a fill at or above it is accepted and takes the whole offered side with no remainder note (fills above the requested amount previously reverted). Partial fills below the minimum are unchanged. Removed the `ERR_PSWAP_FILL_EXCEEDS_REQUESTED` error ([#3148](https://github.com/0xMiden/protocol/pull/3148)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
