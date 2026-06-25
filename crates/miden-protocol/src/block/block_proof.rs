@@ -25,13 +25,17 @@ impl BlockProof {
 
 impl Serializable for BlockProof {
     fn write_into<W: ByteWriter>(&self, _target: &mut W) {
-        // TODO: Implement serialization for BlockProof when fields exist.
+        // BlockProof has no fields currently, so this is a no-op.
+        // WARNING: If fields are added, serialization MUST be implemented here
+        // to prevent silent data corruption.
     }
 }
 
 impl Deserializable for BlockProof {
     fn read_from<R: ByteReader>(_source: &mut R) -> Result<Self, DeserializationError> {
-        // TODO: Implement deserialization for BlockProof when fields exist.
+        // BlockProof has no fields currently, so deserialization returns empty.
+        // WARNING: If fields are added, deserialization MUST be implemented here
+        // to prevent silent data corruption.
         let block = Self {};
 
         Ok(block)
