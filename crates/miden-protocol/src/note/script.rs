@@ -6,7 +6,9 @@ use core::num::TryFromIntError;
 
 use miden_core::mast::{MastNode, MastNodeExt};
 use miden_crypto_derive::WordWrapper;
-use miden_mast_package::Package;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_mast_package::{Package, PackageDebugInfoError};
+use miden_processor::LoadedMastForest;
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastNodeId};
@@ -68,10 +70,11 @@ impl Deserializable for NoteScriptRoot {
 ///
 /// A note's script represents a program which must be executed for a note to be consumed. As such
 /// it defines the rules and side effects of consuming a given note.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct NoteScript {
     mast: Arc<MastForest>,
     entrypoint: MastNodeId,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl NoteScript {
@@ -87,6 +90,7 @@ impl NoteScript {
         Self {
             entrypoint: code.entrypoint(),
             mast: code.mast_forest().clone(),
+            package_debug_info: None,
         }
     }
 
@@ -104,7 +108,11 @@ impl NoteScript {
     /// Panics if the specified entrypoint is not in the provided MAST forest.
     pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
         assert!(mast.get_node_by_id(entrypoint).is_some());
-        Self { mast, entrypoint }
+        Self {
+            mast,
+            entrypoint,
+            package_debug_info: None,
+        }
     }
 
     /// Returns a new [NoteScript] instantiated from the provided library.
@@ -138,6 +146,7 @@ impl NoteScript {
         Ok(Self {
             mast: library.mast_forest().clone(),
             entrypoint,
+            package_debug_info: decode_package_debug_info(library),
         })
     }
 
@@ -181,7 +190,11 @@ impl NoteScript {
         // Create a minimal MastForest with just an external node referencing the digest
         let (mast, entrypoint) = create_external_node_forest(digest);
 
-        Ok(Self { mast: Arc::new(mast), entrypoint })
+        Ok(Self {
+            mast: Arc::new(mast),
+            entrypoint,
+            package_debug_info: decode_package_debug_info(library),
+        })
     }
 
     /// Creates an [`NoteScript`] from a [`Package`].
@@ -210,6 +223,11 @@ impl NoteScript {
         self.mast.clone()
     }
 
+    /// Returns the MAST forest and package-owned debug information backing this note script.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
+    }
+
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
         self.entrypoint
@@ -228,6 +246,7 @@ impl NoteScript {
             .map_root(0, &self.entrypoint)
             .expect("entrypoint should be preserved when compacting a note script MAST forest");
         self.mast = Arc::new(mast);
+        self.package_debug_info = None;
 
         debug_assert_eq!(self.root(), root);
     }
@@ -246,9 +265,18 @@ impl NoteScript {
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
+            package_debug_info: self.package_debug_info,
         }
     }
 }
+
+impl PartialEq for NoteScript {
+    fn eq(&self, other: &Self) -> bool {
+        self.mast == other.mast && self.entrypoint == other.entrypoint
+    }
+}
+
+impl Eq for NoteScript {}
 
 // CONVERSIONS INTO NOTE SCRIPT
 // ================================================================================================
@@ -404,6 +432,26 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
     (mast, node_id)
 }
 
+fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
+    match package.debug_info() {
+        Ok(debug_info) => debug_info.map(Arc::new),
+        Err(PackageDebugInfoError::UntrustedSections) => None,
+        Err(_) => None,
+    }
+}
+
+fn loaded_mast_forest(
+    mast: Arc<MastForest>,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
+) -> LoadedMastForest {
+    match package_debug_info {
+        Some(package_debug_info) => {
+            LoadedMastForest::with_package_debug_info(mast, Ok(Some((*package_debug_info).clone())))
+        },
+        None => LoadedMastForest::new(mast),
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -440,6 +488,18 @@ mod tests {
         let decoded: NoteScript = encoded.try_into().unwrap();
 
         assert_eq!(note_script, decoded);
+    }
+
+    #[test]
+    fn test_note_script_preserves_package_debug_info() {
+        let library = assemble_test_library(
+            "test-note-script-debug-info",
+            "test::note_debug_info",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let note_script = NoteScript::from_library(&library).unwrap();
+
+        assert!(note_script.loaded_mast_forest().package_debug_info().unwrap().is_some());
     }
 
     #[test]

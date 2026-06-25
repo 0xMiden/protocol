@@ -3,6 +3,9 @@ use alloc::vec::Vec;
 
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_mast_package::{Package, PackageDebugInfoError};
+use miden_processor::LoadedMastForest;
 
 use super::{
     AccountError,
@@ -44,6 +47,7 @@ pub struct AccountCode {
     mast: Arc<MastForest>,
     procedures: Vec<AccountProcedureRoot>,
     commitment: Word,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl AccountCode {
@@ -74,6 +78,7 @@ impl AccountCode {
             commitment: build_procedure_commitment(&procedures),
             procedures,
             mast,
+            package_debug_info: None,
         }
     }
 
@@ -105,9 +110,10 @@ impl AccountCode {
     pub(super) fn from_components_unchecked(
         components: &[AccountComponent],
     ) -> Result<Self, AccountError> {
-        let (merged_mast_forest, _) =
+        let (merged_mast_forest, root_map) =
             MastForest::merge(components.iter().map(|component| component.mast_forest()))
                 .map_err(AccountError::AccountComponentMastForestMergeError)?;
+        let package_debug_info = merge_component_debug_info(components, &root_map)?;
 
         let mut builder = AccountProcedureBuilder::new();
         let mut components_iter = components.iter();
@@ -126,6 +132,7 @@ impl AccountCode {
             commitment: build_procedure_commitment(&procedures),
             procedures,
             mast: Arc::new(merged_mast_forest),
+            package_debug_info,
         })
     }
 
@@ -140,6 +147,11 @@ impl AccountCode {
     /// Returns a reference to the [MastForest] backing this account code.
     pub fn mast(&self) -> Arc<MastForest> {
         self.mast.clone()
+    }
+
+    /// Returns the MAST forest and package-owned debug information backing this account code.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
     }
 
     /// Returns a reference to the account procedure roots.
@@ -409,6 +421,54 @@ fn build_procedure_commitment(procedures: &[AccountProcedureRoot]) -> Word {
     Hasher::hash_elements(&elements)
 }
 
+fn merge_component_debug_info(
+    components: &[AccountComponent],
+    root_map: &miden_core::mast::MastForestRootMap,
+) -> Result<Option<Arc<PackageDebugInfo>>, AccountError> {
+    let component_debug_info = components
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, component)| {
+            decode_package_debug_info(component.component_code().as_library())
+                .map(|debug| (idx, debug))
+        })
+        .collect::<Vec<_>>();
+
+    if component_debug_info.is_empty() {
+        return Ok(None);
+    }
+
+    let debug_info = PackageDebugInfo::merge_source_debug(
+        component_debug_info.iter().map(|(idx, debug)| (*idx, debug.as_ref())),
+        root_map,
+    )
+    .map_err(|err| {
+        AccountError::other_with_source("failed to merge account component debug info", err)
+    })?;
+
+    Ok(Some(Arc::new(debug_info)))
+}
+
+fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
+    match package.debug_info() {
+        Ok(debug_info) => debug_info.map(Arc::new),
+        Err(PackageDebugInfoError::UntrustedSections) => None,
+        Err(_) => None,
+    }
+}
+
+fn loaded_mast_forest(
+    mast: Arc<MastForest>,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
+) -> LoadedMastForest {
+    match package_debug_info {
+        Some(package_debug_info) => {
+            LoadedMastForest::with_package_debug_info(mast, Ok(Some((*package_debug_info).clone())))
+        },
+        None => LoadedMastForest::new(mast),
+    }
+}
+
 /// Converts given procedures into field elements
 fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
     procedures.iter().flat_map(AccountProcedureRoot::as_elements).copied().collect()
@@ -476,6 +536,18 @@ mod tests {
         let err = AccountCode::from_components(&[component]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountCodeNoAuthComponent);
+    }
+
+    #[test]
+    fn test_account_code_preserves_component_debug_info() {
+        let library =
+            assemble_test_library("test-account-code-debug-info", "test::account_code", CODE);
+        let metadata = AccountComponentMetadata::new("test::debug_info");
+        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+
+        let code = AccountCode::from_components(&[NoopAuthComponent.into(), component]).unwrap();
+
+        assert!(code.loaded_mast_forest().package_debug_info().unwrap().is_some());
     }
 
     #[test]
