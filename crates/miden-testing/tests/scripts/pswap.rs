@@ -111,6 +111,7 @@ fn assert_vault_patch(
 #[rstest]
 #[case::partial_public(NoteType::Public, 20)]
 #[case::full_public(NoteType::Public, 25)]
+#[case::over_fill_public(NoteType::Public, 30)]
 #[case::partial_private(NoteType::Private, 20)]
 #[case::full_private(NoteType::Private, 25)]
 #[tokio::test]
@@ -181,6 +182,19 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
+
+    // The consumer (Bob) provides all his ETH and receives his offered-asset share; for an
+    // over-fill (fill >= requested) this is the whole offered side. Covers
+    // calculate_offered_for_requested.
+    let bob_payout = pswap.calculate_offered_for_requested(fill_amount)?;
+    assert_vault_patch(
+        executed_transaction.account_patch().vault(),
+        [
+            FungibleAsset::new(usdc_faucet.id(), bob_payout)?,
+            FungibleAsset::new(eth_faucet.id(), 0)?,
+        ],
+    );
+
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
@@ -275,95 +289,6 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     // Verify Alice received the filled amount.
     let vault_patch = executed_transaction.account_patch().vault();
     assert_vault_patch(vault_patch, [FungibleAsset::new(eth_faucet.id(), fill_amount)?]);
-
-    Ok(())
-}
-
-/// Round-trip proof for a single-sided over-fill: paying above the `requested` minimum must
-/// produce a reconstructable payback and no remainder.
-///
-/// Alice offers 50 USDC for a minimum of 25 ETH. Bob fills with 30 ETH (above the floor),
-/// single-sided (`note_fill = 0`). An over-fill is a full take, so the creator banks the full
-/// 30 ETH, Bob takes the whole 50 USDC offered side, and no remainder is emitted. Alice then
-/// reconstructs the payback from the on-chain attachment and consumes it unauthenticated; the
-/// recipient and the received amount must match, proving the over-fill payback round-trips.
-#[tokio::test]
-async fn pswap_overfill_single_sided_reconstructs_payback() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
-    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
-
-    let offered_asset = FungibleAsset::new(usdc_faucet.id(), 50)?;
-    let requested_asset = FungibleAsset::new(eth_faucet.id(), 25)?;
-    let overfill = 30u64; // above the 25 ETH floor
-
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [offered_asset.into()])?;
-    let bob = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(eth_faucet.id(), overfill)?.into()],
-    )?;
-
-    let (pswap, pswap_note) = build_pswap_note(
-        &mut builder,
-        alice.id(),
-        offered_asset,
-        requested_asset,
-        NoteType::Public,
-    )?;
-
-    let mut mock_chain = builder.build()?;
-
-    // --- Bob fills above the minimum, single-sided ---
-    let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), PswapNote::create_args(overfill, 0)?);
-
-    // The Rust `execute()` over-fill prediction must match the MASM output note: feed the
-    // predicted P2ID as an expected output so the executor asserts the commitments are equal.
-    let (predicted_payback, remainder) =
-        pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), overfill)?), None)?;
-    assert!(remainder.is_none(), "an over-fill produces no remainder");
-
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
-        .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(predicted_payback)])
-        .build()?;
-    let executed_transaction = tx_context.execute().await?;
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-    mock_chain.prove_next_block()?;
-
-    // An over-fill is a full take: exactly one output note (the payback), no remainder.
-    assert_eq!(
-        executed_transaction.output_notes().num_notes(),
-        1,
-        "over-fill must not emit a remainder",
-    );
-
-    // The payback carries the full over-fill amount, i.e. the creator banks above the floor.
-    let output_p2id = executed_transaction.output_notes().get_note(0);
-    let attachment_word = first_attachment_word(output_p2id.attachments());
-    let fill_from_aux = attachment_word[0].as_canonical_u64();
-    assert_eq!(fill_from_aux, overfill, "payback must carry the full over-fill amount");
-
-    // --- Alice reconstructs the payback from the on-chain attachment (depth 1) ---
-    let payback_attachment =
-        PswapNoteAttachment::new(AssetAmount::new(fill_from_aux)?, pswap.order_id(), 1);
-    let reconstructed_payback =
-        pswap.payback_note(output_p2id.metadata().sender(), &payback_attachment)?;
-    assert_eq!(
-        reconstructed_payback.recipient().digest(),
-        output_p2id.recipient_digest(),
-        "reconstructed over-fill payback recipient must match the on-chain output",
-    );
-
-    // --- Alice consumes the reconstructed payback and receives the full over-fill ---
-    let tx_context = mock_chain
-        .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
-        .build()?;
-    let executed_transaction = tx_context.execute().await?;
-    let vault_patch = executed_transaction.account_patch().vault();
-    assert_vault_patch(vault_patch, [FungibleAsset::new(eth_faucet.id(), overfill)?]);
 
     Ok(())
 }
@@ -716,155 +641,44 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Integration test for a PSWAP fill that uses **both** `account_fill` and
-/// `note_fill` on the same note in the same transaction.
+/// Cross-swap that fills Alice's PSWAP from both `account_fill` (Charlie's vault) and `note_fill`
+/// (Bob's offered leg) in one transaction. `requested_amount` is a minimum, so this covers an exact
+/// full fill and an over-fill:
+/// - `full_fill`: account_fill 20 + note_fill 30 = 50 = Alice's 50 ETH minimum. The 100 USDC
+///   offered splits 40 (Charlie) / 60 (Bob); two P2IDs, no remainder.
+/// - `over_fill`: account_fill 20 + note_fill 50 = 70 > 50. The 100 USDC splits against denom=70:
+///   floor(100*20/70)=28 to Charlie, residual 72 to Bob (proportional note share 71 + 1 rounding
+///   unit). Alice's P2ID carries the full 70 ETH (she banks the surplus); no remainder.
 ///
-/// Setup:
-/// - Alice's pswap: 100 USDC offered for 50 ETH requested (ratio 2:1).
-/// - Bob's pswap:    30 ETH offered for 60 USDC requested (ratio 1:2).
-/// - Charlie has 20 ETH in vault.
-///
-/// Charlie consumes both notes in one tx:
-/// - Alice's: `account_fill = 20 ETH` (debited from his vault)
-///            + `note_fill = 30 ETH` (sourced from inflight, produced by Bob's pswap)
-///            → 50 ETH total (full fill). Payout split:
-///              - 40 USDC → Charlie's vault (account_fill path)
-///              - 60 USDC → inflight (note_fill path, consumed by Bob's pswap)
-/// - Bob's:   `note_fill = 60 USDC` (sourced from inflight, produced by Alice's pswap) → 60 USDC
-///   total (full fill). Payout: 30 ETH → inflight (matches Alice's note_fill consumption above).
-///
-/// Net effect: Charlie -20 ETH / +40 USDC; Alice's P2ID = 50 ETH; Bob's P2ID = 60 USDC.
+/// In both, Charlie nets -account_fill ETH / +his USDC share; Bob's offered ETH flows entirely into
+/// Alice's note_fill leg via inflight, never touching Charlie's vault.
+#[rstest]
+#[case::full_fill(20, 30, 60, 40)]
+#[case::over_fill(20, 50, 72, 28)]
 #[tokio::test]
-async fn pswap_note_combined_account_fill_and_note_fill_test() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(200))?;
-    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(60))?;
-
-    // Alice's pswap: 100 USDC offered for 50 ETH requested.
-    // Bob's pswap: 30 ETH offered for 60 USDC requested.
-    // Charlie consumes both; his vault supplies 20 ETH (account_fill) and
-    // the other 30 ETH is sourced from Bob's offered leg via note_fill.
-    let alice_offered = FungibleAsset::new(usdc_faucet.id(), 100)?;
-    let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
-    let bob_offered = FungibleAsset::new(eth_faucet.id(), 30)?;
-    let bob_requested = FungibleAsset::new(usdc_faucet.id(), 60)?;
-
-    let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), 20)?;
-    let account_fill_eth = charlie_vault_eth;
-    let note_fill_eth = bob_offered;
-    let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), 40)?;
-
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [alice_offered.into()])?;
-    let bob = builder.add_existing_wallet_with_assets(BASIC_AUTH, [bob_offered.into()])?;
-    let charlie =
-        builder.add_existing_wallet_with_assets(BASIC_AUTH, [charlie_vault_eth.into()])?;
-
-    let (alice_pswap, alice_pswap_note) = build_pswap_note(
-        &mut builder,
-        alice.id(),
-        alice_offered,
-        alice_requested,
-        NoteType::Public,
-    )?;
-    let (bob_pswap, bob_pswap_note) =
-        build_pswap_note(&mut builder, bob.id(), bob_offered, bob_requested, NoteType::Public)?;
-
-    let mock_chain = builder.build()?;
-
-    // Alice's pswap uses a combined fill; Bob's pswap uses pure note_fill.
-    let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(20, 30)?);
-    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 60)?);
-
-    let (alice_p2id_note, alice_remainder) =
-        alice_pswap.execute(charlie.id(), Some(account_fill_eth), Some(note_fill_eth))?;
-    assert!(
-        alice_remainder.is_none(),
-        "combined fill hits full fill — no remainder expected"
-    );
-
-    let (bob_p2id_note, bob_remainder) =
-        bob_pswap.execute(charlie.id(), None, Some(bob_requested))?;
-    assert!(bob_remainder.is_none(), "bob pswap is filled completely via note_fill");
-
-    let tx_context = mock_chain
-        .build_tx_context(charlie.id(), &[alice_pswap_note.id(), bob_pswap_note.id()], &[])?
-        .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
-            RawOutputNote::Full(alice_p2id_note),
-            RawOutputNote::Full(bob_p2id_note),
-        ])
-        .build()?;
-
-    let executed_transaction = tx_context.execute().await?;
-
-    // Exactly 2 output notes: Alice's P2ID (50 ETH) + Bob's P2ID (60 USDC).
-    let output_notes = executed_transaction.output_notes();
-    assert_eq!(output_notes.num_notes(), 2, "expected exactly 2 P2ID output notes");
-
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == alice_requested)),
-        "Alice's P2ID ({alice_requested:?}) not found",
-    );
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == bob_requested)),
-        "Bob's P2ID ({bob_requested:?}) not found",
-    );
-
-    // Charlie's vault: -20 ETH, results in 0 (account_fill) + 40 USDC (account_fill_payout).
-    // The note_fill legs flow entirely through inflight and never touch his vault.
-    let vault_patch = executed_transaction.account_patch().vault();
-    assert_vault_patch(vault_patch, [charlie_payout_usdc, FungibleAsset::new(eth_faucet.id(), 0)?]);
-
-    Ok(())
-}
-
-/// Integration test for an **over-fill** that draws from both `account_fill` and `note_fill`.
-///
-/// `requested_amount` is a minimum, so a fill above it is allowed from any source. The offered
-/// side is split between the consumer (account fill) and the counterparty (note fill) in
-/// proportion to each leg's fill against `denom = total_fill`, the counterparty absorbs the
-/// rounding dust, the creator banks the surplus requested, and no remainder is produced.
-///
-/// Setup:
-/// - Alice's pswap: 100 USDC offered for 50 ETH requested.
-/// - Bob's pswap:    50 ETH offered for 72 USDC requested.
-/// - Charlie has 20 ETH in vault.
-///
-/// Charlie consumes both notes in one tx:
-/// - Alice's: `account_fill = 20 ETH` (from his vault) + `note_fill = 50 ETH` (from Bob's offered
-///   leg) = 70 ETH total, an over-fill of the 50 ETH minimum. The 100 USDC offered is split against
-///   `denom = 70`:
-///     - account share -> Charlie: `floor(100 * 20/70) = 28` USDC
-///     - counterparty residual -> Bob: `100 - 28 = 72` USDC (the proportional note share is
-///       `floor(100 * 50/70) = 71`, so Bob also absorbs the 1-unit rounding dust)
-///   Alice's P2ID carries the full 70 ETH: she banks 20 ETH over her 50 ETH minimum.
-/// - Bob's:   `note_fill = 72 USDC` (from Alice's offered leg) = exact full fill. His P2ID carries
-///   72 USDC and his 50 ETH offered flows entirely into Alice's note_fill leg.
-///
-/// Net effect: Charlie -20 ETH / +28 USDC; two P2ID notes, no remainder.
-#[tokio::test]
-async fn pswap_note_combined_over_fill_test() -> anyhow::Result<()> {
+async fn pswap_note_combined_account_fill_and_note_fill_test(
+    #[case] account_fill: u64,
+    #[case] note_fill: u64,
+    #[case] bob_requested_amount: u64,
+    #[case] charlie_payout_amount: u64,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(200))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(100))?;
 
+    // Alice offers 100 USDC for a 50 ETH minimum. Bob offers exactly the note_fill leg's ETH and
+    // requests `bob_requested_amount` USDC, drawn from Alice's offered side via the cross-swap.
     let alice_offered = FungibleAsset::new(usdc_faucet.id(), 100)?;
     let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
-    let bob_offered = FungibleAsset::new(eth_faucet.id(), 50)?;
-    let bob_requested = FungibleAsset::new(usdc_faucet.id(), 72)?;
+    let bob_offered = FungibleAsset::new(eth_faucet.id(), note_fill)?;
+    let bob_requested = FungibleAsset::new(usdc_faucet.id(), bob_requested_amount)?;
 
-    let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), 20)?;
-    let account_fill_eth = charlie_vault_eth;
-    let note_fill_eth = bob_offered;
-    let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), 70)?;
-    let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), 28)?;
+    let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), account_fill)?;
+    // Alice's P2ID carries the whole fill (account_fill + note_fill ETH); the creator banks any
+    // amount above the 50 ETH minimum.
+    let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), account_fill + note_fill)?;
+    let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), charlie_payout_amount)?;
 
     let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [alice_offered.into()])?;
     let bob = builder.add_existing_wallet_with_assets(BASIC_AUTH, [bob_offered.into()])?;
@@ -883,15 +697,15 @@ async fn pswap_note_combined_over_fill_test() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    // Alice over-fills via a combined fill (20 + 50 = 70 > 50); Bob is filled exactly via pure
-    // note_fill (72), which is sourced from Alice's offered residual.
+    // Alice: combined account_fill + note_fill. Bob: filled exactly via pure note_fill, sourced
+    // from Alice's offered side.
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(20, 50)?);
-    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 72)?);
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(account_fill, note_fill)?);
+    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, bob_requested_amount)?);
 
     let (alice_p2id_note, alice_remainder) =
-        alice_pswap.execute(charlie.id(), Some(account_fill_eth), Some(note_fill_eth))?;
-    assert!(alice_remainder.is_none(), "an over-fill produces no remainder");
+        alice_pswap.execute(charlie.id(), Some(charlie_vault_eth), Some(bob_offered))?;
+    assert!(alice_remainder.is_none(), "fill >= minimum produces no remainder");
 
     let (bob_p2id_note, bob_remainder) =
         bob_pswap.execute(charlie.id(), None, Some(bob_requested))?;
@@ -908,7 +722,7 @@ async fn pswap_note_combined_over_fill_test() -> anyhow::Result<()> {
 
     let executed_transaction = tx_context.execute().await?;
 
-    // Exactly 2 output notes: Alice's P2ID (70 ETH, the over-filled amount) + Bob's P2ID (72 USDC).
+    // Exactly 2 P2ID output notes, no remainder: Alice's (the full fill in ETH) + Bob's (USDC).
     let output_notes = executed_transaction.output_notes();
     assert_eq!(
         output_notes.num_notes(),
@@ -920,7 +734,7 @@ async fn pswap_note_combined_over_fill_test() -> anyhow::Result<()> {
         output_notes
             .iter()
             .any(|note| note.assets().iter_fungible().any(|a| a == alice_payback_eth)),
-        "Alice's P2ID ({alice_payback_eth:?}) not found — the creator should bank the surplus",
+        "Alice's P2ID ({alice_payback_eth:?}) not found",
     );
     assert!(
         output_notes
@@ -929,9 +743,9 @@ async fn pswap_note_combined_over_fill_test() -> anyhow::Result<()> {
         "Bob's P2ID ({bob_requested:?}) not found",
     );
 
-    // Charlie's vault: -20 ETH (account_fill) and +28 USDC (account share = floor(100 * 20/70)).
-    // Bob receives the residual 72 USDC (note share 71 + 1 rounding unit), and the note_fill legs
-    // flow through inflight without touching Charlie's vault.
+    // Charlie's vault: -account_fill ETH and +his account-share USDC
+    // (floor(100 * account_fill / total_fill)). The note_fill legs flow through inflight and never
+    // touch his vault.
     let vault_patch = executed_transaction.account_patch().vault();
     assert_vault_patch(vault_patch, [charlie_payout_usdc, FungibleAsset::new(eth_faucet.id(), 0)?]);
 
