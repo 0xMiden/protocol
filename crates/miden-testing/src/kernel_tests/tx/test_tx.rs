@@ -82,7 +82,7 @@ use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note, create_spawn_note};
-use crate::{Auth, MockChain, TransactionContextBuilder};
+use crate::{Auth, MockChain, TestTransactionBuilder};
 
 /// Tests that consuming a note created in a block that is newer than the reference block of the
 /// transaction fails.
@@ -160,7 +160,7 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_block_procedures() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = "
         use miden::protocol::tx
@@ -377,7 +377,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
-    let tx_context = TransactionContextBuilder::new(executor_account)
+    let tx_context = TestTransactionBuilder::new(executor_account)
         .tx_script(tx_script)
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
@@ -607,7 +607,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new()
         .with_statically_linked_library(&library)?
         .compile_tx_script(source)?;
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
         .tx_script(tx_script.clone())
         .build()?;
@@ -652,7 +652,7 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .extend_advice_map([(tx_script_input_key, tx_script_input_value.to_vec())])
         .build()?;
@@ -695,7 +695,7 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     // extend the advice map with the entry that is accessed using the provided transaction script
     // argument
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .extend_advice_map([(tx_script_args, advice_entry.as_elements().to_vec())])
         .tx_script_args(tx_script_args)
@@ -728,7 +728,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
         "#
     );
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?;
 
@@ -755,7 +755,7 @@ async fn test_get_script_root_without_script() -> anyhow::Result<()> {
         end
         "#;
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     tx_context.execute_code(code).await?;
 
@@ -823,7 +823,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         account_code,
         Felt::new_unchecked(1u64),
     );
-    let tx_context = crate::TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    let tx_context = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
     _ = tx_context.execute().await?;
 
     Ok(())

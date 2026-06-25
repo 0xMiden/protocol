@@ -55,7 +55,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -696,16 +696,16 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
-        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
-
-        let note = P2ideNote::create(
-            sender_account_id,
-            storage,
-            asset.to_vec(),
-            note_type,
-            NoteAttachments::default(),
-            &mut self.rng,
-        )?;
+        let note: Note = P2ideNote::builder()
+            .sender(sender_account_id)
+            .target(target_account_id)
+            .assets(asset.iter().copied())
+            .note_type(note_type)
+            .maybe_reclaim_height(reclaim_height)
+            .maybe_timelock_height(timelock_height)
+            .generate_serial_number(&mut self.rng)
+            .build()?
+            .into();
 
         self.add_output_note(RawOutputNote::Full(note.clone()));
 
