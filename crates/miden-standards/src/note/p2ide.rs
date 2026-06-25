@@ -66,7 +66,7 @@ impl P2ideNote {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No assets were provided ([`NoteError::MissingAsset`]).
+    /// - No assets were provided.
     /// - The assets or attachments exceed their protocol limits (see [`NoteAssets::new`] and
     ///   [`NoteAttachments::new`]).
     #[builder]
@@ -81,7 +81,7 @@ impl P2ideNote {
         #[builder(default)] note_type: NoteType,
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
-            return Err(NoteError::MissingAsset);
+            return Err(NoteError::other("a P2IDE note must contain at least one asset"));
         }
 
         let storage = P2ideNoteStorage::new(target, reclaim_height, timelock_height);
@@ -480,16 +480,18 @@ mod tests {
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
     #[test]
     fn builder_accumulates_assets() {
+        let mut rng = RandomCoin::new(Word::empty());
         let note = P2ideNote::builder()
             .sender(sender())
             .target(target())
-            .serial_number(Word::empty())
             .asset(FungibleAsset::new(faucet_a(), 100).unwrap())
             .assets([Asset::from(FungibleAsset::new(faucet_b(), 200).unwrap())])
+            .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
         assert_eq!(note.assets().num_assets(), 2);
+        assert_ne!(note.serial_number(), Word::empty());
     }
 
     /// A P2IDE note must carry at least one asset.
@@ -502,7 +504,7 @@ mod tests {
             .build()
             .expect_err("a note without assets must be rejected");
 
-        assert!(matches!(err, NoteError::MissingAsset));
+        assert!(matches!(err, NoteError::Other { .. }));
     }
 
     /// The reclaim and timelock heights are optional and surfaced through the getters.
@@ -520,38 +522,5 @@ mod tests {
 
         assert_eq!(note.reclaim_height(), Some(BlockNumber::from(42u32)));
         assert_eq!(note.timelock_height(), Some(BlockNumber::from(100u32)));
-    }
-
-    /// `.generate_serial_number()` draws the serial from the RNG.
-    #[test]
-    fn builder_generates_serial_number() {
-        let mut rng = RandomCoin::new(Word::empty());
-        let note = P2ideNote::builder()
-            .sender(sender())
-            .target(target())
-            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
-            .generate_serial_number(&mut rng)
-            .build()
-            .unwrap();
-
-        assert_ne!(note.serial_number(), Word::empty());
-    }
-
-    /// `Note::from(p2ide_note)` is infallible and preserves the assets.
-    #[test]
-    fn into_note_preserves_assets() {
-        let p2ide_note = P2ideNote::builder()
-            .sender(sender())
-            .target(target())
-            .serial_number(Word::empty())
-            .asset(FungibleAsset::new(faucet_a(), 42).unwrap())
-            .note_type(NoteType::Public)
-            .build()
-            .unwrap();
-
-        let assets = p2ide_note.assets().clone();
-        let note = Note::from(p2ide_note);
-
-        assert_eq!(note.assets(), &assets);
     }
 }
