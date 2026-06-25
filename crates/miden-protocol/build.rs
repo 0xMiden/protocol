@@ -135,7 +135,7 @@ fn compile_batch_kernel(
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mut project_assembler =
-        build_assembler(source_manager)?.for_project_at_path(manifest_path, store)?;
+        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
 
     let batch_kernel_package = project_assembler
         .assemble(ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET), BUILD_PROFILE)?;
@@ -174,7 +174,7 @@ fn compile_tx_kernel(
     let project_dir = source_dir.join(ASM_TX_KERNEL_DIR);
 
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let mut project_assembler = build_assembler(source_manager.clone())?
+    let mut project_assembler = build_assembler(source_manager.clone())
         .for_project_at_path(project_dir.join(PROJECT_MANIFEST), store)?;
 
     // assemble the kernel library and write it to the "tx_kernel.masp" file
@@ -273,11 +273,11 @@ fn compile_kernel_testing_lib(
     let utils_package = {
         let utils_manifest = source_dir.join(UTILS_DIR).join(PROJECT_MANIFEST);
         let mut utils_assembler =
-            build_assembler(source_manager.clone())?.for_project_at_path(utils_manifest, store)?;
+            build_assembler(source_manager.clone()).for_project_at_path(utils_manifest, store)?;
         utils_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?
     };
 
-    let mut assembler = build_assembler(source_manager.clone())?
+    let mut assembler = build_assembler(source_manager.clone())
         .with_dynamic_library(miden_core_lib::CoreLibrary::default())?;
     assembler.link_package(utils_package, Linkage::Static)?;
 
@@ -379,7 +379,7 @@ fn compile_protocol_lib(
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mut project_assembler =
-        build_assembler(source_manager)?.for_project_at_path(manifest_path, store)?;
+        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
 
     let protocol_package =
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
@@ -390,9 +390,9 @@ fn compile_protocol_lib(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a new [Assembler] using the provided source manager.
-fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Result<Assembler> {
-    Ok(Assembler::new(source_manager).with_warnings_as_errors(true))
+/// Returns a new [Assembler] using the provided source manager, with warnings treated as errors.
+fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
+    Assembler::new(source_manager).with_warnings_as_errors(true)
 }
 
 /// Builds an in-memory package registry loaded with the `miden-core` library, so the projects can
