@@ -4,17 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::ast::{Module, ModuleKind};
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{
-    Assembler,
-    KernelLibrary,
-    Library,
-    ModuleParser,
-    ProjectSourceInputs,
-    ProjectTargetSelector,
-};
+use miden_assembly::{Assembler, KernelLibrary, Library, ProjectTargetSelector};
 use miden_core::events::EventId;
 use miden_mast_package::{Package, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
@@ -31,6 +23,7 @@ const ASM_PROTOCOL_DIR: &str = "protocol";
 const UTILS_DIR: &str = "utils";
 const SHARED_MODULES_DIR: &str = "shared_modules";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
 /// Name of the manifest file defining a Miden project.
@@ -38,13 +31,6 @@ const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
 const BUILD_PROFILE: &str = "release";
-
-/// Name of the directory containing the transaction kernel modules, relative to the transaction
-/// kernel project root.
-const TX_KERNEL_LIB_DIR: &str = "lib";
-
-/// File name of the transaction kernel's root module, which defines the exported kernel API.
-const TX_KERNEL_API_FILE: &str = "api.masm";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
@@ -151,17 +137,16 @@ fn compile_batch_kernel(
 ///
 /// The project is expected to have the following structure:
 ///
-/// - {project_dir}/lib/api.masm   -> defines exported procedures from the transaction kernel.
-/// - {project_dir}/lib            -> contains the kernel modules, assembled under `$kernel`.
-/// - {project_dir}/main.masm      -> defines the executable program of the transaction kernel.
-/// - {project_dir}/tx_script_main -> defines the executable program of the arbitrary transaction
+/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction kernel.
+/// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction kernel.
+/// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary transaction
 ///   script.
 ///
 /// The following are written to the `target_dir`:
 ///
 /// - the kernel library package, compiled from lib/api.masm.
-/// - the kernel executable package, compiled from main.masm.
-/// - the transaction script executor package, compiled from tx_script_main.masm.
+/// - the kernel executable package, compiled from bin/main.masm.
+/// - the transaction script executor package, compiled from bin/tx_script_main.masm.
 ///
 /// The kernel procedures table is written to `{build_dir}/procedures.rs`.
 fn compile_tx_kernel(
@@ -184,110 +169,42 @@ fn compile_tx_kernel(
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(kernel_package.try_into_kernel_library()?, build_dir)?;
 
-    // Assemble the executable targets and write them to a masp file
+    // Assemble the executable targets and write their packages to the `target_dir`.
     //
-    // Executable targets are assembled under the `$exec` namespace, but the kernel executables
-    // `exec` kernel modules directly, expecting them under `$kernel`. To support this, the kernel
-    // modules are parsed under the `$kernel` namespace and provided to the assembler explicitly.
-    for (target_name, root_file) in [
-        (TX_KERNEL_MAIN_TARGET, "main.masm"),
-        (TX_SCRIPT_MAIN_TARGET, "tx_script_main.masm"),
-    ] {
-        let mut parser = ModuleParser::new(ModuleKind::Executable);
-        parser.set_warnings_as_errors(true);
-        let root = parser.parse_file(
-            miden_assembly::Path::exec_path(),
-            project_dir.join(root_file),
-            source_manager.clone(),
-        )?;
-        let support = parse_kernel_modules(&project_dir, source_manager.clone())?;
-
-        let package = project_assembler.assemble_with_sources(
-            ProjectTargetSelector::Executable(target_name),
-            BUILD_PROFILE,
-            ProjectSourceInputs { root, support },
-        )?;
+    // The kernel internals now live in the `miden-tx-kernel-core` library, which both programs
+    // depend on, so the executables are assembled directly through the project manifest.
+    for target_name in [TX_KERNEL_MAIN_TARGET, TX_SCRIPT_MAIN_TARGET] {
+        let package = project_assembler
+            .assemble(ProjectTargetSelector::Executable(target_name), BUILD_PROFILE)?;
         package.write_masp_file(target_dir).into_diagnostic()?;
     }
 
     // make sure the store is released before it is borrowed again below
     drop(project_assembler);
 
-    // Build the kernel modules as a plain library and write to as a masp file.
-    // This is needed in test assemblers to access individual procedures which would otherwise
-    // be hidden when using KernelLibrary.
+    // Assemble the kernel internals as a plain library and write its package to the `target_dir`.
+    // This is needed in test assemblers to access individual internal procedures which are not
+    // part of the kernel's public syscall API (api.masm).
     #[cfg(any(feature = "testing", test))]
     compile_kernel_testing_lib(source_dir, target_dir, store)?;
 
     Ok(())
 }
 
-/// Parses the transaction kernel modules in `{project_dir}/lib` under the `$kernel` namespace.
-///
-/// The kernel's root module (api.masm) is excluded: when assembling the kernel executables it is
-/// provided by the kernel library package, which the project assembler links automatically.
-// boxed modules are required by `ProjectSourceInputs`
-#[allow(clippy::vec_box)]
-fn parse_kernel_modules(
-    project_dir: &Path,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<Vec<Box<Module>>> {
-    let lib_dir = project_dir.join(TX_KERNEL_LIB_DIR);
-
-    let mut modules = Vec::new();
-    for module_file in shared::get_masm_files(&lib_dir)? {
-        if module_file.file_name().is_some_and(|name| name == TX_KERNEL_API_FILE) {
-            continue;
-        }
-
-        let module_name = module_file
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .ok_or_else(|| miette::miette!("invalid module file name: {module_file:?}"))?;
-        let module_path = miden_assembly::Path::kernel_path().join(module_name);
-
-        let mut parser = ModuleParser::new(ModuleKind::Library);
-        parser.set_warnings_as_errors(true);
-        modules.push(parser.parse_file(&module_path, &module_file, source_manager.clone())?);
-    }
-
-    Ok(modules)
-}
-
-/// Assembles the transaction kernel modules as a plain library (i.e. not as a kernel) with the
-/// utils library statically linked, and saves the resulting package to `target_dir`.
+/// Assembles the `miden-tx-kernel-core` library and saves the resulting package to the
+/// `target_dir`.
 #[cfg(any(feature = "testing", test))]
 fn compile_kernel_testing_lib(
     source_dir: &Path,
     target_dir: &Path,
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
-    use miden_mast_package::TargetType;
-    use miden_project::Linkage;
-
+    let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let mut assembler =
+        build_assembler(source_manager).for_project_at_path(core_manifest, store)?;
 
-    let utils_package = {
-        let utils_manifest = source_dir.join(UTILS_DIR).join(PROJECT_MANIFEST);
-        let mut utils_assembler =
-            build_assembler(source_manager.clone()).for_project_at_path(utils_manifest, store)?;
-        utils_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?
-    };
-
-    let mut assembler = build_assembler(source_manager.clone())
-        .with_dynamic_library(miden_core_lib::CoreLibrary::default())?;
-    assembler.link_package(utils_package, Linkage::Static)?;
-
-    let modules = parse_kernel_modules(&source_dir.join(ASM_TX_KERNEL_DIR), source_manager)?;
-    let library = assembler.assemble_library(modules)?;
-
-    let package = Package::from_library(
-        "miden-tx-kernel-testing".into(),
-        package_version()?,
-        TargetType::Library,
-        library,
-        [],
-    );
+    let package = assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
     package.write_masp_file(target_dir).into_diagnostic()
 }
@@ -411,18 +328,12 @@ fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     Ok(registry)
 }
 
-/// Returns the version of this crate as the package version.
-#[cfg(any(feature = "testing", test))]
-fn package_version() -> Result<miden_mast_package::Version> {
-    miden_mast_package::Version::parse(env!("CARGO_PKG_VERSION")).into_diagnostic()
-}
-
-/// Copies the content of the build `shared_modules` folder to the `lib` and `protocol` build
-/// folders. This is required to include the shared modules as APIs of the `kernel` and `protocol`
-/// libraries.
+/// Copies the content of the build `shared_modules` folder to the kernel `internals` and
+/// `protocol` build folders. This is required to include the shared modules in the
+/// `miden::tx_kernel_core` and `miden::protocol` libraries.
 ///
 /// This is done to make it possible to import the modules in the `shared_modules` folder directly,
-/// i.e. "use $kernel::account_id".
+/// i.e. "use miden::tx_kernel_core::account_id".
 fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
     // source is expected to be an `OUT_DIR/asm` folder
     let shared_modules_dir = source_dir.as_ref().join(SHARED_MODULES_DIR);
@@ -430,9 +341,9 @@ fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
     for module_path in shared::get_masm_files(shared_modules_dir).unwrap() {
         let module_name = module_path.file_name().unwrap();
 
-        // copy to kernel lib
-        let kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
-        fs::copy(&module_path, kernel_lib_folder.join(module_name)).into_diagnostic()?;
+        // copy to the kernel internals library
+        let core_folder = source_dir.as_ref().join(ASM_TX_KERNEL_CORE_DIR);
+        fs::copy(&module_path, core_folder.join(module_name)).into_diagnostic()?;
 
         // copy to protocol lib
         let protocol_lib_folder = source_dir.as_ref().join(ASM_PROTOCOL_DIR);
@@ -484,6 +395,12 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
     let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
         .context("failed to extract all masm errors")?;
+    // Most kernel error constants live in the internals library, which is a separate project.
+    let kernel_core_dir = asm_source_dir.join(ASM_TX_KERNEL_CORE_DIR);
+    errors.extend(
+        shared::extract_all_masm_errors(&kernel_core_dir)
+            .context("failed to extract all masm errors")?,
+    );
     errors.extend_from_slice(&shared_utils_errors);
     validate_tx_kernel_category(&errors)?;
 

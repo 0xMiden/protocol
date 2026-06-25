@@ -1,6 +1,6 @@
-use $kernel::account_id
-use $kernel::fungible_asset
-use $kernel::non_fungible_asset
+use miden::tx_kernel_core::account_id
+use miden::tx_kernel_core::fungible_asset
+use miden::tx_kernel_core::non_fungible_asset
 use miden::protocol_utils::asset->asset_utils
 
 # ERRORS

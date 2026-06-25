@@ -1,5 +1,5 @@
 [workspace]
-members = ["kernels/batch", "kernels/transaction", "protocol", "utils"]
+members = ["kernels/batch", "kernels/transaction", "kernels/transaction-core", "protocol", "utils"]
 
 [workspace.package]
 version = "0.16.0"
@@ -8,3 +8,4 @@ version = "0.16.0"
 miden-core           = "*"
 miden-protocol-utils = { linkage = "static", path = "utils" }
 miden-tx-kernel      = { path = "kernels/transaction" }
+miden-tx-kernel-core = { linkage = "static", path = "kernels/transaction-core" }

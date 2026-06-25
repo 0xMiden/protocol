@@ -51,9 +51,9 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -132,7 +132,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
     let asset = FungibleAsset::mock(5);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -163,7 +163,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
 
     let code = format!(
         "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
       use mock::faucet
 
       begin
@@ -239,10 +239,10 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use miden::core::collections::smt
 
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -283,7 +283,7 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -351,7 +351,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let code = format!(
         r#"
         use mock::faucet->mock_faucet
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -390,9 +390,9 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -471,7 +471,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -502,7 +502,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -537,10 +537,10 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -593,7 +593,7 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -657,7 +657,7 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin

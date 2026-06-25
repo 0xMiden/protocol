@@ -1,7 +1,7 @@
-use $kernel::tx
-use $kernel::asset
-use $kernel::account
-use $kernel::account_id
+use miden::tx_kernel_core::tx
+use miden::tx_kernel_core::asset
+use miden::tx_kernel_core::account
+use miden::tx_kernel_core::account_id
 use miden::core::word
 
 # CONSTANTS

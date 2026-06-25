@@ -1,8 +1,8 @@
 use miden::core::word
-use $kernel::memory
-use $kernel::memory::LINK_MAP_ENTRY_SIZE
-use $kernel::memory::LINK_MAP_REGION_END_PTR
-use $kernel::memory::LINK_MAP_REGION_START_PTR
+use miden::tx_kernel_core::memory
+use miden::tx_kernel_core::memory::LINK_MAP_ENTRY_SIZE
+use miden::tx_kernel_core::memory::LINK_MAP_REGION_END_PTR
+use miden::tx_kernel_core::memory::LINK_MAP_REGION_START_PTR
 
 # A link map is a map data structure based on a sorted linked list.
 #

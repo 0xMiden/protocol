@@ -1,5 +1,5 @@
-use $kernel::account_id
-use $kernel::asset
+use miden::tx_kernel_core::account_id
+use miden::tx_kernel_core::asset
 
 # ERRORS
 # =================================================================================================

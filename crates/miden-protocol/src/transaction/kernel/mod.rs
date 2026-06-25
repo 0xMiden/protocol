@@ -442,7 +442,7 @@ impl TransactionKernel {
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
     const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-testing.masp"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {

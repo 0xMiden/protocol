@@ -1,0 +1,11 @@
+[package]
+name              = "miden-tx-kernel-core"
+version.workspace = true
+
+[lib]
+namespace = "miden::tx_kernel_core"
+path      = "mod.masm"
+
+[dependencies]
+miden-core.workspace           = true
+miden-protocol-utils.workspace = true
