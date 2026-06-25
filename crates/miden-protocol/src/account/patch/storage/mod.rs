@@ -1,3 +1,6 @@
+mod patch_operation;
+pub use patch_operation::StoragePatchOperation;
+
 mod storage_patch;
 pub use storage_patch::AccountStoragePatch;
 

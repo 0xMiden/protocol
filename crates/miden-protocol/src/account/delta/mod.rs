@@ -182,22 +182,32 @@ impl AccountDelta {
     ///     indicating asset removal.
     ///   - Note that the domain is the same independent of asset addition or removal, since the
     ///     `delta_op` sufficiently distinguishes the two domains.
-    /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
-    ///   value has changed**, depending on the slot type:
+    /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
+    ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
+    ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
+    ///   slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 5, 0, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
-    ///       `NEW_VALUE` is the new value of the slot and `slot_id_{suffix, prefix}` is the
-    ///       identifier of the slot.
+    ///     - Append `[[domain = 5, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///       `NEW_VALUE` is the new value of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - Append `[[domain = 6, num_changed_entries, slot_id_suffix, slot_id_prefix], 0, 0, 0,
-    ///       0]`, where `slot_id_{suffix, prefix}` are the slot identifiers and
-    ///       `num_changed_entries` is the number of changed key-value pairs in the map.
-    ///         - For partial state deltas, the map header must only be included if
-    ///           `num_changed_entries` is not zero.
-    ///         - For full state deltas, the map header must always be included.
+    ///     - Append `[[domain = 6, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries,
+    ///       0, 0, 0]]`, where `num_changed_entries` is the number of changed key-value pairs in
+    ///       the map.
+    ///         - If `patch_op` is
+    ///           [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create)
+    ///           and `num_changed_entries` is zero, the trailer must be included to signal the
+    ///           creation of the slot.
+    ///         - If `patch_op` is
+    ///           [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update)
+    ///           and `num_changed_entries` is zero, the trailer must be omitted, since it is a
+    ///           no-op.
+    ///         - If `patch_op` is
+    ///           [`StoragePatchOperation::Remove`](crate::account::StoragePatchOperation::Remove),
+    ///           `num_changed_entries` is set to zero, since the number of removed entries is
+    ///           unknown.
     ///
     /// ## Rationale
     ///
@@ -209,10 +219,10 @@ impl AccountDelta {
     ///
     /// ### New Accounts
     ///
-    /// The delta for new accounts (a full state delta) must commit to all the storage slots of the
-    /// account, even if the storage slots have a default value (e.g. the empty word for value slots
-    /// or an empty storage map). This ensures the full state delta commits to the exact storage
-    /// slots that are contained in the account.
+    /// The delta for new accounts (a full state delta) must commit to all the created storage slots
+    /// of the account, even if these slots contain the default value (e.g. the empty word for value
+    /// slots or an empty storage map). This ensures the full state delta commits to the exact
+    /// storage slots that are contained in the account.
     ///
     /// ## Security
     ///
@@ -223,14 +233,15 @@ impl AccountDelta {
     /// crafts a delta outside the VM that adds a non-fungible asset. To prevent that, a couple
     /// of measures are taken.
     ///
-    /// - Because multiple unrelated contexts (e.g. vaults and storage slots) are hashed in the same
+    /// - Because multiple unrelated domains (e.g. vaults and storage slots) are hashed in the same
     ///   hasher, domain separators are used to disambiguate. For each changed asset and each
     ///   changed slot in the delta, a domain separator is hashed into the delta. The domain
     ///   separator is always at the same index in each layout so it cannot be maliciously crafted
     ///   (see below for an example).
     /// - Storage value slots:
-    ///   - since only changed value slots are included in the delta, there is no ambiguity between
-    ///     a value slot being set to EMPTY_WORD and its value being unchanged.
+    ///   - since value slots are only included in the patch if their value has changed when the
+    ///     operation is `Update`, there is no ambiguity between a value slot being set to
+    ///     EMPTY_WORD and its value being unchanged.
     /// - Storage map slots:
     ///   - Map slots append a header which summarizes the changes in the slot, in particular the
     ///     slot ID and number of changed entries.
@@ -255,15 +266,15 @@ impl AccountDelta {
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
     ///   [/* no asset delta */],
-    ///   [[domain = 5, 0, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
-    ///   [[domain = 5, 0, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
+    ///   [[domain = 5, patch_op, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
+    ///   [[domain = 5, patch_op, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
     /// ]
     /// ```
     ///
     /// - `NEW_VALUE` is user-controlled and can be crafted to match `ASSET_VALUE` or `EMPTY_WORD`.
     /// - Slot IDs are user-controlled and can be crafted to match the two most significant elements
     ///   in the asset key or `num_added_assets` and the fixed 0.
-    /// - This leaves only the domain separator and the delta_op to differentiate these two deltas.
+    /// - This leaves only the domain separator and the patch_op to differentiate these two deltas.
     ///
     /// The delta and patch headers further use distinct domain separators (1 and 2 respectively),
     /// so a delta and a patch with otherwise identical bodies can never collide.
@@ -276,8 +287,8 @@ impl AccountDelta {
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
     ///   [/* no asset delta */],
-    ///   [domain = 6, num_changed_entries = 0, slot_id_suffix = 20, slot_id_prefix = 21, 0, 0, 0, 0]
-    ///   [domain = 6, num_changed_entries = 0, slot_id_suffix = 42, slot_id_prefix = 43, 0, 0, 0, 0]
+    ///   [domain = 6, patch_op, slot_id_suffix = 20, slot_id_prefix = 21, num_changed_entries = 0, 0, 0, 0]
+    ///   [domain = 6, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 0, 0, 0, 0]
     /// ]
     /// ```
     ///
@@ -286,7 +297,7 @@ impl AccountDelta {
     ///   ID_AND_NONCE, EMPTY_WORD,
     ///   [/* no asset delta */],
     ///   [KEY0, VALUE0],
-    ///   [domain = 6, num_changed_entries = 1, slot_id_suffix = 42, slot_id_prefix = 43, 0, 0, 0, 0]
+    ///   [domain = 6, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 1, 0, 0, 0]
     /// ]
     /// ```
     ///
@@ -299,9 +310,9 @@ impl AccountDelta {
     /// #### New Accounts
     ///
     /// The number of changed entries of a storage map can be validly zero when an empty storage map
-    /// is added to a new account. In such cases, the number of changed key-value pairs is 0, but
-    /// the map must still be committed to, in order to differentiate between a slot being an empty
-    /// map or not being present at all.
+    /// is created in account (e.g. at account creation time). In such cases, the number of changed
+    /// key-value pairs is 0, but the map must still be committed to, in order to differentiate
+    /// between a slot being created as an empty map or not being created at all.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }

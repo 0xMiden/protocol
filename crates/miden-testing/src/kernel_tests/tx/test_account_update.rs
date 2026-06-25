@@ -4,6 +4,7 @@ use std::string::String;
 use std::sync::LazyLock;
 
 use anyhow::Context;
+use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::{
     Account,
@@ -22,8 +23,11 @@ use miden_protocol::account::{
     AccountVaultPatch,
     StorageMap,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
     StorageSlotName,
+    StorageSlotPatch,
+    StorageValuePatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::note::{NoteTag, NoteType};
@@ -835,8 +839,18 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
     let patch = proven_tx.account_update().details().unwrap_public();
 
     assert_eq!(patch.storage().values().count(), 2);
-    assert_eq!(patch.storage().get_value(&slot_name0), Some(Word::empty()));
-    assert_eq!(patch.storage().get_value(&slot_name1), Some(slot_value2));
+    assert_matches!(
+        patch.storage().get(&slot_name0).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
+            assert_eq!(*value, Word::empty())
+        }
+    );
+    assert_matches!(
+        patch.storage().get(&slot_name1).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
+            assert_eq!(*value, slot_value2)
+        }
+    );
 
     let recreated_account = Account::try_from(patch)?;
     // The recreated account should match the original account with the nonce incremented (and the
@@ -913,14 +927,13 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
     let patch = proven_tx.account_update().details().unwrap_public();
 
     assert_eq!(patch.storage().maps().count(), 2);
+
     for slot_name in [&slot_name0, &slot_name1] {
-        assert!(
-            patch
-                .storage()
-                .get_map(slot_name)
-                .unwrap()
-                .entries()
-                .is_some_and(|entries| entries.is_empty())
+        assert_matches!(
+            patch.storage().get(slot_name).unwrap(),
+            StorageSlotPatch::Map(StorageMapPatch::Create { entries }) => {
+                assert!(entries.is_empty())
+            }
         );
     }
 

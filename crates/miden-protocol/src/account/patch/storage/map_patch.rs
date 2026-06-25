@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 
 use super::slot_patch::MergeOutcome;
 use crate::Word;
-use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
+use crate::account::{StorageMap, StorageMapKey, StoragePatchOperation, StorageSlotName};
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
     ByteReader,
@@ -62,6 +62,15 @@ impl StorageMapPatch {
                 Some(entries)
             },
             StorageMapPatch::Remove => None,
+        }
+    }
+
+    /// Returns the [`StoragePatchOperation`] that this patch represents.
+    pub fn patch_op(&self) -> StoragePatchOperation {
+        match self {
+            StorageMapPatch::Create { .. } => StoragePatchOperation::Create,
+            StorageMapPatch::Update { .. } => StoragePatchOperation::Update,
+            StorageMapPatch::Remove => StoragePatchOperation::Remove,
         }
     }
 

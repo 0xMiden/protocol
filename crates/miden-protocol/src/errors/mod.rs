@@ -186,6 +186,8 @@ pub enum AccountError {
     PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
+    #[error("unknown storage patch operation tag {0}")]
+    UnknownStoragePatchOperation(u8),
     /// This variant can be used by methods that are not inherent to the account but want to return
     /// this error type.
     #[error("{error_msg}")]
