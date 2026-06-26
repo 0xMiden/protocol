@@ -90,6 +90,13 @@ pub const fn account_id(account_type: AccountType, random: u32) -> u128 {
     id
 }
 
+impl AccountId {
+    /// Returns an [`AccountIdBuilder`].
+    pub fn builder() -> AccountIdBuilder {
+        AccountIdBuilder::new()
+    }
+}
+
 /// A builder for creating [`AccountId`]s for testing purposes.
 ///
 /// This is essentially a wrapper around [`AccountId::dummy`] generating random values as its input.

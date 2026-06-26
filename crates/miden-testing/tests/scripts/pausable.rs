@@ -14,7 +14,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
-    AccountIdVersion,
     AccountProcedureRoot,
     AccountType,
     RoleSymbol,
@@ -51,7 +50,9 @@ pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_
 pub(crate) static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
 
 pub(crate) fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([seed; 32])
 }
 
 // FAUCET BUILDER

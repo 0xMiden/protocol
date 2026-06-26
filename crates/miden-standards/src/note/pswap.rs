@@ -913,17 +913,17 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     fn dummy_faucet_id(byte: u8) -> AccountId {
-        let mut bytes = [0; 15];
-        bytes[0] = byte;
-        AccountId::dummy(bytes, AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder()
+            .account_type(AccountType::Public)
+            .build_with_seed([byte; 32])
     }
 
     fn dummy_creator_id() -> AccountId {
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([1; 32])
     }
 
     fn dummy_consumer_id() -> AccountId {
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32])
     }
 
     fn build_pswap_note(

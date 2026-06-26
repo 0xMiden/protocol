@@ -10,7 +10,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
-    AccountIdVersion,
     AccountProcedureRoot,
     AccountType,
 };
@@ -438,7 +437,7 @@ async fn minting_on_reserved_only_transfer_policy_faucet_enables_callbacks() -> 
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = build_existing_faucet_with_reserved_only_transfer_policy(
         &mut builder,
@@ -867,7 +866,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -993,7 +992,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1046,7 +1045,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     // This root exists in account code, but is not in the mint policy allowlist.
     let invalid_policy_root = FungibleFaucet::mint_and_send_root().as_word();
@@ -1094,7 +1093,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     // This root exists in account code, but is not in the burn policy allowlist.
     let invalid_policy_root = FungibleFaucet::receive_and_burn_root().as_word();
@@ -1131,7 +1130,7 @@ async fn test_network_faucet_policy_getters_works() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     // `add_existing_network_faucet` activates AllowAll for burn, send, and receive, plus the mint
     // policy passed below, so the active roots are known up front.
@@ -1173,10 +1172,10 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let non_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1232,7 +1231,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1268,10 +1267,10 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Setup: Create initial owner and new owner accounts
     let initial_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let new_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     // Step 1: Create transfer_ownership note script to nominate new owner
     let transfer_note_script_code = format!(
@@ -1417,13 +1416,13 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let non_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     let new_owner_account_id =
-        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
 
     // Create transfer ownership note script
     let transfer_note_script_code = format!(
@@ -1483,10 +1482,10 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let new_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
@@ -1601,7 +1600,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1626,7 +1625,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let mut faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1692,10 +1691,10 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let non_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     let faucet = build_network_faucet_with_burn_switching(
         &mut builder,
@@ -1750,7 +1749,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = build_network_faucet_with_burn_switching(
         &mut builder,
@@ -1814,7 +1813,7 @@ fn test_network_faucet_min_burn_amount_policy_is_active() -> anyhow::Result<()> 
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
@@ -1839,7 +1838,7 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
@@ -1879,7 +1878,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let mut faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
@@ -1927,7 +1926,7 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let mut faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
@@ -1996,9 +1995,9 @@ async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::R
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
     let non_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
 
     let faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
@@ -2088,7 +2087,7 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
     let mut builder = MockChain::builder();
 
     let owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet =
         build_network_faucet_mutable_max_supply(&mut builder, "NET", 200, owner_account_id)?;
@@ -2129,7 +2128,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -2410,7 +2409,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     let faucet = build_network_faucet_with_blocklist_transfer(
         &mut builder,

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -41,7 +41,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::with_basic_allowlist`] on both send and receive,
