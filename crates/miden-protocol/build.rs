@@ -126,7 +126,7 @@ fn main() -> Result<()> {
 // ================================================================================================
 
 /// Assembles the batch kernel project in `{source_dir}/kernels/batch` and saves the resulting
-/// executable package to `{target_dir}/batch_kernel.masp`.
+/// executable package to the `target_dir`.
 fn compile_batch_kernel(
     source_dir: &Path,
     target_dir: &Path,
@@ -157,14 +157,13 @@ fn compile_batch_kernel(
 /// - {project_dir}/tx_script_main -> defines the executable program of the arbitrary transaction
 ///   script.
 ///
-/// The compiled files are written as follows:
+/// The following are written to the `target_dir`:
 ///
-/// - {target_dir}/tx_kernel.masp      -> contains the kernel library package compiled from
-///   lib/api.masm.
-/// - {target_dir}/tx_kernel_main.masp -> contains the executable package compiled from main.masm.
-/// - {target_dir}/tx_script_main.masp -> contains the executable package compiled from
-///   tx_script_main.masm.
-/// - {build_dir}/procedures.rs        -> contains the kernel procedures table.
+/// - the kernel library package, compiled from lib/api.masm.
+/// - the kernel executable package, compiled from main.masm.
+/// - the transaction script executor package, compiled from tx_script_main.masm.
+///
+/// The kernel procedures table is written to `{build_dir}/procedures.rs`.
 fn compile_tx_kernel(
     source_dir: &Path,
     target_dir: &Path,
@@ -177,7 +176,7 @@ fn compile_tx_kernel(
     let mut project_assembler = build_assembler(source_manager.clone())
         .for_project_at_path(project_dir.join(PROJECT_MANIFEST), store)?;
 
-    // assemble the kernel library and write it to the "tx_kernel.masp" file
+    // assemble the kernel library and write its package to the `target_dir`
     let kernel_package =
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
     kernel_package.write_masp_file(target_dir).into_diagnostic()?;
@@ -185,8 +184,7 @@ fn compile_tx_kernel(
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(kernel_package.try_into_kernel_library()?, build_dir)?;
 
-    // Assemble the executable targets and write them to the "tx_kernel_main.masp" and
-    // "tx_script_main.masp" files.
+    // Assemble the executable targets and write them to a masp file
     //
     // Executable targets are assembled under the `$exec` namespace, but the kernel executables
     // `exec` kernel modules directly, expecting them under `$kernel`. To support this, the kernel
@@ -215,9 +213,9 @@ fn compile_tx_kernel(
     // make sure the store is released before it is borrowed again below
     drop(project_assembler);
 
-    // Build the kernel modules as a plain library and save it to the "kernel_library.masp" file.
+    // Build the kernel modules as a plain library and write to as a masp file.
     // This is needed in test assemblers to access individual procedures which would otherwise
-    // be hidden when using KernelLibrary (api.masm)
+    // be hidden when using KernelLibrary.
     #[cfg(any(feature = "testing", test))]
     compile_kernel_testing_lib(source_dir, target_dir, store)?;
 
@@ -257,8 +255,7 @@ fn parse_kernel_modules(
 }
 
 /// Assembles the transaction kernel modules as a plain library (i.e. not as a kernel) with the
-/// utils library statically linked, and saves the resulting package to the
-/// `{target_dir}/kernel_library.masp` file.
+/// utils library statically linked, and saves the resulting package to `target_dir`.
 #[cfg(any(feature = "testing", test))]
 fn compile_kernel_testing_lib(
     source_dir: &Path,
@@ -370,7 +367,7 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
 // ================================================================================================
 
 /// Assembles the protocol library project in `{source_dir}/protocol` and saves the resulting
-/// library package to `{target_dir}/protocol.masp`.
+/// library package to `target_dir`.
 fn compile_protocol_lib(
     source_dir: &Path,
     target_dir: &Path,
