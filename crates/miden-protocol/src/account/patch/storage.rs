@@ -9,7 +9,7 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::errors::{AccountDeltaError, AccountPatchError};
+use crate::errors::AccountPatchError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -97,9 +97,9 @@ impl AccountStoragePatch {
         &mut self,
         slot_name: StorageSlotName,
         new_slot_value: Word,
-    ) -> Result<(), AccountDeltaError> {
+    ) -> Result<(), AccountPatchError> {
         if !self.patches.get(&slot_name).map(StorageSlotPatch::is_value).unwrap_or(true) {
-            return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
+            return Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name));
         }
 
         self.patches.insert(slot_name, StorageSlotPatch::Value(new_slot_value));
@@ -121,14 +121,14 @@ impl AccountStoragePatch {
         slot_name: StorageSlotName,
         key: StorageMapKey,
         new_value: Word,
-    ) -> Result<(), AccountDeltaError> {
+    ) -> Result<(), AccountPatchError> {
         match self
             .patches
             .entry(slot_name.clone())
             .or_insert(StorageSlotPatch::Map(StorageMapPatch::default()))
         {
             StorageSlotPatch::Value(_) => {
-                return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
+                return Err(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name));
             },
             StorageSlotPatch::Map(storage_map_patch) => {
                 storage_map_patch.insert(key, new_value);
@@ -612,7 +612,7 @@ mod tests {
 
     use super::{AccountStoragePatch, Deserializable, Serializable};
     use crate::account::{StorageMapKey, StorageMapPatch, StorageSlotName, StorageSlotPatch};
-    use crate::errors::AccountDeltaError;
+    use crate::errors::AccountPatchError;
     use crate::{ONE, Word};
 
     #[test]
@@ -629,12 +629,12 @@ mod tests {
         let err = patch
             .set_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
             .unwrap_err();
-        assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(value_slot_name, slot_name)
         });
 
         let err = patch.set_item(map_slot_name.clone(), Word::empty()).unwrap_err();
-        assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+        assert_matches!(err, AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(map_slot_name, slot_name)
         });
     }
