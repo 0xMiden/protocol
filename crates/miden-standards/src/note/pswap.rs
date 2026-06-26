@@ -410,13 +410,13 @@ impl PswapNote {
     /// script falls back to a full fill).
     pub fn execute_full_fill(&self, consumer_account_id: AccountId) -> Result<Note, NoteError> {
         let requested_faucet_id = self.storage.requested_faucet_id();
-        let total_requested_amount = self.storage.requested_asset_amount();
+        let min_requested_amount = self.storage.requested_asset_amount();
 
-        let fill_asset = FungibleAsset::new(requested_faucet_id, total_requested_amount)
+        let fill_asset = FungibleAsset::new(requested_faucet_id, min_requested_amount)
             .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?
             .with_callbacks(self.storage.requested_asset().callbacks());
 
-        self.create_payback_note(consumer_account_id, fill_asset, total_requested_amount)
+        self.create_payback_note(consumer_account_id, fill_asset, min_requested_amount)
     }
 
     /// Executes the swap, producing the output notes for a given fill.
@@ -426,7 +426,7 @@ impl PswapNote {
     /// provided.
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
-    /// `None` when the fill is at least the total requested amount (full fill or over-fill).
+    /// `None` when the fill is at least `min_requested_amount` (full fill or over-fill).
     ///
     /// # Errors
     ///
@@ -529,9 +529,9 @@ impl PswapNote {
     /// Returns how many offered tokens a consumer receives for `fill_amount` of the
     /// requested asset, based on this note's current offered/requested ratio.
     ///
-    /// `requested_amount` is a floor, not an exact price: a `fill_amount` at or above it returns
-    /// the entire offered amount. (The divisor is `max(fill_amount, min_requested)`, so the payout
-    /// ratio never exceeds 1 — see [`Self::execute`].)
+    /// `min_requested_amount` is a floor, not an exact price: a `fill_amount` at or above it
+    /// returns the entire offered amount. (The divisor is `max(fill_amount, min_requested)`, so
+    /// the payout ratio never exceeds 1 — see [`Self::execute`].)
     ///
     /// # Errors
     ///
@@ -703,7 +703,7 @@ impl PswapNote {
     /// `floor((offered_total * fill_amount) / fill_reference)`, computed via a u128 intermediate.
     ///
     /// The caller passes `fill_reference = max(total_fill, min_requested_amount)`, so for an
-    /// over-fill the shares scale by the actual fill rather than `requested` (see
+    /// over-fill the shares scale by the actual fill rather than `min_requested_amount` (see
     /// [`Self::execute`]).
     ///
     /// # Errors

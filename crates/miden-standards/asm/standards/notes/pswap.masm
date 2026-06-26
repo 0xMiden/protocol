@@ -82,7 +82,7 @@ const REMAINDER_AMT_OFFERED = 5
 
 # execute_pswap locals
 const EXEC_AMT_OFFERED = 0
-const EXEC_AMT_REQUESTED = 1
+const EXEC_AMT_MIN_REQUESTED = 1
 const EXEC_AMT_PAYOUT_TOTAL = 2
 const EXEC_AMT_PAYOUT_ACCOUNT_FILL = 3
 const EXEC_AMT_PAYOUT_NOTE_FILL = 4
@@ -564,7 +564,7 @@ end
 #!
 @locals(11)
 # EXEC_AMT_OFFERED                : amt_offered
-# EXEC_AMT_REQUESTED              : amt_requested
+# EXEC_AMT_MIN_REQUESTED          : amt_min_requested
 # EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
 # EXEC_AMT_PAYOUT_ACCOUNT_FILL    : amt_payout_account_fill
 # EXEC_AMT_PAYOUT_NOTE_FILL       : amt_payout_note_fill
@@ -602,9 +602,9 @@ proc execute_pswap
     dropw
     # => []
 
-    # Read requested amount directly from note storage
+    # Read the requested minimum directly from note storage
     mem_load.REQUESTED_AMOUNT_ITEM
-    loc_store.EXEC_AMT_REQUESTED
+    loc_store.EXEC_AMT_MIN_REQUESTED
     # => []
 
     # Total fill = account_fill + note_fill; user-provided, so overflow-check and validate it.
@@ -625,8 +625,8 @@ proc execute_pswap
     # => [fill_amount]
 
     # fill_reference = max(fill, min_requested_amount).
-    loc_load.EXEC_AMT_REQUESTED
-    # => [requested, fill_amount]
+    loc_load.EXEC_AMT_MIN_REQUESTED
+    # => [min_requested, fill_amount]
 
     exec.max
     # => [fill_reference]
@@ -711,14 +711,14 @@ proc execute_pswap
 
     # Check if partial fill.
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
-    loc_load.EXEC_AMT_REQUESTED
-    # => [total_requested, total_in]
+    loc_load.EXEC_AMT_MIN_REQUESTED
+    # => [min_requested, total_in]
 
     dup.1 dup.1 lt
-    # => [is_partial, total_requested, total_in]
+    # => [is_partial, min_requested, total_in]
 
     if.true
-        # remaining_requested = total_requested - total_in
+        # remaining_requested = min_requested - total_in
         swap sub
         # => [remaining_requested]
 
@@ -770,7 +770,7 @@ end
 #!
 #! At least one of the two must be non-zero. If both are zero — which is the default in
 #! network transactions where the executor does not provide note_args — the script falls back
-#! to a full fill (`account_fill_amount = requested`). If the consuming account is the note's
+#! to a full fill (`account_fill_amount = min_requested_amount`). If the consuming account is the note's
 #! creator, the script reclaims the offered asset back to the creator's vault instead.
 #!
 #! Requires that the account exposes:
