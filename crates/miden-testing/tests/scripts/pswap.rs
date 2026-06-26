@@ -673,8 +673,8 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
     let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), account_fill + note_fill)?;
     let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), charlie_payout_amount)?;
 
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [alice_offered.into()])?;
-    let bob = builder.add_existing_wallet_with_assets(BASIC_AUTH, [bob_offered.into()])?;
+let alice = AccountIdBuilder::new().build_with_seed([4; 32]);
+let bob = AccountIdBuilder::new().build_with_seed([5; 32]);
     let charlie =
         builder.add_existing_wallet_with_assets(BASIC_AUTH, [charlie_vault_eth.into()])?;
 
