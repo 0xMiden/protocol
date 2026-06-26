@@ -6,7 +6,7 @@ use miden_protocol::{Felt, Word};
 
 use super::{FungibleFaucet, create_network_fungible_faucet, create_user_fungible_faucet};
 use crate::account::access::{AccessControl, PausableManager};
-use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{Approver, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
@@ -148,7 +148,10 @@ fn faucet_create_from_account() {
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .with_component(faucet)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         .build_existing()
         .expect("failed to create wallet account");
 
@@ -157,7 +160,10 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
