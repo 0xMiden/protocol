@@ -12,6 +12,7 @@ use miden_protocol::transaction::{
     TransactionOutputs,
     TxAccountUpdate,
 };
+use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::ProvingOptions;
 use miden_prover::{ExecutionProof, Word, prove};
 
@@ -41,6 +42,13 @@ impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
         Self { proof_options }
+    }
+
+    /// Creates a new [LocalTransactionProver] instance with the [`Poseidon2`] hash function.
+    pub fn with_poseidon2() -> Self {
+        Self {
+            proof_options: ProvingOptions::new(Poseidon2),
+        }
     }
 
     fn build_proven_transaction(

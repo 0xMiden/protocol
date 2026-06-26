@@ -44,22 +44,24 @@ Each of the above transactions is measured in two groups:
 - Benchmarking the transaction execution and proving.
   For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction.
 
+  Notice that the `Poseidon2` hash function is used during the proving process.
+
   This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. Results of this benchmark group are printed to the terminal and look like so:
   ```zsh
-  Execute transaction/Execute transaction which consumes single P2ID note with Falcon signing
+  Execute transaction/single P2ID note (Falcon signing)
                         time:   [7.2611 ms 7.2772 ms 7.2929 ms]
                         change: [−0.9131% −0.5837% −0.3058%] (p = 0.00 < 0.05)
                         Change within noise threshold.
-  Execute transaction/Execute transaction which consumes two P2ID notes
+  Execute transaction/two P2ID notes
                         time:   [8.8279 ms 8.8442 ms 8.8633 ms]
                         change: [−1.2256% −0.7611% −0.3355%] (p = 0.00 < 0.05)
                         Change within noise threshold.
 
-  Execute and prove transaction/Execute and prove transaction which consumes single P2ID note with Falcon signing
+  Execute and prove transaction/single P2ID note (Falcon signing)
                         time:   [698.96 ms 703.92 ms 708.70 ms]
                         change: [−2.3061% −0.4274% +0.9653%] (p = 0.70 > 0.05)
                         No change in performance detected.
-  Execute and prove transaction/Execute and prove transaction which consumes two P2ID notes
+  Execute and prove transaction/two P2ID notes
                         time:   [706.52 ms 710.91 ms 715.66 ms]
                         change: [−7.4641% −5.0278% −2.9437%] (p = 0.00 < 0.05)
                         Performance has improved.

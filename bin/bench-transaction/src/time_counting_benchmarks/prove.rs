@@ -19,32 +19,26 @@ use miden_tx::LocalTransactionProver;
 // BENCHMARK NAMES
 // ================================================================================================
 
+// The benchmark labels below deliberately omit the group-name prefix (e.g. "Execute
+// transaction"). Criterion already prints results as `<group>/<label>` and truncates the
+// directory name derived from the label to 64 characters.
 const BENCH_GROUP_EXECUTE: &str = "Execute transaction";
-const BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID_FALCON: &str =
-    "Execute transaction which consumes single P2ID note with Falcon signing";
-const BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID_ECDSA: &str =
-    "Execute transaction which consumes single P2ID note with ECDSA signing";
-const BENCH_EXECUTE_TX_CONSUME_TWO_P2ID: &str = "Execute transaction which consumes two P2ID notes";
-const BENCH_EXECUTE_TX_CONSUME_CLAIM_L1: &str =
-    "Execute transaction which consumes CLAIM note (L1 to Miden)";
-const BENCH_EXECUTE_TX_CONSUME_CLAIM_L2: &str =
-    "Execute transaction which consumes CLAIM note (L2 to Miden)";
-const BENCH_EXECUTE_TX_CONSUME_B2AGG: &str =
-    "Execute transaction which consumes B2AGG note (bridge-out)";
+const BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID_FALCON: &str = "single P2ID note (Falcon signing)";
+const BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID_ECDSA: &str = "single P2ID note (ECDSA signing)";
+const BENCH_EXECUTE_TX_CONSUME_TWO_P2ID: &str = "two P2ID notes";
+const BENCH_EXECUTE_TX_CONSUME_CLAIM_L1: &str = "CLAIM note (L1 to Miden)";
+const BENCH_EXECUTE_TX_CONSUME_CLAIM_L2: &str = "CLAIM note (L2 to Miden)";
+const BENCH_EXECUTE_TX_CONSUME_B2AGG: &str = "B2AGG note (bridge-out)";
 
 const BENCH_GROUP_EXECUTE_AND_PROVE: &str = "Execute and prove transaction";
 const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_SINGLE_P2ID_FALCON: &str =
-    "Execute and prove transaction which consumes single P2ID note with Falcon signing";
+    "single P2ID note (Falcon signing)";
 const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_SINGLE_P2ID_ECDSA: &str =
-    "Execute and prove transaction which consumes single P2ID note with ECDSA signing";
-const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_TWO_P2ID: &str =
-    "Execute and prove transaction which consumes two P2ID notes";
-const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_CLAIM_L1: &str =
-    "Execute and prove transaction which consumes CLAIM note (L1 to Miden)";
-const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_CLAIM_L2: &str =
-    "Execute and prove transaction which consumes CLAIM note (L2 to Miden)";
-const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_B2AGG: &str =
-    "Execute and prove transaction which consumes B2AGG note (bridge-out)";
+    "single P2ID note (ECDSA signing)";
+const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_TWO_P2ID: &str = "two P2ID notes";
+const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_CLAIM_L1: &str = "CLAIM note (L1 to Miden)";
+const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_CLAIM_L2: &str = "CLAIM note (L2 to Miden)";
+const BENCH_EXECUTE_AND_PROVE_TX_CONSUME_B2AGG: &str = "B2AGG note (bridge-out)";
 
 // CORE PROVING BENCHMARKS
 // ================================================================================================
@@ -215,7 +209,7 @@ fn core_benchmarks(c: &mut Criterion) {
 async fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
     let executed_transaction_id = executed_transaction.id();
     let proven_transaction: ProvenTransaction =
-        LocalTransactionProver::default().prove(executed_transaction).await?;
+        LocalTransactionProver::with_poseidon2().prove(executed_transaction).await?;
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     Ok(())
