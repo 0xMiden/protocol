@@ -1647,13 +1647,13 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
-    let note = BurnNote::create(
-        faucet_owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let note: Note = BurnNote::builder()
+        .sender(faucet_owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
@@ -1719,13 +1719,13 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
     let mut rng = RandomCoin::new([Felt::from(501u32); 4].into());
-    let burn_note = BurnNote::create(
-        non_owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(non_owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -1774,13 +1774,13 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
     let mut rng = RandomCoin::new([Felt::from(511u32); 4].into());
-    let burn_note = BurnNote::create(
-        owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -1858,13 +1858,13 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
-    let burn_note = BurnNote::create(
-        owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -1898,13 +1898,13 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let burn_amount = 50u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
     let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
-    let burn_note = BurnNote::create(
-        owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -1954,13 +1954,13 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
     let mut rng = RandomCoin::new([Felt::from(611u32); 4].into());
-    let burn_note = BurnNote::create(
-        owner_account_id,
-        faucet.id(),
-        fungible_asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .faucet_id(faucet.id())
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(set_note.clone()));
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
     let mut mock_chain = builder.build()?;

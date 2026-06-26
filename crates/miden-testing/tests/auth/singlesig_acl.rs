@@ -17,7 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteAttachments};
+use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
@@ -379,13 +379,13 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
     let sender = AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
     let asset = FungibleAsset::new(faucet_account.id(), 10)?;
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
-    let burn_note = BurnNote::create(
-        sender,
-        faucet_account.id(),
-        asset.into(),
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
+    let burn_note: Note = BurnNote::builder()
+        .sender(sender)
+        .faucet_id(faucet_account.id())
+        .asset(asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
 
     let mut builder = MockChain::builder();
     builder.add_account(faucet_account.clone())?;
