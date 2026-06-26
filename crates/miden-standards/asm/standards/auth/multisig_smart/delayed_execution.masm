@@ -15,12 +15,17 @@ const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_propo
 
 const EMPTY_WORD = [0, 0, 0, 0]
 
+# Maximum allowed `propose_expiration_delta`. The kernel's `tx::update_expiration_block_delta`
+# accepts a `u16` block delta (1..=65535), so any larger value would brick the propose flow.
+const MAX_PROPOSE_EXPIRATION_DELTA = 65535
+
 # ERRORS
 # =================================================================================================
 
 const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
 const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
 const ERR_TIMESTAMPS_NOT_U32 = "current_timestamp and unlock_timestamp must be u32"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
@@ -32,8 +37,6 @@ const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 # CONFIGURATION
 # =================================================================================================
 
-#! High-impact action.
-#!
 #! Sets the delayed execution policy used by proposal lifecycle checks.
 #!
 #! Inputs:  [min_delay, propose_expiration_delta]
@@ -51,6 +54,9 @@ const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 #!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
 #! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
 #! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
+#! - `propose_expiration_delta` exceeds `MAX_PROPOSE_EXPIRATION_DELTA` (u16 max), since the kernel's
+#!   `tx::update_expiration_block_delta` only accepts a u16 delta
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
 #!
 #! Invocation: exec
 pub proc update_delayed_execution_policy
@@ -60,6 +66,11 @@ pub proc update_delayed_execution_policy
 
     swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta, min_delay]
+
+    # The kernel's `tx::update_expiration_block_delta` only accepts a u16 delta, so reject any
+    # value above `MAX_PROPOSE_EXPIRATION_DELTA` here rather than bricking the propose flow later.
+    dup u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
     # => [propose_expiration_delta, min_delay]
 
     swap
@@ -245,6 +256,9 @@ end
 #! - proposal_timestamp is the current transaction reference block timestamp.
 #! - unlock_timestamp is `proposal_timestamp + min_delay`.
 #!
+#! Panics if:
+#! - `proposal_timestamp + min_delay` overflows the `u32` range (`ERR_TIMESTAMPS_NOT_U32`).
+#!
 #! Invocation: exec
 proc compute_unlock_timestamp
     exec.tx::get_block_timestamp
@@ -254,6 +268,11 @@ proc compute_unlock_timestamp
     # => [min_delay, proposal_timestamp, proposal_timestamp]
 
     add
+    # => [unlock_timestamp, proposal_timestamp]
+
+    # Ensure the sum did not overflow u32; otherwise the proposal would be recorded with an
+    # unlock_timestamp that can never satisfy the u32 timestamp comparison at execution time.
+    u32assert.err=ERR_TIMESTAMPS_NOT_U32
     # => [unlock_timestamp, proposal_timestamp]
 end
 
