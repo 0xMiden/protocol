@@ -14,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-use crate::{Auth, TransactionContextBuilder};
+use crate::{Auth, TestTransactionBuilder};
 
 /// The slot name used for testing the array component.
 const TEST_ARRAY_SLOT: &str = "test::array::data";
@@ -130,7 +130,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         .compile_tx_script(tx_script_code)?;
 
     // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
     tx_context.execute().await?;
 
@@ -246,7 +246,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         .with_dynamically_linked_library(&wrapper_library)?
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
     tx_context.execute().await?;
 
