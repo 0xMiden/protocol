@@ -391,7 +391,6 @@ pub proc propose_transaction
     exec.multisig::get_initial_threshold_and_num_approvers
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
-    # Stash default_threshold below the message so it survives signature verification.
     movdn.5
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
@@ -438,11 +437,7 @@ pub proc cancel_transaction_proposal
     dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    drop drop
-    # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-    # Stash min_cancel_sigs below the message so it survives signature verification.
-    movdn.4
+    drop drop movdn.4
     # => [TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
     # ---- Verify cancellation signatures over the target commitment. ----
