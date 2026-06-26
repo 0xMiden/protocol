@@ -930,7 +930,6 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage)
         .generate_serial_number(&mut rng)
@@ -1027,7 +1026,6 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(owner_account_id)
         .mint_storage(mint_inputs)
         .generate_serial_number(&mut rng)
@@ -1212,7 +1210,6 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     // Create mint note from NON-OWNER
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(non_owner_account_id)
         .mint_storage(mint_inputs)
         .generate_serial_number(&mut rng)
@@ -1340,7 +1337,6 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(initial_owner_account_id)
         .mint_storage(mint_inputs.clone())
         .generate_serial_number(&mut rng)
@@ -2185,7 +2181,6 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage.clone())
         .generate_serial_number(&mut rng)
@@ -2453,7 +2448,6 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
-        .faucet_id(faucet.id())
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage)
         .generate_serial_number(&mut rng)

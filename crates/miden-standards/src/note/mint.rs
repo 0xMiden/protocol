@@ -52,7 +52,6 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct MintNote {
-    faucet_id: AccountId,
     sender: AccountId,
     storage: MintNoteStorage,
     serial_number: Word,
@@ -61,30 +60,22 @@ pub struct MintNote {
 
 #[bon::bon]
 impl MintNote {
-    /// Builds a new [`MintNote`] for `faucet_id` to mint the asset embedded in `mint_storage`.
+    /// Builds a new [`MintNote`] that mints the asset embedded in `mint_storage`.
     ///
     /// # Errors
     ///
-    /// Returns an error if `faucet_id` does not match the faucet of the embedded asset, or if the
-    /// attachments exceed their protocol limit (see [`NoteAttachments::new`]).
+    /// Returns an error if the attachments exceed their protocol limit (see
+    /// [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
-        faucet_id: AccountId,
         sender: AccountId,
         #[builder(name = mint_storage)] storage: MintNoteStorage,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        if faucet_id != storage.asset().faucet_id() {
-            return Err(NoteError::other(
-                "faucet_id must equal the faucet ID of the asset embedded in mint_storage",
-            ));
-        }
-
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
-            faucet_id,
             sender,
             storage,
             serial_number,
@@ -124,7 +115,7 @@ impl MintNote {
 
     /// Returns the account ID of the faucet that will mint the asset.
     pub fn faucet_id(&self) -> AccountId {
-        self.faucet_id
+        self.storage.asset().faucet_id()
     }
 
     /// Returns the account ID of the note's sender (the faucet owner).
@@ -188,8 +179,9 @@ impl From<MintNote> for Note {
     fn from(note: MintNote) -> Self {
         // MINT notes are always public for network execution and carry no assets; the asset to mint
         // lives in the note's storage.
+        let faucet_id = note.storage.asset().faucet_id();
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.faucet_id));
+            .with_tag(NoteTag::with_account_target(faucet_id));
         let recipient = NoteRecipient::new(
             note.serial_number,
             MintNote::script(),
@@ -305,19 +297,15 @@ mod tests {
         AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Private)
     }
 
-    fn mint_storage(asset_faucet: AccountId) -> MintNoteStorage {
-        let asset = FungibleAsset::new(asset_faucet, 50).unwrap();
-        MintNoteStorage::new_private(Word::empty(), asset, Felt::ZERO)
-    }
-
     /// The builder produces a public, asset-less note tagged for the faucet.
     #[test]
     fn builder_builds_public_mint_note() {
         let mut rng = RandomCoin::new(Word::empty());
+        let asset = FungibleAsset::new(faucet(), 50).unwrap();
+        let mint_storage = MintNoteStorage::new_private(Word::empty(), asset, Felt::ZERO);
         let mint_note = MintNote::builder()
-            .faucet_id(faucet())
             .sender(owner())
-            .mint_storage(mint_storage(faucet()))
+            .mint_storage(mint_storage)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -329,21 +317,5 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(faucet()));
         assert_eq!(note.assets().num_assets(), 0);
-    }
-
-    /// The faucet ID must match the faucet of the embedded asset.
-    #[test]
-    fn builder_rejects_mismatched_faucet() {
-        let other_faucet =
-            AccountId::dummy([9u8; 15], AccountIdVersion::Version1, AccountType::Public);
-        let err = MintNote::builder()
-            .faucet_id(faucet())
-            .sender(owner())
-            .mint_storage(mint_storage(other_faucet))
-            .serial_number(Word::empty())
-            .build()
-            .expect_err("mismatched faucet id must be rejected");
-
-        assert!(matches!(err, NoteError::Other { .. }));
     }
 }
