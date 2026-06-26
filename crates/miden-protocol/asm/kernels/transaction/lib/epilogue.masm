@@ -4,7 +4,6 @@ use $kernel::asset
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset_vault
 use $kernel::constants::NOTE_MEM_SIZE
-use $kernel::fungible_asset
 use $kernel::memory
 use $kernel::memory::OUTPUT_NOTE_SECTION_OFFSET
 use $kernel::memory::OUTPUT_VAULT_ROOT_PTR
@@ -30,42 +29,11 @@ const ERR_EPILOGUE_NONCE_CANNOT_BE_0="nonce cannot be 0 after an account-creatin
 # Event emitted to signal that the compute_fee procedure has obtained the current number of cycles.
 const EPILOGUE_AFTER_TX_CYCLES_OBTAINED_EVENT=event("miden::protocol::epilogue::after_tx_cycles_obtained")
 
-# Event emitted to signal that the fee was computed.
-const EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_EVENT=event("miden::protocol::epilogue::before_tx_fee_removed_from_account")
-
 # Event emitted to signal that an execution of the authentication procedure has started.
 const EPILOGUE_AUTH_PROC_START_EVENT=event("miden::protocol::epilogue::auth_proc_start")
 
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_end")
-
-# An additional number of cycles to account for the number of cycles that smt::set will take when
-# removing the computed fee from the asset vault.
-# Theoretically, this can safely be set to worst_case_cycles - best_case_cycles of smt::set. That's
-# because we can assume that the measured number of cycles already contains at least the best case
-# number of cycles, and so we only need to add the difference.
-const SMT_SET_ADDITIONAL_CYCLES=250
-
-# An upper-bound estimate of the cycles needed to hash the asset vault key before the fee-removing
-# smt::set. This cost is incurred only when a fee is actually removed from the asset vault, and is
-# kept separate from SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
-# It is additive rather than double-counted: the lowest-observed NUM_POST_COMPUTE_FEE_CYCLES below
-# comes from a zero-fee transaction that skips fee removal entirely, and so excludes this hashing.
-const VAULT_KEY_HASH_CYCLES=50
-
-# The number of cycles the epilogue is estimated to take after compute_fee has been executed,
-# including an unknown cycle number of the above-mentioned call to smt::set. It is safe to assume
-# that this includes at least smt::set's best case number of cycles.
-# This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
-# to the lowest observed value (which comes from a zero-fee transaction that skips fee removal).
-const NUM_POST_COMPUTE_FEE_CYCLES=608
-
-# Upper bound on the post-compute_fee cycle count; it must stay an upper bound or the verification
-# fee is undercharged. Worst case observed is 863 cycles (45 of margin); re-measure when the
-# epilogue or smt::set changes. An adversary cannot inflate the fee-removal smt::set cost: vault
-# keys are hashed before insertion (see AssetVaultKey::hash). The multi-leaf smt::set worst case is
-# not yet exercised (see test_fee.rs TODO).
-const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES+VAULT_KEY_HASH_CYCLES
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -127,10 +95,6 @@ end
 #! The output vault is built as follows:
 #! - we first copy the account vault root to the output vault root.
 #! - we then loop over the output notes and insert their assets into the output vault.
-#!
-#! Note that this does not handle anything related to the fee asset. The fee asset is removed from
-#! the account vault after this procedure has executed and since it is not added to an output note,
-#! we don't have to account for it explicitly.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -270,9 +234,6 @@ proc compute_fee
     # => [num_current_cycles]
 
     emit.EPILOGUE_AFTER_TX_CYCLES_OBTAINED_EVENT
-
-    # estimate the number of cycles the transaction will take
-    add.ESTIMATED_AFTER_COMPUTE_FEE_CYCLES
     # => [num_tx_cycles]
 
     # ilog2 will round down, but we need to round up, so we add 1 afterwards.
@@ -289,130 +250,39 @@ proc compute_fee
     # => [verification_cost]
 end
 
-#! Creates the fee asset with the provided fee amount and the fee faucet ID of the transaction's
-#! reference block as the faucet ID.
-#!
-#! Inputs:  [fee_amount]
-#! Outputs: [FEE_ASSET_KEY, FEE_ASSET_VALUE]
-#!
-#! Where:
-#! - fee_amount is the computed fee amount of the transaction in the fee asset.
-#! - FEE_ASSET_KEY is the asset vault key of the fee asset.
-#! - FEE_ASSET_VALUE is the fungible asset with amount set to fee_amount and the faucet ID set to
-#!   the fee faucet.
-proc create_fee_asset
-    exec.memory::get_fee_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-
-    # assume the fee asset does not have callbacks
-    # this should be addressed more holistically with a fee construction refactor
-    push.0
-    # => [enable_callbacks, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-
-    # SAFETY: fee faucet ID should be fungible and amount should not be exceeded
-    exec.fungible_asset::create_unchecked
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
-end
-
-#! Computes the fee of this transaction and removes the asset from the native account's vault.
-#!
-#! Note that this does not have to account for the fee asset in the output vault explicitly,
-#! because the fee asset is removed from the account vault after build_output_vault and because
-#! it is not added to an output note. Effectively, the fee asset bypasses the asset preservation
-#! check. That's okay, because the logic is entirely determined by the transaction kernel.
-#!
-#! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-#!
-#! Where:
-#! - fee_amount is the computed fee amount of the transaction in the fee asset.
-#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   fee asset.
-#!
-#! Panics if:
-#! - the account vault contains less than the computed fee.
-proc compute_and_remove_fee
-    # compute the fee the tx needs to pay
-    exec.compute_fee dup
-    # => [fee_amount, fee_amount]
-
-    # build the fee asset from the fee amount
-    exec.create_fee_asset
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
-
-    emit.EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_EVENT
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
-
-    # prepare the return value
-    exec.asset::key_to_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
-
-    movdn.9 movdn.9
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-
-    # remove the fee from the native account's vault
-    # note that this deliberately does not use account::remove_asset_from_vault, because that
-    # procedure modifies the vault delta of the account. That is undesirable because it does not
-    # take a constant number of cycles, which makes it much harder to calculate the number of
-    # cycles the kernel takes after computing the fee. It is also unnecessary, because the delta
-    # commitment has already been computed and so any modifications done to the delta at this point
-    # are essentially ignored.
-
-    # fetch the vault root ptr
-    exec.memory::get_account_vault_root_ptr movdn.8
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-
-    # remove the asset from the account vault
-    exec.asset_vault::remove_fungible_asset dropw dropw
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-end
-
 # TRANSACTION EPILOGUE PROCEDURE
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
 #! - computes the output notes commitment.
-#! - computes the transaction's fees and takes them out of the account vault.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
 #!
-#! Note that the order of operations in this procedure is important. We want to run as many
-#! operations as possible before computing the fee, since the fee depends on the transaction's
-#! number of cycles. All operations that run before fee computation are included when invoking
-#! `clk`. The cycles of operations that run after fee computation must be calculated to include
-#! them in the fee and calculating is easiest when the operations are simple.
-#!
 #! Inputs:  []
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-#!   fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num
 #! ]
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
-#! - fee_amount is the computed fee amount of the transaction denominated in the fee asset.
-#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   fee asset.
 #! - tx_expiration_block_num is the transaction expiration block number.
 #!
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
-#! - 4..8: FEE_ASSET_INFO
-#! - 8..12: ACCOUNT_PATCH_COMMITMENT
+#! - 4..8: ACCOUNT_PATCH_COMMITMENT
 #!
 #! Panics if:
 #! - the assets that were in input notes or in the account vault at the beginning of
 #!   transaction execution are not in output notes or in the account vault at the end of the
-#!   transaction. The exception to this is the automatically computed and removed fee asset.
+#!   transaction.
 #! - the transaction does not change the chain state. This must be the case to avoid tx
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
-#! - the account vault does not contain the computed fee.
-@locals(12)
+@locals(8)
 pub proc finalize_transaction
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
@@ -464,7 +334,7 @@ pub proc finalize_transaction
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # store commitment in local
-    loc_storew_le.8
+    loc_storew_le.4
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # ------ Assert that account was changed or notes were consumed ------
@@ -485,19 +355,6 @@ pub proc finalize_transaction
 
     # assert that either the account was changed or notes were consumed
     assertz.err=ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY
-    # => []
-
-    # ------ Compute fees ------
-
-    exec.compute_and_remove_fee
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
-
-    # pad to word size so we can store the info as a word
-    push.0 movdn.3
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, 0]
-
-    # store fee info in local memory
-    loc_storew_le.4 dropw
     # => []
 
     # ------ Insert final account data into advice provider ------
@@ -525,7 +382,7 @@ pub proc finalize_transaction
     # ------ Compute and insert account update commitment ------
 
     # load account patch commitment from local
-    padw loc_loadw_le.8 swapw
+    padw loc_loadw_le.4 swapw
     # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
     # insert into advice map ACCOUNT_UPDATE_COMMITMENT: (FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT),
@@ -538,16 +395,11 @@ pub proc finalize_transaction
 
     # ------ Build output stack ------
 
-    # load fee asset from local
-    padw loc_loadw_le.4 swapw
-    # => [ACCOUNT_UPDATE_COMMITMENT, [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, 0]]
-
-    # replace 0 with expiration block num
-    exec.memory::get_expiration_block_num swap.8 drop
-    # => [ACCOUNT_UPDATE_COMMITMENT, [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num]]
+    # place the expiration block num below the account update commitment word
+    exec.memory::get_expiration_block_num movdn.4
+    # => [ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num]
 
     # load output notes commitment from local
     padw loc_loadw_le.0
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-    #     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num]
 end

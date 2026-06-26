@@ -1,12 +1,5 @@
 use miden_protocol::Felt;
-use miden_protocol::account::{
-    AccountCode,
-    AccountDelta,
-    AccountId,
-    AccountPatch,
-    AccountVaultDelta,
-    PartialAccount,
-};
+use miden_protocol::account::{AccountCode, AccountDelta, AccountId, AccountPatch, PartialAccount};
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
@@ -62,13 +55,6 @@ impl AccountUpdateTracker {
     /// Increments the nonce delta by one.
     pub fn increment_nonce(&mut self) {
         self.nonce_delta += Felt::ONE;
-    }
-
-    /// Returns the vault delta materialized from the currently tracked per-asset deltas.
-    ///
-    /// TODO: Remove this method when removing automatic fee removal from the tx kernel.
-    pub(crate) fn build_vault_delta(&self) -> AccountVaultDelta {
-        self.vault.clone().into_delta()
     }
 
     /// Updates the vault patch.

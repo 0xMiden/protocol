@@ -332,23 +332,6 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
     )
 }
 
-fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::assert_sender_has_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
 // TESTS
 // ================================================================================================
 
@@ -674,34 +657,6 @@ async fn test_rbac_member_count_and_has_role_queries() -> anyhow::Result<()> {
 
     let outsider_note = build_note(owner, assert_has_role_script(&user_role, outsider, false))?;
     let _ = execute_note_and_apply(&mock_chain, &updated, &outsider_note).await?;
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_assert_sender_has_role() -> anyhow::Result<()> {
-    let owner = test_account_id(120);
-    let minter = test_account_id(121);
-    let outsider = test_account_id(122);
-
-    let minter_role = role("MINTER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&minter_role, minter))?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    // Member can pass the assertion.
-    let member_check = build_note(minter, assert_sender_has_role_script(&minter_role))?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &member_check).await?;
-
-    // Outsider cannot.
-    let outsider_check = build_note(outsider, assert_sender_has_role_script(&minter_role))?;
-    let tx = mock_chain
-        .build_tx_context(updated, &[], slice::from_ref(&outsider_check))?
-        .build()?;
-    let result = tx.execute().await;
-    assert!(result.is_err());
 
     Ok(())
 }

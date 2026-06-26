@@ -29,7 +29,7 @@ pub proc block_account
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.blocklist::block_account
-    # => [pad(14)]
+    # => [pad(16)]
 end
 
 #! Unblock an account, gated by the Ownable2Step owner.
@@ -46,5 +46,5 @@ pub proc unblock_account
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.blocklist::unblock_account
-    # => [pad(14)]
+    # => [pad(16)]
 end

@@ -74,7 +74,6 @@ pub enum TransactionEventId {
     EpilogueAuthProcEnd = EPILOGUE_AUTH_PROC_END_ID,
 
     EpilogueAfterTxCyclesObtained = EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID,
-    EpilogueBeforeTxFeeRemovedFromAccount = EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID,
 
     LinkMapSet = LINK_MAP_SET_ID,
     LinkMapGet = LINK_MAP_GET_ID,
@@ -135,9 +134,6 @@ impl TransactionEventId {
             Self::EpilogueAuthProcStart => &EPILOGUE_AUTH_PROC_START_NAME,
             Self::EpilogueAuthProcEnd => &EPILOGUE_AUTH_PROC_END_NAME,
             Self::EpilogueAfterTxCyclesObtained => &EPILOGUE_AFTER_TX_CYCLES_OBTAINED_NAME,
-            Self::EpilogueBeforeTxFeeRemovedFromAccount => {
-                &EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_NAME
-            },
             Self::LinkMapSet => &LINK_MAP_SET_NAME,
             Self::LinkMapGet => &LINK_MAP_GET_NAME,
             Self::Unauthorized => &AUTH_UNAUTHORIZED_NAME,
@@ -229,9 +225,6 @@ impl TryFrom<EventId> for TransactionEventId {
             EPILOGUE_AUTH_PROC_END_ID => Ok(TransactionEventId::EpilogueAuthProcEnd),
             EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID => {
                 Ok(TransactionEventId::EpilogueAfterTxCyclesObtained)
-            },
-            EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID => {
-                Ok(TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount)
             },
             EPILOGUE_END_ID => Ok(TransactionEventId::EpilogueEnd),
 

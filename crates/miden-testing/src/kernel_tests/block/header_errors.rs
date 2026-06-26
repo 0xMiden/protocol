@@ -29,7 +29,7 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
-use crate::{Auth, MockChain, TransactionContextBuilder};
+use crate::{Auth, MockChain};
 
 struct WitnessTestSetup {
     stale_block_inputs: BlockInputs,
@@ -302,8 +302,7 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     // Execute the account-creating transaction.
     // --------------------------------------------------------------------------------------------
 
-    let tx_inputs = mock_chain.get_transaction_inputs(&account, &[], &[])?;
-    let tx_context = TransactionContextBuilder::new(account).tx_inputs(tx_inputs).build()?;
+    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
     let tx = tx_context.execute().await.context("failed to execute account creating tx")?;
     let tx = LocalTransactionProver::default().prove_dummy(tx)?;
 
@@ -403,7 +402,6 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 Vec::<OutputNote>::new(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
-                FungibleAsset::mock(500).unwrap_fungible(),
                 BlockNumber::from(u32::MAX),
                 ExecutionProof::new_dummy(),
             )

@@ -249,7 +249,7 @@ pub proc transfer_ownership
     # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
 
     exec.save_ownership_info
-    # => [pad(14)]
+    # => [pad(16)]
 end
 
 #! Accepts a nominated ownership transfer. The nominated owner becomes the new owner

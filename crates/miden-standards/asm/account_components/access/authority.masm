@@ -4,10 +4,14 @@
 # state-mutating operations. The actual authorization check (`assert_authorized`) lives at
 # `miden::standards::access::authority` and is `exec`'d inline by gating procedures within
 # the active account's context. This component exposes `get_authority` as a call-padded
-# accessor so other accounts can read this account's authority.
+# accessor so other accounts can read this account's authority, and re-exports the owner-gated
+# emergency switch (`freeze` / `unfreeze`) as `call` entrypoints.
 
 use miden::protocol::active_account
 use miden::standards::access::authority::AUTHORITY_SLOT
+
+pub use ::miden::standards::access::authority::freeze
+pub use ::miden::standards::access::authority::unfreeze
 
 #! Returns the authority discriminator stored on the account.
 #!

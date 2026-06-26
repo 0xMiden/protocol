@@ -47,10 +47,10 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
-static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
+pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
+pub(crate) static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
 
-fn test_account_id(seed: u8) -> AccountId {
+pub(crate) fn test_account_id(seed: u8) -> AccountId {
     AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
@@ -84,7 +84,7 @@ fn add_faucet_with_pause(
 // NOTE BUILDERS
 // ================================================================================================
 
-fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
+pub(crate) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
     let seed: [u32; 4] = rand::random();
     let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
@@ -94,7 +94,7 @@ fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note
 }
 
 /// Builds an owner-authored note that calls `pausable::manager::pause`.
-fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
+pub(crate) fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
@@ -127,7 +127,7 @@ fn build_unpause_note(sender: AccountId) -> anyhow::Result<Note> {
     )
 }
 
-async fn execute_note_on_faucet(
+pub(crate) async fn execute_note_on_faucet(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
     note: &Note,
@@ -272,7 +272,7 @@ async fn pausable_manager_pause_while_paused_is_noop() -> anyhow::Result<()> {
 // TESTS — PAUSABLE MANAGER WITH PER-PROCEDURE RBAC ROLES
 // ================================================================================================
 
-fn role(name: &str) -> RoleSymbol {
+pub(crate) fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
@@ -314,7 +314,7 @@ fn add_rbac_faucet_with_pause(
 
 /// Builds an owner-or-admin-authored note that grants `role` to `account_id` via
 /// `rbac::grant_role`.
-fn build_grant_role_note(
+pub(crate) fn build_grant_role_note(
     sender: AccountId,
     role: &RoleSymbol,
     account_id: AccountId,
@@ -344,7 +344,10 @@ fn build_grant_role_note(
 
 /// Builds a note that calls `set_max_supply`, an authority-gated procedure intentionally left out
 /// of the role map in the tests below so it exercises the owner fallback.
-fn build_set_max_supply_note(sender: AccountId, new_max_supply: u64) -> anyhow::Result<Note> {
+pub(crate) fn build_set_max_supply_note(
+    sender: AccountId,
+    new_max_supply: u64,
+) -> anyhow::Result<Note> {
     build_note(
         sender,
         format!(
