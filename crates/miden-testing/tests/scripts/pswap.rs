@@ -7,6 +7,7 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetVaultKey, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachments, NoteType};
+use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
@@ -641,7 +642,7 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Cross-swap that fills Alice's PSWAP from both `account_fill` (Charlie's vault) and `note_fill`
+/// Cross-swap that fills Alice's PSWAP from both `charlie_fill` (Charlie's vault) and `bob_fill`
 /// (Bob's offered leg) in one transaction. The `full_fill` and `over_fill` cases (amounts in the
 /// `#[case]` rows) both produce two P2IDs and no remainder; Bob's offered ETH flows through
 /// inflight into Alice's note_fill leg, never touching Charlie's vault.
@@ -650,8 +651,8 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
 #[case::over_fill(20, 50, 72, 28)]
 #[tokio::test]
 async fn pswap_note_combined_account_fill_and_note_fill_test(
-    #[case] account_fill: u64,
-    #[case] note_fill: u64,
+    #[case] charlie_fill: u64,
+    #[case] bob_fill: u64,
     #[case] bob_requested_amount: u64,
     #[case] charlie_payout_amount: u64,
 ) -> anyhow::Result<()> {
@@ -664,36 +665,31 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
     // from Alice's offered side via the cross-swap.
     let alice_offered = FungibleAsset::new(usdc_faucet.id(), 100)?;
     let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
-    let bob_offered = FungibleAsset::new(eth_faucet.id(), note_fill)?;
+    let bob_offered = FungibleAsset::new(eth_faucet.id(), bob_fill)?;
     let bob_requested = FungibleAsset::new(usdc_faucet.id(), bob_requested_amount)?;
 
-    let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), account_fill)?;
-    // Alice's P2ID carries the whole fill (account_fill + note_fill ETH); the creator banks any
+    let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), charlie_fill)?;
+    // Alice's P2ID carries the whole fill (charlie_fill + bob_fill ETH); the creator banks any
     // amount above her requested minimum.
-    let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), account_fill + note_fill)?;
+    let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), charlie_fill + bob_fill)?;
     let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), charlie_payout_amount)?;
 
-let alice = AccountIdBuilder::new().build_with_seed([4; 32]);
-let bob = AccountIdBuilder::new().build_with_seed([5; 32]);
+    let alice = AccountIdBuilder::new().build_with_seed([4; 32]);
+    let bob = AccountIdBuilder::new().build_with_seed([5; 32]);
     let charlie =
         builder.add_existing_wallet_with_assets(BASIC_AUTH, [charlie_vault_eth.into()])?;
 
-    let (alice_pswap, alice_pswap_note) = build_pswap_note(
-        &mut builder,
-        alice.id(),
-        alice_offered,
-        alice_requested,
-        NoteType::Public,
-    )?;
+    let (alice_pswap, alice_pswap_note) =
+        build_pswap_note(&mut builder, alice, alice_offered, alice_requested, NoteType::Public)?;
     let (bob_pswap, bob_pswap_note) =
-        build_pswap_note(&mut builder, bob.id(), bob_offered, bob_requested, NoteType::Public)?;
+        build_pswap_note(&mut builder, bob, bob_offered, bob_requested, NoteType::Public)?;
 
     let mock_chain = builder.build()?;
 
-    // Alice: combined account_fill + note_fill. Bob: filled exactly via pure note_fill, sourced
+    // Alice: combined charlie_fill + bob_fill. Bob: filled exactly via pure note_fill, sourced
     // from Alice's offered side.
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(account_fill, note_fill)?);
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(charlie_fill, bob_fill)?);
     note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, bob_requested_amount)?);
 
     let (alice_p2id_note, alice_remainder) =
@@ -736,8 +732,8 @@ let bob = AccountIdBuilder::new().build_with_seed([5; 32]);
         "Bob's P2ID ({bob_requested:?}) not found",
     );
 
-    // Charlie's vault: -account_fill ETH and +his account-share of the offered USDC
-    // (floor(offered * account_fill / total_fill)). The note_fill legs flow through inflight and
+    // Charlie's vault: -charlie_fill ETH and +his account-share of the offered USDC
+    // (floor(offered * charlie_fill / total_fill)). The note_fill legs flow through inflight and
     // never touch his vault.
     let vault_patch = executed_transaction.account_patch().vault();
     assert_vault_patch(vault_patch, [charlie_payout_usdc, FungibleAsset::new(eth_faucet.id(), 0)?]);

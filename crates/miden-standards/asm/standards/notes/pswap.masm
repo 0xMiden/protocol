@@ -137,8 +137,8 @@ end
 #! Computes the proportional amount of offered tokens for a given fill amount.
 #!
 #! Formula: `payout = floor((offered * fill_amount) / fill_reference)`, where the caller passes
-#! `fill_reference = max(total_fill, requested)` so an over-fill divides by the fill itself
-#! (whole offered side) rather than `requested` (see `execute_pswap`).
+#! `fill_reference = max(total_fill, min_requested_amount)` so an over-fill divides by the fill
+#! itself (whole offered side) rather than `min_requested_amount` (see `execute_pswap`).
 #!
 #! The intermediate product `offered * fill_amount` is computed as a full
 #! u128 via `u64::widening_mul`, then divided by `fill_reference` (extended to
@@ -153,7 +153,7 @@ end
 #!
 @locals(2)
 # CALC_FILL_AMOUNT:      this leg's fill amount
-# CALC_FILL_REFERENCE: max(total_fill, requested) — the fill that maps to the whole offered side
+# CALC_FILL_REFERENCE: max(total_fill, min_requested_amount) — the fill that maps to the whole offered side
 proc calculate_output_amount
     movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, fill_reference]
@@ -202,14 +202,7 @@ end
 proc max
     dup.1 dup.1 lt
     # => [b_lt_a, a, b]
-
-    if.true
-        swap drop
-        # => [a]
-    else
-        drop
-        # => [b]
-    end
+    cdrop
     # => [max(a, b)]
 end
 
@@ -553,11 +546,11 @@ end
 #! Sends offered tokens to consumer, requested tokens to creator via P2ID,
 #! and creates a remainder note if partially filled.
 #!
-#! `requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
+#! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
 #! note_fill`:
-#! - `total_fill <= requested_amount`: the consumer takes a proportional share of the offered
+#! - `total_fill <= min_requested_amount`: the consumer takes a proportional share of the offered
 #!   side, and a remainder note carries the unfilled balance.
-#! - `total_fill > requested_amount` (over-fill): the whole offered side is paid out and no
+#! - `total_fill > min_requested_amount` (over-fill): the whole offered side is paid out and no
 #!   remainder is created. The consumer takes the `account_fill` share; any `note_fill` share
 #!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
 #!   surplus requested tokens.
@@ -580,7 +573,7 @@ end
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
-# EXEC_AMT_FILL_REFERENCE       : max(total_fill, requested)
+# EXEC_AMT_FILL_REFERENCE       : max(total_fill, min_requested_amount)
 proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
@@ -631,7 +624,7 @@ proc execute_pswap
     swap mul.MAX_U32 add
     # => [fill_amount]
 
-    # fill_reference = max(fill, requested).
+    # fill_reference = max(fill, min_requested_amount).
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
 

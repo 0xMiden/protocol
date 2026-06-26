@@ -459,7 +459,7 @@ impl PswapNote {
 
         let total_offered_amount = self.offered_asset.amount().as_u64();
         let requested_faucet_id = self.storage.requested_faucet_id();
-        let total_requested_amount = self.storage.requested_asset_amount();
+        let min_requested_amount = self.storage.requested_asset_amount();
 
         // Validate fill amount
         if fill_amount == 0 {
@@ -469,11 +469,12 @@ impl PswapNote {
         let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
         let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
 
-        // `requested_amount` is a minimum: each fill's share is computed against
-        // `fill_reference = max(fill_amount, requested)`. At or below requested this is
-        // `requested` (proportional, leaving a remainder); for an over-fill it is the fill
-        // itself, so the whole offered side is paid out and no remainder is created.
-        let fill_reference = fill_amount.max(total_requested_amount);
+        // `min_requested_amount` is a floor, not an exact target: each fill's share is computed
+        // against `fill_reference = max(fill_amount, min_requested_amount)`. At or below the
+        // minimum this is `min_requested_amount` (proportional, leaving a remainder); for an
+        // over-fill it is the fill itself, so the whole offered side is paid out and no remainder
+        // is created.
+        let fill_reference = fill_amount.max(min_requested_amount);
 
         // Calculate payout amounts separately for account fill and note fill, matching the MASM
         // which calls calculate_output_amount twice: the account fill portion is credited to the
@@ -491,9 +492,9 @@ impl PswapNote {
             self.create_payback_note(consumer_account_id, payback_asset, fill_amount)?;
 
         // Create remainder note if partial fill
-        let remainder = if fill_amount < total_requested_amount {
+        let remainder = if fill_amount < min_requested_amount {
             let remaining_offered = total_offered_amount - offered_amount_for_fill;
-            let remaining_requested = total_requested_amount - fill_amount;
+            let remaining_requested = min_requested_amount - fill_amount;
 
             let remaining_offered_asset =
                 FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered)
@@ -529,17 +530,17 @@ impl PswapNote {
     /// requested asset, based on this note's current offered/requested ratio.
     ///
     /// `requested_amount` is a floor, not an exact price: a `fill_amount` at or above it returns
-    /// the entire offered amount. (The divisor is `max(fill_amount, requested)`, so the payout
+    /// the entire offered amount. (The divisor is `max(fill_amount, min_requested)`, so the payout
     /// ratio never exceeds 1 — see [`Self::execute`].)
     ///
     /// # Errors
     ///
     /// Returns an error if the calculated payout is not a valid asset amount.
     pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
-        let total_requested = self.storage.requested_asset_amount();
+        let min_requested = self.storage.requested_asset_amount();
         let total_offered = self.offered_asset.amount().as_u64();
 
-        let fill_reference = fill_amount.max(total_requested);
+        let fill_reference = fill_amount.max(min_requested);
         Self::calculate_output_amount(total_offered, fill_reference, fill_amount)
     }
 
@@ -701,8 +702,9 @@ impl PswapNote {
     /// Computes a fill's proportional share of the offered tokens:
     /// `floor((offered_total * fill_amount) / fill_reference)`, computed via a u128 intermediate.
     ///
-    /// The caller passes `fill_reference = max(total_fill, requested)`, so for an over-fill the
-    /// shares scale by the actual fill rather than `requested` (see [`Self::execute`]).
+    /// The caller passes `fill_reference = max(total_fill, min_requested_amount)`, so for an
+    /// over-fill the shares scale by the actual fill rather than `requested` (see
+    /// [`Self::execute`]).
     ///
     /// # Errors
     ///
