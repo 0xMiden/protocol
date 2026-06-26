@@ -5,29 +5,14 @@ use crate::account::faucets::TokenName;
 
 /// Building a faucet exposes the configured fields.
 #[test]
-fn non_fungible_faucet_storage_round_trip() -> anyhow::Result<()> {
+fn non_fungible_faucet_fields() -> anyhow::Result<()> {
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("Example Collection")?)
         .symbol(TokenSymbol::new("EC")?)
-        .max_supply(10_000)
-        .build()?;
+        .build();
 
-    assert_eq!(faucet.max_supply(), 10_000);
-    assert_eq!(faucet.current_supply(), 0);
     assert_eq!(faucet.symbol(), &TokenSymbol::new("EC")?);
-
-    Ok(())
-}
-
-/// An unset `max_supply` defaults to the maximum representable cap.
-#[test]
-fn non_fungible_faucet_uncapped_supply() -> anyhow::Result<()> {
-    let faucet = NonFungibleFaucet::builder()
-        .name(TokenName::new("Uncapped")?)
-        .symbol(TokenSymbol::new("UNC")?)
-        .build()?;
-
-    assert_eq!(faucet.max_supply(), NonFungibleFaucet::MAX_MAX_SUPPLY);
+    assert_eq!(faucet.token_name(), &TokenName::new("Example Collection")?);
 
     Ok(())
 }

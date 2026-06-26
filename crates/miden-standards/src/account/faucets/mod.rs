@@ -83,10 +83,6 @@ pub enum FungibleFaucetError {
 /// Non-fungible (NFT) faucet related errors.
 #[derive(Debug, Error)]
 pub enum NonFungibleFaucetError {
-    #[error("faucet metadata max supply is {actual} which exceeds max value of {max}")]
-    MaxSupplyTooLarge { actual: u64, max: u64 },
-    #[error("current supply {current_supply} exceeds max_supply {max_supply}")]
-    CurrentSupplyExceedsMaxSupply { current_supply: u64, max_supply: u64 },
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a non-fungible faucet account")]

@@ -21,7 +21,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_NFT_ALREADY_ISSUED,
-    ERR_NFT_MAX_SUPPLY_EXCEEDED,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{NonFungibleBurnNote, NonFungibleMintNote, NonFungibleMintNoteStorage};
@@ -39,15 +38,13 @@ use rand::Rng;
 fn build_nft_faucet(
     builder: &mut MockChainBuilder,
     symbol: &str,
-    max_supply: u64,
     owner: AccountId,
     mint_policy: MintPolicy,
 ) -> anyhow::Result<Account> {
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new(symbol)?)
         .symbol(TokenSymbol::new(symbol)?)
-        .max_supply(max_supply)
-        .build()?;
+        .build();
 
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(mint_policy)
@@ -113,7 +110,7 @@ async fn execute_nft_mint(
 async fn nft_mint_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
     let commitment = NonFungibleFaucet::compute_asset_commitment(
@@ -135,7 +132,7 @@ async fn nft_mint_succeeds() -> anyhow::Result<()> {
 async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
     let commitment = NonFungibleFaucet::compute_asset_commitment(
@@ -164,58 +161,26 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Minting beyond `max_supply` is rejected. With `max_supply = 1`, minting two distinct
-/// commitments in one transaction fails on the second with `ERR_NFT_MAX_SUPPLY_EXCEEDED`.
-#[tokio::test]
-async fn nft_mint_exceeds_max_supply_fails() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([6; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 1, owner, MintPolicy::allow_all())?;
-    let mock_chain = builder.build()?;
-
-    let c1 = NonFungibleFaucet::compute_asset_commitment(b"token 1", Word::from([1, 0, 0, 0u32]));
-    let c2 = NonFungibleFaucet::compute_asset_commitment(b"token 2", Word::from([2, 0, 0, 0u32]));
-    let recipient = Word::from([9, 9, 9, 9u32]);
-
-    let body1 = nft_mint_body(c1, recipient);
-    let body2 = nft_mint_body(c2, recipient);
-    let code = format!("begin\n{body1}\n{body2}\nend");
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
-    let tx = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(tx, ERR_NFT_MAX_SUPPLY_EXCEEDED);
-
-    Ok(())
-}
-
-/// Full mint -> burn flow: mint an NFT (status ISSUED, supply 1), then consume a BURN note
-/// carrying that NFT against the faucet (status BURNED, supply back to 0). Uses the production
+/// Full mint -> burn flow: mint an NFT (status ISSUED), then consume a BURN note carrying that
+/// NFT against the faucet. A successful burn proves the status transitioned ISSUED -> BURNED,
+/// since `receive_and_burn` asserts the prior status was ISSUED. Uses the production
 /// `NonFungibleBurnNote` script.
 #[tokio::test]
 async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([5; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
     let commitment =
         NonFungibleFaucet::compute_asset_commitment(b"burnable token", Word::from([5, 6, 7, 8u32]));
     let recipient = Word::from([9, 9, 9, 9u32]);
 
-    // 1. mint and apply the patch: the faucet records the commitment ISSUED with supply 1
+    // 1. mint and apply the patch so the faucet records the commitment as ISSUED (required for the
+    //    burn below to find the asset in the issued state)
     let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
     let mut faucet = faucet;
     faucet.apply_patch(minted.account_patch())?;
-    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 1);
 
     // 2. consume a BURN note carrying the minted NFT against the faucet
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
@@ -229,15 +194,13 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    let burned = mock_chain
+    // the burn transaction succeeding is the assertion: receive_and_burn would abort with
+    // ERR_NFT_NOT_ISSUED if the commitment were not in the issued state.
+    mock_chain
         .build_tx_context(faucet.clone(), &[], &[burn_note])?
         .build()?
         .execute()
         .await?;
-
-    // 3. supply is decremented back to 0
-    faucet.apply_patch(burned.account_patch())?;
-    assert_eq!(NonFungibleFaucet::try_from(&faucet)?.current_supply(), 0);
 
     Ok(())
 }
@@ -249,7 +212,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([8; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
     let commitment = NonFungibleFaucet::compute_asset_commitment(
@@ -287,7 +250,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
 async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([10; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::owner_only())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::owner_only())?;
     let mock_chain = builder.build()?;
 
     let commitment = NonFungibleFaucet::compute_asset_commitment(
@@ -330,8 +293,7 @@ fn build_nft_faucet_with_blocklist(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
-        .max_supply(10_000)
-        .build()?;
+        .build();
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
@@ -395,38 +357,19 @@ async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
 async fn nft_public_getters() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::dummy([13; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = build_nft_faucet(&mut builder, "EC", 10_000, owner, MintPolicy::allow_all())?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
     let code = "
         begin
-            # current supply of a fresh faucet is 0
-            call.::miden::standards::faucets::non_fungible::get_current_supply
-            push.0 eq assert
-
-            # max supply is 10_000
-            call.::miden::standards::faucets::non_fungible::get_max_supply
-            push.10000 eq assert
-
             # status of an unissued asset id is 0 (not issued)
             push.0.123
             call.::miden::standards::faucets::non_fungible::get_asset_status
             push.0 eq assert
 
-            # token config is [current_supply, max_supply, symbol, pad(13)]: check supply fields
-            # and drop the symbol element
-            call.::miden::standards::faucets::non_fungible::get_token_config
-            push.0 eq assert
-            push.10000 eq assert
-            drop
-
             # get_symbol returns a single felt; exercise it
             call.::miden::standards::faucets::non_fungible::get_symbol
             drop
-
-            # is_max_supply_mutable defaults to false (0)
-            call.::miden::standards::faucets::non_fungible::is_max_supply_mutable
-            push.0 eq assert
         end
     ";
 

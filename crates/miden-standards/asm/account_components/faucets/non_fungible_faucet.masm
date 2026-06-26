@@ -9,12 +9,7 @@
 pub use ::miden::standards::faucets::non_fungible::mint_and_send
 pub use ::miden::standards::faucets::non_fungible::receive_and_burn
 
-# Non-fungible token configuration and status
-pub use ::miden::standards::faucets::non_fungible::get_token_config
-pub use ::miden::standards::faucets::non_fungible::get_current_supply
-pub use ::miden::standards::faucets::non_fungible::get_max_supply
-pub use ::miden::standards::faucets::non_fungible::set_max_supply
-pub use ::miden::standards::faucets::non_fungible::is_max_supply_mutable
+# Non-fungible token symbol and asset status
 pub use ::miden::standards::faucets::non_fungible::get_symbol
 pub use ::miden::standards::faucets::non_fungible::get_asset_status
 
