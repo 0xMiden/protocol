@@ -852,12 +852,6 @@ pub proc auth_tx(salt: word)
     # so only an execution transaction needs the checks below.
     if.true
         # ------ Execution path ------
-        # The execution mode (delayed vs immediate) is derived from the per-procedure policies: if
-        # any called procedure requires delayed execution the transaction runs in delayed mode
-        # (= DELAYED_EXECUTION_MODE = 1), otherwise immediate mode (= IMMEDIATE_EXECUTION_MODE = 0).
-        # Deriving the mode from policy (rather than from proposal existence) keeps a delay-only
-        # procedure in delayed mode even on an unauthorized dry-run, so a caller can still obtain the
-        # TX_SUMMARY_COMMITMENT needed to create the proposal.
         exec.compute_requires_delay
         # => [execution_mode, TX_SUMMARY_COMMITMENT]
 
