@@ -185,7 +185,7 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
         .execute()
         .await?;
 
-    target_account.apply_delta(consume_swap_note_tx.account_delta())?;
+    target_account.apply_patch(consume_swap_note_tx.account_patch())?;
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
     assert_eq!(
@@ -210,7 +210,7 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
         .execute()
         .await?;
 
-    sender_account.apply_delta(consume_payback_tx.account_delta())?;
+    sender_account.apply_patch(consume_payback_tx.account_patch())?;
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
 
     Ok(())
