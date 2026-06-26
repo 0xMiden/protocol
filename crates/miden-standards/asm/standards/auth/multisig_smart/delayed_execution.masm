@@ -1,7 +1,8 @@
-use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
+use miden::standards::auth::multisig
+use miden::standards::auth::tx_policy
 
 # CONSTANTS
 # =================================================================================================
@@ -12,13 +13,7 @@ const DELAYED_EXECUTION_SLOT = word("miden::standards::auth::multisig_smart::del
 # Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
 
-# Pending action slots
-const PENDING_PROPOSE_SLOT = word("miden::standards::auth::multisig_smart::pending_propose")
-const PENDING_CANCEL_SLOT = word("miden::standards::auth::multisig_smart::pending_cancel")
-const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pending_execute")
-
 const EMPTY_WORD = [0, 0, 0, 0]
-const PENDING_EXECUTE_FLAG = [1, 0, 0, 0]
 
 # ERRORS
 # =================================================================================================
@@ -31,8 +26,7 @@ const ERR_TIMESTAMPS_NOT_U32 = "current_timestamp and unlock_timestamp must be u
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_NOT_PROPOSED = "tx not proposed"
 const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
-const ERR_PENDING_ALREADY_SET = "pending action already set"
-const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
+const ERR_PROPOSE_INSUFFICIENT_SIGNATURES = "insufficient signatures for propose"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 
 # CONFIGURATION
@@ -91,7 +85,7 @@ end
 #!
 #! Where:
 #! - min_delay is the minimum number of seconds that must elapse between a `propose_transaction`
-#!   call and the matching `execute_proposed_transaction` call.
+#!   call and the matching execute transaction.
 #! - propose_expiration_delta is the block delta applied to proposal transactions so that
 #!   unsatisfied proposals expire after `propose_expiration_delta` blocks.
 #!
@@ -106,30 +100,6 @@ proc get_delayed_execution_config
     movup.3 drop movup.2 drop
     # => [min_delay, propose_expiration_delta]
 end
-
-#! Returns 1 if `execute_proposed_transaction` was called in the current transaction, 0 otherwise.
-#!
-#! Inputs:  []
-#! Outputs: [is_delayed_execution_path]
-#!
-#! Where:
-#! - is_delayed_execution_path is 1 if `PENDING_EXECUTE_SLOT` is non-empty, otherwise 0.
-#!
-#! Invocation: exec
-pub proc is_delayed_execution_path
-    push.PENDING_EXECUTE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix]
-
-    exec.active_account::get_item
-    # => [PENDING_EXECUTE_WORD]
-
-    exec.word::eqz
-    # => [is_pending_execute_empty]
-
-    not
-    # => [is_delayed_execution_path]
-end
-
 
 #! Returns `min_delay` from [`DELAYED_EXECUTION_SLOT`]
 #!
@@ -200,14 +170,13 @@ end
 #!   for the commitment), otherwise 0.
 #!
 #! Invocation: exec
-proc is_tx_proposed(tx_summary_commitment: word) -> u32
+pub proc is_tx_proposed(tx_summary_commitment: word) -> u32
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
     drop swap drop neq.0
     # => [is_proposed]
 end
-
 
 #! Deletes the proposal entry for `TX_SUMMARY_COMMITMENT` by writing `EMPTY_WORD`.
 #!
@@ -234,7 +203,6 @@ proc remove_tx_proposal(tx_summary_commitment: word)
     dropw
     # => []
 end
-
 
 #! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally.
 #!
@@ -268,7 +236,6 @@ proc write_tx_proposal
     # => []
 end
 
-
 #! Computes the unlock timestamp for the current proposal.
 #!
 #! Inputs:  []
@@ -289,7 +256,6 @@ proc compute_unlock_timestamp
     add
     # => [unlock_timestamp, proposal_timestamp]
 end
-
 
 #! Asserts that the proposal unlock timestamp has been reached.
 #!
@@ -319,7 +285,6 @@ proc assert_unlock_reached
     # => []
 end
 
-
 #! Enforces that `TX_SUMMARY_COMMITMENT` is proposed and that its unlock timestamp has been reached.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
@@ -348,559 +313,174 @@ proc enforce_tx_timelock
     # => [min_cancel_sigs]
 end
 
-
-# PENDING SLOT MANAGEMENT HELPERS
+# DISPATCH
 # =================================================================================================
 
-#! Returns the pending propose transaction summary hash, or `EMPTY_WORD` if none is set.
+#! Returns 1 if the current transaction only invoked a delay-action procedure
+#! (`propose_transaction` or `cancel_transaction_proposal`) and nothing else.
+#!
+#! When a delay-action procedure was called it verifies its own signatures internally, so the auth
+#! procedure has no additional work to do for such transactions. Any other transaction is treated
+#! as an execution and runs the full signature/threshold/timelock checks in the auth procedure.
 #!
 #! Inputs:  []
-#! Outputs: [PENDING_PROPOSE_COMMITMENT]
+#! Outputs: [is_delay_action_only]
 #!
 #! Where:
-#! - PENDING_PROPOSE_COMMITMENT is the pending propose transaction summary hash, or
-#!   `EMPTY_WORD` if no propose action is pending.
-#!
-#! Invocation: exec
-proc get_pending_propose
-    push.PENDING_PROPOSE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix]
-
-    exec.active_account::get_item
-    # => [PENDING_PROPOSE_COMMITMENT]
-end
-
-
-#! Returns the pending cancel transaction summary hash, or `EMPTY_WORD` if none is set.
-#!
-#! Inputs:  []
-#! Outputs: [PENDING_CANCEL_COMMITMENT]
-#!
-#! Where:
-#! - PENDING_CANCEL_COMMITMENT is the pending cancel transaction summary hash, or
-#!   `EMPTY_WORD` if no cancel action is pending.
-#!
-#! Invocation: exec
-proc get_pending_cancel
-    push.PENDING_CANCEL_SLOT[0..2]
-    # => [slot_prefix, slot_suffix]
-
-    exec.active_account::get_item
-    # => [PENDING_CANCEL_COMMITMENT]
-end
-
-
-#! Returns the pending execute marker word, or `EMPTY_WORD` if no execute action is pending.
-#!
-#! Inputs:  []
-#! Outputs: [PENDING_EXECUTE_WORD]
-#!
-#! Where:
-#! - PENDING_EXECUTE_WORD is `PENDING_EXECUTE_FLAG` if an execute action is pending,
-#!   or `EMPTY_WORD` otherwise.
-#!
-#! Invocation: exec
-proc get_pending_execute
-    push.PENDING_EXECUTE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix]
-
-    exec.active_account::get_item
-    # => [PENDING_EXECUTE_WORD]
-end
-
-
-
-#! Sets the pending propose slot to `TX_SUMMARY_COMMITMENT`.
-#!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: []
-#!
-#! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment to stage for proposal.
+#! - is_delay_action_only is 1 if `propose_transaction` or `cancel_transaction_proposal` was the
+#!   single non-auth procedure called, otherwise 0.
 #!
 #! Panics if:
-#! - `PENDING_PROPOSE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
+#! - a delay-action procedure was called together with another non-auth account procedure
+#!   (`assert_only_one_non_auth_procedure_called`).
 #!
 #! Invocation: exec
-proc set_pending_propose
-    push.PENDING_PROPOSE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
+pub proc is_delay_action_only
+    procref.propose_transaction
+    exec.native_account::was_procedure_called
+    # => [propose_called]
 
-    exec.native_account::set_item
-    # => [OLD_PENDING_PROPOSE_WORD]
+    procref.cancel_transaction_proposal
+    exec.native_account::was_procedure_called
+    # => [cancel_called, propose_called]
 
-    exec.word::eqz assert.err=ERR_PENDING_ALREADY_SET
-    # => []
+    or
+    # => [is_delay_action_only]
+
+    dup
+    # => [is_delay_action_only, is_delay_action_only]
+
+    if.true
+        # A delay action must be the only non-auth procedure called, otherwise it could be bundled
+        # with a state-mutating procedure to bypass the timelock.
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
+    end
+    # => [is_delay_action_only]
 end
-
-#! Clears the pending propose transaction summary hash.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-proc clear_pending_propose
-    push.EMPTY_WORD
-    # => [EMPTY_WORD]
-
-    push.PENDING_PROPOSE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, EMPTY_WORD]
-
-    exec.native_account::set_item
-    # => [OLD_PENDING_PROPOSE_COMMITMENT]
-
-    dropw
-    # => []
-end
-
-
-#! Sets the pending cancel slot to `TX_SUMMARY_COMMITMENT`.
-#!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: []
-#!
-#! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment to stage for cancellation.
-#!
-#! Panics if:
-#! - `PENDING_CANCEL_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
-#!
-#! Invocation: exec
-proc set_pending_cancel
-    push.PENDING_CANCEL_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
-
-    exec.native_account::set_item
-    # => [OLD_PENDING_CANCEL_WORD]
-
-    exec.word::eqz assert.err=ERR_PENDING_ALREADY_SET
-    # => []
-end
-
-#! Clears the pending cancel transaction summary hash.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-proc clear_pending_cancel
-    push.EMPTY_WORD
-    # => [EMPTY_WORD]
-
-    push.PENDING_CANCEL_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, EMPTY_WORD]
-
-    exec.native_account::set_item
-    # => [OLD_PENDING_CANCEL_COMMITMENT]
-
-    dropw
-    # => []
-end
-
-
-#! Marks the current transaction as an execute-path transaction.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - `PENDING_EXECUTE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
-#!
-#! Invocation: exec
-proc set_pending_execute
-    push.PENDING_EXECUTE_FLAG
-    # => [PENDING_EXECUTE_FLAG]
-
-    push.PENDING_EXECUTE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, PENDING_EXECUTE_FLAG]
-
-    exec.native_account::set_item
-    # => [OLD_PENDING_EXECUTE_WORD]
-
-    exec.word::eqz assert.err=ERR_PENDING_ALREADY_SET
-    # => []
-end
-
-
-#! Clears the pending execute transaction summary hash.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-proc clear_pending_execute
-    push.EMPTY_WORD
-    # => [EMPTY_WORD]
-
-    push.PENDING_EXECUTE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, EMPTY_WORD]
-
-    exec.native_account::set_item
-    # => [OLD_PENDING_EXECUTE_HASH]
-
-    dropw
-    # => []
-end
-
 
 # TX ACTIONS API
 # =================================================================================================
 
-#! Stages a new proposal for `TX_SUMMARY_COMMITMENT`.
+#! Records a new proposal for `TX_SUMMARY_COMMITMENT`.
 #!
-#! Any signer can call this procedure. The proposal word itself is written later in the auth
-#! finalizer after signature verification completes.
+#! Verifies the proposal signatures over `TX_SUMMARY_COMMITMENT` against the approver set and
+#! requires at least `default_threshold` valid signatures. The proposal is written with
+#! `min_cancel_sigs` set to the number of verified signatures, and the current (proposal)
+#! transaction is given the configured `propose_expiration_delta`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary hash of the proposal to stage.
+#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment of the target transaction to
+#!   propose.
 #!
 #! Panics if:
 #! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
-#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
+#! - fewer than `default_threshold` signatures verify over `TX_SUMMARY_COMMITMENT`
+#!   (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
-#! Invocation: exec
+#! Invocation: call
 pub proc propose_transaction
+    # => [TX_SUMMARY_COMMITMENT]
+    dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ---- Verify proposal signatures over the target commitment. ----
+    exec.multisig::get_initial_threshold_and_num_approvers
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    # Stash default_threshold below the message so it survives signature verification.
+    movdn.5
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    exec.multisig::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    dup movup.6 u32gte assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    # ---- Bound the proposal transaction's validity window. ----
     exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+    # ---- Write the proposal with min_cancel_sigs = num_verified_signatures. ----
+    exec.compute_unlock_timestamp
+    # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    exec.is_tx_proposed
-    # => [is_proposed, TX_SUMMARY_COMMITMENT]
-
-    assertz.err=ERR_TX_ALREADY_PROPOSED
-    # => [TX_SUMMARY_COMMITMENT]
-
-    exec.set_pending_propose
+    exec.write_tx_proposal
     # => []
 end
 
-
-#! Stages cancellation of an existing proposal.
+#! Cancels an existing proposal for `TX_SUMMARY_COMMITMENT`.
 #!
-#! The proposal is not removed immediately, the actual delete happens in the auth finalizer.
+#! Verifies the cancellation signatures over `TX_SUMMARY_COMMITMENT` and requires at least the
+#! proposal's `min_cancel_sigs` valid signatures, then deletes the proposal entry.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary hash of the proposal to cancel.
+#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment of the proposal to cancel.
 #!
 #! Panics if:
 #! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
-#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
-#!
-#! Invocation: exec
-pub proc cancel_transaction_proposal
-    dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-    exec.is_tx_proposed
-    # => [is_proposed, TX_SUMMARY_COMMITMENT]
-
-    assert.err=ERR_TX_NOT_PROPOSED
-    # => [TX_SUMMARY_COMMITMENT]
-
-    exec.set_pending_cancel
-    # => []
-end
-
-
-#! Cancels an existing proposal and stages a replacement proposal in the same transaction.
-#!
-#! The old proposal is marked for cancellation first, and the new proposal is then staged for
-#! creation in the auth finalizer.
-#!
-#! Inputs:  [OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT]
-#! Outputs: []
-#!
-#! Where:
-#! - OLD_TX_SUMMARY_COMMITMENT is the transaction summary hash of the proposal to cancel.
-#! - NEW_TX_SUMMARY_COMMITMENT is the transaction summary hash of the proposal to stage.
-#!
-#! Panics if:
-#! - no proposal exists for `OLD_TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
-#! - a proposal already exists for `NEW_TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
-#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
-#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
-#!
-#! Invocation: exec
-pub proc cancel_and_propose_new_transaction
-    dupw
-    # => [OLD_TX_SUMMARY_COMMITMENT, OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT]
-
-    exec.is_tx_proposed
-    # => [is_old_tx_proposed, OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT]
-
-    assert.err=ERR_TX_NOT_PROPOSED
-    # => [OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT]
-
-    swapw
-    # => [NEW_TX_SUMMARY_COMMITMENT, OLD_TX_SUMMARY_COMMITMENT]
-
-    dupw
-    # => [NEW_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT, OLD_TX_SUMMARY_COMMITMENT]
-
-    exec.is_tx_proposed
-    # => [is_new_tx_proposed, NEW_TX_SUMMARY_COMMITMENT, OLD_TX_SUMMARY_COMMITMENT]
-
-    assertz.err=ERR_TX_ALREADY_PROPOSED
-    # => [NEW_TX_SUMMARY_COMMITMENT, OLD_TX_SUMMARY_COMMITMENT]
-
-    swapw
-    # => [OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT]
-
-    exec.set_pending_cancel
-    # => [NEW_TX_SUMMARY_COMMITMENT]
-
-    exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
-    # => [NEW_TX_SUMMARY_COMMITMENT]
-
-    exec.set_pending_propose
-    # => []
-end
-
-
-#! Marks that this tx intends to execute a proposed action.
-#!
-#! Called from the user's tx script. The auth procedure later reads `PENDING_EXECUTE_SLOT`
-#! through `is_delayed_execution_path` to drive the execute-path consistency check and the
-#! timelock enforcement in `finalize_pending_execute`.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - `PENDING_EXECUTE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
-#!
-#! Invocation: exec
-pub proc execute_proposed_transaction
-    exec.set_pending_execute
-    # => []
-end
-
-# TX FINALIZERS
-# =================================================================================================
-
-#! Finalizes a pending execute action for the current transaction.
-#!
-#! Inputs:  [num_verified_signatures, requires_delay, TX_SUMMARY_COMMITMENT]
-#! Outputs: [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-#!
-#! Where:
-#! - num_verified_signatures is the number of signatures verified for the current transaction.
-#! - requires_delay is 1 if the current transaction must run in delayed execution mode,
-#!   otherwise 0.
-#! - TX_SUMMARY_COMMITMENT is the current transaction summary hash.
-#!
-#! Panics if:
-#! - `enforce_tx_timelock` fails.
-#!
-#! Locals:
-#! 0: num_verified_signatures
-#!
-#! Invocation: exec
-@locals(1)
-proc finalize_pending_execute
-    loc_store.0
-    # => [requires_delay, TX_SUMMARY_COMMITMENT]
-
-    exec.get_pending_execute
-    # => [PENDING_EXECUTE_HASH, requires_delay, TX_SUMMARY_COMMITMENT]
-
-    exec.word::eqz
-    # => [is_pending_execute_empty, requires_delay, TX_SUMMARY_COMMITMENT]
-
-    if.true
-        drop
-        # => [TX_SUMMARY_COMMITMENT]
-    else
-        if.true
-            dupw
-            # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-            exec.enforce_tx_timelock
-            # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-            drop
-            # => [TX_SUMMARY_COMMITMENT]
-        end
-
-        dupw
-        # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        exec.remove_tx_proposal
-        # => [TX_SUMMARY_COMMITMENT]
-    end
-
-    exec.clear_pending_execute
-    # => [TX_SUMMARY_COMMITMENT]
-
-    loc_load.0
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-end
-
-#! Finalizes a pending cancel action for the current transaction.
-#!
-#! Inputs:  [num_verified_signatures]
-#! Outputs: []
-#!
-#! Where:
-#! - num_verified_signatures is the number of signatures verified for the current transaction.
-#!
-#! Panics if:
-#! - the pending cancel commitment is not currently proposed (`ERR_TX_NOT_PROPOSED`).
-#! - `num_verified_signatures` is less than `min_cancel_sigs`
+#! - fewer than `min_cancel_sigs` signatures verify over `TX_SUMMARY_COMMITMENT`
 #!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
 #!
-#! Invocation: exec
-proc finalize_pending_cancel
-    exec.get_pending_cancel
-    # => [PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+#! Invocation: call
+pub proc cancel_transaction_proposal
+    # => [TX_SUMMARY_COMMITMENT]
+    dupw exec.get_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    exec.word::eqz
-    # => [is_pending_cancel_empty, num_verified_signatures]
+    dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    if.true
-        # No pending cancel; drop the unused num_verified_signatures.
-        drop
-    else
-        exec.get_pending_cancel
-        # => [PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+    drop drop
+    # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-        dupw exec.get_tx_proposal
-        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+    # Stash min_cancel_sigs below the message so it survives signature verification.
+    movdn.4
+    # => [TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
-        dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
-        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+    # ---- Verify cancellation signatures over the target commitment. ----
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
-        drop swap drop
-        # => [min_cancel_sigs, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+    exec.multisig::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
-        movup.5 swap
-        # => [min_cancel_sigs, num_verified_signatures, PENDING_CANCEL_COMMITMENT]
+    movup.5 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    # => [TX_SUMMARY_COMMITMENT]
 
-        u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
-        # => [PENDING_CANCEL_COMMITMENT]
-
-        exec.remove_tx_proposal
-        # => []
-    end
-
-    exec.clear_pending_cancel
+    exec.remove_tx_proposal
     # => []
 end
 
-#! Finalizes a pending propose action for the current transaction.
+#! Enforces the timelock for a delayed execution and removes the consumed proposal.
 #!
-#! Inputs:  [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+#! Called by the auth procedure when the current transaction matches an existing proposal. Asserts
+#! the proposal exists and its unlock timestamp has been reached, then deletes the proposal entry.
+#! Replay protection against re-execution is provided by the multisig executed-transactions set.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - num_verified_signatures is the number of signatures verified for the current transaction.
-#! - TX_SUMMARY_COMMITMENT is the current transaction summary hash.
-#!
-#! Panics if:
-#! - the pending propose hash is already proposed (`ERR_TX_ALREADY_PROPOSED`).
-#! - `num_verified_signatures` is zero (`ERR_PROPOSE_ZERO_SIGNATURES`).
-#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
-#!
-#! Locals:
-#! 0: num_verified_signatures
-#!
-#! Invocation: exec
-@locals(1)
-proc finalize_pending_propose
-    loc_store.0
-    # => [TX_SUMMARY_COMMITMENT]
-
-    exec.get_pending_propose
-    # => [PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-    exec.word::eqz
-    # => [is_pending_propose_empty, TX_SUMMARY_COMMITMENT]
-
-    if.false
-        exec.get_pending_propose
-        # => [PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        dupw
-        # => [PENDING_PROPOSE_COMMITMENT, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        exec.is_tx_proposed
-        # => [is_proposed, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        assertz.err=ERR_TX_ALREADY_PROPOSED
-        # => [PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        loc_load.0
-        # => [num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        dup
-        # => [num_verified_signatures, num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        eq.0
-        # => [num_verified_eq_0, num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
-        # => [num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
-        # => [num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        exec.compute_unlock_timestamp
-        # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
-
-        exec.write_tx_proposal
-        # => [TX_SUMMARY_COMMITMENT]
-    end
-
-    exec.clear_pending_propose
-    # => [TX_SUMMARY_COMMITMENT]
-end
-
-#! Finalizes all staged timelock actions for the current transaction.
-#!
-#! Pending actions are processed in this order:
-#! 1. execute
-#! 2. cancel
-#! 3. propose
-#!
-#! Inputs:  [num_verified_signatures, requires_delay, TX_SUMMARY_COMMITMENT]
-#! Outputs: [TX_SUMMARY_COMMITMENT]
-#!
-#! Where:
-#! - num_verified_signatures is the number of signatures verified for the current transaction.
-#! - requires_delay is 1 if the current transaction must run in delayed execution mode,
-#!   otherwise 0.
 #! - TX_SUMMARY_COMMITMENT is the current transaction summary commitment.
 #!
 #! Panics if:
-#! - `finalize_pending_execute` fails.
-#! - `finalize_pending_cancel` fails.
-#! - `finalize_pending_propose` fails.
+#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-pub proc finalize_timelock_proposals
-    exec.finalize_pending_execute
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+pub proc handle_execute
+    # => [TX_SUMMARY_COMMITMENT]
+    dupw exec.enforce_tx_timelock drop
+    # => [TX_SUMMARY_COMMITMENT]
 
-    # `finalize_pending_cancel` consumes `num_verified_signatures`; dup it so
-    # `finalize_pending_propose` still has the value available below.
-    dup movdn.5
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, num_verified_signatures]
-
-    exec.finalize_pending_cancel
-    # => [TX_SUMMARY_COMMITMENT, num_verified_signatures]
-
-    movup.4
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    exec.finalize_pending_propose
+    dupw exec.remove_tx_proposal
     # => [TX_SUMMARY_COMMITMENT]
 end

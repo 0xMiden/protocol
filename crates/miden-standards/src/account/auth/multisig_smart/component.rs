@@ -68,21 +68,6 @@ static TX_PROPOSALS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-static PENDING_PROPOSE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_propose")
-        .expect("storage slot name should be valid")
-});
-
-static PENDING_CANCEL_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_cancel")
-        .expect("storage slot name should be valid")
-});
-
-static PENDING_EXECUTE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_execute")
-        .expect("storage slot name should be valid")
-});
-
 // MULTISIG SMART AUTHENTICATION COMPONENT
 // ================================================================================================
 
@@ -193,6 +178,31 @@ fn validate_proc_policies(
 }
 
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
+///
+/// Procedures whose policy requires delayed execution must first be proposed (recorded in the
+/// proposals map) and can only execute once the timelock has elapsed. Both `propose_transaction`
+/// and the eventual execution verify the approver signatures over the *proposed transaction's*
+/// commitment, so approvers sign the actual transaction they intend to run.
+///
+/// # Security considerations
+///
+/// Two properties follow from verifying proposal signatures over the proposed transaction's
+/// commitment, and callers/operators must account for them:
+///
+/// - A proposal signature is bound to the proposed transaction's commitment, which is a stable,
+///   replayable message. After a proposal is cancelled (its entry removed), the original proposal
+///   signatures can be replayed to re-create the same proposal. There is intentionally no
+///   in-contract protection against this; instead, the cancellation must be re-applied before the
+///   timelock elapses. Re-cancelling is cheap (the cancel signatures are likewise replayable), but
+///   it requires off-chain monitoring of the proposals map. Monitoring is required regardless,
+///   because a semantically-equivalent proposal built with a different salt has a different
+///   commitment and cannot be blocked on-chain either.
+///
+/// - Proposing pre-authorizes execution. Because both proposing and executing verify signatures
+///   over the same (proposed) commitment, an approver's proposal signature also counts toward the
+///   execution threshold and can be reused for it. An approver who signs to propose a transaction
+///   has therefore also contributed a signature usable to execute it; consent cannot be withdrawn
+///   passively, only by cancelling.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -264,18 +274,6 @@ impl AuthMultisigSmart {
         &TX_PROPOSALS_SLOT_NAME
     }
 
-    pub fn pending_propose_slot() -> &'static StorageSlotName {
-        &PENDING_PROPOSE_SLOT_NAME
-    }
-
-    pub fn pending_cancel_slot() -> &'static StorageSlotName {
-        &PENDING_CANCEL_SLOT_NAME
-    }
-
-    pub fn pending_execute_slot() -> &'static StorageSlotName {
-        &PENDING_EXECUTE_SLOT_NAME
-    }
-
     /// Returns the [`AccountProcedureRoot`] of the `update_delayed_execution_policy` procedure.
     pub fn update_delayed_execution_policy_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY
@@ -328,41 +326,11 @@ impl AuthMultisigSmart {
             ),
         )
     }
-
-    pub fn pending_propose_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::pending_propose_slot().clone(),
-            StorageSlotSchema::value(
-                "Pending propose: TX_SUMMARY_COMMITMENT",
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn pending_cancel_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::pending_cancel_slot().clone(),
-            StorageSlotSchema::value(
-                "Pending cancel: TX_SUMMARY_COMMITMENT",
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn pending_execute_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::pending_execute_slot().clone(),
-            StorageSlotSchema::value(
-                "Pending execute marker (any non-zero word)",
-                SchemaType::native_word(),
-            ),
-        )
-    }
 }
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(10);
+        let mut storage_slots = Vec::with_capacity(7);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -427,20 +395,6 @@ impl From<AuthMultisigSmart> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Pending propose / cancel / execute scratch slots — empty by default.
-        storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::pending_propose_slot().clone(),
-            Word::empty(),
-        ));
-        storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::pending_cancel_slot().clone(),
-            Word::empty(),
-        ));
-        storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::pending_execute_slot().clone(),
-            Word::empty(),
-        ));
-
         let storage_schema = StorageSchema::new(vec![
             AuthMultisigSmart::threshold_config_slot_schema(),
             AuthMultisigSmart::approver_public_keys_slot_schema(),
@@ -449,9 +403,6 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::procedure_policies_slot_schema(),
             AuthMultisigSmart::delayed_execution_slot_schema(),
             AuthMultisigSmart::tx_proposals_slot_schema(),
-            AuthMultisigSmart::pending_propose_slot_schema(),
-            AuthMultisigSmart::pending_cancel_slot_schema(),
-            AuthMultisigSmart::pending_execute_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

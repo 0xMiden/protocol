@@ -14,8 +14,6 @@ pub use multisig_smart::update_signers_and_threshold
 pub use delayed_execution::update_delayed_execution_policy
 pub use delayed_execution::propose_transaction
 pub use delayed_execution::cancel_transaction_proposal
-pub use delayed_execution::cancel_and_propose_new_transaction
-pub use delayed_execution::execute_proposed_transaction
 
 #! Authenticate a transaction using multisig smart-policy rules.
 #!

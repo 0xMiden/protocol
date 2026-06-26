@@ -60,8 +60,6 @@ const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must b
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
-const ERR_DELAYED_EXECUTION_PATH_MISMATCH = "execute_proposed_transaction must be called iff a called procedure requires delayed execution"
-
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
 
@@ -408,36 +406,96 @@ pub proc enforce_note_restrictions
     # => []
 end
 
-#! Enforces the procedure-policy for the current transaction:
-#! - asserts each called procedure supports the active execution mode,
+#! Returns 1 if any called (non-auth) procedure's policy requires delayed execution, otherwise 0.
+#!
+#! A procedure requires delayed execution when its policy is delay-only, i.e. its
+#! `immediate_threshold` is zero and its `delay_threshold` is non-zero. This is used to derive the
+#! transaction's execution mode from the per-procedure policies (rather than from whether a proposal
+#! already exists), so that a delay-only procedure is always evaluated in the delayed mode.
+#!
+#! Inputs:  []
+#! Outputs: [requires_delay]
+#!
+#! The auth procedure (procedure index 0) is excluded, consistent with `compute_called_proc_policy`.
+#!
+#! Invocation: exec
+proc compute_requires_delay
+    push.0 exec.active_account::get_num_procedures
+    # => [num_procedures, requires_delay_acc]
+
+    dup neq.0
+    # => [should_continue, num_procedures, requires_delay_acc]
+    while.true
+        sub.1
+        # => [proc_index, requires_delay_acc]
+
+        dup neq.0
+        # => [is_non_auth, proc_index, requires_delay_acc]
+
+        dup.1 exec.active_account::get_procedure_root
+        # => [PROC_ROOT, is_non_auth, proc_index, requires_delay_acc]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, is_non_auth, proc_index, requires_delay_acc]
+
+        and
+        # => [should_process, proc_index, requires_delay_acc]
+
+        if.true
+            dup exec.active_account::get_procedure_root
+            # => [PROC_ROOT, proc_index, requires_delay_acc]
+
+            exec.get_procedure_policy
+            # => [immediate, delayed, note_restrictions, proc_index, requires_delay_acc]
+
+            movup.2 drop
+            # => [immediate, delayed, proc_index, requires_delay_acc]
+
+            eq.0
+            # => [is_immediate_zero, delayed, proc_index, requires_delay_acc]
+
+            swap neq.0
+            # => [is_delayed_nonzero, is_immediate_zero, proc_index, requires_delay_acc]
+
+            and
+            # => [proc_requires_delay, proc_index, requires_delay_acc]
+
+            movup.2 or
+            # => [new_requires_delay_acc, proc_index]
+
+            swap
+            # => [proc_index, new_requires_delay_acc]
+        end
+        # => [proc_index, requires_delay_acc]
+
+        dup neq.0
+        # => [should_continue, proc_index, requires_delay_acc]
+    end
+
+    drop
+    # => [requires_delay_acc]
+end
+
+#! Enforces the procedure-policy for the current transaction under the given execution mode:
+#! - asserts each called procedure supports `execution_mode`,
 #! - asserts the union of note restrictions against the transaction's input/output notes,
 #! - returns the effective threshold required by the called procedure policies.
 #!
-#! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
-#! panic via [`compute_called_proc_policy`] because this component has no timelock.
-#!
-#! Inputs:  [default_threshold]
-#! Outputs: [policy_threshold, policy_requires_delay]
+#! Inputs:  [execution_mode, default_threshold]
+#! Outputs: [policy_threshold]
 #!
 #! Where:
+#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1); the caller
+#!   derives it from whether a matured proposal exists for the transaction commitment.
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
 #! - policy_threshold is the effective threshold required by the called procedure policies.
-#! - policy_requires_delay is 1 when any called procedure's policy explicitly requires the
-#!   delayed execution mode, 0 otherwise.
+#!
+#! Panics if:
+#! - any called procedure's policy does not support `execution_mode`.
 #!
 #! Invocation: exec
-#!
-#! The active execution mode is read from [`delayed_execution::is_delayed_execution_path`]: when the
-#! delayed-execution module's `PENDING_EXECUTE` slot is set this transaction is on the
-#! delayed execution path (mode = 1); otherwise it is on the immediate path (mode = 0).
-#!
-#! `policy_requires_delay` is surfaced so the caller can enforce execute-path consistency
-#! after signature verification (see [`ERR_DELAYED_EXECUTION_PATH_MISMATCH`]).
-proc enforce_procedure_policy(default_threshold: u32)
-    exec.delayed_execution::is_delayed_execution_path
-    # => [execution_mode, default_threshold]
-
+proc enforce_procedure_policy(execution_mode: u32, default_threshold: u32)
     exec.compute_called_proc_policy
     # => [policy_threshold, policy_requires_delay, note_restrictions]
 
@@ -446,6 +504,9 @@ proc enforce_procedure_policy(default_threshold: u32)
 
     exec.enforce_note_restrictions
     # => [policy_threshold, policy_requires_delay]
+
+    swap drop
+    # => [policy_threshold]
 end
 
 #! Asserts that all configured smart per-procedure policies are valid for num_approvers.
@@ -749,25 +810,23 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Locals:
-#! 0: policy_threshold
+#! 0: execution_mode (1 = delayed, 0 = immediate)
 #! 1: default_threshold
-#! 2: policy_requires_delay
-#! 3: num_verified_signatures
+#! 2: policy_threshold
 #!
 #! Flow:
 #! 1. Build the tx summary commitment used for signing and timelock proposals.
-#! 2. Enforce per-procedure policy (note restrictions + policy threshold + delay flag).
-#! 3. Verify approver signatures and check the threshold.
-#! 4. Enforce execute-path consistency: if any policy required the delayed mode the tx must be
-#!    on the delayed execution path, and conversely the immediate path is only valid when no consumed
-#!    policy required a delay. This check runs after signature verification so a caller can
-#!    still obtain the TX_SUMMARY_COMMITMENT needed for a propose/execute round-trip from an
-#!    unauthorized dry-run.
-#! 5. Finalize any pending timelock propose/cancel/execute slots against the verified sig count
-#!    and the policy-derived `requires_delay` flag.
+#! 2. Dispatch: a propose/cancel-only transaction already verified its signatures inside the
+#!    called procedure, so there is nothing else to do. Any other transaction is an execution.
+#! 3. For an execution: derive the execution mode from the per-procedure policies (delayed if any
+#!    called procedure requires delay), enforce the per-procedure policy under that mode, verify
+#!    approver signatures and check the threshold.
+#! 4. If the transaction matched a proposal (delayed mode), enforce the timelock and consume the
+#!    proposal entry. Re-execution replay protection is provided by the executed-transactions set
+#!    (see `assert_new_tx` in the component wrapper).
 #!
 #! Invocation: call
-@locals(4)
+@locals(3)
 pub proc auth_tx(salt: word)
     exec.native_account::incr_nonce drop
     # => [SALT]
@@ -782,75 +841,77 @@ pub proc auth_tx(salt: word)
     exec.auth::hash_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
 
-    # ------ Reading threshold config (default + num_approvers) ------
-    exec.multisig::get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+    # ------ Dispatch ------
+    # A propose/cancel transaction verifies its own signatures inside the called procedure, so the
+    # auth procedure has nothing else to do. Any other transaction is treated as an execution.
+    exec.delayed_execution::is_delay_action_only
+    not
+    # => [is_execution, TX_SUMMARY_COMMITMENT]
 
-    # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
-    # fallback below.
-    dup loc_store.1
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Enforcing procedure policy (consumes default_threshold) ------
-    exec.enforce_procedure_policy
-    # => [policy_threshold, policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    loc_store.0
-    # => [policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    loc_store.2
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Verifying approver signatures ------
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    exec.::miden::standards::auth::signature::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    dup loc_store.3
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # ------ Computing final transaction threshold ------
-    # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
-    # falls back to `default_threshold`; otherwise it returns the policy max directly.
-    loc_load.0
-    loc_load.1
-    # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    exec.compute_tx_threshold
-    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    u32assert2 u32lt
-    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
-
+    # A propose/cancel-only transaction already verified its signatures inside the called procedure,
+    # so only an execution transaction needs the checks below.
     if.true
-        emit.AUTH_UNAUTHORIZED_EVENT
-        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        # ------ Execution path ------
+        # The execution mode (delayed vs immediate) is derived from the per-procedure policies: if
+        # any called procedure requires delayed execution the transaction runs in delayed mode
+        # (= DELAYED_EXECUTION_MODE = 1), otherwise immediate mode (= IMMEDIATE_EXECUTION_MODE = 0).
+        # Deriving the mode from policy (rather than from proposal existence) keeps a delay-only
+        # procedure in delayed mode even on an unauthorized dry-run, so a caller can still obtain the
+        # TX_SUMMARY_COMMITMENT needed to create the proposal.
+        exec.compute_requires_delay
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        loc_store.0
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # ------ Reading threshold config (default + num_approvers) ------
+        exec.multisig::get_initial_threshold_and_num_approvers
+        # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        dup loc_store.1
+        # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Enforcing procedure policy (consumes execution_mode + default_threshold) ------
+        loc_load.0
+        # => [execution_mode, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        exec.enforce_procedure_policy
+        # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        loc_store.2
+        # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Verifying approver signatures ------
+        exec.multisig::verify_signatures
+        # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        # ------ Computing final transaction threshold ------
+        # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
+        # falls back to `default_threshold`; otherwise it returns the policy max directly.
+        loc_load.2
+        loc_load.1
+        # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        exec.compute_tx_threshold
+        # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        u32assert2 u32lt
+        # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            emit.AUTH_UNAUTHORIZED_EVENT
+            push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        end
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # ------ Delayed execution: enforce timelock and consume the proposal ------
+        loc_load.0
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            exec.delayed_execution::handle_execute
+        end
+        # => [TX_SUMMARY_COMMITMENT]
     end
-
-    # ------ Enforcing execute-path consistency ------
-    # The immediate path is only valid when no consumed policy required a delay. Conversely,
-    # the delayed execution path is only valid when the tx actually requires a delay.
-    loc_load.2
-    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
-
-    exec.delayed_execution::is_delayed_execution_path
-    # => [is_delayed_execution_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
-
-    # is_valid = NOT(policy_requires_delay) OR is_delayed_execution_path
-    swap not or
-    # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
-
-    assert.err=ERR_DELAYED_EXECUTION_PATH_MISMATCH
-    # => [TX_SUMMARY_COMMITMENT]
-
-    # ------ Finalizing timelock proposals ------
-    loc_load.2
-    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
-
-    loc_load.3
-    # => [num_verified_signatures, policy_requires_delay, TX_SUMMARY_COMMITMENT]
-
-    exec.delayed_execution::finalize_timelock_proposals
     # => [TX_SUMMARY_COMMITMENT]
 end
