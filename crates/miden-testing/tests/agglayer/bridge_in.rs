@@ -43,13 +43,7 @@ use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_TH
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    TransactionContextBuilder,
-    assert_transaction_executor_error,
-};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use rand::Rng;
 
@@ -1583,6 +1577,10 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
     assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
     assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
 
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+
     for leaf_index in 0..32 {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
@@ -1590,7 +1588,8 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
             .with_statically_linked_library(&agglayer_library())?
             .compile_tx_script(source)?;
 
-        TransactionContextBuilder::with_existing_mock_account()
+        mock_chain
+            .build_tx_context(account.id(), &[], &[])?
             .tx_script(tx_script.clone())
             .build()?
             .execute()
