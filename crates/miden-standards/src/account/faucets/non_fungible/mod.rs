@@ -115,9 +115,6 @@ procedure_root!(
 /// - `get_symbol`, `get_asset_status`, and the metadata accessors/setters (see the embedded
 ///   [`TokenMetadata`]).
 ///
-/// Supply is intentionally not tracked: a collection cap is an application-level concern (as in
-/// ERC-721) and can be composed as a mint policy when needed.
-///
 /// `mint_and_send` is gated by the active mint policy from the associated [`TokenPolicyManager`];
 /// `receive_and_burn` is gated by the active burn policy.
 #[derive(Debug, Clone)]

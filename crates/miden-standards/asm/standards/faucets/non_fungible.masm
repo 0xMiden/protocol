@@ -10,10 +10,6 @@
 # keyed by `[asset_id_suffix, asset_id_prefix, 0, 0]`: a commitment can be issued at most once
 # and, once burned, is permanently consumed.
 #
-# Supply is intentionally not tracked here: a collection cap is an application-level concern (as
-# in ERC-721, where capping lives in the mint logic, not the core standard) and can be composed
-# as a mint policy when needed.
-#
 # Shared token metadata (name, description, logo_uri, external_link) lives in the parent
 # `miden::standards::faucets` namespace.
 
