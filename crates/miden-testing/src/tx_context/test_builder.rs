@@ -9,18 +9,15 @@ use anyhow::Context;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
-use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::Account;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::auth::BasicAuthenticator;
 
 use super::TransactionContext;
 use crate::MockChain;
@@ -33,45 +30,33 @@ use crate::MockChain;
 /// Use it when a test just needs some valid chain data to run against and does not care about the
 /// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and gets
 /// the inputs from [`crate::MockChain::build_tx_context`].
-#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct TestTransactionBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
     account: Account,
     advice_inputs: AdviceInputs,
-    authenticator: Option<BasicAuthenticator>,
     expected_output_notes: Vec<RawOutputNote>,
-    foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     input_notes: Vec<Note>,
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
-    note_args: BTreeMap<NoteId, Word>,
     auth_args: Word,
-    signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     is_lazy_loading_enabled: bool,
-    is_debug_mode_enabled: bool,
 }
 
-#[allow(dead_code)]
 impl TestTransactionBuilder {
     pub(crate) fn new(account: Account) -> Self {
         Self {
             source_manager: Arc::new(DefaultSourceManager::default()),
             account,
             advice_inputs: Default::default(),
-            authenticator: None,
             expected_output_notes: Vec::new(),
-            foreign_account_inputs: BTreeMap::new(),
             input_notes: Vec::new(),
             tx_script: None,
             tx_script_args: EMPTY_WORD,
-            note_args: BTreeMap::new(),
             auth_args: EMPTY_WORD,
-            signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
     }
 
@@ -110,35 +95,12 @@ impl TestTransactionBuilder {
         Self::new(Account::mock_non_fungible_faucet(acct_id))
     }
 
-    /// Extend the advice inputs with the provided [AdviceInputs] instance.
-    pub(crate) fn extend_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
-        self.advice_inputs.extend(advice_inputs);
-        self
-    }
-
     /// Extend the advice inputs map with the provided iterator.
     pub(crate) fn extend_advice_map(
         mut self,
         map_entries: impl IntoIterator<Item = (Word, Vec<Felt>)>,
     ) -> Self {
         self.advice_inputs.map.extend(map_entries);
-        self
-    }
-
-    /// Set the authenticator for the transaction (if needed).
-    pub(crate) fn authenticator(mut self, authenticator: Option<BasicAuthenticator>) -> Self {
-        self.authenticator = authenticator;
-        self
-    }
-
-    /// Set foreign account codes that are used by the transaction.
-    pub(crate) fn foreign_accounts(
-        mut self,
-        inputs: impl IntoIterator<Item = (Account, AccountWitness)>,
-    ) -> Self {
-        self.foreign_account_inputs.extend(
-            inputs.into_iter().map(|(account, witness)| (account.id(), (account, witness))),
-        );
         self
     }
 
@@ -175,21 +137,6 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Disables debug mode.
-    ///
-    /// For performance-sensitive applications, debug mode should be disabled because executing in
-    /// debug mode may be up to 100x slower.
-    pub(crate) fn disable_debug_mode(mut self) -> Self {
-        self.is_debug_mode_enabled = false;
-        self
-    }
-
-    /// Extend the note arguments map with the provided one.
-    pub(crate) fn extend_note_args(mut self, note_args: BTreeMap<NoteId, Word>) -> Self {
-        self.note_args.extend(note_args);
-        self
-    }
-
     /// Extend the expected output notes.
     pub(crate) fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         self.expected_output_notes.extend(output_notes);
@@ -205,17 +152,6 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Add a new signature for the message and the public key.
-    pub(crate) fn add_signature(
-        mut self,
-        pub_key: PublicKeyCommitment,
-        message: Word,
-        signature: Signature,
-    ) -> Self {
-        self.signatures.push((pub_key, message, signature));
-        self
-    }
-
     /// Add a note script to the context for testing.
     pub(crate) fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
@@ -227,8 +163,8 @@ impl TestTransactionBuilder {
     /// An ad-hoc [`crate::MockChain`] is created to generate valid block data for the requested
     /// input notes, and the account plus those notes are resolved into transaction inputs through
     /// [`crate::MockChain::build_tx_context`]. The rest of the configuration (advice inputs,
-    /// transaction script, expected output notes, foreign accounts, signatures, ...) is then
-    /// applied on top of the resolved inputs before the [TransactionContext] is assembled.
+    /// transaction script, expected output notes, ...) is then applied on top of the resolved
+    /// inputs before the [TransactionContext] is assembled.
     pub(crate) fn build(self) -> anyhow::Result<TransactionContext> {
         // Spin up an ad-hoc mock chain that commits the requested input notes, so that valid block
         // data (block headers and the chain's Merkle Mountain Range) can be generated for them.
@@ -251,12 +187,9 @@ impl TestTransactionBuilder {
             .build_tx_context(self.account, &input_note_ids, &[])
             .context("failed to build transaction context from mock chain")?
             .extend_advice_inputs(self.advice_inputs)
-            .authenticator(self.authenticator)
             .tx_script_args(self.tx_script_args)
             .auth_args(self.auth_args)
-            .extend_note_args(self.note_args)
             .extend_expected_output_notes(self.expected_output_notes)
-            .foreign_accounts(self.foreign_account_inputs.into_values())
             .with_source_manager(self.source_manager);
 
         if let Some(tx_script) = self.tx_script {
@@ -265,23 +198,11 @@ impl TestTransactionBuilder {
         if !self.is_lazy_loading_enabled {
             builder = builder.disable_lazy_loading();
         }
-        if !self.is_debug_mode_enabled {
-            builder = builder.disable_debug_mode();
-        }
-        for (pub_key, message, signature) in self.signatures {
-            builder = builder.add_signature(pub_key, message, signature);
-        }
         for script in self.note_scripts.into_values() {
             builder = builder.add_note_script(script);
         }
 
         builder.build()
-    }
-}
-
-impl Default for TestTransactionBuilder {
-    fn default() -> Self {
-        Self::with_existing_mock_account()
     }
 }
 
