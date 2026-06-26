@@ -7,7 +7,7 @@ use crate::account::{AccountHeader, AccountId};
 #[cfg(any(feature = "testing", test))]
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
-use crate::assembly::{Assembler, DefaultSourceManager, KernelLibrary};
+use crate::assembly::{Assembler, DefaultSourceManager};
 use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -34,14 +34,14 @@ pub use tx_event_id::TransactionEventId;
 // CONSTANTS
 // ================================================================================================
 
-// Initialize the kernel library only once
-static KERNEL_LIB: LazyLock<KernelLibrary> = LazyLock::new(|| {
+// Initialize the transaction kernel package only once
+static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_package_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
-    Package::read_from_bytes(kernel_package_bytes)
-        .expect("failed to deserialize transaction kernel package")
-        .try_into_kernel_library()
-        .expect("transaction kernel package should contain a kernel library")
+    Arc::new(
+        Package::read_from_bytes(kernel_package_bytes)
+            .expect("failed to deserialize transaction kernel package"),
+    )
 });
 
 // Initialize the kernel main program only once
@@ -81,12 +81,9 @@ impl TransactionKernel {
     // KERNEL SOURCE CODE
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a library with the transaction kernel system procedures.
-    ///
-    /// # Panics
-    /// Panics if the transaction kernel source is not well-formed.
-    pub fn kernel() -> KernelLibrary {
-        KERNEL_LIB.clone()
+    /// Returns the assembled transaction kernel as a [`Package`].
+    pub fn kernel() -> Arc<Package> {
+        KERNEL_PACKAGE.clone()
     }
 
     /// Returns an AST of the transaction kernel executable program.
@@ -112,7 +109,9 @@ impl TransactionKernel {
     pub fn program_info() -> ProgramInfo {
         // TODO: make static
         let program_hash = Self::main().hash();
-        let kernel = Self::kernel().kernel().clone();
+        let kernel = KERNEL_PACKAGE
+            .to_kernel()
+            .expect("transaction kernel package should describe a valid kernel");
 
         ProgramInfo::new(program_hash, kernel)
     }
@@ -150,7 +149,10 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        Assembler::with_kernel(source_manager, Self::kernel())
+        let kernel_lib = KERNEL_PACKAGE
+            .try_into_kernel_library()
+            .expect("transaction kernel package should contain a kernel library");
+        Assembler::with_kernel(source_manager, kernel_lib)
             .with_dynamic_library(CoreLibrary::default())
             .expect("failed to load std-lib")
             .with_dynamic_library(ProtocolLib::default())
