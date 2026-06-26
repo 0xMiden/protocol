@@ -41,7 +41,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 
-use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
+use crate::{MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
 // SHARED HELPERS
 // ================================================================================================
@@ -187,7 +187,7 @@ async fn execute_tx_script(
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code.as_ref())?;
-    let tx_context = TransactionContextBuilder::new(account)
+    let tx_context = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;

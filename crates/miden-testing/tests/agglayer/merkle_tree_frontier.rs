@@ -5,7 +5,7 @@ use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::TransactionContextBuilder;
+use miden_testing::{Auth, MockChain};
 
 // MERKLE TREE FRONTIER
 // ================================================================================================
@@ -102,7 +102,11 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
         .with_statically_linked_library(&agglayer_library())?
         .compile_tx_script(source)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])?
         .tx_script(tx_script.clone())
         .build()?
         .execute()
@@ -134,7 +138,11 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
         .with_statically_linked_library(&agglayer_library())?
         .compile_tx_script(source)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])?
         .tx_script(tx_script.clone())
         .build()?
         .execute()
