@@ -197,7 +197,7 @@ impl From<MintNote> for Note {
         );
 
         Note::with_attachments(
-            NoteAssets::new(vec![]).expect("a MINT note carries no assets"),
+            NoteAssets::default(),
             metadata,
             recipient,
             note.attachments,
