@@ -188,12 +188,7 @@ impl From<MintNote> for Note {
             NoteStorage::from(note.storage),
         );
 
-        Note::with_attachments(
-            NoteAssets::default(),
-            metadata,
-            recipient,
-            note.attachments,
-        )
+        Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
     }
 }
 
