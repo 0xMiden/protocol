@@ -1,5 +1,5 @@
+use core::num::NonZeroU16;
 use core::slice;
-use std::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
@@ -19,10 +19,10 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
-use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain};
 
@@ -62,8 +62,6 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
-
     let attachment_0 = NoteAttachment::with_words(
         NoteAttachmentScheme::new(42)?,
         vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])],
@@ -84,19 +82,25 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         "test should use max num of attachments"
     );
 
-    let p2id_note = P2idNote::create(
-        sender_basic_wallet_account.id(),
-        sender_basic_wallet_account.id(),
-        vec![sent_asset0, sent_asset2],
-        NoteType::Public,
-        attachments,
-        &mut rng,
-    )?;
+    let p2id_note: Note = P2idNote::builder()
+        .sender(sender_basic_wallet_account.id())
+        .target(sender_basic_wallet_account.id())
+        .asset(sent_asset0)
+        .asset(sent_asset2)
+        .attachments(attachments.iter().cloned())
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
     let partial_note = PartialNote::from(p2id_note.clone());
 
-    let expiration_delta = 10u16;
-    let send_note_transaction_script = sender_account_interface
-        .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
+    let expiration_delta = NonZeroU16::new(10).expect("10 is non-zero");
+    let send_note_transaction_script =
+        TransactionScript::from(SendNotesTransactionScript::with_expiration_delta(
+            &sender_basic_wallet_account.code_interface(),
+            slice::from_ref(&partial_note),
+            expiration_delta,
+        )?);
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
@@ -107,24 +111,34 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    // assert that the removed asset is in the delta
-    let mut removed_assets: BTreeMap<_, _> = executed_transaction
-        .account_delta()
-        .vault()
-        .removed_assets()
-        .map(|asset| (asset.vault_key(), asset))
-        .collect();
-    assert_eq!(removed_assets.len(), 2, "two assets should have been removed");
+    // Assert that the non-fungible asset was removed
+    let vault_patch = executed_transaction.account_patch().vault();
     assert_eq!(
-        removed_assets.remove(&sent_asset0.vault_key()).unwrap(),
-        sent_asset0,
-        "sent asset0 should be in removed assets"
+        vault_patch.removed_asset_keys().count(),
+        1,
+        "the non-fungible asset should have been completely removed"
     );
     assert_eq!(
-        removed_assets.remove(&sent_asset1.vault_key()).unwrap(),
-        sent_asset1.unwrap_fungible().add(sent_asset2.unwrap_fungible())?.into(),
-        "sent asset1 + sent_asset2 should be in removed assets"
+        vault_patch.removed_asset_keys().next().unwrap(),
+        &sent_asset0.vault_key(),
+        "the non-fungible asset should have been completely removed"
     );
+
+    // Assert that the fungible asset's value was decremented
+    assert_eq!(
+        vault_patch.updated_assets().count(),
+        1,
+        "the fungible asset should have been updated"
+    );
+    // Expected value is total - (sent_asset1 + sent_asset2).
+    let expected_removed = sent_asset1.unwrap_fungible().add(sent_asset2.unwrap_fungible())?;
+    let expected_asset_value = total_asset.unwrap_fungible().sub(expected_removed)?.into();
+    assert_eq!(
+        vault_patch.updated_assets().next().unwrap(),
+        expected_asset_value,
+        "fungible asset should have been decremented"
+    );
+
     assert_eq!(
         executed_transaction.output_notes().get_note(0),
         &RawOutputNote::Partial(p2any_note.into())
@@ -151,8 +165,6 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface = AccountInterface::from_account(&sender_fungible_faucet_account);
-
     let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
     let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
@@ -170,9 +182,13 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
     let partial_note: PartialNote = note.clone().into();
 
-    let expiration_delta = 10u16;
-    let send_note_transaction_script = sender_account_interface
-        .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
+    let expiration_delta = NonZeroU16::new(10).expect("10 is non-zero");
+    let send_note_transaction_script =
+        TransactionScript::from(SendNotesTransactionScript::with_expiration_delta(
+            &sender_fungible_faucet_account.code_interface(),
+            slice::from_ref(&partial_note),
+            expiration_delta,
+        )?);
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])

@@ -3,10 +3,10 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::{Account, AccountDelta, AccountStoragePatch, AccountVaultDelta};
+use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
-    ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
+    ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
@@ -35,7 +35,7 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_execution_error,
     assert_transaction_executor_error,
@@ -51,7 +51,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let input_note_1 =
         create_public_p2any_note(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(), [asset]);
 
-    let tx_context = TransactionContextBuilder::new(account.clone())
+    let tx_context = TestTransactionBuilder::new(account.clone())
         .extend_input_notes(vec![input_note_1])
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_1.clone())])
         .build()?;
@@ -105,20 +105,17 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             .collect(),
     )?;
 
-    let account_delta_commitment = AccountDelta::new(
+    let account_patch_commitment = AccountPatch::new(
         tx_context.account().id(),
         AccountStoragePatch::default(),
-        AccountVaultDelta::default(),
-        ONE,
+        AccountVaultPatch::default(),
+        None,
+        Some(final_account.nonce()),
     )?
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
-    let fee_asset = FungibleAsset::new(
-        tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
-        0,
-    )?;
+        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -129,24 +126,16 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().suffix(),
-    );
-    assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX),
-        fee_asset.faucet_id().prefix().as_felt()
-    );
-    assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
-            .as_canonical_u64(),
-        fee_asset.amount().as_u64()
-    );
-    assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
             .as_canonical_u64(),
         u64::from(u32::MAX)
+    );
+
+    // Everything after the expiration block number (index 8) must be zero.
+    assert_eq!(
+        exec_output.get_stack_word(8).as_elements()[1..],
+        Word::empty().as_elements()[1..],
     );
     assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
@@ -170,7 +159,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
     let output_note0 = create_p2any_note(account.id(), NoteType::Private, [asset0], &mut rng);
     let output_note1 = create_p2any_note(account.id(), NoteType::Private, [asset1], &mut rng);
 
-    let tx_context = TransactionContextBuilder::new(account.clone())
+    let tx_context = TestTransactionBuilder::new(account.clone())
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(output_note0.clone()),
             RawOutputNote::Full(output_note1.clone()),
@@ -309,7 +298,7 @@ async fn epilogue_fails_when_assets_arent_preserved(
 
 #[tokio::test]
 async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let test_pairs: [(u64, u64); 3] = [(9, 12), (18, 3), (20, 20)];
     let code_template = "
@@ -359,7 +348,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
 
 #[tokio::test]
 async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let test_values = [0u64, u16::MAX as u64 + 1, u32::MAX as u64];
     let code_template = "
@@ -383,7 +372,7 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code_template = "
     use $kernel::prologue
@@ -418,7 +407,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let expected_nonce = ONE + ONE;
 
@@ -479,7 +468,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::with_noop_auth_account()
+    let result = TestTransactionBuilder::with_noop_auth_account()
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -487,7 +476,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
     assert_transaction_executor_error!(
         result,
-        ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
     );
 
     Ok(())
@@ -514,7 +503,7 @@ async fn epilogue_fails_when_nonce_not_incremented() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_epilogue_execute_empty_transaction() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_noop_auth_account().build()?;
+    let tx_context = TestTransactionBuilder::with_noop_auth_account().build()?;
 
     let result = tx_context.execute().await;
 
@@ -567,7 +556,7 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
         note_type = note_type as u8,
     );
 
-    let tx_context = TransactionContextBuilder::with_noop_auth_account().build()?;
+    let tx_context = TestTransactionBuilder::with_noop_auth_account().build()?;
 
     let result = tx_context.execute_code(&code).await.map(|_| ());
 

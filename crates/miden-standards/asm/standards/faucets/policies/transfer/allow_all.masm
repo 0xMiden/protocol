@@ -8,10 +8,15 @@
 #! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
 #! account-wide pause check.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - custom_data is `0` for the receive (account) callback and the output note index for the
+#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
 #!
 #! Invocation: call
 pub proc check_policy
     dropw
+    # => [ASSET_VALUE, pad(12)]
 end

@@ -4,6 +4,8 @@ use either::Either;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -11,7 +13,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -69,12 +71,14 @@ pub(crate) enum TransactionEvent {
         foreign_account_id: AccountId,
     },
 
-    AccountVaultAfterRemoveAsset {
-        update: RemovedAssetUpdate,
+    AccountVaultAfterAssetUpdate {
+        patch: AssetPatch,
     },
 
-    AccountVaultAfterAddAsset {
-        update: AddedAssetUpdate,
+    AccountBeforeAssetDeltaComputation,
+
+    AccountOnAssetDeltaComputation {
+        delta: AssetDelta,
     },
 
     AccountStorageAfterSetItem {
@@ -147,16 +151,12 @@ pub(crate) enum TransactionEvent {
     /// transaction summary to be signed when no signature is available yet (`Right`). Only one is
     /// ever needed, so the summary is only reconstructed when a signature is absent.
     AuthRequest {
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         signature_or_summary: Either<Vec<Felt>, TransactionSummary>,
     },
 
     Unauthorized {
         tx_summary: TransactionSummary,
-    },
-
-    EpilogueBeforeTxFeeRemovedFromAccount {
-        fee_asset: FungibleAsset,
     },
 
     LinkMapSet {
@@ -170,28 +170,18 @@ pub(crate) enum TransactionEvent {
 }
 
 #[derive(Debug)]
-pub(crate) struct AddedAssetUpdate {
+pub(crate) struct AssetPatch {
     pub asset_key: AssetVaultKey,
-    /// The relative change applied by this add (always non-empty).
-    pub added_asset_value: Word,
-    /// The absolute value of `asset_key` in the vault before the operation that produced this
-    /// event was applied.
+    /// The absolute value of `asset_key` in the vault before the operation.
     pub initial_vault_value: Word,
     /// The absolute value of `asset_key` in the vault after the operation.
     pub final_vault_value: Word,
 }
 
-#[derive(Debug)]
-pub(crate) struct RemovedAssetUpdate {
-    pub asset_key: AssetVaultKey,
-    /// The relative change applied by this remove (always non-empty).
-    pub removed_asset_value: Word,
-    /// The absolute value of `asset_key` in the vault before the operation that produced this
-    /// event was applied.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation. `EMPTY_WORD` for a
-    /// fully-removed non-fungible asset.
-    pub final_vault_value: Word,
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -249,13 +239,13 @@ impl TransactionEvent {
                     current_vault_root,
                 )?
             },
-            TransactionEventId::AccountVaultAfterRemoveAsset => {
+            TransactionEventId::AccountVaultAfterRemoveAsset
+            | TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
-                let removed_asset_value = process.get_stack_word(5);
+                let initial_vault_value = process.get_stack_word(5);
                 let final_vault_value = process.get_stack_word(9);
-                let initial_vault_value = process.get_stack_word(13);
 
                 let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
@@ -264,38 +254,52 @@ impl TransactionEvent {
                     }
                 })?;
 
-                let update = RemovedAssetUpdate {
+                let patch = AssetPatch {
                     asset_key,
-                    removed_asset_value,
                     initial_vault_value,
                     final_vault_value,
                 };
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { update })
+                Some(TransactionEvent::AccountVaultAfterAssetUpdate { patch })
             },
-            TransactionEventId::AccountVaultAfterAddAsset => {
+            TransactionEventId::AccountBeforeAssetDeltaComputation => {
+                Some(TransactionEvent::AccountBeforeAssetDeltaComputation)
+            },
+            TransactionEventId::AccountOnAssetDeltaComputation => Some({
                 // Expected stack state:
-                // [event, ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE',
-                //  INITIAL_ASSET_VALUE]
-                let asset_key = process.get_stack_word(1);
-                let added_asset_value = process.get_stack_word(5);
-                let final_vault_value = process.get_stack_word(9);
-                let initial_vault_value = process.get_stack_word(13);
+                // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+                let delta_op = process.get_stack_item(1);
+                let asset_key = process.get_stack_word(2);
+                let delta_asset_value = process.get_stack_word(6);
 
                 let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "AccountVaultAfterAddAsset",
+                        handler: "AccountOnAssetDeltaComputation",
                         source,
                     }
                 })?;
+                let asset =
+                    Asset::from_key_value(asset_key, delta_asset_value).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "AccountOnAssetDeltaComputation",
+                            source,
+                        }
+                    })?;
+                let delta_op = AssetDeltaOperation::try_from(
+                    u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
+                        TransactionKernelError::other("failed to convert asset delta op to u8")
+                    })?,
+                )
+                .map_err(|source| {
+                    TransactionKernelError::other_with_source(
+                        "failed to decode asset delta op",
+                        source,
+                    )
+                })?;
 
-                let update = AddedAssetUpdate {
-                    asset_key,
-                    added_asset_value,
-                    initial_vault_value,
-                    final_vault_value,
-                };
-                Some(TransactionEvent::AccountVaultAfterAddAsset { update })
-            },
+                TransactionEvent::AccountOnAssetDeltaComputation {
+                    delta: AssetDelta { delta_op, asset },
+                }
+            }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_KEY, vault_root_ptr]
@@ -491,8 +495,8 @@ impl TransactionEvent {
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
-                let pub_key_hash = process.get_stack_word(5);
-                let signature_key = Hasher::merge(&[pub_key_hash, message]);
+                let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
+                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
                 let signature = process
                     .advice_provider()
@@ -508,7 +512,7 @@ impl TransactionEvent {
                     None => Either::Right(extract_tx_summary(base_host, process, message)?),
                 };
 
-                Some(TransactionEvent::AuthRequest { pub_key_hash, signature_or_summary })
+                Some(TransactionEvent::AuthRequest { pub_key_commitment, signature_or_summary })
             },
 
             TransactionEventId::Unauthorized => {
@@ -517,17 +521,6 @@ impl TransactionEvent {
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
                 Some(TransactionEvent::Unauthorized { tx_summary })
-            },
-
-            TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
-                // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
-                let fee_asset_key = process.get_stack_word(1);
-                let fee_asset_value = process.get_stack_word(5);
-
-                let fee_asset = FungibleAsset::from_key_value_words(fee_asset_key, fee_asset_value)
-                    .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
-
-                Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })
             },
 
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {

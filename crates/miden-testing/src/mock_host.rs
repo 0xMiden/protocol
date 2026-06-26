@@ -58,9 +58,6 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountPushProcedureIndex,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
-                // TODO: It should be possible to remove this after implementing
-                // https://github.com/0xMiden/protocol/issues/1852.
-                &TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount,
             ]
             .map(TransactionEventId::event_id),
         );

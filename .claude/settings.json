@@ -16,13 +16,13 @@
           },
           {
             "type": "command",
-            "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_push_review.py"
+            "if": "Bash(*gh *)",
+            "command": ".claude/hooks/pre_pr_draft.py"
           },
           {
             "type": "command",
             "if": "Bash(*gh *)",
-            "command": ".claude/hooks/pre_pr_draft.py"
+            "command": ".claude/hooks/pre_pr_review.py"
           }
         ]
       }
@@ -31,6 +31,11 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*git *)",
+            "command": ".claude/hooks/post_commit_review.py"
+          },
           {
             "type": "command",
             "if": "Bash(*gh *)",

@@ -1,23 +1,39 @@
 use core::slice;
+use std::collections::BTreeSet;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountId,
+    AccountIdVersion,
+    AccountProcedureRoot,
     AccountStorage,
     AccountType,
 };
+use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::{Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthSingleSigAcl;
+use miden_standards::account::faucets::{Description, FungibleFaucet, TokenName};
+use miden_standards::account::policies::{
+    BurnPolicy,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::BurnNote;
 use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::faucet::user_faucet_single_sig_acl;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -28,92 +44,131 @@ use rstest::rstest;
 
 use crate::prove_and_verify_transaction;
 
-// CONSTANTS
+// TESTS
 // ================================================================================================
-
-const TX_SCRIPT_NO_TRIGGER: &str = r#"
-    use mock::account
-    begin
-        call.account::account_procedure_1
-        drop
-    end
-    "#;
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Sets up the basic components needed for ACL tests.
-/// Returns (account, mock_chain, note).
-fn setup_acl_test(
-    allow_unauthorized_output_notes: bool,
-    allow_unauthorized_input_notes: bool,
-    auth_scheme: AuthScheme,
-) -> anyhow::Result<(Account, MockChain, Note)> {
-    let component: AccountComponent =
-        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
-
-    let get_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::get_item")
-        .expect("get_item procedure should exist");
-    let set_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::set_item")
-        .expect("set_item procedure should exist");
-    let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-
-    let (auth_component, _authenticator) = Auth::Acl {
-        auth_trigger_procedures: auth_trigger_procedures.clone(),
-        allow_unauthorized_output_notes,
-        allow_unauthorized_input_notes,
-        auth_scheme,
-    }
-    .build_component();
-
-    let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
-        .with_component(component)
-        .account_type(AccountType::Public)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    // Create a mock note to consume (needed to make the transaction non-empty)
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to create mock note");
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
-    let mock_chain = builder.build()?;
-
-    Ok((account, mock_chain, note))
-}
 
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
+async fn test_acl_non_exempt_procedures_require_auth(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_, _, account_procedure_1) = mock_component_proc_roots();
+    let TestSetup {
+        account,
+        mock_chain,
+        input_note,
+        authenticator,
+    } = setup_acl_test(BTreeSet::from([account_procedure_1]), auth_scheme);
 
-    // We need to get the authenticator separately for this test
-    let component: AccountComponent =
-        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+    let tx_script_get_item = compile_call_get_item_script()?;
+    let tx_script_set_item = compile_call_set_item_script()?;
 
-    let get_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::get_item")
-        .expect("get_item procedure should exist");
-    let set_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::set_item")
-        .expect("set_item procedure should exist");
-    let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
+    // Test 1: non-exempt `get_item` WITH authenticator (should succeed).
+    let executed_tx_get_item_with_auth = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(authenticator.clone())
+        .tx_script(tx_script_get_item.clone())
+        .build()?
+        .execute()
+        .await?;
+    prove_and_verify_transaction(executed_tx_get_item_with_auth).await?;
 
-    let (_, authenticator) = Auth::Acl {
-        auth_trigger_procedures: auth_trigger_procedures.clone(),
-        allow_unauthorized_output_notes: false,
-        allow_unauthorized_input_notes: true,
-        auth_scheme,
-    }
-    .build_component();
+    // Test 2: non-exempt `set_item` WITH authenticator (should succeed).
+    mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(authenticator)
+        .tx_script(tx_script_set_item)
+        .build()?
+        .execute()
+        .await?;
 
-    let tx_script_with_trigger_1 = format!(
+    // Test 3: non-exempt `get_item` WITHOUT authenticator (should fail).
+    let result_no_auth = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(tx_script_get_item)
+        .build()?
+        .execute()
+        .await;
+    assert_matches!(result_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
+
+    Ok(())
+}
+
+/// Positive exempt-path: a kernel-detected procedure that *is* on the exempt list can be
+/// called without a signature. This is the main path the exempt map lookup is supposed to
+/// enable.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (get_item, ..) = mock_component_proc_roots();
+    let TestSetup { account, mock_chain, input_note, .. } =
+        setup_acl_test(BTreeSet::from([get_item]), auth_scheme);
+
+    mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(compile_call_get_item_script()?)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Empty exempt list is the safe default: any kernel-detected procedure call without a
+/// signature must be rejected. Uses `get_item` because it interacts with a kernel-restricted
+/// account API (so `was_procedure_called` fires for it).
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_empty_exempt_list_default_denies_unsigned(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let TestSetup { account, mock_chain, input_note, .. } =
+        setup_acl_test(BTreeSet::new(), auth_scheme);
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(compile_call_get_item_script()?)
+        .build()?
+        .execute()
+        .await;
+    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
+
+    Ok(())
+}
+
+/// A transaction that calls a mix of detected exempt and detected non-exempt procedures must
+/// still require a signature: a detected exempt call must not suppress the signature
+/// requirement for a co-occurring non-exempt call.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_mixed_exempt_and_protected_requires_auth(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (get_item, ..) = mock_component_proc_roots();
+    let TestSetup {
+        account,
+        mock_chain,
+        input_note,
+        authenticator,
+        ..
+    } = setup_acl_test(BTreeSet::from([get_item]), auth_scheme);
+
+    // Call `get_item` (detected & exempt) and `set_item` (detected & non-exempt) in the same
+    // transaction so both branches of the per-procedure check are exercised.
+    let tx_script_mixed = format!(
         r#"
         use mock::account
 
@@ -123,18 +178,6 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
-        end
-        "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
-    );
-
-    let tx_script_with_trigger_2 = format!(
-        r#"
-        use mock::account
-
-        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
-
-        begin
             push.1.2.3.4
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::set_item
@@ -144,163 +187,37 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
 
-    let tx_script_trigger_1 =
-        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_with_trigger_1)?;
+    let tx_script_mixed_compiled =
+        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_mixed)?;
 
-    let tx_script_trigger_2 =
-        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_with_trigger_2)?;
-
-    let tx_script_no_trigger =
-        CodeBuilder::with_mock_libraries().compile_tx_script(TX_SCRIPT_NO_TRIGGER)?;
-
-    // Test 1: Transaction WITH authenticator calling trigger procedure 1 (should succeed)
-    let tx_context_with_auth_1 = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(authenticator.clone())
-        .tx_script(tx_script_trigger_1.clone())
-        .build()?;
-
-    let executed_tx_with_auth_1 = tx_context_with_auth_1
+    // Without auth: must fail because `set_item` is not exempt.
+    let result_no_auth = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(tx_script_mixed_compiled.clone())
+        .build()?
         .execute()
-        .await
-        .expect("trigger 1 with auth should succeed");
-    prove_and_verify_transaction(executed_tx_with_auth_1).await?;
+        .await;
+    assert_matches!(result_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
 
-    // Test 2: Transaction WITH authenticator calling trigger procedure 2 (should succeed)
-    let tx_context_with_auth_2 = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+    // With auth: must succeed.
+    mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
         .authenticator(authenticator)
-        .tx_script(tx_script_trigger_2)
-        .build()?;
-
-    tx_context_with_auth_2
+        .tx_script(tx_script_mixed_compiled)
+        .build()?
         .execute()
-        .await
-        .expect("trigger 2 with auth should succeed");
-
-    // Test 3: Transaction WITHOUT authenticator calling trigger procedure (should fail)
-    let tx_context_no_auth = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(None)
-        .tx_script(tx_script_trigger_1)
-        .build()?;
-
-    let executed_tx_no_auth = tx_context_no_auth.execute().await;
-
-    assert_matches!(executed_tx_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
-
-    // Test 4: Transaction WITHOUT authenticator calling non-trigger procedure (should succeed)
-    let tx_context_no_trigger = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(None)
-        .tx_script(tx_script_no_trigger)
-        .build()?;
-
-    let executed = tx_context_no_trigger
-        .execute()
-        .await
-        .expect("no trigger, no auth should succeed");
-    assert_eq!(
-        executed.account_delta().nonce_delta(),
-        Felt::ZERO,
-        "no auth but should still trigger nonce increment"
-    );
-
-    Ok(())
-}
-
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[tokio::test]
-async fn test_acl_with_allow_unauthorized_output_notes(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(true, true, auth_scheme)?;
-
-    // Verify the storage layout includes both authorization flags
-    let config_slot = account
-        .storage()
-        .get_item(AuthSingleSigAcl::config_slot())
-        .expect("config storage slot access failed");
-    // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
-    // allow_unauthorized_input_notes, 0] With 2 procedures,
-    // allow_unauthorized_output_notes=true, and allow_unauthorized_input_notes=true, this should be
-    // [2, 1, 1, 0]
-    assert_eq!(config_slot, Word::from([2u32, 1, 1, 0]));
-
-    let tx_script_no_trigger =
-        CodeBuilder::with_mock_libraries().compile_tx_script(TX_SCRIPT_NO_TRIGGER)?;
-
-    // Test: Transaction WITHOUT authenticator calling non-trigger procedure (should succeed)
-    // This tests that when allow_unauthorized_output_notes=true, transactions without
-    // authenticators can still succeed even if they create output notes
-    let tx_context_no_trigger = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(None)
-        .tx_script(tx_script_no_trigger)
-        .build()?;
-
-    let executed = tx_context_no_trigger
-        .execute()
-        .await
-        .expect("no trigger, no auth should succeed");
-    assert_eq!(
-        executed.account_delta().nonce_delta(),
-        Felt::ZERO,
-        "no auth but should still trigger nonce increment"
-    );
-
-    Ok(())
-}
-
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[tokio::test]
-async fn test_acl_with_disallow_unauthorized_input_notes(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(true, false, auth_scheme)?;
-
-    // Verify the storage layout includes both flags
-    let config_slot = account
-        .storage()
-        .get_item(AuthSingleSigAcl::config_slot())
-        .expect("config storage slot access failed");
-    // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
-    // allow_unauthorized_input_notes, 0] With 2 procedures,
-    // allow_unauthorized_output_notes=true, and allow_unauthorized_input_notes=false, this should
-    // be [2, 1, 0, 0]
-    assert_eq!(config_slot, Word::from([2u32, 1, 0, 0]));
-
-    let tx_script_no_trigger =
-        CodeBuilder::with_mock_libraries().compile_tx_script(TX_SCRIPT_NO_TRIGGER)?;
-
-    // Test: Transaction WITHOUT authenticator calling non-trigger procedure but consuming input
-    // notes This should FAIL because allow_unauthorized_input_notes=false and we're consuming
-    // input notes
-    let tx_context_no_auth = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(None)
-        .tx_script(tx_script_no_trigger)
-        .build()?;
-
-    let executed_tx_no_auth = tx_context_no_auth.execute().await;
-
-    // This should fail with MissingAuthenticator error because input notes are being consumed
-    // and allow_unauthorized_input_notes is false
-    assert_matches!(executed_tx_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
+        .await?;
 
     Ok(())
 }
 
 /// Tests that the singlesig ACL auth procedure reads the initial (pre-rotation) public key
 /// when verifying signatures. The transaction script overwrites the public key slot with
-/// a bogus value via `set_item` (which also triggers authentication); the test verifies
-/// that authentication still succeeds because the auth procedure uses `get_initial_item`
-/// to retrieve the original key, rather than `get_item` which would return the
-/// overwritten (bogus) value.
+/// a bogus value via `set_item` (which is not exempt, so it forces authentication); the
+/// test verifies that authentication still succeeds because the auth procedure uses
+/// `get_initial_item` to retrieve the original key, rather than `get_item` which would
+/// return the overwritten (bogus) value.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -308,27 +225,14 @@ async fn test_acl_with_disallow_unauthorized_input_notes(
 async fn test_acl_auth_uses_initial_public_key(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
-
-    // Build the authenticator separately (same seed as Auth::Acl uses)
-    let component: AccountComponent =
-        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
-
-    let get_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::get_item")
-        .expect("get_item procedure should exist");
-    let set_item_proc_root = component
-        .get_procedure_root_by_path("mock::account::set_item")
-        .expect("set_item procedure should exist");
-    let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-
-    let (_, authenticator) = Auth::Acl {
-        auth_trigger_procedures,
-        allow_unauthorized_output_notes: false,
-        allow_unauthorized_input_notes: true,
-        auth_scheme,
-    }
-    .build_component();
+    let (_, _, account_procedure_1) = mock_component_proc_roots();
+    let TestSetup {
+        account,
+        mock_chain,
+        input_note,
+        authenticator,
+        ..
+    } = setup_acl_test(BTreeSet::from([account_procedure_1]), auth_scheme);
 
     let pub_key_slot = AuthSingleSigAcl::public_key_slot();
     let tx_script_src = format!(
@@ -346,26 +250,22 @@ async fn test_acl_auth_uses_initial_public_key(
         "#,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
-    let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+    let executed_tx = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
         .authenticator(authenticator)
-        .tx_script(tx_script)
-        .build()?;
-
-    let executed_tx = tx_context
+        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .build()?
         .execute()
-        .await
-        .expect("singlesig_acl auth should use initial public key, not the rotated one");
+        .await?;
 
     prove_and_verify_transaction(executed_tx).await?;
 
     Ok(())
 }
 
-/// Rotated-key negative (ACL): mirrors the singlesig version. `set_item` is a trigger
-/// procedure so auth runs; the authenticator signs with sec_b under key A's commitment, and
-/// MASM verify must reject the mismatched signature.
+/// Rotated-key negative (ACL): mirrors the singlesig version. `set_item` is not exempt so
+/// auth runs; the authenticator signs with sec_b under key A's commitment, and MASM verify
+/// must reject the mismatched signature.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -373,16 +273,15 @@ async fn test_acl_auth_uses_initial_public_key(
 async fn test_acl_auth_rejects_rotated_key_signature(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
+    let (_, _, account_procedure_1) = mock_component_proc_roots();
+    let TestSetup { account, mock_chain, input_note, .. } =
+        setup_acl_test(BTreeSet::from([account_procedure_1]), auth_scheme);
 
     let mut rng_a = ChaCha20Rng::from_seed(Default::default());
-    let pub_key_a = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_a)
-        .expect("failed to derive original public key")
-        .public_key();
+    let pub_key_a = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_a)?.public_key();
 
     let mut rng_b = ChaCha20Rng::from_seed([1u8; 32]);
-    let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)
-        .expect("failed to create second secret key");
+    let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)?;
     let pub_key_b_commitment: Word = sec_key_b.public_key().to_commitment().into();
 
     let authenticator = BasicAuthenticator::from_key_pairs(&[(sec_key_b, pub_key_a)]);
@@ -405,14 +304,13 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         new_pub_key = pub_key_b_commitment,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
-    let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
         .authenticator(Some(authenticator))
-        .tx_script(tx_script)
-        .build()?;
-
-    let result = tx_context.execute().await;
+        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .build()?
+        .execute()
+        .await;
 
     match auth_scheme {
         AuthScheme::EcdsaK256Keccak => {
@@ -436,4 +334,184 @@ async fn test_acl_auth_rejects_rotated_key_signature(
     }
 
     Ok(())
+}
+
+/// A BURN note targeted at a `user_faucet_single_sig_acl`-configured fungible faucet must
+/// execute without an authenticator: the canonical user-faucet auth component carries
+/// `receive_and_burn` in its exempt set, so the note's call into the faucet does not require
+/// a signature even though no authority-gated setter was invoked.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let pub_key_word = Word::new([Felt::ONE; 4]);
+    let auth_component = user_faucet_single_sig_acl(pub_key_word.into(), auth_scheme);
+
+    let policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("polygon")?)
+        .symbol(TokenSymbol::try_from("POL")?)
+        .decimals(2)
+        .max_supply(AssetAmount::new(1000)?)
+        .token_supply(AssetAmount::new(100)?)
+        .description(Description::new("A polygon token")?)
+        .build()?;
+
+    let faucet_account = AccountBuilder::new([42u8; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(auth_component)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build_existing()?;
+
+    let sender = AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+    let asset = FungibleAsset::new(faucet_account.id(), 10)?;
+    let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
+    let burn_note: Note = BurnNote::builder()
+        .sender(sender)
+        .faucet_id(faucet_account.id())
+        .asset(asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet_account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_tx_context(faucet_account.id(), &[burn_note.id()], &[])?
+        .authenticator(None)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+// HELPER STRUCTURES
+// ================================================================================================
+
+struct TestSetup {
+    pub account: Account,
+    pub mock_chain: MockChain,
+    pub input_note: Note,
+    pub authenticator: Option<BasicAuthenticator>,
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Returns the procedure roots used by the ACL tests, in this order:
+///   (`get_item`, `set_item`, `account_procedure_1`).
+fn mock_component_proc_roots() -> (AccountProcedureRoot, AccountProcedureRoot, AccountProcedureRoot)
+{
+    let component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let get_item = component
+        .get_procedure_root_by_path("mock::account::get_item")
+        .expect("get_item procedure should exist");
+    let set_item = component
+        .get_procedure_root_by_path("mock::account::set_item")
+        .expect("set_item procedure should exist");
+    let account_procedure_1 = component
+        .get_procedure_root_by_path("mock::account::account_procedure_1")
+        .expect("account_procedure_1 procedure should exist");
+
+    (get_item, set_item, account_procedure_1)
+}
+
+/// Sets up an account using `AuthSingleSigAcl` with the supplied exempt list, registers it
+/// on a fresh mock chain, and returns a note ready to be consumed by the account.
+fn setup_acl_test(
+    exempt_procedures: BTreeSet<AccountProcedureRoot>,
+    auth_scheme: AuthScheme,
+) -> TestSetup {
+    let component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let (auth_component, authenticator) =
+        Auth::Acl { exempt_procedures, auth_scheme }.build_component();
+
+    let account = AccountBuilder::new([0; 32])
+        .with_auth_component(auth_component)
+        .with_component(component)
+        .account_type(AccountType::Public)
+        .build_existing()
+        .expect("failed to create an account");
+
+    let mut builder = MockChain::builder();
+    builder
+        .add_account(account.clone())
+        .expect("failed to add account to the mock chain builder");
+
+    // Create a mock note to consume (needed to make the transaction non-empty)
+    let input_note = NoteBuilder::new(account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to create mock note");
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let mock_chain = builder.build().expect("failed to build a mock chain");
+
+    TestSetup {
+        account,
+        mock_chain,
+        input_note,
+        authenticator,
+    }
+}
+
+/// Compiles the canonical "call `mock::account::get_item` against `MOCK_VALUE_SLOT0`" tx
+/// script. Used by several tests that need a non-exempt detected call (`get_item` invokes a
+/// kernel-restricted storage-read API).
+fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
+    let src = format!(
+        r#"
+        use mock::account
+
+        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
+
+        begin
+            push.MOCK_VALUE_SLOT0[0..2]
+            call.account::get_item
+            dropw
+        end
+        "#,
+        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+    );
+    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+}
+
+/// Compiles the canonical "call `mock::account::set_item` on `MOCK_VALUE_SLOT0` with a fixed
+/// dummy word" tx script.
+fn compile_call_set_item_script() -> anyhow::Result<TransactionScript> {
+    let src = format!(
+        r#"
+        use mock::account
+
+        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
+
+        begin
+            push.1.2.3.4
+            push.MOCK_VALUE_SLOT0[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+    );
+    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
 }

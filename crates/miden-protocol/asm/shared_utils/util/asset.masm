@@ -12,7 +12,7 @@ const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata com
 
 # Specifies the maximum amount a fungible asset can represent.
 #
-# This is 2^63 - 2^31. See account_delta.masm for more details.
+# This is 2^63 - 2^31. See account_update.masm for more details.
 pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
 
 # The number of elements in an asset, i.e. vault key and value.

@@ -1,8 +1,8 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::vm::AdviceMap;
@@ -143,7 +143,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
     );
 
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -232,9 +232,9 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 ) -> anyhow::Result<()> {
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-    use miden_protocol::transaction::RawOutputNote;
-    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_protocol::transaction::{RawOutputNote, TransactionScript};
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
 
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -250,17 +250,19 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         )],
     )?;
 
-    let output_note = P2idNote::create(
-        multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(5)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
-    )?;
+    let output_note: Note = P2idNote::builder()
+        .sender(multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(5))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])))
+        .build()?
+        .into();
 
-    let send_note_script = AccountInterface::from_account(&multisig_account)
-        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -379,7 +381,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Verify the new threshold/num_approvers config is persisted.
     let threshold_config = multisig_account
@@ -391,7 +393,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = Word::from([i as u32, 0, 0, 0]);
+        let storage_key = StorageMapKey::from_index(i as u32);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)
@@ -422,7 +424,7 @@ async fn test_multisig_smart_set_procedure_policy(
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+    let receive_asset_root = StorageMapKey::from_raw(BasicWallet::receive_asset_root().as_word());
     let immediate_threshold = 1u32;
     let delay_threshold = 0u32;
     let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;
@@ -481,7 +483,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Policy word layout: [immediate, delayed, note_restrictions, 0]
     let stored_policy = multisig_account
@@ -932,7 +934,7 @@ async fn test_multisig_smart_double_propose_fails(
     )
     .await?
     .expect("first propose should succeed");
-    multisig_account.apply_delta(propose_tx.account_delta())?;
+    multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1017,7 +1019,7 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     )
     .await?
     .expect("propose tx should succeed");
-    multisig_account.apply_delta(propose_tx.account_delta())?;
+    multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1099,14 +1101,17 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     )
     .await?
     .expect("propose tx should succeed");
-    multisig_account.apply_delta(propose_tx.account_delta())?;
+    multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
     // After propose, the proposal entry is present.
     let stored_before = multisig_account
         .storage()
-        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_summary_commitment_word)
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(tx_summary_commitment_word),
+        )
         .expect("tx proposals slot should exist");
     assert_ne!(stored_before, Word::empty(), "proposal must be written to storage");
 
@@ -1129,12 +1134,15 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     )
     .await?
     .expect("execute tx should succeed after min_delay elapses");
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Proposal entry should be cleared after execute.
     let stored_after = multisig_account
         .storage()
-        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_summary_commitment_word)
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(tx_summary_commitment_word),
+        )
         .expect("tx proposals slot should still exist");
     assert_eq!(
         stored_after,
@@ -1179,7 +1187,7 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     )
     .await?
     .expect("propose tx with 4 sigs should succeed");
-    multisig_account.apply_delta(propose_tx.account_delta())?;
+    multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1245,7 +1253,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     )
     .await?
     .expect("policy rotation tx should succeed");
-    multisig_account.apply_delta(rotate_tx.account_delta())?;
+    multisig_account.apply_patch(rotate_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&rotate_tx)?;
     mock_chain.prove_next_block()?;
 
@@ -1275,11 +1283,14 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     )
     .await?
     .expect("propose tx should succeed after rotation");
-    multisig_account.apply_delta(propose_tx.account_delta())?;
+    multisig_account.apply_patch(propose_tx.account_patch())?;
 
     let proposal_entry = multisig_account
         .storage()
-        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), target_commitment)
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
         .expect("tx proposals slot should exist");
     // Entry layout: [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
     let elements: &[Felt] = proposal_entry.as_ref();
@@ -1327,7 +1338,7 @@ async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
         )
         .await?
         .expect("propose tx should succeed");
-        multisig_account.apply_delta(tx.account_delta())?;
+        multisig_account.apply_patch(tx.account_patch())?;
         mock_chain.add_pending_executed_transaction(&tx)?;
         mock_chain.prove_next_block()?;
     }
@@ -1336,7 +1347,10 @@ async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
     for commitment in [commitment_a, commitment_b] {
         let entry = multisig_account
             .storage()
-            .get_map_item(AuthMultisigSmart::tx_proposals_slot(), commitment)
+            .get_map_item(
+                AuthMultisigSmart::tx_proposals_slot(),
+                StorageMapKey::from_raw(commitment),
+            )
             .expect("tx proposals slot should exist");
         assert_ne!(entry, Word::empty(), "proposal entry must be present in storage");
     }

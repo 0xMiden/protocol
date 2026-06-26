@@ -1,6 +1,6 @@
 use $kernel::asset
 use $kernel::account
-use $kernel::account_delta
+use $kernel::account_update
 use $kernel::account_id
 use $kernel::faucet
 use $kernel::input_note
@@ -158,7 +158,7 @@ end
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment
     # compute the account delta commitment
-    exec.account_delta::compute_commitment
+    exec.account_update::compute_delta_commitment
     # => [DELTA_COMMITMENT, pad(16)]
 
     # truncate the stack

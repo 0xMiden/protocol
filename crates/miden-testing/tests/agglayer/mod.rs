@@ -7,6 +7,7 @@ mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
 mod network_account_regression;
+mod remove_ger;
 mod solidity_miden_address_conversion;
 pub mod test_utils;
 mod update_ger;
