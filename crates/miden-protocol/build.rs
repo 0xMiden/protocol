@@ -137,10 +137,12 @@ fn compile_batch_kernel(
 ///
 /// The project is expected to have the following structure:
 ///
-/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction kernel.
-/// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction kernel.
-/// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary transaction
-///   script.
+/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction
+///   kernel.
+/// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction
+///   kernel.
+/// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary
+///   transaction script.
 ///
 /// The following are written to the `target_dir`:
 ///
