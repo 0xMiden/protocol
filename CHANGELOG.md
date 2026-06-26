@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Replaced `BLAKE3` hash function to `Poseidon2` hash function in the proving pipeline of the time counting benchmarks ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `P2ideNote` marker type and its `P2ideNote::create` factory with a `P2ideNote` struct built via a `bon` typestate builder (`P2ideNote::builder()`). P2IDE notes must now carry at least one asset; the optional `reclaim_height`/`timelock_height` are set via the builder, `P2ideNoteStorage::into_recipient` is now infallible, and a `P2ideNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
