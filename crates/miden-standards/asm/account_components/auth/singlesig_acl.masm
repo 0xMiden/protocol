@@ -1,10 +1,9 @@
-# The MASM code of the ECDSA K256 Keccak authentication Account Component with ACL.
+# The MASM code of the signature-based authentication Account Component with an exempt-list ACL.
 #
 # See the `AuthSingleSigAcl` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::tx
 use miden::standards::auth::signature
 use miden::core::word
 
@@ -17,121 +16,92 @@ const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig_acl::pub_key")
 # The slot in this component's storage layout where the corresponding signature scheme id is stored.
 const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig_acl::scheme")
 
-# The slot where the authentication configuration is stored.
-const AUTH_CONFIG_SLOT = word("miden::standards::auth::singlesig_acl::config")
+# The slot where the map of procedure roots exempt from requiring a signature is stored.
+# Map entries: `PROC_ROOT => [1, 0, 0, 0]`
+const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl::exempt_procedure_roots")
 
-# The slot where the map of auth trigger procedure roots is stored.
-const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::singlesig_acl::trigger_procedure_roots")
-
-const ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC = 0
-const ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC = 1
-
-#! Authenticate a transaction using the signature scheme specified by scheme_id 
-#! based on procedure calls and note usage.
+#! Authenticate a transaction using the signature scheme specified by scheme_id.
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! This authentication procedure checks:
-#! 1. If any of the trigger procedures were called during the transaction
-#! 2. If input notes were consumed and allow_unauthorized_input_notes is false
-#! 3. If output notes were created and allow_unauthorized_output_notes is false
+#! Authentication is required if a non-auth kernel-detected procedure not on the exempt list
+#! was called.
 #!
-#! If any of these conditions are true, standard EcdsaK256Keccak signature verification is performed.
-#! Otherwise, only the nonce is incremented.
+#! Notice that asset removal from the account vault uses a kernel-tracked procedure, so any
+#! transaction which moves assets out of the account will be authenticated unless all the
+#! procedures required for that are explicitly added to the exempt list.
+#!
+#! If authentication is required, the configured signature is verified. Otherwise, the nonce
+#! is conditionally incremented when the account state changed or the account is new.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @auth_script
-@locals(2)
 pub proc auth_tx_acl(auth_args: word)
     dropw
     # => [pad(16)]
 
-    # Get the authentication configuration
-    push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_initial_item
-    # => [num_auth_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0, pad(16)]
+    # ------ Iterate procedures to determine whether any non-exempt proc was called ------
 
-    movup.3 drop
-    # => [num_auth_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, pad(16)]
-
-    swap loc_store.ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC
-    swap loc_store.ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC
-    # => [num_auth_trigger_procs, pad(16)]
-
-    # ------ Check if any trigger procedure was called ------
-
-    # Counter `i` starts at `num_auth_trigger_procs` and flag `require_acl_auth` starts at 0
-    # `require_acl_auth` is true if any ACL procedures were called
+    # By default we assume no authentication required, look for conditions to change that
     push.0
-    # => [require_acl_auth, i, pad(16)]
-
-    # Loop through trigger procedures
-    dup.1 neq.0
-    while.true
-        # => [require_acl_auth, i, pad(16)]
-
-        # Get the procedure root from storage
-        push.0.0.0 dup.4 sub.1 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
-        # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [i-1, 0, 0, 0], require_acl_auth, i, pad(16)]
-
-        exec.active_account::get_initial_map_item
-        # => [AUTH_TRIGGER_PROC_ROOT, require_acl_auth, i, pad(16)]
-
-        exec.native_account::was_procedure_called
-        # => [was_called, require_acl_auth, i, pad(16)]
-
-        # Update require_acl_auth
-        or
-        # => [require_acl_auth', i, pad(16)]
-
-        swap sub.1 swap
-        # => [require_acl_auth', i-1, pad(16)]
-
-        # Check if we should continue looping
-        dup.1 neq.0
-        # => [should_continue, require_acl_auth', i-1, pad(16)]
-    end
-    # => [require_acl_auth, i-1, pad(16)]
-
-    swap drop
-    # => [require_acl_auth, pad(16)]
-
-    # ------ Check if output notes were created ------
-
-    exec.tx::get_num_output_notes
-    # => [num_output_notes, require_acl_auth, pad(16)]
-
-    neq.0
-    # => [were_output_notes_created, require_acl_auth, pad(16)]
-
-    loc_load.ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC not
-    # => [!allow_unauthorized_output_notes, were_output_notes_created, require_acl_auth, pad(16)]
-
-    and
-    # => [require_output_note_auth, require_acl_auth, pad(16)]
-
-    or
     # => [auth_required, pad(16)]
 
-    # ------ Check if input notes were consumed ------
+    exec.active_account::get_num_procedures
+    # => [num_procedures, auth_required, pad(16)]
 
-    exec.tx::get_num_input_notes
-    # => [INPUT_NOTES_COMMITMENT, auth_required, pad(16)]
+    # Iterate indices from `num_procedures-1` down to `1`. That way we can skip the
+    # authentication procedure itself located at index `0`.
+    dup neq.1
+    # => [should_continue, num_procedures, auth_required, pad(16)]
+    while.true
+        sub.1
+        # => [i, auth_required, pad(16)]
 
-    neq.0
-    # => [were_input_notes_consumed, auth_required, pad(16)]
+        # Get the procedure root at index i.
+        dup exec.active_account::get_procedure_root dupw
+        # => [PROC_ROOT, PROC_ROOT, i, auth_required, pad(16)]
 
-    loc_load.ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC not
-    # => [!allow_unauthorized_input_notes, were_input_notes_consumed, auth_required, pad(16)]
+        exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT, i, auth_required, pad(16)]
 
-    and
-    # => [require_input_note_auth, auth_required, pad(16)]
+        if.true
+            # Look up the proc root in the exempt map. Exempt procedure entries have
+            # `[1, 0, 0, 0]` as their values.
+            push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
+            # => [slot_suffix, slot_prefix, PROC_ROOT, i, auth_required, pad(16)]
 
-    or
+            exec.active_account::get_initial_map_item
+            # => [[is_exempt, 0, 0, 0], i, auth_required, pad(16)]
+
+            movdn.3 drop drop drop
+            # => [is_exempt, i, auth_required, pad(16)]
+
+            # If the called procedure is not exempt, auth is required.
+            not
+            # => [is_not_exempt, i, auth_required, pad(16)]
+
+            movup.2 or
+            # => [auth_required', i, pad(16)]
+
+            swap
+            # => [i, auth_required', pad(16)]
+        else
+            # Procedure was not called; discard the duplicated root.
+            dropw
+            # => [i, auth_required, pad(16)]
+        end
+
+        dup neq.1
+        # => [should_continue, i, auth_required, pad(16)]
+    end
+    # => [i = 1, auth_required, pad(16)]
+
+    drop
     # => [auth_required, pad(16)]
 
     # If authentication is required, perform signature verification
