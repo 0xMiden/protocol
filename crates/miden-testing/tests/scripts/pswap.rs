@@ -321,11 +321,11 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     let eth_20 = FungibleAsset::new(eth_faucet.id(), 20)?;
     let eth_25 = FungibleAsset::new(eth_faucet.id(), 25)?;
 
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [usdc_50.into()])?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(BASIC_AUTH, [eth_20.into()])?;
 
     let (pswap, pswap_note) =
-        build_pswap_note(&mut builder, alice.id(), usdc_50, eth_25, NoteType::Public)?;
+        build_pswap_note(&mut builder, alice, usdc_50, eth_25, NoteType::Public)?;
 
     let mock_chain = builder.build()?;
 
@@ -458,10 +458,7 @@ async fn pswap_fill_test(
     let eth_faucet =
         builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(requested_total))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), offered_total)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let consumer_id = if use_network_account {
         let seed: [u8; 32] = builder.rng_mut().draw_word().into();
@@ -486,7 +483,7 @@ async fn pswap_fill_test(
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), requested_total)?;
 
     let (pswap, pswap_note) =
-        build_pswap_note(&mut builder, alice.id(), offered_asset, min_requested_asset, note_type)?;
+        build_pswap_note(&mut builder, alice, offered_asset, min_requested_asset, note_type)?;
 
     let mut mock_chain = builder.build()?;
 
@@ -581,17 +578,17 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     let usdc_50 = FungibleAsset::new(usdc_faucet.id(), 50)?;
     let eth_25 = FungibleAsset::new(eth_faucet.id(), 25)?;
 
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [usdc_50.into()])?;
-    let bob = builder.add_existing_wallet_with_assets(BASIC_AUTH, [eth_25.into()])?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = AccountIdBuilder::new().build_with_seed([2; 32]);
     let charlie = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
 
     // Alice's note: offers 50 USDC, requests 25 ETH
     let (alice_pswap, alice_pswap_note) =
-        build_pswap_note(&mut builder, alice.id(), usdc_50, eth_25, NoteType::Public)?;
+        build_pswap_note(&mut builder, alice, usdc_50, eth_25, NoteType::Public)?;
 
     // Bob's note: offers 25 ETH, requests 50 USDC
     let (bob_pswap, bob_pswap_note) =
-        build_pswap_note(&mut builder, bob.id(), eth_25, usdc_50, NoteType::Public)?;
+        build_pswap_note(&mut builder, bob, eth_25, usdc_50, NoteType::Public)?;
 
     let mock_chain = builder.build()?;
 
@@ -803,10 +800,7 @@ async fn pswap_note_invalid_input_test(
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(30))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
         [FungibleAsset::new(eth_faucet.id(), 30)?.into()],
@@ -814,7 +808,7 @@ async fn pswap_note_invalid_input_test(
 
     let (_, pswap_note) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
@@ -856,10 +850,7 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
         [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
@@ -867,7 +858,7 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
 
     let (pswap, pswap_note) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
@@ -952,10 +943,7 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
@@ -964,7 +952,7 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
 
     let (pswap, pswap_note) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
@@ -1029,10 +1017,7 @@ async fn run_partial_fill_ratio_case(
     let eth_faucet =
         builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(fill_eth))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), offered_usdc)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
         [FungibleAsset::new(eth_faucet.id(), fill_eth)?.into()],
@@ -1040,7 +1025,7 @@ async fn run_partial_fill_ratio_case(
 
     let (pswap, pswap_note) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), offered_usdc)?,
         FungibleAsset::new(eth_faucet.id(), requested_eth)?,
         NoteType::Public,
@@ -1203,10 +1188,7 @@ async fn pswap_chained_partial_fills_test(
         let eth_faucet =
             builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(*fill_amount))?;
 
-        let alice = builder.add_existing_wallet_with_assets(
-            BASIC_AUTH,
-            [FungibleAsset::new(usdc_faucet.id(), current_offered)?.into()],
-        )?;
+        let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
         let bob = builder.add_existing_wallet_with_assets(
             BASIC_AUTH,
             [FungibleAsset::new(eth_faucet.id(), *fill_amount)?.into()],
@@ -1220,10 +1202,10 @@ async fn pswap_chained_partial_fills_test(
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(requested_fungible)
-            .creator_account_id(alice.id())
+            .creator_account_id(alice)
             .build();
         let pswap = PswapNote::builder()
-            .sender(alice.id())
+            .sender(alice)
             .storage(storage)
             .serial_number(current_serial)
             .note_type(NoteType::Public)
@@ -1313,12 +1295,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let usdc_faucet =
         builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150)).unwrap();
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50)).unwrap();
-    let alice = builder
-        .add_existing_wallet_with_assets(
-            BASIC_AUTH,
-            [FungibleAsset::new(usdc_faucet.id(), 50).unwrap().into()],
-        )
-        .unwrap();
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder
         .add_existing_wallet_with_assets(
             BASIC_AUTH,
@@ -1331,11 +1308,11 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 25).unwrap();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
-        .creator_account_id(alice.id())
+        .creator_account_id(alice)
         .payback_note_type(NoteType::Public)
         .build();
     let pswap_note: Note = PswapNote::builder()
-        .sender(alice.id())
+        .sender(alice)
         .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
@@ -1348,10 +1325,10 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let pswap = PswapNote::try_from(&pswap_note).unwrap();
 
     // Verify roundtripped PswapNote preserves key fields
-    assert_eq!(pswap.sender(), alice.id(), "Sender mismatch after roundtrip");
+    assert_eq!(pswap.sender(), alice, "Sender mismatch after roundtrip");
     assert_eq!(pswap.note_type(), NoteType::Public, "Note type mismatch after roundtrip");
     assert_eq!(pswap.storage().min_requested_amount(), 25, "Requested amount mismatch");
-    assert_eq!(pswap.storage().creator_account_id(), alice.id(), "Creator ID mismatch");
+    assert_eq!(pswap.storage().creator_account_id(), alice, "Creator ID mismatch");
 
     // Full fill: should produce P2ID note, no remainder
     let (p2id_note, remainder) = pswap
@@ -1383,7 +1360,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     // Verify remainder properties
     assert_eq!(
         remainder_pswap.storage().creator_account_id(),
-        alice.id(),
+        alice,
         "Remainder creator should be Alice"
     );
     let remaining_requested = remainder_pswap.storage().min_requested_amount();
@@ -1401,14 +1378,11 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let (pswap, _) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
@@ -1436,10 +1410,7 @@ fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
         [FungibleAsset::new(eth_faucet.id(), 10)?.into()],
@@ -1447,7 +1418,7 @@ fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
 
     let (pswap, _) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
@@ -1653,10 +1624,7 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1_000, Some(100))?;
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1_000, Some(50))?;
 
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(usdc_faucet.id(), 100)?.into()],
-    )?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
         [FungibleAsset::new(eth_faucet.id(), 30)?.into()],
@@ -1668,11 +1636,11 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
         let serial = rng.draw_word();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 20)?)
-            .creator_account_id(alice.id())
+            .creator_account_id(alice)
             .build();
 
         PswapNote::builder()
-            .sender(alice.id())
+            .sender(alice)
             .storage(storage)
             .serial_number(serial)
             .note_type(NoteType::Public)
@@ -1685,11 +1653,11 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
         let serial = rng.draw_word();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 30)?)
-            .creator_account_id(alice.id())
+            .creator_account_id(alice)
             .build();
 
         PswapNote::builder()
-            .sender(alice.id())
+            .sender(alice)
             .storage(storage)
             .serial_number(serial)
             .note_type(NoteType::Public)
@@ -1779,16 +1747,11 @@ fn pswap_parse_inputs_roundtrip() {
     let usdc_faucet =
         builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150)).unwrap();
     let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50)).unwrap();
-    let alice = builder
-        .add_existing_wallet_with_assets(
-            BASIC_AUTH,
-            [FungibleAsset::new(usdc_faucet.id(), 50).unwrap().into()],
-        )
-        .unwrap();
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let (_, pswap_note) = build_pswap_note(
         &mut builder,
-        alice.id(),
+        alice,
         FungibleAsset::new(usdc_faucet.id(), 50).unwrap(),
         FungibleAsset::new(eth_faucet.id(), 25).unwrap(),
         NoteType::Public,
@@ -1800,7 +1763,7 @@ fn pswap_parse_inputs_roundtrip() {
 
     let parsed = PswapNoteStorage::try_from(items).unwrap();
 
-    assert_eq!(parsed.creator_account_id(), alice.id(), "Creator ID roundtrip failed!");
+    assert_eq!(parsed.creator_account_id(), alice, "Creator ID roundtrip failed!");
 
     // Verify requested amount from value word
     assert_eq!(parsed.min_requested_amount(), 25, "Requested amount should be 25");
