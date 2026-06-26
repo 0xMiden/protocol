@@ -1,7 +1,7 @@
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
-use miden::tx_kernel_core::account_id
+use miden::protocol_utils::account_id
 use miden::tx_kernel_core::faucet
 use miden::tx_kernel_core::input_note
 use miden::tx_kernel_core::memory

@@ -16,4 +16,5 @@ path = "bin/tx_script_main.masm"
 
 [dependencies]
 miden-core.workspace           = true
+miden-protocol-utils.workspace = true
 miden-tx-kernel-core.workspace = true

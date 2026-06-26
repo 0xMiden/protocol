@@ -1,4 +1,4 @@
-use miden::tx_kernel_core::account_id
+use miden::protocol_utils::account_id
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::non_fungible_asset
 use miden::protocol_utils::asset->asset_utils

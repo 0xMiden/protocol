@@ -21,7 +21,6 @@ const ASM_DIR: &str = "asm";
 const ASM_PROTOCOL_DIR: &str = "protocol";
 
 const UTILS_DIR: &str = "utils";
-const SHARED_MODULES_DIR: &str = "shared_modules";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
 const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
@@ -82,9 +81,6 @@ fn main() -> Result<()> {
 
     // set source directory to {OUT_DIR}/asm
     let source_dir = dst.join(ASM_DIR);
-
-    // copy the shared modules to the kernel and protocol library folders
-    copy_shared_modules(&source_dir)?;
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -328,31 +324,6 @@ fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
     registry.cache_package(Arc::from(package)).into_diagnostic()?;
     Ok(registry)
-}
-
-/// Copies the content of the build `shared_modules` folder to the kernel `internals` and
-/// `protocol` build folders. This is required to include the shared modules in the
-/// `miden::tx_kernel_core` and `miden::protocol` libraries.
-///
-/// This is done to make it possible to import the modules in the `shared_modules` folder directly,
-/// i.e. "use miden::tx_kernel_core::account_id".
-fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
-    // source is expected to be an `OUT_DIR/asm` folder
-    let shared_modules_dir = source_dir.as_ref().join(SHARED_MODULES_DIR);
-
-    for module_path in shared::get_masm_files(shared_modules_dir).unwrap() {
-        let module_name = module_path.file_name().unwrap();
-
-        // copy to the kernel internals library
-        let core_folder = source_dir.as_ref().join(ASM_TX_KERNEL_CORE_DIR);
-        fs::copy(&module_path, core_folder.join(module_name)).into_diagnostic()?;
-
-        // copy to protocol lib
-        let protocol_lib_folder = source_dir.as_ref().join(ASM_PROTOCOL_DIR);
-        fs::copy(&module_path, protocol_lib_folder.join(module_name)).into_diagnostic()?;
-    }
-
-    Ok(())
 }
 
 // ERROR CONSTANTS FILE GENERATION
@@ -622,29 +593,6 @@ mod shared {
         }
 
         Ok(())
-    }
-
-    /// Returns a vector with paths to all MASM files in the specified directory and its
-    /// subdirectories.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            for entry in WalkDir::new(path) {
-                let entry = entry.into_diagnostic()?;
-                let file_path = entry.path().to_path_buf();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
     }
 
     /// Returns true if the provided path resolves to a file with `.masm` extension.
