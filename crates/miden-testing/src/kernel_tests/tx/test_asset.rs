@@ -31,13 +31,12 @@ use miden_protocol::{Felt, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{TransactionContextBuilder, assert_execution_error};
+use crate::{TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .build()?;
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
     let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
@@ -70,7 +69,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
+        TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
     let non_fungible_asset_details = NonFungibleAssetDetails::new(

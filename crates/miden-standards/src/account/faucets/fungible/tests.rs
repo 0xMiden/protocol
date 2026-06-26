@@ -1,5 +1,3 @@
-use alloc::collections::BTreeSet;
-
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountType, StorageMapKey};
@@ -36,24 +34,6 @@ fn sample_faucet() -> FungibleFaucet {
         .unwrap()
 }
 
-/// Reads every trigger-procedure-root map entry from `0..num` and returns the set.
-fn read_trigger_procedure_roots(
-    account: &miden_protocol::account::Account,
-    num: u32,
-) -> BTreeSet<Word> {
-    (0..num)
-        .map(|i| {
-            account
-                .storage()
-                .get_map_item(
-                    AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                    StorageMapKey::from_index(i),
-                )
-                .unwrap()
-        })
-        .collect()
-}
-
 #[test]
 fn user_fungible_faucet_with_single_sig_acl() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
@@ -68,7 +48,7 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let description_string = "A polygon token";
 
     let auth_component =
-        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2).unwrap();
+        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2);
 
     let faucet_account = create_user_fungible_faucet(
         init_seed,
@@ -85,15 +65,10 @@ fn user_fungible_faucet_with_single_sig_acl() {
         pub_key_word
     );
 
-    // Config slot: 11 trigger procedures (mint_and_send + 4 token metadata setters + 4 policy
-    // setters + pause + unpause), allow_unauthorized_input_notes=true → [11, 0, 1, 0].
-    assert_eq!(
-        faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
-        [Felt::from(11_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
-    );
-
-    let stored_roots = read_trigger_procedure_roots(&faucet_account, 11);
-    let expected_roots: BTreeSet<Word> = [
+    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet -
+    // every authority-gated setter requires a signature. Probe the full former trigger set so
+    // a regression that put any of them back into the exempt map would surface here.
+    for probed_root in [
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
         FungibleFaucet::set_description_root(),
@@ -105,11 +80,16 @@ fn user_fungible_faucet_with_single_sig_acl() {
         TokenPolicyManager::set_receive_policy_root(),
         PausableManager::pause_root(),
         PausableManager::unpause_root(),
-    ]
-    .into_iter()
-    .map(|root| root.as_word())
-    .collect();
-    assert_eq!(stored_roots, expected_roots);
+    ] {
+        let value = faucet_account
+            .storage()
+            .get_map_item(
+                AuthSingleSigAcl::exempt_procedure_roots_slot(),
+                StorageMapKey::from_raw(probed_root.as_word()),
+            )
+            .unwrap();
+        assert_eq!(value, Word::empty());
+    }
 
     // Token config slot layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(
