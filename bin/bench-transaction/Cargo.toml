@@ -14,6 +14,8 @@ version                = "0.1.0"
 doctest = false
 
 [features]
+# Transaction benchmarks use the concurrent proving stack. That stack requires `std`, so keep it
+# behind a default feature to avoid enabling it in no-default workspace library builds.
 concurrent = [
   "dep:anyhow",
   "dep:miden-agglayer",
