@@ -9,7 +9,7 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::errors::AccountDeltaError;
+use crate::errors::{AccountDeltaError, AccountPatchError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -51,6 +51,11 @@ impl AccountStoragePatch {
     /// Returns the patch for the provided slot name, or `None` if no patch exists.
     pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlotPatch> {
         self.patches.get(slot_name)
+    }
+
+    /// Returns the number of slot patches.
+    pub fn num_slots(&self) -> usize {
+        self.patches.len()
     }
 
     /// Returns an iterator over the slot patches.
@@ -143,16 +148,17 @@ impl AccountStoragePatch {
     }
 
     /// Merges another patch into this one, overwriting any existing values.
-    pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
+    pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         for (slot_name, slot_patch) in other.patches {
             match self.patches.entry(slot_name.clone()) {
                 Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(slot_patch);
                 },
                 Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry.get_mut().merge(slot_patch).ok_or_else(|| {
-                        AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
-                    })?;
+                    occupied_entry
+                        .get_mut()
+                        .merge(slot_patch)
+                        .ok_or(AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name))?;
                 },
             }
         }

@@ -68,8 +68,8 @@ pub fn setup_chain() -> TestSetup {
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);
     let note1 = builder
-        .add_p2id_note(account1.id(), account2.id(), &[], NoteType::Public)
-        .expect("adding p2id note1 should work");
+        .add_p2any_note(account1.id(), NoteType::Public, [])
+        .expect("adding p2any note1 should work");
     let mut chain = builder.build().expect("genesis should be valid");
     chain.prove_next_block().expect("valid setup");
 
@@ -124,7 +124,7 @@ pub async fn setup_circular_note_dependency_test()
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
     let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
         &account.code_interface(),
@@ -913,7 +913,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
     assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
 

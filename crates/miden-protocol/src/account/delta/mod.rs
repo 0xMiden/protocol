@@ -105,35 +105,6 @@ impl AccountDelta {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Merge another [AccountDelta] into this one.
-    pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
-        let new_nonce_delta = self.nonce_delta + other.nonce_delta;
-
-        if new_nonce_delta.as_canonical_u64() < self.nonce_delta.as_canonical_u64() {
-            return Err(AccountDeltaError::NonceIncrementOverflow {
-                current: self.nonce_delta,
-                increment: other.nonce_delta,
-                new: new_nonce_delta,
-            });
-        }
-
-        // TODO(code_upgrades): This should go away once we have proper account code updates in
-        // deltas. Then, the two code updates can be merged. For now, code cannot be merged
-        // and this should never happen.
-        if self.is_full_state() && other.is_full_state() {
-            return Err(AccountDeltaError::MergingFullStateDeltas);
-        }
-
-        if let Some(code) = other.code {
-            self.code = Some(code);
-        }
-
-        self.nonce_delta = new_nonce_delta;
-
-        self.storage.merge(other.storage)?;
-        self.vault.merge(other.vault)
-    }
-
     /// Returns a mutable reference to the account vault delta.
     pub fn vault_mut(&mut self) -> &mut AccountVaultDelta {
         &mut self.vault
@@ -368,8 +339,16 @@ impl TryFrom<&AccountDelta> for Account {
             return Err(AccountError::PartialStateDeltaToAccount);
         };
 
+        // The asset vault of a new account is empty, so if the delta contains removed assets, the
+        // delta is invalid.
+        if delta.vault().removed_assets().count() != 0 {
+            return Err(AccountError::AssetsRemovedFromNewAccount);
+        }
+
         let mut vault = AssetVault::default();
-        vault.apply_delta(delta.vault()).map_err(AccountError::AssetVaultUpdateError)?;
+        for added_asset in delta.vault().added_assets() {
+            vault.insert_asset(added_asset).map_err(AccountError::AssetVaultUpdateError)?;
+        }
 
         // Once we support addition and removal of storage slots, we may be able to change
         // this to create an empty account and use `Account::apply_delta` instead.
@@ -434,68 +413,6 @@ impl SequentialCommit for AccountDelta {
     }
 }
 
-// ACCOUNT UPDATE DETAILS
-// ================================================================================================
-
-/// [`AccountUpdateDetails`] describes the details of one or more transactions executed against an
-/// account.
-///
-/// In particular, private account changes aren't tracked at all; they are represented as
-/// [`AccountUpdateDetails::Private`].
-///
-/// Non-private accounts are tracked as an [`AccountDelta`]. If the account is new, the delta can be
-/// converted into an [`Account`]. If not, the delta can be applied to the existing account using
-/// [`Account::apply_delta`].
-///
-/// Note that these details can represent the changes from one or more transactions in which case
-/// the deltas of each transaction are merged together using [`AccountDelta::merge`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AccountUpdateDetails {
-    /// The state update details of a private account is not publicly accessible.
-    Private,
-
-    /// The state update details of non-private accounts.
-    Delta(AccountDelta),
-}
-
-impl AccountUpdateDetails {
-    /// Returns `true` if the account update details are for private account.
-    pub fn is_private(&self) -> bool {
-        matches!(self, Self::Private)
-    }
-
-    /// Merges the `other` update into this one.
-    ///
-    /// This account update is assumed to come before the other.
-    pub fn merge(self, other: AccountUpdateDetails) -> Result<Self, AccountDeltaError> {
-        let merged_update = match (self, other) {
-            (AccountUpdateDetails::Private, AccountUpdateDetails::Private) => {
-                AccountUpdateDetails::Private
-            },
-            (AccountUpdateDetails::Delta(mut delta), AccountUpdateDetails::Delta(new_delta)) => {
-                delta.merge(new_delta)?;
-                AccountUpdateDetails::Delta(delta)
-            },
-            (left, right) => {
-                return Err(AccountDeltaError::IncompatibleAccountUpdates {
-                    left_update_type: left.as_tag_str(),
-                    right_update_type: right.as_tag_str(),
-                });
-            },
-        };
-
-        Ok(merged_update)
-    }
-
-    /// Returns the tag of the [`AccountUpdateDetails`] as a string for inclusion in error messages.
-    pub(crate) const fn as_tag_str(&self) -> &'static str {
-        match self {
-            AccountUpdateDetails::Private => "private",
-            AccountUpdateDetails::Delta(_) => "delta",
-        }
-    }
-}
-
 // SERIALIZATION
 // ================================================================================================
 
@@ -538,42 +455,6 @@ impl Deserializable for AccountDelta {
     }
 }
 
-impl Serializable for AccountUpdateDetails {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            AccountUpdateDetails::Private => {
-                0_u8.write_into(target);
-            },
-            AccountUpdateDetails::Delta(delta) => {
-                1_u8.write_into(target);
-                delta.write_into(target);
-            },
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        // Size of the serialized enum tag.
-        let u8_size = 0u8.get_size_hint();
-
-        match self {
-            AccountUpdateDetails::Private => u8_size,
-            AccountUpdateDetails::Delta(account_delta) => u8_size + account_delta.get_size_hint(),
-        }
-    }
-}
-
-impl Deserializable for AccountUpdateDetails {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        match u8::read_from(source)? {
-            0 => Ok(Self::Private),
-            1 => Ok(Self::Delta(AccountDelta::read_from(source)?)),
-            variant => Err(DeserializationError::InvalidValue(format!(
-                "Unknown variant {variant} for AccountDetails"
-            ))),
-        }
-    }
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -602,10 +483,8 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_core::Felt;
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
-    use crate::account::delta::AccountUpdateDetails;
     use crate::account::{
         Account,
         AccountCode,
@@ -654,31 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn account_delta_nonce_overflow() {
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let storage_patch = AccountStoragePatch::new();
-        let vault_delta = AccountVaultDelta::default();
-
-        let nonce_delta0 = ONE;
-        let nonce_delta1 = Felt::try_from(0xffff_ffff_0000_0000u64).unwrap();
-
-        let mut delta0 =
-            AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), nonce_delta0)
-                .unwrap();
-        let delta1 =
-            AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta1).unwrap();
-
-        assert_matches!(delta0.merge(delta1).unwrap_err(), AccountDeltaError::NonceIncrementOverflow {
-          current, increment, new
-        } => {
-            assert_eq!(current, nonce_delta0);
-            assert_eq!(increment, nonce_delta1);
-            assert_eq!(new, nonce_delta0 + nonce_delta1);
-        });
-    }
-
-    #[test]
-    fn account_update_details_size_hint() {
+    fn account_delta_size_hint() {
         // AccountDelta
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let storage_patch = AccountStoragePatch::new();
@@ -748,13 +603,5 @@ mod tests {
         let account =
             Account::new_existing(account_id, asset_vault, account_storage, account_code, ONE);
         assert_eq!(account.to_bytes().len(), account.get_size_hint());
-
-        // AccountUpdateDetails
-
-        let update_details_private = AccountUpdateDetails::Private;
-        assert_eq!(update_details_private.to_bytes().len(), update_details_private.get_size_hint());
-
-        let update_details_delta = AccountUpdateDetails::Delta(account_delta);
-        assert_eq!(update_details_delta.to_bytes().len(), update_details_delta.get_size_hint());
     }
 }

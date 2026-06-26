@@ -186,12 +186,12 @@ impl AccountStorage {
     pub fn get_map_item(
         &self,
         slot_name: &StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
     ) -> Result<Word, AccountError> {
         self.get(slot_name)
             .ok_or_else(|| AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })
             .and_then(|slot| match slot.content() {
-                StorageSlotContent::Map(map) => Ok(map.get(&StorageMapKey::from_raw(key))),
+                StorageSlotContent::Map(map) => Ok(map.get(&key)),
                 _ => Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             })
     }

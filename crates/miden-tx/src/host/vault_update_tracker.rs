@@ -80,7 +80,7 @@ impl VaultUpdateTracker {
             })
             .collect();
 
-        AccountVaultPatch::from_raw(normalized)
+        AccountVaultPatch::new(normalized).expect("tx kernel should only emit valid assets")
     }
 
     // HELPER FUNCTIONS

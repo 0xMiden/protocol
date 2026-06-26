@@ -330,7 +330,7 @@ mod tests {
             .storage()
             .get_map_item(
                 AuthMultisigSmart::procedure_policies_slot(),
-                BasicWallet::receive_asset_root().as_word(),
+                StorageMapKey::from_raw(BasicWallet::receive_asset_root().as_word()),
             )
             .expect("receive_asset policy should be present");
         assert_eq!(

@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountType,
     RoleSymbol,
+    StorageMapKey,
 };
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
@@ -55,12 +56,17 @@ fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
-fn role_config_key(role: &RoleSymbol) -> Word {
-    Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)])
+fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
 }
 
-fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> Word {
-    Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
+fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([
+        Felt::ZERO,
+        Felt::from(role),
+        account_id.suffix(),
+        account_id.prefix().as_felt(),
+    ]))
 }
 
 fn account_id_from_felt_pair(
@@ -119,7 +125,7 @@ async fn execute_note_and_apply(
     let executed = tx.execute().await?;
 
     let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
+    updated.apply_patch(executed.account_patch())?;
 
     Ok(updated)
 }
@@ -323,23 +329,6 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
             dropw dropw dropw dropw
         end
         "#,
-    )
-}
-
-fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::assert_sender_has_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        role = Felt::from(role),
     )
 }
 
@@ -668,34 +657,6 @@ async fn test_rbac_member_count_and_has_role_queries() -> anyhow::Result<()> {
 
     let outsider_note = build_note(owner, assert_has_role_script(&user_role, outsider, false))?;
     let _ = execute_note_and_apply(&mock_chain, &updated, &outsider_note).await?;
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_assert_sender_has_role() -> anyhow::Result<()> {
-    let owner = test_account_id(120);
-    let minter = test_account_id(121);
-    let outsider = test_account_id(122);
-
-    let minter_role = role("MINTER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&minter_role, minter))?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    // Member can pass the assertion.
-    let member_check = build_note(minter, assert_sender_has_role_script(&minter_role))?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &member_check).await?;
-
-    // Outsider cannot.
-    let outsider_check = build_note(outsider, assert_sender_has_role_script(&minter_role))?;
-    let tx = mock_chain
-        .build_tx_context(updated, &[], slice::from_ref(&outsider_check))?
-        .build()?;
-    let result = tx.execute().await;
-    assert!(result.is_err());
 
     Ok(())
 }

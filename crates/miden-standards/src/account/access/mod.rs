@@ -8,16 +8,17 @@ pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
 
-/// Access control configuration for account components.
+/// Access control configuration for network-style accounts whose authority-gated setters are
+/// gated by an owner / role check rather than by the account's auth component.
 ///
-/// Each variant expands into the set of [`AccountComponent`]s that implement that access
-/// control choice **plus** the matching [`Authority`] component. The [`Authority`] is
-/// auto-yielded so callers don't need to remember to install it separately and so that the
-/// authority discriminator stays in sync with the chosen access mode.
+/// User-account faucets (where the auth component is itself the setter gate) install
+/// [`Authority::AuthControlled`] directly via factories like
+/// [`create_user_fungible_faucet`][crate::account::faucets::create_user_fungible_faucet]; they
+/// do not need this enum.
 ///
-/// - [`AccessControl::AuthControlled`] yields just [`Authority::AuthControlled`].
-/// - [`AccessControl::Ownable2Step`] yields [`Ownable2Step`] + [`Authority::OwnerControlled`].
-/// - [`AccessControl::Rbac`] yields [`Ownable2Step`] + [`RoleBasedAccessControl`] +
+/// - [`AccessControl::Ownable2Step`] → [`Ownable2Step`] + [`Authority::OwnerControlled`]. The
+///   setter gate enforces `sender == owner`.
+/// - [`AccessControl::Rbac`] → [`Ownable2Step`] + [`RoleBasedAccessControl`] +
 ///   [`Authority::RbacControlled`]. The `roles` map assigns a role to individual gated procedures
 ///   (keyed by procedure root); procedures without a mapping fall back to the `owner` check.
 ///
@@ -41,13 +42,10 @@ pub mod rbac;
 /// [`AccountBuilder::with_component`][miden_protocol::account::AccountBuilder::with_component].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessControl {
-    /// No external access control component is installed; access decisions are gated solely
-    /// by the account's auth component.
-    AuthControlled,
-    /// Two-step ownership transfer with the provided initial owner. Authority for `set_*`
-    /// operations is fixed to the registered owner.
+    /// Two-step ownership transfer with the provided initial owner. The setter gate enforces
+    /// `sender == owner`.
     Ownable2Step { owner: AccountId },
-    /// Role-based access control. Includes [`Ownable2Step`] internally; the provided `owner`
+    /// Role-based access control. Includes [`Ownable2Step`] internally. The provided `owner`
     /// becomes the top-level RBAC authority (the account's owner).
     ///
     /// `roles` assigns a role to individual authority-gated procedures, keyed by procedure root
@@ -69,7 +67,6 @@ impl IntoIterator for AccessControl {
     /// always included.
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            AccessControl::AuthControlled => vec![Authority::AuthControlled.into()].into_iter(),
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },

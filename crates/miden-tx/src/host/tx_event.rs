@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
@@ -11,7 +12,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -145,17 +146,13 @@ pub(crate) enum TransactionEvent {
 
     /// The data necessary to handle an auth request.
     AuthRequest {
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
         signature: Option<Vec<Felt>>,
     },
 
     Unauthorized {
         tx_summary: TransactionSummary,
-    },
-
-    EpilogueBeforeTxFeeRemovedFromAccount {
-        fee_asset: FungibleAsset,
     },
 
     LinkMapSet {
@@ -494,8 +491,8 @@ impl TransactionEvent {
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
-                let pub_key_hash = process.get_stack_word(5);
-                let signature_key = Hasher::merge(&[pub_key_hash, message]);
+                let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
+                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
                 let signature = process
                     .advice_provider()
@@ -504,7 +501,11 @@ impl TransactionEvent {
 
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
-                Some(TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature })
+                Some(TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary,
+                    signature,
+                })
             },
 
             TransactionEventId::Unauthorized => {
@@ -513,17 +514,6 @@ impl TransactionEvent {
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
                 Some(TransactionEvent::Unauthorized { tx_summary })
-            },
-
-            TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
-                // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
-                let fee_asset_key = process.get_stack_word(1);
-                let fee_asset_value = process.get_stack_word(5);
-
-                let fee_asset = FungibleAsset::from_key_value_words(fee_asset_key, fee_asset_value)
-                    .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
-
-                Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })
             },
 
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
