@@ -11,7 +11,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::utils::create_p2id_note_exact;
+use miden_standards::note::P2idNote;
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;
@@ -237,14 +237,16 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     // When consuming a SWAP note with a public payback note output
     // it is necessary to add the details of the public note to the advice provider
     // via `.extend_expected_output_notes()`
-    let payback_p2id_note = create_p2id_note_exact(
-        target_account.id(),
-        sender_account.id(),
-        vec![requested_asset],
-        payback_note_type,
-        payback_note.serial_num(),
-    )
-    .unwrap();
+    let payback_p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(target_account.id())
+            .target(sender_account.id())
+            .assets(vec![requested_asset])
+            .note_type(payback_note_type)
+            .serial_number(payback_note.serial_num())
+            .build()
+            .unwrap(),
+    );
 
     let consume_swap_note_tx = mock_chain
         .build_tx_context(target_account.id(), &[swap_note.id()], &[])
