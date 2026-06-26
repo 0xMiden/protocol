@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use either::Either;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -141,10 +142,13 @@ pub(crate) enum TransactionEvent {
     },
 
     /// The data necessary to handle an auth request.
+    ///
+    /// Carries either the signature already present in the advice provider (`Left`), or the
+    /// transaction summary to be signed when no signature is available yet (`Right`). Only one is
+    /// ever needed, so the summary is only reconstructed when a signature is absent.
     AuthRequest {
         pub_key_hash: Word,
-        tx_summary: TransactionSummary,
-        signature: Option<Vec<Felt>>,
+        signature_or_summary: Either<Vec<Felt>, TransactionSummary>,
     },
 
     Unauthorized {
@@ -495,9 +499,16 @@ impl TransactionEvent {
                     .get_mapped_values(&signature_key)
                     .map(|slice| slice.to_vec());
 
-                let tx_summary = extract_tx_summary(base_host, process, message)?;
+                // The transaction summary only needs to be reconstructed when a signature must be
+                // produced (none is available yet). When a signature is already present, it is used
+                // directly and the message is not required to be the current transaction's summary
+                // (this lets a procedure verify a signature over a provided commitment).
+                let signature_or_summary = match signature {
+                    Some(signature) => Either::Left(signature),
+                    None => Either::Right(extract_tx_summary(base_host, process, message)?),
+                };
 
-                Some(TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature })
+                Some(TransactionEvent::AuthRequest { pub_key_hash, signature_or_summary })
             },
 
             TransactionEventId::Unauthorized => {

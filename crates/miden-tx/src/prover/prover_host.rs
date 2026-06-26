@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use either::Either;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
@@ -180,13 +181,12 @@ where
                 .on_note_before_add_attachment(note_idx, attachment)
                 .map(|_| Vec::new()),
 
-            TransactionEvent::AuthRequest { signature, .. } => {
-                if let Some(signature) = signature {
-                    Ok(self.base_host.on_auth_requested(signature))
-                } else {
-                    Err(TransactionKernelError::other(
+            TransactionEvent::AuthRequest { signature_or_summary, .. } => {
+                match signature_or_summary {
+                    Either::Left(signature) => Ok(self.base_host.on_auth_requested(signature)),
+                    Either::Right(_) => Err(TransactionKernelError::other(
                         "signatures should be in the advice provider at proving time",
-                    ))
+                    )),
                 }
             },
 

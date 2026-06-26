@@ -63,6 +63,7 @@ anyhow          = { default-features = false, features = ["backtrace", "std"], v
 assert_matches  = { default-features = false, version = "1.5" }
 bon             = { default-features = false, version = "3" }
 criterion       = { default-features = false, version = "0.5" }
+either          = { default-features = false, version = "1.16" }
 fs-err          = { default-features = false, version = "3" }
 primitive-types = { default-features = false, version = "0.14" }
 rand            = { default-features = false, version = "0.9" }

@@ -1,6 +1,8 @@
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
+
+use either::Either;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
@@ -632,11 +634,12 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
-                    if let Some(signature) = signature {
-                        Ok(self.base_host.on_auth_requested(signature))
-                    } else {
-                        self.on_auth_requested(pub_key_hash, tx_summary).await
+                TransactionEvent::AuthRequest { pub_key_hash, signature_or_summary } => {
+                    match signature_or_summary {
+                        Either::Left(signature) => Ok(self.base_host.on_auth_requested(signature)),
+                        Either::Right(tx_summary) => {
+                            self.on_auth_requested(pub_key_hash, tx_summary).await
+                        },
                     }
                 },
 

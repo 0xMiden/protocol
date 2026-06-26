@@ -2091,6 +2091,7 @@ dependencies = [
 name = "miden-tx"
 version = "0.16.0"
 dependencies = [
+ "either",
  "miden-processor",
  "miden-protocol",
  "miden-prover",
