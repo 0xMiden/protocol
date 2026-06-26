@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{Asset, AssetAmount, AssetCallbackFlag, AssetComposition, AssetError, Word};
+use super::{Asset, AssetAmount, AssetComposition, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
@@ -21,13 +21,12 @@ use crate::utils::serde::{
 /// A fungible asset consists of a faucet ID of the faucet which issued the asset as well as the
 /// asset amount. Asset amount is guaranteed to be 2^63 - 1 or smaller.
 ///
-/// The fungible asset can have callbacks to the faucet enabled or disabled, depending on
-/// [`AssetCallbackFlag`]. See [`AssetCallbacks`](crate::asset::AssetCallbacks) for more details.
+/// Whether the asset triggers callbacks to the faucet is an immutable property of the faucet's
+/// [`AccountId`], see [`AccountId::asset_callback_flag`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FungibleAsset {
     faucet_id: AccountId,
     amount: AssetAmount,
-    callbacks: AssetCallbackFlag,
 }
 
 impl FungibleAsset {
@@ -41,12 +40,10 @@ impl FungibleAsset {
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
-    /// A composition byte (u8) plus an account ID (15 bytes) plus an amount (u64) plus a
-    /// callbacks flag (u8).
+    /// A composition byte (u8) plus an account ID (15 bytes) plus an amount (u64).
     pub const SERIALIZED_SIZE: usize = AssetComposition::SERIALIZED_SIZE
         + AccountId::SERIALIZED_SIZE
-        + core::mem::size_of::<u64>()
-        + AssetCallbackFlag::SERIALIZED_SIZE;
+        + core::mem::size_of::<u64>();
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -61,11 +58,7 @@ impl FungibleAsset {
         // TODO: Take AssetAmount as input, then make the function infallible.
         let amount = AssetAmount::new(amount)?;
 
-        Ok(Self {
-            faucet_id,
-            amount,
-            callbacks: AssetCallbackFlag::default(),
-        })
+        Ok(Self { faucet_id, amount })
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -95,10 +88,7 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        let mut asset = Self::new(key.faucet_id(), value[0].as_canonical_u64())?;
-        asset.callbacks = key.callback_flag();
-
-        Ok(asset)
+        Self::new(key.faucet_id(), value[0].as_canonical_u64())
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -112,12 +102,6 @@ impl FungibleAsset {
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
         Self::from_key_value(vault_key, value)
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
-        self.callbacks = callbacks;
-        self
     }
 
     // PUBLIC ACCESSORS
@@ -138,20 +122,10 @@ impl FungibleAsset {
         self.vault_key() == other.vault_key()
     }
 
-    /// Returns the [`AssetCallbackFlag`] of this asset.
-    pub fn callbacks(&self) -> AssetCallbackFlag {
-        self.callbacks
-    }
-
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::new(
-            AssetId::default(),
-            self.faucet_id,
-            AssetComposition::Fungible,
-            self.callbacks,
-        )
-        .expect("default asset id should be valid for fungible composition")
+        AssetVaultKey::new(AssetId::default(), self.faucet_id, AssetComposition::Fungible)
+            .expect("default asset id should be valid for fungible composition")
     }
 
     /// Returns the asset's key encoded to a [`Word`].
@@ -171,7 +145,7 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
+    /// - The assets do not have the same vault key (i.e. different faucet).
     /// - The total value of assets is greater than or equal to 2^63.
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
@@ -184,18 +158,14 @@ impl FungibleAsset {
 
         let amount = (self.amount + other.amount)?;
 
-        Ok(Self {
-            faucet_id: self.faucet_id,
-            amount,
-            callbacks: self.callbacks,
-        })
+        Ok(Self { faucet_id: self.faucet_id, amount })
     }
 
     /// Subtracts a fungible asset from another and returns the result.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
+    /// - The assets do not have the same vault key (i.e. different faucet).
     /// - The final amount would be negative.
     #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
@@ -208,11 +178,7 @@ impl FungibleAsset {
 
         let amount = (self.amount - other.amount)?;
 
-        Ok(FungibleAsset {
-            faucet_id: self.faucet_id,
-            amount,
-            callbacks: self.callbacks,
-        })
+        Ok(FungibleAsset { faucet_id: self.faucet_id, amount })
     }
 }
 
@@ -238,14 +204,12 @@ impl Serializable for FungibleAsset {
         target.write(AssetComposition::Fungible);
         target.write(self.faucet_id);
         target.write(self.amount.as_u64());
-        target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
         AssetComposition::SERIALIZED_SIZE
             + self.faucet_id.get_size_hint()
             + self.amount.as_u64().get_size_hint()
-            + self.callbacks.get_size_hint()
     }
 }
 
@@ -269,13 +233,9 @@ impl FungibleAsset {
     ) -> Result<Self, DeserializationError> {
         let faucet_id: AccountId = source.read()?;
         let amount: u64 = source.read()?;
-        let callbacks = source.read()?;
 
-        let asset = FungibleAsset::new(faucet_id, amount)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?
-            .with_callbacks(callbacks);
-
-        Ok(asset)
+        FungibleAsset::new(faucet_id, amount)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -318,13 +278,9 @@ mod tests {
     #[test]
     fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
-        let mut asset_key = AssetVaultKey::new(
-            AssetId::default(),
-            faucet_id,
-            AssetComposition::Fungible,
-            AssetCallbackFlag::Disabled,
-        )?
-        .to_word();
+        let mut asset_key =
+            AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?
+                .to_word();
         asset_key[0] = Felt::from(1u32);
         asset_key[1] = Felt::from(2u32);
 

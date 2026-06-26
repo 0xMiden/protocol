@@ -819,8 +819,12 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
+    // The reclaim returns the asset to the user's vault, dispatching the faucet's receive callback,
+    // so the faucet must be available as a foreign account.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let tx_context = mock_chain
         .build_tx_context(user_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
@@ -1057,9 +1061,13 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: consume the B2AGG note against the bridge (triggers lock_asset).
+    // TX1: consume the B2AGG note against the bridge (triggers lock_asset). The native faucet
+    // configures a transfer policy, so its callback dispatches when the asset enters the bridge
+    // vault; supply the faucet as a foreign account so the kernel can load it.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let executed_tx = mock_chain
         .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;

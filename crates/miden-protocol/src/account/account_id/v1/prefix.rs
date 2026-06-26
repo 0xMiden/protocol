@@ -5,7 +5,7 @@ use core::hash::Hash;
 use miden_core::Felt;
 
 use crate::account::account_id::v1::{self, validate_prefix};
-use crate::account::{AccountIdVersion, AccountType};
+use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
     ByteReader,
@@ -83,6 +83,13 @@ impl AccountIdPrefixV1 {
     /// See [`AccountIdPrefix::is_public`](crate::account::AccountIdPrefix::is_public) for details.
     pub fn is_public(&self) -> bool {
         self.account_type().is_public()
+    }
+
+    /// See
+    /// [`AccountIdPrefix::asset_callback_flag`](crate::account::AccountIdPrefix::asset_callback_flag)
+    /// for details.
+    pub fn asset_callback_flag(&self) -> AssetCallbackFlag {
+        v1::extract_asset_callback_flag(self.prefix.as_canonical_u64())
     }
 
     /// See [`AccountIdPrefix::version`](crate::account::AccountIdPrefix::version) for details.

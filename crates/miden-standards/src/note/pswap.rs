@@ -2,7 +2,7 @@ use alloc::vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -43,16 +43,15 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Canonical storage representation for a PSWAP note.
 ///
-/// Maps to the 7-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 6-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
 /// | Slot | Field |
 /// |---------|-------|
-/// | `[0]` | Requested asset enable_callbacks flag |
-/// | `[1]` | Requested asset faucet ID suffix |
-/// | `[2]` | Requested asset faucet ID prefix |
-/// | `[3]` | Requested asset amount |
-/// | `[4]` | Payback note type (0 = private, 1 = public) |
-/// | `[5-6]` | Creator account ID (prefix, suffix) |
+/// | `[0]` | Requested asset faucet ID suffix |
+/// | `[1]` | Requested asset faucet ID prefix |
+/// | `[2]` | Requested asset amount |
+/// | `[3]` | Payback note type (0 = private, 1 = public) |
+/// | `[4-5]` | Creator account ID (prefix, suffix) |
 ///
 /// The payback note tag is derived at runtime from the creator account ID
 /// (via `note_tag::create_account_target` in MASM) rather than stored.
@@ -80,7 +79,7 @@ impl PswapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 7;
+    pub const NUM_STORAGE_ITEMS: usize = 6;
 
     /// Consumes the storage and returns a PSWAP [`NoteRecipient`] with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -121,18 +120,17 @@ impl PswapNoteStorage {
     }
 }
 
-/// Serializes [`PswapNoteStorage`] into a 7-element [`NoteStorage`].
+/// Serializes [`PswapNoteStorage`] into a 6-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let storage_items = vec![
-            // Requested asset (individual felts) [0-3]
-            Felt::from(storage.min_requested_asset.callbacks().as_u8()),
+            // Requested asset (individual felts) [0-2]
             storage.min_requested_asset.faucet_id().suffix(),
             storage.min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(storage.min_requested_asset.amount()),
-            // Payback note type [4]
+            // Payback note type [3]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Creator ID [5-6]
+            // Creator ID [4-5]
             storage.creator_account_id.prefix().as_felt(),
             storage.creator_account_id.suffix(),
         ];
@@ -141,7 +139,7 @@ impl From<PswapNoteStorage> for NoteStorage {
     }
 }
 
-/// Deserializes [`PswapNoteStorage`] from a slice of exactly 7 [`Felt`]s.
+/// Deserializes [`PswapNoteStorage`] from a slice of exactly 6 [`Felt`]s.
 impl TryFrom<&[Felt]> for PswapNoteStorage {
     type Error = NoteError;
 
@@ -154,30 +152,23 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         }
 
         // Reconstruct requested asset from individual felts:
-        // [0] = enable_callbacks, [1] = faucet_id_suffix, [2] = faucet_id_prefix, [3] = amount
-        let callbacks = AssetCallbackFlag::try_from(
-            u8::try_from(note_storage[0].as_canonical_u64())
-                .map_err(|_| NoteError::other("enable_callbacks exceeds u8"))?,
-        )
-        .map_err(|e| NoteError::other_with_source("failed to parse asset callback flag", e))?;
-
-        let faucet_id = AccountId::try_from_elements(note_storage[1], note_storage[2])
+        // [0] = faucet_id_suffix, [1] = faucet_id_prefix, [2] = amount
+        let faucet_id = AccountId::try_from_elements(note_storage[0], note_storage[1])
             .map_err(|e| NoteError::other_with_source("failed to parse requested faucet ID", e))?;
 
-        let amount = note_storage[3].as_canonical_u64();
+        let amount = note_storage[2].as_canonical_u64();
         let min_requested_asset = FungibleAsset::new(faucet_id, amount)
-            .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?
-            .with_callbacks(callbacks);
+            .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?;
 
-        // [4] = payback_note_type
+        // [3] = payback_note_type
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[4].as_canonical_u64())
+            u8::try_from(note_storage[3].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [5-6] = creator account ID (prefix, suffix)
-        let creator_account_id = AccountId::try_from_elements(note_storage[6], note_storage[5])
+        // [4-5] = creator account ID (prefix, suffix)
+        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[4])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
@@ -413,8 +404,7 @@ impl PswapNote {
         let min_requested_amount = self.storage.min_requested_amount();
 
         let fill_asset = FungibleAsset::new(requested_faucet_id, min_requested_amount)
-            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?
-            .with_callbacks(self.storage.min_requested_asset().callbacks());
+            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?;
 
         self.create_payback_note(consumer_account_id, fill_asset, min_requested_amount)
     }
@@ -497,21 +487,14 @@ impl PswapNote {
             let remaining_requested = min_requested_amount - fill_amount;
 
             let remaining_offered_asset =
-                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered)
-                    .map_err(|e| {
-                        NoteError::other_with_source("failed to create remainder asset", e)
-                    })?
-                    .with_callbacks(self.offered_asset.callbacks());
+                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered).map_err(
+                    |e| NoteError::other_with_source("failed to create remainder asset", e),
+                )?;
 
             let remaining_min_requested_asset =
-                FungibleAsset::new(requested_faucet_id, remaining_requested)
-                    .map_err(|e| {
-                        NoteError::other_with_source(
-                            "failed to create remaining requested asset",
-                            e,
-                        )
-                    })?
-                    .with_callbacks(self.storage.min_requested_asset().callbacks());
+                FungibleAsset::new(requested_faucet_id, remaining_requested).map_err(|e| {
+                    NoteError::other_with_source("failed to create remaining requested asset", e)
+                })?;
 
             Some(self.create_remainder_pswap_note(
                 consumer_account_id,
@@ -580,8 +563,7 @@ impl PswapNote {
 
         let fill_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(attachment.amount()))
-                .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?
-                .with_callbacks(self.storage.min_requested_asset().callbacks());
+                .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
         let assets = NoteAssets::new(vec![fill_asset.into()])?;
 
         let metadata =
@@ -633,12 +615,12 @@ impl PswapNote {
 
         let min_requested_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(remaining_requested))
-                .map_err(|e| NoteError::other_with_source("invalid remaining_requested amount", e))?
-                .with_callbacks(self.storage.min_requested_asset().callbacks());
+                .map_err(|e| {
+                    NoteError::other_with_source("invalid remaining_requested amount", e)
+                })?;
         let offered_asset =
             FungibleAsset::new(self.offered_asset.faucet_id(), u64::from(remaining_offered))
-                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?
-                .with_callbacks(self.offered_asset.callbacks());
+                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?;
 
         let new_storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
@@ -903,7 +885,7 @@ impl TryFrom<&Note> for PswapNote {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 
@@ -1004,7 +986,12 @@ mod tests {
         requested_faucet_bytes[1] = 0xec;
 
         let offered_asset = FungibleAsset::new(
-            AccountId::dummy(offered_faucet_bytes, AccountIdVersion::Version1, AccountType::Public),
+            AccountId::dummy(
+                offered_faucet_bytes,
+                AccountIdVersion::Version1,
+                AccountType::Public,
+                AssetCallbackFlag::Disabled,
+            ),
             100,
         )
         .unwrap();
@@ -1013,6 +1000,7 @@ mod tests {
                 requested_faucet_bytes,
                 AccountIdVersion::Version1,
                 AccountType::Public,
+                AssetCallbackFlag::Disabled,
             ),
             200,
         )
@@ -1043,7 +1031,6 @@ mod tests {
         let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
 
         let storage_items = vec![
-            Felt::from(min_requested_asset.callbacks().as_u8()),
             min_requested_asset.faucet_id().suffix(),
             min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(min_requested_asset.amount()),
@@ -1146,82 +1133,5 @@ mod tests {
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");
-    }
-
-    /// Regression for the silent `AssetCallbackFlag` drop: when the PSWAP's requested or
-    /// offered asset carries `Enabled` callbacks, the on-chain MASM preserves that flag
-    /// on every output note's asset. The Rust-side `execute`, `payback_note`, and
-    /// `remainder_note` must do the same — otherwise the reconstructed `Note::details_commitment`
-    /// diverges from the on-chain leaf and the unauthenticated consume path fails.
-    #[test]
-    fn pswap_output_assets_preserve_callback_flag() {
-        let creator_id = dummy_creator_id();
-        let consumer_id = dummy_consumer_id();
-        let offered_faucet = dummy_faucet_id(0xaa);
-        let requested_faucet = dummy_faucet_id(0xbb);
-
-        let offered_asset = FungibleAsset::new(offered_faucet, 100)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
-        let min_requested_asset = FungibleAsset::new(requested_faucet, 50)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
-        let (pswap, _) = build_pswap_note(offered_asset, min_requested_asset, creator_id);
-
-        // --- execute() (partial fill) ---
-        let account_fill = FungibleAsset::new(requested_faucet, 20)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
-        let (payback, remainder) = pswap.execute(consumer_id, Some(account_fill), None).unwrap();
-
-        let Asset::Fungible(fa) = payback.assets().iter().next().unwrap() else {
-            panic!("expected fungible payback asset");
-        };
-        assert_eq!(fa.callbacks(), AssetCallbackFlag::Enabled);
-
-        let remainder = remainder.expect("partial fill should produce remainder");
-        assert_eq!(
-            remainder.offered_asset().callbacks(),
-            AssetCallbackFlag::Enabled,
-            "remainder offered asset must inherit callbacks",
-        );
-        assert_eq!(
-            remainder.storage().min_requested_asset().callbacks(),
-            AssetCallbackFlag::Enabled,
-            "remainder storage's requested asset must inherit callbacks",
-        );
-
-        // --- payback_note() reconstruction ---
-        let payback_attachment =
-            PswapNoteAttachment::new(AssetAmount::new(20).unwrap(), pswap.order_id(), 1);
-        let reconstructed_payback = pswap.payback_note(consumer_id, &payback_attachment).unwrap();
-        let Asset::Fungible(fa) = reconstructed_payback.assets().iter().next().unwrap() else {
-            panic!("expected fungible payback asset");
-        };
-        assert_eq!(
-            fa.callbacks(),
-            AssetCallbackFlag::Enabled,
-            "payback_note must preserve requested asset's callback flag",
-        );
-
-        // --- remainder_note() reconstruction ---
-        let remainder_attachment =
-            PswapNoteAttachment::new(AssetAmount::new(40).unwrap(), pswap.order_id(), 1);
-        let reconstructed_remainder = pswap
-            .remainder_note(
-                consumer_id,
-                &remainder_attachment,
-                AssetAmount::new(60).unwrap(),
-                AssetAmount::new(30).unwrap(),
-            )
-            .unwrap();
-        let Asset::Fungible(fa) = reconstructed_remainder.assets().iter().next().unwrap() else {
-            panic!("expected fungible remainder asset");
-        };
-        assert_eq!(
-            fa.callbacks(),
-            AssetCallbackFlag::Enabled,
-            "remainder_note must preserve offered asset's callback flag",
-        );
     }
 }

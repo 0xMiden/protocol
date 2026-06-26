@@ -7,7 +7,7 @@ use miden_crypto_derive::WordWrapper;
 
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
-use crate::asset::{Asset, AssetCallbackFlag, AssetComposition, FungibleAsset, NonFungibleAsset};
+use crate::asset::{Asset, AssetComposition, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
 use crate::utils::serde::{
@@ -26,7 +26,7 @@ use crate::{Felt, Hasher, Word};
 /// [
 ///   asset_id_suffix (64 bits),
 ///   asset_id_prefix (64 bits),
-///   [faucet_id_suffix (56 bits) | reserved (5 bits) | callback_flag (1 bit) | composition (2 bits)],
+///   [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
 ///   faucet_id_prefix (64 bits)
 /// ]
 /// ```
@@ -48,9 +48,6 @@ pub struct AssetVaultKey {
 
     /// The composition of the asset.
     composition: AssetComposition,
-
-    /// Determines whether callbacks are enabled.
-    callback_flag: AssetCallbackFlag,
 }
 
 impl AssetVaultKey {
@@ -70,18 +67,13 @@ impl AssetVaultKey {
     /// identifies the asset's type.
     pub(in crate::asset) const COMPOSITION_MASK: u8 = 0b11;
 
-    /// Bit 2 of the metadata byte encodes the [`AssetCallbackFlag`].
-    pub(in crate::asset) const CALLBACK_FLAG_MASK: u8 = 0b1 << Self::CALLBACK_FLAG_SHIFT;
-    pub(in crate::asset) const CALLBACK_FLAG_SHIFT: u8 = 2;
-
-    /// Bits 3-7 of the metadata byte are reserved and must be zero.
-    pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1111_1000;
+    /// Bits 2-7 of the metadata byte are reserved and must be zero.
+    pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1111_1100;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetComposition`] and
-    /// [`AssetCallbackFlag`].
+    /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetComposition`].
     ///
     /// # Errors
     ///
@@ -93,7 +85,6 @@ impl AssetVaultKey {
         asset_id: AssetId,
         faucet_id: AccountId,
         composition: AssetComposition,
-        callback_flag: AssetCallbackFlag,
     ) -> Result<Self, AssetError> {
         // For now, reject custom composition.
         if composition.is_custom() {
@@ -104,17 +95,12 @@ impl AssetVaultKey {
             return Err(AssetError::FungibleAssetIdMustBeZero(asset_id));
         }
 
-        Ok(Self {
-            asset_id,
-            faucet_id,
-            composition,
-            callback_flag,
-        })
+        Ok(Self { asset_id, faucet_id, composition })
     }
 
     /// Constructs a fungible asset's key from a faucet ID.
-    pub fn new_fungible(faucet_id: AccountId, callback_flag: AssetCallbackFlag) -> Self {
-        Self::new(AssetId::default(), faucet_id, AssetComposition::Fungible, callback_flag).expect(
+    pub fn new_fungible(faucet_id: AccountId) -> Self {
+        Self::new(AssetId::default(), faucet_id, AssetComposition::Fungible).expect(
             "passing AssetComposition::Fungible together with AssetId::default should be valid",
         )
     }
@@ -133,8 +119,7 @@ impl AssetVaultKey {
             faucet_suffix & Self::METADATA_BYTE_MASK as u64 == 0,
             "lower 8 bits of faucet suffix must be zero",
         );
-        let metadata_byte =
-            self.composition.as_u8() | (self.callback_flag.as_u8() << Self::CALLBACK_FLAG_SHIFT);
+        let metadata_byte = self.composition.as_u8();
         let faucet_id_suffix_and_metadata = faucet_suffix | metadata_byte as u64;
         let faucet_id_suffix_and_metadata = Felt::try_from(faucet_id_suffix_and_metadata)
             .expect("highest bit should still be zero resulting in a valid felt");
@@ -156,11 +141,6 @@ impl AssetVaultKey {
     /// Returns the [`AccountId`] of the faucet that issued the asset.
     pub fn faucet_id(&self) -> AccountId {
         self.faucet_id
-    }
-
-    /// Returns the [`AssetCallbackFlag`] flag of the vault key.
-    pub fn callback_flag(&self) -> AssetCallbackFlag {
-        self.callback_flag
     }
 
     /// Returns the [`AssetComposition`] of the vault key.
@@ -251,9 +231,6 @@ impl TryFrom<Word> for AssetVaultKey {
             return Err(AssetError::ReservedAssetMetadata(metadata_byte));
         }
 
-        let callback_flag = AssetCallbackFlag::try_from(
-            (metadata_byte & Self::CALLBACK_FLAG_MASK) >> Self::CALLBACK_FLAG_SHIFT,
-        )?;
         let composition = AssetComposition::try_from(metadata_byte & Self::COMPOSITION_MASK)?;
 
         let faucet_id_suffix = Felt::try_from(raw & !(Self::METADATA_BYTE_MASK as u64))
@@ -263,7 +240,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id = AccountId::try_from_elements(faucet_id_suffix, faucet_id_prefix)
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
-        Self::new(asset_id, faucet_id, composition, callback_flag)
+        Self::new(asset_id, faucet_id, composition)
     }
 }
 
@@ -317,31 +294,23 @@ impl Deserializable for AssetVaultKey {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use rstest::rstest;
 
     use super::*;
+    use crate::asset::AssetComposition;
     use crate::asset::tests::{asset_metadata, set_asset_metadata};
-    use crate::asset::{AssetCallbackFlag, AssetComposition};
     use crate::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     };
 
-    #[rstest]
-    fn asset_vault_key_word_roundtrip(
-        #[values(AssetCallbackFlag::Disabled, AssetCallbackFlag::Enabled)]
-        callback_flag: AssetCallbackFlag,
-    ) -> anyhow::Result<()> {
+    #[test]
+    fn asset_vault_key_word_roundtrip() -> anyhow::Result<()> {
         let fungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
         let nonfungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
         // Fungible: asset_id must be zero.
-        let key = AssetVaultKey::new(
-            AssetId::default(),
-            fungible_faucet,
-            AssetComposition::Fungible,
-            callback_flag,
-        )?;
+        let key =
+            AssetVaultKey::new(AssetId::default(), fungible_faucet, AssetComposition::Fungible)?;
         assert_eq!(key.composition(), AssetComposition::Fungible);
         let roundtripped = AssetVaultKey::try_from(key.to_word())?;
         assert_eq!(key, roundtripped);
@@ -352,7 +321,6 @@ mod tests {
             AssetId::new(Felt::from(42u32), Felt::from(99u32)),
             nonfungible_faucet,
             AssetComposition::None,
-            callback_flag,
         )?;
         assert_eq!(key.composition(), AssetComposition::None);
         let roundtripped = AssetVaultKey::try_from(key.to_word())?;

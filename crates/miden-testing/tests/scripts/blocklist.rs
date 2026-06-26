@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -73,6 +73,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
@@ -163,7 +164,7 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -200,7 +201,7 @@ async fn block_receive_asset_fails_when_account_pre_blocked() -> anyhow::Result<
         [target_account.id()],
     )?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -230,7 +231,7 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -267,7 +268,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
 
     let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_account", 2)?;
     builder.add_output_note(RawOutputNote::Full(block_note.clone()));
@@ -325,8 +326,7 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
     let amount: u64 = 50;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -408,8 +408,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
     let amount: u64 = 25;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         other_account.id(),
@@ -453,7 +452,7 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let note_type = NoteType::Private;
 
     // `mint_and_send` takes the full asset (ASSET_KEY + ASSET_VALUE) the MINT note carries.
-    let asset = FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), amount)?;
     let asset_key = asset.to_key_word();
     let asset_value = asset.to_value_word();
 
