@@ -5,6 +5,6 @@ members = ["kernels/batch", "kernels/transaction", "protocol", "utils"]
 version = "0.16.0"
 
 [workspace.dependencies]
-miden-core           = "*"
+miden-core           = "0.23.1"
 miden-protocol-utils = { linkage = "static", path = "utils" }
 miden-tx-kernel      = { path = "kernels/transaction" }
