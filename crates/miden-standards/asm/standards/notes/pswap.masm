@@ -23,21 +23,21 @@ const MAX_U32=0x0000000100000000
 const PSWAP_ATTACHMENT_SCHEME = 3
 
 # Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
-# - requested_enable_callbacks [0]  : 1 felt
-# - requested_faucet_suffix    [1]  : 1 felt
-# - requested_faucet_prefix    [2]  : 1 felt
-# - requested_amount           [3]  : 1 felt
+# - min_requested_enable_callbacks [0]  : 1 felt
+# - min_requested_faucet_suffix    [1]  : 1 felt
+# - min_requested_faucet_prefix    [2]  : 1 felt
+# - min_requested_amount           [3]  : 1 felt
 # - payback_note_type          [4]  : 1 felt
 # - creator_id_prefix          [5]  : 1 felt
 # - creator_id_suffix          [6]  : 1 felt
 #
 # Where:
-# - requested_enable_callbacks: Callback-enabled flag for the requested fungible asset
+# - min_requested_enable_callbacks: Callback-enabled flag for the min_requested fungible asset
 #   (FungibleAsset::callbacks() as u8)
-# - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
-# - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
+# - min_requested_faucet_suffix: Suffix of the min_requested asset's faucet AccountId (Felt)
+# - min_requested_faucet_prefix: Prefix of the min_requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
-# - requested_amount: Amount of the requested fungible asset (Felt)
+# - min_requested_amount: Amount of the min_requested fungible asset (Felt)
 # - payback_note_type: The NoteType used for the P2ID payback note
 # - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
@@ -49,10 +49,10 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # active note's metadata at remainder-creation time (same asset pair => same
 # tag), saving one storage slot.
 const STORAGE_PTR = 0
-const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
-const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
-const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
-const REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
+const MIN_REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
+const MIN_REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
+const MIN_REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
+const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
 const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
@@ -66,9 +66,9 @@ const CALC_FILL_REFERENCE = 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
-const P2ID_REQUESTED_ENABLE_CB = 1
-const P2ID_REQUESTED_FAUCET_SUFFIX = 2
-const P2ID_REQUESTED_FAUCET_PREFIX = 3
+const P2ID_MIN_REQUESTED_ENABLE_CB = 1
+const P2ID_MIN_REQUESTED_FAUCET_SUFFIX = 2
+const P2ID_MIN_REQUESTED_FAUCET_PREFIX = 3
 const P2ID_AMT_ACCOUNT_FILL = 4
 const P2ID_AMT_NOTE_FILL = 5
 
@@ -89,8 +89,8 @@ const EXEC_AMT_PAYOUT_NOTE_FILL = 4
 const EXEC_OFFERED_ENABLE_CB = 5
 const EXEC_OFFERED_FAUCET_SUFFIX = 6
 const EXEC_OFFERED_FAUCET_PREFIX = 7
-const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
-const EXEC_AMT_REQUESTED_NOTE_FILL = 9
+const EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL = 8
+const EXEC_AMT_MIN_REQUESTED_NOTE_FILL = 9
 const EXEC_AMT_FILL_REFERENCE = 10
 
 # Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
@@ -213,7 +213,7 @@ end
 #!
 #! Derives a unique serial number by incrementing the least significant element
 #! of the provided serial, creates the output note using p2id::new, sets the
-#! attachment, and adds the requested assets (from the consumer's account vault
+#! attachment, and adds the min_requested assets (from the consumer's account vault
 #! and/or from another note in the same transaction).
 #!
 #! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
@@ -222,9 +222,9 @@ end
 #!
 @locals(6)
 # P2ID_NOTE_IDX              : note_idx
-# P2ID_REQUESTED_ENABLE_CB   : enable_callbacks
-# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
-# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
+# P2ID_MIN_REQUESTED_ENABLE_CB   : enable_callbacks
+# P2ID_MIN_REQUESTED_FAUCET_SUFFIX : faucet_suffix
+# P2ID_MIN_REQUESTED_FAUCET_PREFIX : faucet_prefix
 # P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
 # P2ID_AMT_NOTE_FILL         : amt_note_fill
 proc create_p2id_note
@@ -245,9 +245,9 @@ proc create_p2id_note
     # => [note_idx, enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     loc_store.P2ID_NOTE_IDX
-    loc_store.P2ID_REQUESTED_ENABLE_CB
-    loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
-    loc_store.P2ID_REQUESTED_FAUCET_PREFIX
+    loc_store.P2ID_MIN_REQUESTED_ENABLE_CB
+    loc_store.P2ID_MIN_REQUESTED_FAUCET_SUFFIX
+    loc_store.P2ID_MIN_REQUESTED_FAUCET_PREFIX
     loc_store.P2ID_AMT_ACCOUNT_FILL
     loc_store.P2ID_AMT_NOTE_FILL
     # => []
@@ -284,9 +284,9 @@ proc create_p2id_note
         # => [note_idx, pad(7)]
 
         loc_load.P2ID_AMT_ACCOUNT_FILL
-        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
-        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
-        loc_load.P2ID_REQUESTED_ENABLE_CB
+        loc_load.P2ID_MIN_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_MIN_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_MIN_REQUESTED_ENABLE_CB
         # => [enable_cb, faucet_suffix, faucet_prefix, amt_account_fill, note_idx, pad(7)]
 
         exec.asset::create_fungible_asset
@@ -309,9 +309,9 @@ proc create_p2id_note
         # => [note_idx]
 
         loc_load.P2ID_AMT_NOTE_FILL
-        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
-        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
-        loc_load.P2ID_REQUESTED_ENABLE_CB
+        loc_load.P2ID_MIN_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_MIN_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_MIN_REQUESTED_ENABLE_CB
         # => [enable_cb, faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
         exec.asset::create_fungible_asset
@@ -328,14 +328,14 @@ end
 
 #! Creates a PSWAP remainder output note for partial fills.
 #!
-#! Updates the requested amount in note storage, builds a new remainder recipient
+#! Updates the min_requested amount in note storage, builds a new remainder recipient
 #! (using the active note's script root and a serial derived by incrementing the
 #! most significant element of the active note's serial number), creates the output
 #! note, sets the attachment, and adds the remaining offered asset.
 #!
 #! Inputs:  [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
 #!           amt_payout, amt_offered,
-#!           remaining_requested, note_type, tag]
+#!           remaining_min_requested, note_type, tag]
 #! Outputs: []
 #!
 @locals(6)
@@ -352,10 +352,10 @@ proc create_remainder_note
     loc_store.REMAINDER_OFFERED_ENABLE_CB
     loc_store.REMAINDER_AMT_PAYOUT
     loc_store.REMAINDER_AMT_OFFERED
-    # => [remaining_requested, note_type, tag]
+    # => [remaining_min_requested, note_type, tag]
 
-    # Update note storage with new requested amount (needed by compute_and_store_recipient)
-    mem_store.REQUESTED_AMOUNT_ITEM
+    # Update note storage with new min_requested amount (needed by compute_and_store_recipient)
+    mem_store.MIN_REQUESTED_AMOUNT_ITEM
     # => [note_type, tag]
 
     # Build PSWAP remainder recipient using the same script as the active note.
@@ -369,7 +369,7 @@ proc create_remainder_note
     movup.3 add.1 movdn.3
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
-    # Build recipient from all note storage items (now with updated requested amount)
+    # Build recipient from all note storage items (now with updated min_requested amount)
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR
     # => [storage_ptr, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
 
@@ -543,7 +543,7 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to creator via P2ID,
+#! Sends offered tokens to consumer, min_requested tokens to creator via P2ID,
 #! and creates a remainder note if partially filled.
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
@@ -553,7 +553,7 @@ end
 #! - `total_fill > min_requested_amount` (over-fill): the whole offered side is paid out and no
 #!   remainder is created. The consumer takes the `account_fill` share; any `note_fill` share
 #!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
-#!   surplus requested tokens.
+#!   surplus min_requested tokens.
 #!
 #! Account fill and note fill payouts are computed separately (rather than summing
 #! first) because the account fill portion must be credited to the consumer's vault
@@ -571,12 +571,12 @@ end
 # EXEC_OFFERED_ENABLE_CB          : offered_enable_cb
 # EXEC_OFFERED_FAUCET_SUFFIX      : offered_faucet_suffix
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
-# EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
-# EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
+# EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL : amt_min_requested_account_fill
+# EXEC_AMT_MIN_REQUESTED_NOTE_FILL    : amt_min_requested_note_fill
 # EXEC_AMT_FILL_REFERENCE       : max(total_fill, min_requested_amount)
 proc execute_pswap
-    loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
-    loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_store.EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL
+    loc_store.EXEC_AMT_MIN_REQUESTED_NOTE_FILL
     # => []
 
     exec.load_offered_asset
@@ -602,14 +602,14 @@ proc execute_pswap
     dropw
     # => []
 
-    # Read the requested minimum directly from note storage
-    mem_load.REQUESTED_AMOUNT_ITEM
+    # Read the min_requested minimum directly from note storage
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM
     loc_store.EXEC_AMT_MIN_REQUESTED
     # => []
 
     # Total fill = account_fill + note_fill; user-provided, so overflow-check and validate it.
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
-    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
+    loc_load.EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL u32split
+    loc_load.EXEC_AMT_MIN_REQUESTED_NOTE_FILL u32split
     # => [nf_lo, nf_hi, af_lo, af_hi]
 
     exec.u64::overflowing_add
@@ -635,7 +635,7 @@ proc execute_pswap
     # => []
 
     # Payout for account_fill_amount
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    loc_load.EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL
     loc_load.EXEC_AMT_FILL_REFERENCE
     loc_load.EXEC_AMT_OFFERED
     # => [offered, fill_reference, account_fill_amount]
@@ -647,7 +647,7 @@ proc execute_pswap
     # => []
 
     # Payout for note_fill_amount
-    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_MIN_REQUESTED_NOTE_FILL
     loc_load.EXEC_AMT_FILL_REFERENCE
     loc_load.EXEC_AMT_OFFERED
     # => [offered, fill_reference, note_fill_amount]
@@ -665,15 +665,15 @@ proc execute_pswap
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note carrying the requested asset to the creator. The note's
-    # assets are derived from the requested fill amounts (`account_fill +
+    # Create P2ID note carrying the min_requested asset to the creator. The note's
+    # assets are derived from the min_requested fill amounts (`account_fill +
     # note_fill`), not from `total_payout` (which is the offered asset owed to
     # the consumer). Fills are guaranteed > 0 by the `both_zero` guard in `main`.
-    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
-    mem_load.REQUESTED_FAUCET_PREFIX_ITEM
-    mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
-    mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
+    loc_load.EXEC_AMT_MIN_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL
+    mem_load.MIN_REQUESTED_FAUCET_PREFIX_ITEM
+    mem_load.MIN_REQUESTED_FAUCET_SUFFIX_ITEM
+    mem_load.MIN_REQUESTED_ENABLE_CALLBACKS_ITEM
     exec.active_note::get_serial_number
     mem_load.PAYBACK_NOTE_TYPE_ITEM
     mem_load.PSWAP_CREATOR_PREFIX_ITEM
@@ -710,7 +710,7 @@ proc execute_pswap
     # => []
 
     # Check if partial fill.
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    loc_load.EXEC_AMT_MIN_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_MIN_REQUESTED_NOTE_FILL add
     loc_load.EXEC_AMT_MIN_REQUESTED
     # => [min_requested, total_in]
 
@@ -718,27 +718,27 @@ proc execute_pswap
     # => [is_partial, min_requested, total_in]
 
     if.true
-        # remaining_requested = min_requested - total_in
+        # remaining_min_requested = min_requested - total_in
         swap sub
-        # => [remaining_requested]
+        # => [remaining_min_requested]
 
         exec.active_note::get_metadata
-        # => [METADATA, remaining_requested]
+        # => [METADATA, remaining_min_requested]
 
         dupw
-        # => [METADATA, METADATA, remaining_requested]
+        # => [METADATA, METADATA, remaining_min_requested]
 
         exec.note::metadata_into_tag
-        # => [tag, METADATA, remaining_requested]
+        # => [tag, METADATA, remaining_min_requested]
 
         movdn.4
-        # => [METADATA, tag, remaining_requested]
+        # => [METADATA, tag, remaining_min_requested]
 
         exec.note::metadata_into_note_type
-        # => [note_type, tag, remaining_requested]
+        # => [note_type, tag, remaining_min_requested]
 
         movup.2
-        # => [remaining_requested, note_type, tag]
+        # => [remaining_min_requested, note_type, tag]
 
         loc_load.EXEC_AMT_OFFERED
         loc_load.EXEC_AMT_PAYOUT_TOTAL
@@ -747,7 +747,7 @@ proc execute_pswap
         loc_load.EXEC_OFFERED_FAUCET_SUFFIX
         # => [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
         #     amt_payout, amt_offered,
-        #     remaining_requested, note_type, tag]
+        #     remaining_min_requested, note_type, tag]
 
         exec.create_remainder_note
         # => []
@@ -760,12 +760,12 @@ proc execute_pswap
 end
 
 #! Partially-fillable swap note script: exchanges a portion of the offered asset for a
-#! proportional amount of the requested asset, producing a P2ID payback note for the creator
+#! proportional amount of the min_requested asset, producing a P2ID payback note for the creator
 #! and, on partial fills, a remainder PSWAP note carrying the unfilled balance.
 #!
 #! The consumer specifies two fill amounts via `NOTE_ARGS`:
-#! - `account_fill_amount`: portion of the requested asset debited from the consumer's vault.
-#! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
+#! - `account_fill_amount`: portion of the min_requested asset debited from the consumer's vault.
+#! - `note_fill_amount`:    portion of the min_requested asset sourced from another note in the
 #!                          same transaction (cross-swap / net-zero flow, no vault debit).
 #!
 #! At least one of the two must be non-zero. If both are zero — which is the default in
@@ -805,7 +805,7 @@ pub proc main
     dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill_amount, note_fill_amount]
     if.true
-        drop mem_load.REQUESTED_AMOUNT_ITEM
+        drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
         # => [account_fill_amount, note_fill_amount]
     end
     # => [account_fill_amount, note_fill_amount]
