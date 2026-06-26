@@ -58,8 +58,8 @@ const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 
 #! Checks that the note sender holds the given role.
 #!
-#! Inputs:  [role_symbol, pad(15)]
-#! Outputs: [pad(16)]
+#! Inputs:  [role_symbol]
+#! Outputs: []
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
@@ -68,16 +68,16 @@ const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 #! - role_symbol is zero.
 #! - the note sender does not hold the given role.
 #!
-#! Invocation: call
+#! Invocation: exec
 pub proc assert_sender_has_role
     dup exec.assert_role_symbol_non_zero
-    # => [role_symbol, pad(15)]
+    # => [role_symbol]
 
     exec.is_sender_in_role
-    # => [has_role, pad(15)]
+    # => [has_role]
 
     assert.err=ERR_SENDER_LACKS_ROLE
-    # => [pad(16)]
+    # => []
 end
 
 #! Returns whether an account holds a role.

@@ -2,7 +2,6 @@ use core::fmt::Debug;
 
 use crate::Word;
 use crate::account::AccountHeader;
-use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::utils::serde::{
     ByteReader,
@@ -39,8 +38,6 @@ pub struct TransactionOutputs {
     account_patch_commitment: Word,
     /// Set of output notes created by the transaction.
     output_notes: RawOutputNotes,
-    /// The fee of the transaction.
-    fee: FungibleAsset,
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
 }
@@ -57,19 +54,8 @@ impl TransactionOutputs {
     /// output stack.
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
-    /// The index of the element at which the ID suffix of the fee faucet is stored on the output
-    /// stack.
-    pub const FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX: usize = 8;
-
-    /// The index of the element at which the ID prefix of the fee faucet is stored on the output
-    /// stack.
-    pub const FEE_FAUCET_ID_PREFIX_ELEMENT_IDX: usize = 9;
-
-    /// The index of the element at which the fee amount is stored on the output stack.
-    pub const FEE_AMOUNT_ELEMENT_IDX: usize = 10;
-
     /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 11;
+    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 8;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -79,14 +65,12 @@ impl TransactionOutputs {
         account: AccountHeader,
         account_patch_commitment: Word,
         output_notes: RawOutputNotes,
-        fee: FungibleAsset,
         expiration_block_num: BlockNumber,
     ) -> Self {
         Self {
             account,
             account_patch_commitment,
             output_notes,
-            fee,
             expiration_block_num,
         }
     }
@@ -109,11 +93,6 @@ impl TransactionOutputs {
         &self.output_notes
     }
 
-    /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
-        self.fee
-    }
-
     /// Returns the block number at which the transaction will expire.
     pub fn expiration_block_num(&self) -> BlockNumber {
         self.expiration_block_num
@@ -133,7 +112,6 @@ impl Serializable for TransactionOutputs {
         self.account.write_into(target);
         self.account_patch_commitment.write_into(target);
         self.output_notes.write_into(target);
-        self.fee.write_into(target);
         self.expiration_block_num.write_into(target);
     }
 }
@@ -143,14 +121,12 @@ impl Deserializable for TransactionOutputs {
         let account = AccountHeader::read_from(source)?;
         let account_patch_commitment = Word::read_from(source)?;
         let output_notes = RawOutputNotes::read_from(source)?;
-        let fee = FungibleAsset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
 
         Ok(Self {
             account,
             account_patch_commitment,
             output_notes,
-            fee,
             expiration_block_num,
         })
     }

@@ -40,10 +40,11 @@ use rand_chacha::ChaCha20Rng;
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::{ExecutionOutputExt, input_note_data_ptr};
 use crate::{
+    AccountState,
     Auth,
     MockChain,
+    TestTransactionBuilder,
     TransactionContext,
-    TransactionContextBuilder,
     TxContextInput,
     assert_transaction_executor_error,
 };
@@ -190,7 +191,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
 
 #[tokio::test]
 async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Create test script and serial number
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
@@ -285,7 +286,7 @@ async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Define test values as Words
     let word_1 = Word::from([1, 2, 3, 4u32]);
@@ -369,7 +370,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_build_metadata() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     let sender = tx_context.account().id();
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
@@ -469,10 +470,9 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     // Attempt to consume note too early.
     // ----------------------------------------------------------------------------------------
-    let tx_inputs = mock_chain.get_transaction_inputs(&account, &[timelock_note.id()], &[])?;
-    let tx_context = TransactionContextBuilder::new(account.clone())
+    let tx_context = mock_chain
+        .build_tx_context(account.clone(), &[timelock_note.id()], &[])?
         .with_source_manager(source_manager.clone())
-        .tx_inputs(tx_inputs.clone())
         .build()?;
     let result = tx_context.execute().await;
     assert_transaction_executor_error!(result, TIMESTAMP_ERROR);
@@ -483,8 +483,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .prove_next_block_at(lock_timestamp)
         .context("failed to prove next block at lock timestamp")?;
 
-    let tx_inputs = mock_chain.get_transaction_inputs(&account, &[timelock_note.id()], &[])?;
-    let tx_context = TransactionContextBuilder::new(account).tx_inputs(tx_inputs).build()?;
+    let tx_context = mock_chain.build_tx_context(account, &[timelock_note.id()], &[])?.build()?;
     tx_context.execute().await?;
 
     Ok(())
@@ -504,23 +503,21 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     let public_key = PublicKeyCommitment::from(sec_key.public_key());
     let public_key_value = Word::from(public_key);
 
-    let (rpo_component, authenticator) = Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    }
-    .build_component();
+    let mut builder = MockChain::builder();
 
     let mock_seed_1 = Word::from([1, 2, 3, 4u32]).as_bytes();
-    let target_account = AccountBuilder::new(mock_seed_1)
-        .with_auth_component(rpo_component.clone())
-        .with_component(BasicWallet)
-        .build_existing()?;
+    let target_account = builder.add_account_from_builder(
+        Auth::default(),
+        AccountBuilder::new(mock_seed_1).with_component(BasicWallet),
+        AccountState::Exists,
+    )?;
 
     let mock_seed_2 = Word::from([5, 6, 7, 8u32]).as_bytes();
-
-    let sender_account = AccountBuilder::new(mock_seed_2)
-        .with_auth_component(rpo_component)
-        .with_component(BasicWallet)
-        .build_existing()?;
+    let sender_account = builder.add_account_from_builder(
+        Auth::default(),
+        AccountBuilder::new(mock_seed_2).with_component(BasicWallet),
+        AccountState::Exists,
+    )?;
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
@@ -531,9 +528,11 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         NoteRecipient::new(serial_num, note_script, NoteStorage::new(public_key_value.to_vec())?);
     let note_with_pub_key = Note::new(vault.clone(), metadata, recipient);
 
-    let tx_context = TransactionContextBuilder::new(target_account)
-        .extend_input_notes(vec![note_with_pub_key])
-        .authenticator(authenticator)
+    builder.add_output_note(RawOutputNote::Full(note_with_pub_key.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(target_account, &[note_with_pub_key.id()], &[])?
         .build()?;
 
     tx_context.execute().await?;

@@ -319,7 +319,7 @@ fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
     let package = Package::from_library(
         PackageId::from("miden-core"),
-        Version::new(0, 0, 0),
+        Version::new(0, 23, 1),
         TargetType::Library,
         library,
         core::iter::empty(),

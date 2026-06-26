@@ -29,7 +29,7 @@ pub proc allow_account
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.allowlist::allow_account
-    # => [pad(14)]
+    # => [pad(16)]
 end
 
 #! Disallow an account, gated by the Ownable2Step owner.
@@ -46,5 +46,5 @@ pub proc disallow_account
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.allowlist::disallow_account
-    # => [pad(14)]
+    # => [pad(16)]
 end
