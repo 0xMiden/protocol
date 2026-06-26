@@ -1,7 +1,7 @@
 use $kernel::asset
 use $kernel::account
 use $kernel::account_update
-use $kernel::account_id
+use miden::protocol_utils::account_id
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
