@@ -8,7 +8,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{NoteAttachments, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
-use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
+use crate::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    NoAuth,
+};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
@@ -40,7 +47,7 @@ fn test_required_asset_same_as_offered() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2)
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
 }
 
 // AUTH COMPONENT IDENTIFICATION TESTS
@@ -111,17 +118,17 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
 
     let approvers = vec![
-        (pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
-        (pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
-        (pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
+        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
 
     let threshold = 2u32;
 
     // Create multisig component
-    let multisig_component =
-        AuthMultisig::new(AuthMultisigConfig::new(approvers.clone(), threshold).unwrap())
-            .expect("multisig component creation failed");
+    let approver_set = ApproverSet::new(approvers.clone(), threshold).unwrap();
+    let multisig_component = AuthMultisig::new(AuthMultisigConfig::new(approver_set))
+        .expect("multisig component creation failed");
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let multisig_account = AccountBuilder::new(mock_seed)

@@ -13,6 +13,7 @@ use super::{
 };
 use crate::account::access::{AccessControl, PausableManager};
 use crate::account::auth::{
+    Approver,
     AuthGuardedMultisig,
     AuthMultisig,
     AuthNetworkAccount,
@@ -182,10 +183,11 @@ fn user_fungible_faucet_with_multisig() {
 
 #[test]
 fn user_fungible_faucet_with_guarded_multisig() {
-    let guardian = GuardianConfig::new(
+    let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(99_u32); 4])),
         AuthScheme::Falcon512Poseidon2,
     );
+    let guardian = GuardianConfig::new(approver);
     let auth_component = user_faucet_guarded(sample_approvers(3), 2, guardian).unwrap();
 
     let faucet_account = create_guarded_user_fungible_faucet(
@@ -291,7 +293,10 @@ fn faucet_create_from_account() {
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .with_component(faucet)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         .build_existing()
         .expect("failed to create wallet account");
 
@@ -300,7 +305,10 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");

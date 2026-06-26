@@ -8,6 +8,8 @@ use miden_protocol::errors::AccountError;
 
 use crate::account::access::PausableManager;
 use crate::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
@@ -52,7 +54,7 @@ pub fn user_faucet_single_sig_acl(
     let exempt_procedures = BTreeSet::from([FungibleFaucet::receive_and_burn_root()]);
     let config = AuthSingleSigAclConfig::new(exempt_procedures)
         .expect("`receive_and_burn` is within MAX_NUM_PROCEDURES");
-    AuthSingleSigAcl::new(pub_key, scheme, config)
+    AuthSingleSigAcl::new(Approver::new(pub_key, scheme), config)
 }
 
 /// Convenience constructor for a multisig user-account fungible faucet auth component: an
@@ -63,12 +65,17 @@ pub fn user_faucet_multisig(
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
 ) -> Result<AuthMultisig, AccountError> {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| Approver::new(*pub_key, *auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, default_threshold)?;
+
     let proc_thresholds = all_authority_gated_setter_roots()
         .into_iter()
         .map(|root| (root, default_threshold))
         .collect();
-    let config = AuthMultisigConfig::new(approvers, default_threshold)?
-        .with_proc_thresholds(proc_thresholds)?;
+    let config = AuthMultisigConfig::new(approver_set).with_proc_thresholds(proc_thresholds)?;
     AuthMultisig::new(config)
 }
 
@@ -81,11 +88,17 @@ pub fn user_faucet_guarded(
     default_threshold: u32,
     guardian: GuardianConfig,
 ) -> Result<AuthGuardedMultisig, AccountError> {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| Approver::new(*pub_key, *auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, default_threshold)?;
+
     let proc_thresholds = all_authority_gated_setter_roots()
         .into_iter()
         .map(|root| (root, default_threshold))
         .collect();
-    let config = AuthGuardedMultisigConfig::new(approvers, default_threshold, guardian)?
+    let config = AuthGuardedMultisigConfig::new(approver_set, guardian)?
         .with_proc_thresholds(proc_thresholds)?;
     AuthGuardedMultisig::new(config)
 }

@@ -2,7 +2,6 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -23,6 +22,7 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
+use super::Approver;
 use crate::account::account_component_code;
 
 account_component_code!(SINGLESIG_ACL_CODE, "auth/singlesig_acl.masl");
@@ -105,8 +105,7 @@ impl AuthSingleSigAclConfig {
 /// the funds-out guarantee above, since asset movement always routes through tracked vault
 /// operations.
 pub struct AuthSingleSigAcl {
-    pub_key: PublicKeyCommitment,
-    auth_scheme: AuthScheme,
+    approver: Approver,
     config: AuthSingleSigAclConfig,
 }
 
@@ -124,14 +123,10 @@ impl AuthSingleSigAcl {
         &SINGLESIG_ACL_CODE
     }
 
-    /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
+    /// Creates a new [`AuthSingleSigAcl`] component with the given `approver` and
     /// configuration.
-    pub fn new(
-        pub_key: PublicKeyCommitment,
-        auth_scheme: AuthScheme,
-        config: AuthSingleSigAclConfig,
-    ) -> Self {
-        Self { pub_key, auth_scheme, config }
+    pub fn new(approver: Approver, config: AuthSingleSigAclConfig) -> Self {
+        Self { approver, config }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -204,13 +199,13 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Public key slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::public_key_slot().clone(),
-            singlesig_acl.pub_key.into(),
+            singlesig_acl.approver.pub_key().into(),
         ));
 
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::scheme_id_slot().clone(),
-            Word::from([singlesig_acl.auth_scheme.as_u8(), 0, 0, 0]),
+            Word::from([singlesig_acl.approver.auth_scheme().as_u8(), 0, 0, 0]),
         ));
 
         // Exempt procedure roots slot.
@@ -241,6 +236,7 @@ mod tests {
     use anyhow::Result;
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
+    use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 
     use super::*;
     use crate::account::components::StandardAccountComponent;
@@ -262,7 +258,7 @@ mod tests {
 
         let acl_config = AuthSingleSigAclConfig::new(exempt_procedures)?;
 
-        let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config);
+        let component = AuthSingleSigAcl::new(Approver::new(public_key, auth_scheme), acl_config);
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(component)
