@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountType, StorageMapKey};
+use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -144,7 +144,9 @@ fn sample_approvers(n: u32) -> alloc::vec::Vec<(PublicKeyCommitment, AuthScheme)
 
 #[test]
 fn user_fungible_faucet_with_multisig() {
-    let auth_component = user_faucet_multisig(sample_approvers(3), 2).unwrap();
+    let threshold = 2;
+    let num_approvers = 3;
+    let auth_component = user_faucet_multisig(sample_approvers(num_approvers), threshold).unwrap();
 
     let faucet_account = create_multisig_user_fungible_faucet(
         [3u8; 32],
@@ -161,7 +163,7 @@ fn user_fungible_faucet_with_multisig() {
             .storage()
             .get_item(AuthMultisig::threshold_config_slot())
             .unwrap(),
-        [Felt::from(2_u32), Felt::from(3_u32), Felt::ZERO, Felt::ZERO].into()
+        [Felt::from(threshold), Felt::from(num_approvers), Felt::ZERO, Felt::ZERO].into()
     );
 
     // Every authority-gated setter requires the configured multisig threshold.
@@ -183,12 +185,15 @@ fn user_fungible_faucet_with_multisig() {
 
 #[test]
 fn user_fungible_faucet_with_guarded_multisig() {
+    let threshold = 2;
+    let num_approvers = 3;
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(99_u32); 4])),
         AuthScheme::Falcon512Poseidon2,
     );
     let guardian = GuardianConfig::new(approver);
-    let auth_component = user_faucet_guarded(sample_approvers(3), 2, guardian).unwrap();
+    let auth_component =
+        user_faucet_guarded(sample_approvers(num_approvers), threshold, guardian).unwrap();
 
     let faucet_account = create_guarded_user_fungible_faucet(
         [4u8; 32],
@@ -205,7 +210,7 @@ fn user_fungible_faucet_with_guarded_multisig() {
             .storage()
             .get_item(AuthGuardedMultisig::threshold_config_slot())
             .unwrap(),
-        [Felt::from(2_u32), Felt::from(3_u32), Felt::ZERO, Felt::ZERO].into()
+        [Felt::from(threshold), Felt::from(num_approvers), Felt::ZERO, Felt::ZERO].into()
     );
 
     // Every authority-gated setter requires the configured multisig threshold.
@@ -232,10 +237,7 @@ fn user_fungible_faucet_with_guarded_multisig() {
 fn network_fungible_faucet_with_ownable2step() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 
-    let owner = miden_protocol::account::AccountId::try_from(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    )
-    .unwrap();
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
 
     let _account = create_network_fungible_faucet(
         [7u8; 32],
@@ -252,10 +254,7 @@ fn network_fungible_faucet_with_ownable2step() {
 fn network_fungible_faucet_allowlists_expiration_tx_script() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 
-    let owner = miden_protocol::account::AccountId::try_from(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    )
-    .unwrap();
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
 
     let account = create_network_fungible_faucet(
         [8u8; 32],
