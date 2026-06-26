@@ -53,34 +53,33 @@ pub struct BurnNote {
     sender: AccountId,
     faucet_id: AccountId,
     serial_number: Word,
-    assets: NoteAssets,
+    asset: Asset,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
 impl BurnNote {
-    /// Builds a new [`BurnNote`] instructing `faucet_id` to burn `fungible_asset`.
+    /// Builds a new [`BurnNote`] instructing `faucet_id` to burn `asset`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the asset or attachments exceed their protocol limits (see
-    /// [`NoteAssets::new`] and [`NoteAttachments::new`]).
+    /// Returns an error if the attachments exceed their protocol limit (see
+    /// [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         faucet_id: AccountId,
-        #[builder(into)] fungible_asset: Asset,
+        #[builder(into)] asset: Asset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        let assets = NoteAssets::new(vec![fungible_asset])?;
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
             faucet_id,
             serial_number,
-            assets,
+            asset,
             attachments,
         })
     }
@@ -121,9 +120,9 @@ impl BurnNote {
         self.serial_number
     }
 
-    /// Returns the assets carried by the note (the assets to be burned).
-    pub fn assets(&self) -> &NoteAssets {
-        &self.assets
+    /// Returns the asset carried by the note (the asset to be burned).
+    pub fn asset(&self) -> Asset {
+        self.asset
     }
 
     /// Returns the attachments carried by the note.
@@ -173,13 +172,12 @@ impl From<BurnNote> for Note {
         // BURN notes are always public for network execution and carry no storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.faucet_id));
-        let recipient = NoteRecipient::new(
-            note.serial_number,
-            BurnNote::script(),
-            NoteStorage::new(vec![]).expect("a BURN note has no storage items"),
-        );
+        let recipient =
+            NoteRecipient::new(note.serial_number, BurnNote::script(), NoteStorage::default());
 
-        Note::with_attachments(note.assets, metadata, recipient, note.attachments)
+        let assets = NoteAssets::new(vec![note.asset])
+            .expect("a single asset never exceeds the note asset limit");
+        Note::with_attachments(assets, metadata, recipient, note.attachments)
     }
 }
 
@@ -211,14 +209,14 @@ mod tests {
         let burn_note = BurnNote::builder()
             .sender(sender())
             .faucet_id(faucet())
-            .fungible_asset(asset)
+            .asset(asset)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
         assert_eq!(burn_note.sender(), sender());
         assert_eq!(burn_note.faucet_id(), faucet());
-        assert_eq!(burn_note.assets().num_assets(), 1);
+        assert_eq!(burn_note.asset(), asset.into());
         assert_ne!(burn_note.serial_number(), Word::empty());
 
         let note = Note::from(burn_note);

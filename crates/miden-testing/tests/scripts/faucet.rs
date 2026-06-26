@@ -1650,7 +1650,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     let note: Note = BurnNote::builder()
         .sender(faucet_owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
@@ -1722,7 +1722,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     let burn_note: Note = BurnNote::builder()
         .sender(non_owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
@@ -1777,7 +1777,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
@@ -1861,7 +1861,7 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
@@ -1901,7 +1901,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
@@ -1957,7 +1957,7 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .faucet_id(faucet.id())
-        .fungible_asset(fungible_asset)
+        .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
         .into();
