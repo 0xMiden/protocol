@@ -14,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
-use crate::{MockChain, TransactionContextBuilder};
+use crate::{MockChain, TestTransactionBuilder};
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -59,7 +59,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let builder = CodeBuilder::with_mock_libraries();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .extend_input_notes(vec![asset_note])
         .with_source_manager(source_manager)
@@ -206,14 +206,14 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::with_existing_mock_account()
+    let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
         .execute()
         .await?;
 
-    let map_patch = tx.account_delta().storage().get_map(mock_map_slot).unwrap();
+    let map_patch = tx.account_patch().storage().get_map(mock_map_slot).unwrap();
     assert_eq!(map_patch.entries().get(&existing_key).unwrap(), &value0);
     assert_eq!(map_patch.entries().get(&non_existent_key).unwrap(), &value1);
 
@@ -269,7 +269,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

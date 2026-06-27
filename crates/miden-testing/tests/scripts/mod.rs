@@ -1,4 +1,5 @@
 mod allowlist;
+mod authority;
 mod blocklist;
 mod expiration;
 mod faucet;

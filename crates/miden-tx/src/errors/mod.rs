@@ -113,8 +113,6 @@ pub enum TransactionExecutorError {
         input_id: AccountId,
         output_id: AccountId,
     },
-    #[error("expected account nonce delta to be {expected}, found {actual}")]
-    InconsistentAccountNonceDelta { expected: Felt, actual: Felt },
     #[error("account witness provided for account ID {0} is invalid")]
     InvalidAccountWitness(AccountId, #[source] SmtProofError),
     #[error(
