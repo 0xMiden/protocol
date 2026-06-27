@@ -12,6 +12,9 @@ pub use burn::BurnNote;
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
+mod file;
+pub use file::{NoteFile, NoteSyncHint};
+
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
@@ -25,7 +28,7 @@ mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
 mod swap;
-pub use swap::{SwapNote, SwapNoteStorage};
+pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
