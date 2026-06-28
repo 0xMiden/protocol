@@ -6,8 +6,8 @@ Below we describe how to benchmark Miden transactions.
 
 The following transactions are benchmarked:
 
-- **P2ID notes**: Consume single P2ID notes with Falcon or ECDSA signing, consume two P2ID
-  notes, create single P2ID note
+- **P2ID notes**: Consume single P2ID notes, consume two P2ID notes, and create single P2ID
+  note - each with both Falcon and ECDSA signing
 - **CLAIM notes (agglayer bridge-in)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
 - **B2AGG note (agglayer bridge-out)**: Consume B2AGG note for Miden-to-AggLayer bridging
 
@@ -46,22 +46,26 @@ Each of the above transactions is measured in two groups:
 
   Notice that the `Poseidon2` hash function is used during the proving process.
 
-  This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. Results of this benchmark group are printed to the terminal and look like so:
+  This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the
+  elapsed time. The benchmark ID encodes what was measured: the signing scheme of the
+  benchmarked account (`falcon`/`ecdsa`) and, for the proving group, the hash function used
+  during proving (`poseidon2`). Network-authenticated transactions (CLAIM, B2AGG) carry no
+  signing scheme. Results are printed to the terminal and look like so:
   ```zsh
-  Execute transaction/single P2ID note (Falcon signing)
+  Execute transaction/falcon/single-p2id-note
                         time:   [7.2611 ms 7.2772 ms 7.2929 ms]
                         change: [−0.9131% −0.5837% −0.3058%] (p = 0.00 < 0.05)
                         Change within noise threshold.
-  Execute transaction/two P2ID notes
+  Execute transaction/ecdsa/two-p2id-notes
                         time:   [8.8279 ms 8.8442 ms 8.8633 ms]
                         change: [−1.2256% −0.7611% −0.3355%] (p = 0.00 < 0.05)
                         Change within noise threshold.
 
-  Execute and prove transaction/single P2ID note (Falcon signing)
+  Execute and prove transaction/poseidon2-falcon/single-p2id-note
                         time:   [698.96 ms 703.92 ms 708.70 ms]
                         change: [−2.3061% −0.4274% +0.9653%] (p = 0.70 > 0.05)
                         No change in performance detected.
-  Execute and prove transaction/two P2ID notes
+  Execute and prove transaction/poseidon2/claim-note-l1
                         time:   [706.52 ms 710.91 ms 715.66 ms]
                         change: [−7.4641% −5.0278% −2.9437%] (p = 0.00 < 0.05)
                         Performance has improved.
@@ -105,7 +109,7 @@ equality:
 - `padded_chiplets  = max(64, next_pow2(chiplets_rows))`
 
 These two can land in different brackets on the same workload (e.g.
-`consume two P2ID notes` has `padded_core_side = 131072` but
+`consume two P2ID notes with Falcon signing` has `padded_core_side = 131072` but
 `padded_chiplets = 262144`).
 
 To feed the snapshot into `miden-vm`, regenerate `bench-tx.json` here and copy
