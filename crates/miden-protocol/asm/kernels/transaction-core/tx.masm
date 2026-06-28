@@ -1,6 +1,6 @@
-use $kernel::account
-use $kernel::memory
-use $kernel::note
+use miden::tx_kernel_core::account
+use miden::tx_kernel_core::memory
+use miden::tx_kernel_core::note
 
 # CONSTANTS
 # =================================================================================================

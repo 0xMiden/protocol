@@ -1,10 +1,10 @@
 use miden::core::word
 
-use $kernel::epilogue
-use $kernel::memory
-use $kernel::memory::TX_SCRIPT_ROOT_PTR
-use $kernel::note
-use $kernel::prologue
+use miden::tx_kernel_core::epilogue
+use miden::tx_kernel_core::memory
+use miden::tx_kernel_core::memory::TX_SCRIPT_ROOT_PTR
+use miden::tx_kernel_core::note
+use miden::tx_kernel_core::prologue
 
 # EVENTS
 # =================================================================================================
