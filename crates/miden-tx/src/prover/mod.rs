@@ -33,22 +33,22 @@ pub use mast_store::TransactionMastStore;
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
-#[derive(Default)]
 pub struct LocalTransactionProver {
     proof_options: ProvingOptions,
+}
+
+impl Default for LocalTransactionProver {
+    fn default() -> Self {
+        Self {
+            proof_options: ProvingOptions::new(Poseidon2),
+        }
+    }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
         Self { proof_options }
-    }
-
-    /// Creates a new [LocalTransactionProver] instance with the [`Poseidon2`] hash function.
-    pub fn with_poseidon2() -> Self {
-        Self {
-            proof_options: ProvingOptions::new(Poseidon2),
-        }
     }
 
     fn build_proven_transaction(

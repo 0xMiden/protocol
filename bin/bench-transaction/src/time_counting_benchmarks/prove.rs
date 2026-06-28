@@ -283,7 +283,7 @@ fn core_benchmarks(c: &mut Criterion) {
 async fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
     let executed_transaction_id = executed_transaction.id();
     let proven_transaction: ProvenTransaction =
-        LocalTransactionProver::with_poseidon2().prove(executed_transaction).await?;
+        LocalTransactionProver::default().prove(executed_transaction).await?;
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     Ok(())
