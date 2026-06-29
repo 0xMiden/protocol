@@ -193,21 +193,22 @@ impl AccountDelta {
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - Append `[[domain = 6, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries,
-    ///       0, 0, 0]]`, where `num_changed_entries` is the number of changed key-value pairs in
-    ///       the map.
-    ///         - If `patch_op` is
-    ///           [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create)
-    ///           and `num_changed_entries` is zero, the trailer must be included to signal the
-    ///           creation of the slot.
-    ///         - If `patch_op` is
-    ///           [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update)
-    ///           and `num_changed_entries` is zero, the trailer must be omitted, since it is a
-    ///           no-op.
-    ///         - If `patch_op` is
+    ///     - The map trailer is constructed as `[[domain = 6, patch_op, slot_id_suffix,
+    ///       slot_id_prefix], [num_changed_entries, 0, 0, 0]]`, where `num_changed_entries` is the
+    ///       number of key-value pairs appended above. Whether the trailer is included depends on
+    ///       `patch_op`:
+    ///         - For
+    ///           [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create),
+    ///           the trailer is always included, since the slot's creation must be committed to even
+    ///           when the map is created empty (`num_changed_entries == 0`).
+    ///         - For
+    ///           [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update),
+    ///           the trailer is included only if `num_changed_entries != 0`. An update that changes
+    ///           no entries is a no-op and is omitted entirely.
+    ///         - For
     ///           [`StoragePatchOperation::Remove`](crate::account::StoragePatchOperation::Remove),
-    ///           `num_changed_entries` is set to zero, since the number of removed entries is
-    ///           unknown.
+    ///           the trailer is always included with `num_changed_entries` set to zero, since the
+    ///           number of removed entries is unknown.
     ///
     /// ## Rationale
     ///

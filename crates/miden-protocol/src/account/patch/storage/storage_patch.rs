@@ -201,11 +201,6 @@ impl AccountStoragePatch {
 
     /// Appends the storage slot patches to the given `elements` from which the delta or patch
     /// commitment is computed.
-    ///
-    /// TODO(storage_delta): Map [`StorageValuePatch::Create`] and [`StorageValuePatch::Update`]
-    /// (and likewise for maps) to the current structure to match the transaction kernel's
-    /// commitment. This will be refactored in a follow-up to include the delta ops in the
-    /// commitment.
     pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         for (slot_name, slot_patch) in self.patches.iter() {
             let slot_id = slot_name.id();
