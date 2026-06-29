@@ -14,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
-use crate::{MockChain, TransactionContextBuilder};
+use crate::{MockChain, TestTransactionBuilder};
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -59,7 +59,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let builder = CodeBuilder::with_mock_libraries();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .extend_input_notes(vec![asset_note])
         .with_source_manager(source_manager)
@@ -206,7 +206,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::with_existing_mock_account()
+    let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
@@ -270,7 +270,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

@@ -36,7 +36,7 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use rand::Rng;
 
-use crate::{Auth, MockChain, TransactionContextBuilder};
+use crate::{Auth, MockChain, TestTransactionBuilder};
 
 // ACCOUNT DELTA TESTS
 //
@@ -736,7 +736,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx_builder = TransactionContextBuilder::new(account.clone())
+    let tx_builder = TestTransactionBuilder::new(account.clone())
         .tx_script(tx_script)
         .with_source_manager(source_manager);
 
@@ -828,7 +828,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
         .with_auth_component(Auth::IncrNonce)
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account.clone()).build()?.execute().await?;
+    let tx = TestTransactionBuilder::new(account.clone()).build()?.execute().await?;
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
 
@@ -901,7 +901,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::new(account.clone())
+    let tx = TestTransactionBuilder::new(account.clone())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

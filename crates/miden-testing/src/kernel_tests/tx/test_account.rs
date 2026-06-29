@@ -77,7 +77,7 @@ use crate::{
     Auth,
     ExecError,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_transaction_executor_error,
 };
@@ -156,7 +156,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         expected_commitment = &expected_commitment,
     );
 
-    let tx_context_builder = TransactionContextBuilder::new(account);
+    let tx_context_builder = TestTransactionBuilder::new(account);
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
     let tx_context = tx_context_builder.tx_script(tx_script).build()?;
 
@@ -266,7 +266,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
 // TODO: update this test once the ability to change the account code will be implemented
 #[tokio::test]
 pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
     let account = tx_context.account();
 
     let code = format!(
@@ -296,7 +296,7 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_item() -> anyhow::Result<()> {
     for storage_item in [AccountStorage::mock_value_slot0(), AccountStorage::mock_value_slot1()] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             r#"
@@ -337,7 +337,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     let StorageSlotContent::Map(map) = slot.content() else {
         panic!("expected map")
@@ -382,7 +382,7 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         AccountStorage::mock_value_slot1().name(),
         AccountStorage::mock_map_slot().name(),
     ] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
         let (slot_idx, slot) = tx_context
             .account()
             .storage()
@@ -544,7 +544,7 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     let slot_name = &*MOCK_VALUE_SLOT0;
     let new_value = Word::from([91, 92, 93, 94u32]);
@@ -601,7 +601,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     let code = format!(
         r#"
@@ -677,14 +677,14 @@ async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
         .build()
         .context("failed to build account")?;
 
-    TransactionContextBuilder::new(account).build()?.execute().await?;
+    TestTransactionBuilder::new(account).build()?.execute().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
         r#"
@@ -718,7 +718,7 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
 /// - After updating the 2nd storage slot (map slot).
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
     let mut account_clone = tx_context.account().clone();
     let account_storage = account_clone.storage_mut();
 
@@ -821,7 +821,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         ]))
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
@@ -870,7 +870,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_vault_root() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let mut account = tx_context.account().clone();
 
@@ -1280,7 +1280,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
         vec![(tc_0, true), (tc_1, true), (tc_2, true), (Word::from([1, 0, 1, 0u32]), false)];
 
     for (root, valid) in test_cases.into_iter() {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             "
@@ -1375,7 +1375,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
 
     // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
     tx_context
         .execute()
@@ -1461,7 +1461,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         .with_dynamically_linked_library(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
-    let tx_context = TransactionContextBuilder::new(native_account.clone())
+    let tx_context = TestTransactionBuilder::new(native_account.clone())
         .tx_script(tx_script)
         .build()
         .unwrap();
@@ -1509,7 +1509,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
         .build()
         .context("failed to build account")?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE);
 
@@ -1558,7 +1558,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
     tx_context
         .execute()
@@ -1576,7 +1576,7 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
     let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
 
     for (slot_name, expected_to_exist) in test_cases {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let assertion = if expected_to_exist {
             r#"assert.err="installed storage slot should be reported as present""#
@@ -1672,7 +1672,7 @@ async fn test_faucet_has_callbacks(
     );
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
 
-    TransactionContextBuilder::new(account)
+    TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1686,7 +1686,7 @@ async fn test_faucet_has_callbacks(
 
 #[tokio::test]
 async fn test_get_initial_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     // Test that get_initial_item returns the initial value before any changes
     let code = format!(
@@ -1743,7 +1743,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     // Use the first key-value pair from the mock storage
     let StorageSlotContent::Map(map) = map_slot.content() else {
@@ -1833,7 +1833,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     // Build MASM code that, for each slot:
     // 1. Sets a new value [index, 0, 0, 0]
@@ -1905,7 +1905,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     // modulus - 2.
     account.increment_nonce(Felt::new_unchecked(Felt::ORDER_U64 - 2))?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_AT_MAX);
 
@@ -2040,7 +2040,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         .with_dynamically_linked_library(COMPONENT_2_LIBRARY.clone())?
         .compile_tx_script(tx_script)?;
 
-    TransactionContextBuilder::new(account)
+    TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
