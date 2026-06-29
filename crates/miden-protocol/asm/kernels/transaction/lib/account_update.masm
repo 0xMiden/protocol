@@ -48,6 +48,15 @@ const DELTA_OP_ADD = 1
 #! The delta operation indicating that an asset was removed.
 const DELTA_OP_REMOVE = 2
 
+#! The patch operation indicating the creation of a slot.
+const PATCH_OP_CREATE = 0
+
+#! The patch operation indicating an update to a slot.
+const PATCH_OP_UPDATE = 1
+
+#! The patch operation indicating the removal of a slot.
+const PATCH_OP_REMOVE = 2
+
 # The maximum value a felt can represent.
 const FELT_MAX = 0xffffffff00000000
 
@@ -269,23 +278,38 @@ proc commit_slot_patch
     # => [RATE0, RATE1, CAPACITY]
 end
 
+#! Returns the storage delta operation for the native account's storage slots.
+#!
+#! In the absence of storage upgrades, every slot of a new account is considered _created_, and
+#! every slot of an existing account is considered _updated_.
+#!
+#! Inputs:  []
+#! Outputs: [patch_op]
+proc get_storage_slot_patch_op
+    # negate the is_new_account flag to get the patch operation
+    # `is_new_account` maps to Create = 0
+    # `!is_new_account` maps to Update = 1
+    exec.memory::is_new_account not
+end
+
 #! Updates the given delta hasher with the value storage slot at the provided index.
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
 proc commit_value_slot_patch
-    exec.account::get_item_delta
+    exec.account::get_item_patch
     # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
-    exec.word::test_eq not
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+    exec.word::test_eq
+    # => [has_not_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
-    # set was_changed to true if the account is new
-    # generally, the delta for a new account must include all its storage slots, regardless of the
-    # initial value and even if it is an empty word, because the initial delta for an account must
-    # represent its full state
-    exec.memory::is_new_account or
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+    # do not commit the slot if the operation is Update and the value hasn't changed
+    # in particular, this means we commit the patch if the slot was created or removed
+    exec.get_storage_slot_patch_op eq.PATCH_OP_UPDATE and
+    # => [should_not_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+    not
+    # => [should_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
     # only include in delta if the slot's value has changed or the account is new
     if.true
@@ -297,12 +321,12 @@ proc commit_value_slot_patch
         movup.5 movup.5
         # => [slot_id_suffix, slot_id_prefix, CURRENT_VALUE, RATE0, RATE1, CAPACITY]
 
-        push.0.DOMAIN_VALUE
-        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, RATE0, RATE1, CAPACITY]
+        exec.get_storage_slot_patch_op push.DOMAIN_VALUE
+        # => [[domain_value, patch_op, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, RATE0, RATE1, CAPACITY]
 
         # clear rate elements
         swapdw dropw dropw
-        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CAPACITY]
+        # => [[domain_value, patch_op, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CAPACITY]
 
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY]
@@ -399,23 +423,30 @@ proc commit_map_slot_patch
     drop
     # => [RATE0, RATE1, CAPACITY]
 
-    # only include the map slot metadata if there were entries in the map that resulted in an
-    # update to the hasher state
-    loc_load.4 neq.0
-    # => [is_num_changed_entries_non_zero, RATE0, RATE1, CAPACITY]
+    loc_load.4 eq.0
+    # => [is_num_changed_entries_zero, RATE0, RATE1, CAPACITY]
 
-    # if the account is new (nonce == 0) include the map header even if it is an empty map
-    # in order to have the delta commit to this initial storage slot.
-    exec.memory::is_new_account or
-    # => [should_include_map_header, RATE0, RATE1, CAPACITY]
+    # omit the map slot trailer if the operation is Update and the number of changed entries is
+    # zero
+    # in particular, this means we commit the trailer if the slot was created or removed
+    exec.get_storage_slot_patch_op eq.PATCH_OP_UPDATE and
+    # => [should_not_commit, RATE0, RATE1, CAPACITY]
+
+    not
+    # => [should_commit, RATE0, RATE1, CAPACITY]
 
     if.true
         # drop the previous RATE elements
         dropw dropw
         # => [CAPACITY]
 
-        padw loc_load.1 loc_load.0 loc_load.4 push.DOMAIN_MAP
-        # => [[domain, num_changed_entries, slot_id_suffix, slot_id_prefix], EMPTY_WORD, CAPACITY]
+        # build the second rate word holding the number of changed entries
+        push.0.0.0 loc_load.4
+        # => [[num_changed_entries, 0, 0, 0], CAPACITY]
+
+        # build the map slot metadata as the first rate word
+        loc_load.1 loc_load.0 exec.get_storage_slot_patch_op push.DOMAIN_MAP
+        # => [[domain_map, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries, 0, 0, 0], CAPACITY]
 
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY]
