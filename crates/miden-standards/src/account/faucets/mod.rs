@@ -12,8 +12,10 @@ mod token_metadata;
 pub use fungible::{
     FungibleFaucet,
     FungibleFaucetBuilder,
+    create_guarded_user_fungible_faucet,
+    create_multisig_user_fungible_faucet,
     create_network_fungible_faucet,
-    create_user_fungible_faucet,
+    create_singlesig_user_fungible_faucet,
 };
 pub use non_fungible::{
     NonFungibleFaucet,

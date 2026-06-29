@@ -4,13 +4,15 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::TransactionScriptRoot;
 use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
@@ -40,23 +42,20 @@ pub enum Auth {
 
     /// Multisig
     Multisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Guarded multisig.
     GuardedMultisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Multisig with smart per-procedure policy configuration.
     MultisigSmart {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
@@ -112,14 +111,14 @@ impl Auth {
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthSingleSig::new(pub_key, *auth_scheme).into();
+                let component = AuthSingleSig::new(Approver::new(pub_key, *auth_scheme)).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
                 (component, Some(authenticator))
             },
-            Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+            Auth::Multisig { approver_set, proc_threshold_map } => {
+                let config = AuthMultisigConfig::new(approver_set.clone())
+                    .with_proc_thresholds(proc_threshold_map.clone())
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
@@ -127,24 +126,22 @@ impl Auth {
                 (component, None)
             },
             Auth::GuardedMultisig {
-                threshold,
-                approvers,
+                approver_set,
                 guardian_config,
                 proc_threshold_map,
             } => {
-                let config =
-                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
-                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                        .expect("invalid guarded multisig config");
+                let config = AuthGuardedMultisigConfig::new(approver_set.clone(), *guardian_config)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid guarded multisig config");
                 let component = AuthGuardedMultisig::new(config)
                     .expect("guarded multisig component creation failed")
                     .into();
 
                 (component, None)
             },
-            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
-                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+            Auth::MultisigSmart { approver_set, proc_policy_map } => {
+                let config = AuthMultisigSmartConfig::new(approver_set.clone())
+                    .with_proc_policies(proc_policy_map.clone())
                     .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
@@ -160,8 +157,7 @@ impl Auth {
                 let pub_key = sec_key.public_key().to_commitment();
 
                 let component = AuthSingleSigAcl::new(
-                    pub_key,
-                    *auth_scheme,
+                    Approver::new(pub_key, *auth_scheme),
                     AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
                         "AuthSingleSigAcl component creation failed: too many exempt procedures",
                     ),

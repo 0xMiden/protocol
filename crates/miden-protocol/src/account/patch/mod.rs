@@ -5,18 +5,18 @@ mod update_details;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
+pub use storage::{
+    AccountStoragePatch,
+    StorageMapPatch,
+    StorageMapPatchEntries,
+    StoragePatchOperation,
+    StorageSlotPatch,
+    StorageValuePatch,
+};
 pub use update_details::AccountUpdateDetails;
 pub use vault::AccountVaultPatch;
 
-use crate::account::{
-    Account,
-    AccountCode,
-    AccountId,
-    AccountStorage,
-    StorageSlot,
-    StorageSlotType,
-};
+use crate::account::{Account, AccountCode, AccountId, AccountStorage};
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountError, AccountPatchError};
@@ -291,22 +291,33 @@ impl AccountPatch {
     ///       `num_changed_assets` is the number of assets that were appended. Note that this is a
     ///       distinct domain from the delta asset domain (`3`), so an asset delta and an asset
     ///       patch can never produce the same commitment.
-    /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
-    ///   value has changed**, depending on the slot type:
+    /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
+    ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
+    ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
+    ///   slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 5, 0, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
-    ///       `NEW_VALUE` is the new value of the slot and `slot_id_{suffix, prefix}` is the
-    ///       identifier of the slot.
+    ///     - Append `[[domain = 5, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///       `NEW_VALUE` is the new value of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - Append `[[domain = 6, num_changed_entries, slot_id_suffix, slot_id_prefix], 0, 0, 0,
-    ///       0]`, where `slot_id_{suffix, prefix}` are the slot identifiers and
-    ///       `num_changed_entries` is the number of changed key-value pairs in the map.
-    ///         - For partial state deltas, the map header must only be included if
-    ///           `num_changed_entries` is not zero.
-    ///         - For full state deltas, the map header must always be included.
+    ///     - The map trailer is constructed as `[[domain = 6, patch_op, slot_id_suffix,
+    ///       slot_id_prefix], [num_changed_entries, 0, 0, 0]]`, where `num_changed_entries` is the
+    ///       number of key-value pairs appended above. Whether the trailer is included depends on
+    ///       `patch_op`:
+    ///         - For
+    ///           [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create),
+    ///           the trailer is always included, since the slot's creation must be committed to even
+    ///           when the map is created empty (`num_changed_entries == 0`).
+    ///         - For
+    ///           [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update),
+    ///           the trailer is included only if `num_changed_entries != 0`. An update that changes
+    ///           no entries is a no-op and is omitted entirely.
+    ///         - For
+    ///           [`StoragePatchOperation::Remove`](crate::account::StoragePatchOperation::Remove),
+    ///           the trailer is always included with `num_changed_entries` set to zero, since the
+    ///           number of removed entries is unknown.
     ///
     /// Headers for storage map slots and asset patches are appended rather than prepended since the
     /// tx kernel cannot efficiently get the number of changed entries before the iteration.
@@ -329,7 +340,7 @@ impl TryFrom<&AccountPatch> for Account {
     /// Returns an error if:
     /// - The patch does not carry account code or a final nonce.
     /// - Applying the vault patch to an empty vault fails.
-    /// - Applying the storage patch to the reconstructed initial storage fails.
+    /// - Applying the storage patch to empty storage fails.
     fn try_from(patch: &AccountPatch) -> Result<Self, Self::Error> {
         if !patch.is_full_state() {
             return Err(AccountError::PartialStatePatchToAccount);
@@ -342,16 +353,9 @@ impl TryFrom<&AccountPatch> for Account {
         let mut vault = AssetVault::default();
         vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
 
-        let mut empty_storage_slots = Vec::new();
-        for (slot_name, slot_patch) in patch.storage().slots() {
-            let slot = match slot_patch.slot_type() {
-                StorageSlotType::Value => StorageSlot::with_empty_value(slot_name.clone()),
-                StorageSlotType::Map => StorageSlot::with_empty_map(slot_name.clone()),
-            };
-            empty_storage_slots.push(slot);
-        }
-        let mut storage = AccountStorage::new(empty_storage_slots)
-            .expect("storage patch should contain a valid number of slots");
+        // A full state patch consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
+        let mut storage = AccountStorage::default();
         storage.apply_patch(patch.storage())?;
 
         Account::new(patch.id(), vault, storage, code, nonce, None)
@@ -447,6 +451,8 @@ mod tests {
         StorageMapKey,
         StorageMapPatch,
         StorageSlotName,
+        StorageSlotPatch,
+        StorageValuePatch,
     };
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::errors::{AccountError, AccountPatchError};
@@ -586,8 +592,11 @@ mod tests {
         let slot_name = StorageSlotName::mock(4);
         let slot_value = Word::from([1, 2, 3, 4u32]);
 
-        let storage_patch =
-            AccountStoragePatch::from_iters([], [(slot_name.clone(), slot_value)], []);
+        // A full state patch is composed of `Create` slot patches.
+        let storage_patch = AccountStoragePatch::from_entries([(
+            slot_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: slot_value }),
+        )])?;
 
         let patch = AccountPatch::new(
             account_id,
@@ -744,7 +753,7 @@ mod tests {
         let map_storage = AccountStoragePatch::from_iters(
             [],
             [],
-            [(shared_slot.clone(), StorageMapPatch::default())],
+            [(shared_slot.clone(), StorageMapPatch::from_iters([], []))],
         );
 
         let mut patch = AccountPatch::new(
@@ -871,9 +880,10 @@ mod tests {
 
         assert_eq!(patch.storage().num_slots(), 1);
         let merged_map = patch.storage().get_map(&map_slot).expect("map slot should be present");
-        assert_eq!(merged_map.entries().len(), 2);
-        assert_eq!(merged_map.entries().get(&key_self).copied(), Some(value_self));
-        assert_eq!(merged_map.entries().get(&key_other).copied(), Some(value_other));
+        let merged_entries = merged_map.entries().expect("map patch should have entries");
+        assert_eq!(merged_entries.as_map().len(), 2);
+        assert_eq!(merged_entries.as_map().get(&key_self).copied(), Some(value_self));
+        assert_eq!(merged_entries.as_map().get(&key_other).copied(), Some(value_other));
 
         Ok(())
     }
