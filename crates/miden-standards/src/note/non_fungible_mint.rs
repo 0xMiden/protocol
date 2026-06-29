@@ -46,7 +46,6 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// carry no assets and are always public.
 ///
 /// Build one with [`NonFungibleMintNote::builder`], then convert it into a [`Note`] via [`From`].
-/// Attachments can be appended one at a time with the builder's `attachment` method.
 #[derive(Debug, Clone)]
 pub struct NonFungibleMintNote {
     sender: AccountId,
@@ -58,20 +57,19 @@ pub struct NonFungibleMintNote {
 
 #[bon::bon]
 impl NonFungibleMintNote {
-    /// Builds a [`NonFungibleMintNote`].
+    /// Builds a [`NonFungibleMintNote`] that mints the NFT for the commitment in `mint_storage`,
+    /// routed to `faucet_id`.
     ///
-    /// # Parameters
-    /// - `sender`: the account ID of the note creator.
-    /// - `faucet_id`: the network faucet that will mint the asset (used for the note tag /
-    ///   routing).
-    /// - `storage`: the storage configuration specifying private or public output mode.
-    /// - `serial_number`: the note serial number (see [`Self::generate_serial_number`]).
+    /// # Errors
+    ///
+    /// Returns an error if the attachments exceed their protocol limit (see
+    /// [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         faucet_id: AccountId,
-        storage: NonFungibleMintNoteStorage,
+        #[builder(name = mint_storage)] storage: NonFungibleMintNoteStorage,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -82,14 +80,6 @@ impl NonFungibleMintNote {
             storage,
             attachments,
         })
-    }
-}
-
-impl<S: non_fungible_mint_note_builder::State> NonFungibleMintNoteBuilder<S> {
-    /// Appends a single attachment to the note.
-    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
-        self.attachments.push(attachment.into());
-        self
     }
 }
 
@@ -115,11 +105,6 @@ impl NonFungibleMintNote {
         MINT_SCRIPT.root()
     }
 
-    /// Draws a fresh serial number from the provided RNG.
-    pub fn generate_serial_number<R: FeltRng>(rng: &mut R) -> Word {
-        rng.draw_word()
-    }
-
     /// Returns the account ID of the note creator.
     pub fn sender(&self) -> AccountId {
         self.sender
@@ -143,6 +128,39 @@ impl NonFungibleMintNote {
     /// Returns the note attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         &self.attachments
+    }
+}
+
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: non_fungible_mint_note_builder::State> NonFungibleMintNoteBuilder<S> {
+    /// Adds a single attachment to the note.
+    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
+        self.attachments.push(attachment.into());
+        self
+    }
+
+    /// Adds multiple attachments to the note.
+    pub fn attachments(
+        mut self,
+        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
+    ) -> Self {
+        self.attachments.extend(attachments.into_iter().map(Into::into));
+        self
+    }
+}
+
+impl<S: non_fungible_mint_note_builder::State> NonFungibleMintNoteBuilder<S>
+where
+    S::SerialNumber: non_fungible_mint_note_builder::IsUnset,
+{
+    /// Draws a serial number from `rng` and sets it on the builder.
+    pub fn generate_serial_number(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> NonFungibleMintNoteBuilder<non_fungible_mint_note_builder::SetSerialNumber<S>> {
+        self.serial_number(rng.draw_word())
     }
 }
 

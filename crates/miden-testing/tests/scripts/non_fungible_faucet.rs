@@ -121,7 +121,16 @@ async fn nft_mint_succeeds() -> anyhow::Result<()> {
 
     let executed = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
 
+    // exactly one output note, addressed to the requested recipient, carrying exactly the minted
+    // NFT (the commitment, issued by this faucet, with callbacks enabled)
     assert_eq!(executed.output_notes().num_notes(), 1);
+    let note = executed.output_notes().get_note(0);
+    assert_eq!(note.recipient_digest(), recipient);
+    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
+    assert_eq!(note.assets().num_assets(), 1);
+    assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
     Ok(())
 }
@@ -188,9 +197,8 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(11u32); 4].into());
     let burn_note: Note = NonFungibleBurnNote::builder()
         .sender(sender)
-        .faucet_id(faucet.id())
         .asset(asset)
-        .serial_number(NonFungibleBurnNote::generate_serial_number(&mut rng))
+        .generate_serial_number(&mut rng)
         .build()?
         .into();
 
@@ -228,8 +236,8 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let mint_note: Note = NonFungibleMintNote::builder()
         .sender(sender)
         .faucet_id(faucet.id())
-        .storage(storage)
-        .serial_number(NonFungibleMintNote::generate_serial_number(&mut rng))
+        .mint_storage(storage)
+        .generate_serial_number(&mut rng)
         .build()?
         .into();
 
@@ -239,7 +247,16 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
         .execute()
         .await?;
 
+    // exactly one output note, addressed to the recipient digest carried by the MINT note,
+    // carrying exactly the minted NFT issued by this faucet (with callbacks enabled)
     assert_eq!(executed.output_notes().num_notes(), 1);
+    let note = executed.output_notes().get_note(0);
+    assert_eq!(note.recipient_digest(), recipient_digest);
+    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
+    assert_eq!(note.assets().num_assets(), 1);
+    assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
     Ok(())
 }
@@ -267,8 +284,8 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     let mint_note: Note = NonFungibleMintNote::builder()
         .sender(non_owner)
         .faucet_id(faucet.id())
-        .storage(storage)
-        .serial_number(NonFungibleMintNote::generate_serial_number(&mut rng))
+        .mint_storage(storage)
+        .generate_serial_number(&mut rng)
         .build()?
         .into();
 
@@ -360,18 +377,22 @@ async fn nft_public_getters() -> anyhow::Result<()> {
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
-    let code = "
+    let expected_symbol: Felt = TokenSymbol::new("EC")?.into();
+    let code = format!(
+        "
         begin
             # status of an unissued asset id is 0 (not issued)
-            push.0.123
+            push.42.123
             call.::miden::standards::faucets::non_fungible::get_asset_status
-            push.0 eq assert
+            eq.0 assert.err=\"expected asset status to be unissued\"
 
-            # get_symbol returns a single felt; exercise it
+            # get_symbol returns the configured token symbol
             call.::miden::standards::faucets::non_fungible::get_symbol
-            drop
+            push.{expected_symbol}
+            assert_eq.err=\"expected token symbol to be EC\"
         end
-    ";
+    "
+    );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script =

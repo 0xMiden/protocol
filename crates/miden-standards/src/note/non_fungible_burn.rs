@@ -45,12 +45,10 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// When consumed by the faucet that issued the NFT, the script calls
 /// `non_fungible::receive_and_burn`. BURN notes are always public.
 ///
-/// Build one with [`NonFungibleBurnNote::builder`], then convert it into a [`Note`] via
-/// [`From`]. Attachments can be appended one at a time with the builder's `attachment` method.
+/// Build one with [`NonFungibleBurnNote::builder`], then convert it into a [`Note`] via [`From`].
 #[derive(Debug, Clone)]
 pub struct NonFungibleBurnNote {
     sender: AccountId,
-    faucet_id: AccountId,
     serial_number: Word,
     asset: Asset,
     attachments: NoteAttachments,
@@ -58,37 +56,26 @@ pub struct NonFungibleBurnNote {
 
 #[bon::bon]
 impl NonFungibleBurnNote {
-    /// Builds a [`NonFungibleBurnNote`].
+    /// Builds a [`NonFungibleBurnNote`] that burns `asset` against the faucet that issued it.
     ///
-    /// # Parameters
-    /// - `sender`: the account ID of the note creator.
-    /// - `faucet_id`: the faucet that will burn the asset (used for the note tag / routing).
-    /// - `asset`: the non-fungible asset to be burned.
-    /// - `serial_number`: the note serial number (see [`Self::generate_serial_number`]).
+    /// # Errors
+    ///
+    /// Returns an error if the attachments exceed their protocol limit (see
+    /// [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        faucet_id: AccountId,
-        asset: Asset,
+        #[builder(into)] asset: Asset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
         Ok(Self {
             sender,
-            faucet_id,
             serial_number,
             asset,
             attachments,
         })
-    }
-}
-
-impl<S: non_fungible_burn_note_builder::State> NonFungibleBurnNoteBuilder<S> {
-    /// Appends a single attachment to the note.
-    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
-        self.attachments.push(attachment.into());
-        self
     }
 }
 
@@ -106,19 +93,14 @@ impl NonFungibleBurnNote {
         BURN_SCRIPT.root()
     }
 
-    /// Draws a fresh serial number from the provided RNG.
-    pub fn generate_serial_number<R: FeltRng>(rng: &mut R) -> Word {
-        rng.draw_word()
-    }
-
     /// Returns the account ID of the note creator.
     pub fn sender(&self) -> AccountId {
         self.sender
     }
 
-    /// Returns the faucet that will burn the asset.
+    /// Returns the faucet that will burn the asset (the asset's own faucet).
     pub fn faucet_id(&self) -> AccountId {
-        self.faucet_id
+        self.asset.faucet_id()
     }
 
     /// Returns the note serial number.
@@ -137,14 +119,53 @@ impl NonFungibleBurnNote {
     }
 }
 
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: non_fungible_burn_note_builder::State> NonFungibleBurnNoteBuilder<S> {
+    /// Adds a single attachment to the note.
+    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
+        self.attachments.push(attachment.into());
+        self
+    }
+
+    /// Adds multiple attachments to the note.
+    pub fn attachments(
+        mut self,
+        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
+    ) -> Self {
+        self.attachments.extend(attachments.into_iter().map(Into::into));
+        self
+    }
+}
+
+impl<S: non_fungible_burn_note_builder::State> NonFungibleBurnNoteBuilder<S>
+where
+    S::SerialNumber: non_fungible_burn_note_builder::IsUnset,
+{
+    /// Draws a serial number from `rng` and sets it on the builder.
+    pub fn generate_serial_number(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> NonFungibleBurnNoteBuilder<non_fungible_burn_note_builder::SetSerialNumber<S>> {
+        self.serial_number(rng.draw_word())
+    }
+}
+
+// CONVERSIONS
+// ================================================================================================
+
 impl From<NonFungibleBurnNote> for Note {
     fn from(note: NonFungibleBurnNote) -> Self {
-        let tag = NoteTag::with_account_target(note.faucet_id);
-        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public).with_tag(tag);
+        // BURN notes are always public and carry no storage; the tag routes to the asset's faucet.
+        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
+            .with_tag(NoteTag::with_account_target(note.asset.faucet_id()));
+        let recipient = NoteRecipient::new(
+            note.serial_number,
+            NonFungibleBurnNote::script(),
+            NoteStorage::default(),
+        );
         let assets = NoteAssets::new(vec![note.asset]).expect("a single asset is valid");
-        let storage = NoteStorage::new(vec![]).expect("empty note storage is valid");
-        let recipient =
-            NoteRecipient::new(note.serial_number, NonFungibleBurnNote::script(), storage);
 
         Note::with_attachments(assets, metadata, recipient, note.attachments)
     }

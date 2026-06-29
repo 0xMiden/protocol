@@ -86,7 +86,7 @@ pub enum FungibleFaucetError {
 #[derive(Debug, Error)]
 pub enum NonFungibleFaucetError {
     #[error("account creation failed")]
-    AccountError(#[source] AccountError),
+    AccountCreationFailed(#[source] AccountError),
     #[error("account is not a non-fungible faucet account")]
     NotANonFungibleFaucetAccount,
     #[error(transparent)]

@@ -286,10 +286,10 @@ impl NonFungibleFaucet {
             Self::asset_status_slot().clone(),
             StorageSlotSchema::map(
                 "Asset status registry. Key is the asset id padded to a word \
-                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status padded to a word \
-                 `[status, 0, 0, 0]` (status: 0 = not issued, 1 = issued, 2 = burned).",
+                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status (0 = not issued, \
+                 1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
                 SchemaType::native_word(),
-                SchemaType::native_word(),
+                SchemaType::native_felt(),
             ),
         )
     }
@@ -388,14 +388,6 @@ impl TryFrom<&AccountStorage> for NonFungibleFaucet {
     }
 }
 
-impl TryFrom<Account> for NonFungibleFaucet {
-    type Error = NonFungibleFaucetError;
-
-    fn try_from(account: Account) -> Result<Self, Self::Error> {
-        NonFungibleFaucet::try_from_interface(account.code_interface(), account.storage())
-    }
-}
-
 impl TryFrom<&Account> for NonFungibleFaucet {
     type Error = NonFungibleFaucetError;
 
@@ -429,7 +421,7 @@ pub fn create_user_non_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(NonFungibleFaucetError::AccountError)
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
 }
 
 /// Creates a new **network-style** non-fungible faucet. The account is always
@@ -463,5 +455,5 @@ pub fn create_network_non_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(NonFungibleFaucetError::AccountError)
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
 }
