@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `MintNote` marker type and its `MintNote::create` factory with a struct built via a `bon` typestate builder (`MintNote::builder()`); a `MintNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `BurnNote` marker type and its `BurnNote::create` factory with a struct built via a `bon` typestate builder (`BurnNote::builder()`); a `BurnNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
@@ -59,14 +60,16 @@
 - Refactored `is_max_supply_mutable_internal` in the fungible faucet to read the mutability config through the `get_mutability_config_word` getter instead of accessing the storage slot directly ([#3120](https://github.com/0xMiden/protocol/pull/3120)).
 - Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
+- Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
 
 ### Fixes
+
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 
-## v0.15.2 (TBD)
+## v0.15.2 (2026-06-05)
 
 ### Changes
 
@@ -74,7 +77,7 @@
 - [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
 - Renamed `AuthNetworkAccount::with_allowlist` to `with_allowed_notes` and aligned the component's internal allowlist field names, for consistency with `with_allowed_tx_scripts` ([#3049](https://github.com/0xMiden/protocol/pull/3049)).
 
-## v0.15.1 (TBD)
+## v0.15.0 (2026-05-22)
 
 ### Changes
 
