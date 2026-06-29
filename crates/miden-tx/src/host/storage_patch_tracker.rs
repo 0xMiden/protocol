@@ -155,7 +155,7 @@ impl StoragePatchTracker {
     ) -> Result<(), TransactionKernelError> {
         // Don't update the patch if the new value matches the old one.
         if prev_value != new_value {
-            self.set_init_map_item(slot_name.clone(), key, prev_value);
+            set_init_map_item(&mut self.init_maps, slot_name.clone(), key, prev_value);
 
             let update_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
                 slot_name,
@@ -185,17 +185,6 @@ impl StoragePatchTracker {
 
     // HELPERS
     // --------------------------------------------------------------------------------------------
-
-    /// Sets the initial value of the given key in the given slot to the given value, if no value is
-    /// already tracked for that key.
-    fn set_init_map_item(
-        &mut self,
-        slot_name: StorageSlotName,
-        key: StorageMapKey,
-        prev_value: Word,
-    ) {
-        set_init_map_item(&mut self.init_maps, slot_name, key, prev_value)
-    }
 
     /// Normalizes the storage patch.
     ///
