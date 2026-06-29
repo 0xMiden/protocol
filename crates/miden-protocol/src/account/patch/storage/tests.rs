@@ -223,6 +223,8 @@ enum Expected {
     /// The merge succeeds, leaving a slot patch with the given operation and the incoming
     /// value.
     Ok(Op),
+    /// The merge succeeds but the slot patch cancels out and is dropped entirely.
+    Cancelled,
     /// The merge fails with the error produced by the given variant constructor.
     Err(AccountPatchError),
 }
@@ -271,7 +273,7 @@ fn single_slot_patch(slot_name: StorageSlotName, patch: StorageSlotPatch) -> Acc
     Expected::Err(AccountPatchError::StoragePatchMergeDoubleCreate(TEST_SLOT_NAME.clone()))
 )]
 #[case::create_update(Op::Create, Op::Update, Expected::Ok(Op::Create))]
-#[case::create_remove(Op::Create, Op::Remove, Expected::Ok(Op::Remove))]
+#[case::create_remove(Op::Create, Op::Remove, Expected::Cancelled)]
 #[case::update_create(
     Op::Update,
     Op::Create,
@@ -311,6 +313,11 @@ fn merge_slot_patch(
             result.context("merge should succeed")?;
             let expected_patch = build_slot_patch(slot_type, resulting_op, INCOMING_SEED);
             assert_eq!(current_patch.get(&slot_name), Some(&expected_patch));
+        },
+        Expected::Cancelled => {
+            result.context("merge should succeed")?;
+            assert_eq!(current_patch.get(&slot_name), None);
+            assert!(current_patch.is_empty());
         },
         Expected::Err(expected_err) => {
             let err = result.err().context("merge should fail")?;
@@ -360,6 +367,34 @@ fn merge_inserts_disjoint_slots() -> anyhow::Result<()> {
     assert_eq!(current_patch.num_slots(), 2);
     assert_eq!(current_patch.get(&value_slot), Some(&value_patch));
     assert_eq!(current_patch.get(&map_slot), Some(&map_patch));
+
+    Ok(())
+}
+
+#[test]
+fn merge_drops_only_the_cancelled_slot() -> anyhow::Result<()> {
+    let cancelled_slot = StorageSlotName::mock(1);
+    let kept_slot = StorageSlotName::mock(2);
+
+    let kept_patch = build_slot_patch(SlotType::Value, Op::Create, CURRENT_SEED);
+
+    let mut current_patch = AccountStoragePatch::from_raw(BTreeMap::from([
+        (
+            cancelled_slot.clone(),
+            build_slot_patch(SlotType::Value, Op::Create, CURRENT_SEED),
+        ),
+        (kept_slot.clone(), kept_patch.clone()),
+    ]))?;
+
+    // Removing the created slot cancels it out, leaving the unrelated slot untouched.
+    current_patch.merge(single_slot_patch(
+        cancelled_slot.clone(),
+        build_slot_patch(SlotType::Value, Op::Remove, INCOMING_SEED),
+    ))?;
+
+    assert_eq!(current_patch.num_slots(), 1);
+    assert_eq!(current_patch.get(&cancelled_slot), None);
+    assert_eq!(current_patch.get(&kept_slot), Some(&kept_patch));
 
     Ok(())
 }
@@ -498,9 +533,9 @@ fn merge_then_apply_equals_apply_individually_for_recreated_slot() -> anyhow::Re
 /// Applying create / remove individually must yield the same account as applying their merge in one
 /// shot.
 ///
-/// The slot is absent from the initial account, so `(Create, Remove)` merges to a single `Remove`
-/// that is applied to a base state which never had the slot. This relies on removing an absent slot
-/// being a no-op.
+/// The slot is absent from the initial account, so `(Create, Remove)` cancels out and the merged
+/// patch drops the slot entirely, leaving the base state untouched. This must match applying the
+/// create then the remove, which nets back to the slot being absent.
 #[test]
 fn merge_then_apply_equals_apply_individually_for_created_then_removed_slot() -> anyhow::Result<()>
 {

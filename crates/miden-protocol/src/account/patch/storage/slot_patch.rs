@@ -64,14 +64,17 @@ impl StorageSlotPatch {
 
     /// Merges `other` into `self`, with `other` taking precedence.
     ///
+    /// Returns whether the merged slot patch should be kept or removed because it cancels out (see
+    /// [`MergeOutcome`]).
+    ///
     /// # Errors
     ///
-    /// Returns `None` if merging failed due to a slot type mismatch.
+    /// Returns an error if merging failed due to a slot type mismatch.
     pub(super) fn merge(
         &mut self,
         slot_name: &StorageSlotName,
         other: Self,
-    ) -> Result<(), AccountPatchError> {
+    ) -> Result<MergeOutcome, AccountPatchError> {
         match (self, other) {
             (StorageSlotPatch::Value(current), StorageSlotPatch::Value(new)) => {
                 current.merge(slot_name, new)
@@ -134,4 +137,20 @@ impl Deserializable for StorageSlotPatch {
             ))),
         }
     }
+}
+
+// MERGE OUTCOME
+// ================================================================================================
+
+/// The outcome of merging one slot patch into another.
+///
+/// Merging can cause a slot patch to cancel out, in which case the parent
+/// [`AccountStoragePatch`](crate::account::AccountStoragePatch) drops the slot patch rather than
+/// commit to a no-op. This happens when a `Create` is followed by a `Remove`: the slot is taken
+/// from absent to present and back to absent, so the base state is left unchanged.
+pub(super) enum MergeOutcome {
+    /// The merged slot patch should be kept.
+    Keep,
+    /// The merged slot patch cancels out and should be removed.
+    Remove,
 }

@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use super::slot_patch::MergeOutcome;
 use crate::account::{
     AccountStorage,
     StorageMapPatch,
@@ -147,9 +148,9 @@ impl AccountStoragePatch {
     ///   first already makes it present.
     /// - `(Create, Update)`: Merged to `Create`. The slot stays newly created, but carries the
     ///   updated value.
-    /// - `(Create, Remove)`: Merged to `Remove`. A slot created and then removed validly results in
-    ///   the slot being absent. Since the base state never had the slot, the resulting `Remove` is
-    ///   applied to a slot that does not exist which is a no-op.
+    /// - `(Create, Remove)`: Cancels out, so the slot patch is dropped entirely. A slot created and
+    ///   then removed validly results in the slot being absent. This normalizes away such patches
+    ///   and makes the patch not commit to a no-op (removing a slot that doesn't exist).
     /// - `(Update, Create)`: Errors because the create assumes the slot is absent, but the update
     ///   already requires it is present.
     /// - `(Update, Update)`: Merged to `Update`, keeping the latest value.
@@ -176,7 +177,9 @@ impl AccountStoragePatch {
                     self.patches.insert(slot_name, slot_patch);
                 },
                 Some(existing) => {
-                    existing.merge(&slot_name, slot_patch)?;
+                    if let MergeOutcome::Remove = existing.merge(&slot_name, slot_patch)? {
+                        self.patches.remove(&slot_name);
+                    }
                 },
             }
         }

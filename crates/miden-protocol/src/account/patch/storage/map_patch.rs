@@ -1,5 +1,6 @@
 use alloc::collections::BTreeMap;
 
+use super::slot_patch::MergeOutcome;
 use crate::Word;
 use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
 use crate::errors::AccountPatchError;
@@ -69,12 +70,13 @@ impl StorageMapPatch {
 
     /// Merges `other` into `self`, with `other` taking precedence.
     ///
-    /// A map that was created and then updated remains created (with the merged entries).
+    /// A map that was created and then updated remains created (with the merged entries). A map
+    /// that was created and then removed cancels out, signalled via [`MergeOutcome::Remove`].
     pub(super) fn merge(
         &mut self,
         slot_name: &StorageSlotName,
         other: Self,
-    ) -> Result<(), AccountPatchError> {
+    ) -> Result<MergeOutcome, AccountPatchError> {
         match (self, other) {
             // (Create, _) patterns
             // ------------------------------------------------------------------------------------
@@ -85,8 +87,8 @@ impl StorageMapPatch {
                 StorageMapPatch::Create { entries: current },
                 StorageMapPatch::Update { entries: incoming },
             ) => current.merge(incoming),
-            (current @ StorageMapPatch::Create { .. }, StorageMapPatch::Remove) => {
-                *current = StorageMapPatch::Remove
+            (StorageMapPatch::Create { .. }, StorageMapPatch::Remove) => {
+                return Ok(MergeOutcome::Remove);
             },
 
             // (Update, _) patterns
@@ -119,7 +121,7 @@ impl StorageMapPatch {
             },
         }
 
-        Ok(())
+        Ok(MergeOutcome::Keep)
     }
 }
 

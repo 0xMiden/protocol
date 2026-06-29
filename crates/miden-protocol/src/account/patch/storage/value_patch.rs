@@ -1,3 +1,4 @@
+use super::slot_patch::MergeOutcome;
 use crate::Word;
 use crate::account::StorageSlotName;
 use crate::errors::AccountPatchError;
@@ -65,12 +66,13 @@ impl StorageValuePatch {
 
     /// Merges `other` into `self`, with `other` taking precedence.
     ///
-    /// A slot that was created and then updated remains created (with the updated value).
+    /// A slot that was created and then updated remains created (with the updated value). A slot
+    /// that was created and then removed cancels out, signalled via [`MergeOutcome::Remove`].
     pub(super) fn merge(
         &mut self,
         slot_name: &StorageSlotName,
         other: Self,
-    ) -> Result<(), AccountPatchError> {
+    ) -> Result<MergeOutcome, AccountPatchError> {
         match (self, other) {
             // (Create, _) patterns
             // ------------------------------------------------------------------------------------
@@ -81,8 +83,8 @@ impl StorageValuePatch {
                 StorageValuePatch::Create { value: current },
                 StorageValuePatch::Update { value: incoming },
             ) => *current = incoming,
-            (current @ StorageValuePatch::Create { .. }, StorageValuePatch::Remove) => {
-                *current = StorageValuePatch::Remove
+            (StorageValuePatch::Create { .. }, StorageValuePatch::Remove) => {
+                return Ok(MergeOutcome::Remove);
             },
 
             // (Update, _) patterns
@@ -115,7 +117,7 @@ impl StorageValuePatch {
             },
         }
 
-        Ok(())
+        Ok(MergeOutcome::Keep)
     }
 }
 
