@@ -14,7 +14,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDAT
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::AuthMultisig;
+use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -82,11 +82,12 @@ fn create_multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
-        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .map(|(pub_key, auth_scheme)| Approver::new(pub_key.to_commitment(), *auth_scheme))
         .collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
+        .with_auth_component(Auth::Multisig { approver_set, proc_threshold_map })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
