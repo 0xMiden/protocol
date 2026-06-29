@@ -1,8 +1,10 @@
 use miden::core::word
-use miden::tx_kernel_core::memory
-use miden::tx_kernel_core::memory::LINK_MAP_ENTRY_SIZE
-use miden::tx_kernel_core::memory::LINK_MAP_REGION_END_PTR
-use miden::tx_kernel_core::memory::LINK_MAP_REGION_START_PTR
+pub use {
+    LINK_MAP_ENTRY_SIZE,
+    LINK_MAP_REGION_END_PTR,
+    LINK_MAP_REGION_START_PTR,
+    link_map_malloc,
+} from miden::tx_kernel_core::memory
 
 # A link map is a map data structure based on a sorted linked list.
 #
@@ -438,7 +440,7 @@ end
 #! Panics if:
 #! - the KEY is not less than the key in the head of the map, unless the map is empty.
 proc insert_at_head
-    exec.memory::link_map_malloc
+    exec.link_map_malloc
     # => [entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
     dup movdn.14
@@ -535,7 +537,7 @@ proc insert_after_entry
     movup.4
     # => [map_ptr, KEY, VALUE0, VALUE1, prev_entry_ptr]
 
-    exec.memory::link_map_malloc
+    exec.link_map_malloc
     # => [entry_ptr, map_ptr, KEY, VALUE0, VALUE1, prev_entry_ptr]
 
     dup movdn.14

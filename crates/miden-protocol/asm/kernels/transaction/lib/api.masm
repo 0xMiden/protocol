@@ -13,6 +13,11 @@ use miden::tx_kernel_core::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 use miden::tx_kernel_core::memory::KERNEL_PROCEDURES_PTR
 
 use miden::core::word
+use {
+    KERNEL_PROCEDURES_PTR,
+    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
+} from $kernel::memory
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
 

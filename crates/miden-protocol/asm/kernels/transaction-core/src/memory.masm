@@ -3,6 +3,12 @@ use miden::tx_kernel_core::constants::MAX_ASSETS_PER_NOTE
 use miden::tx_kernel_core::constants::NOTE_MEM_SIZE
 use miden::tx_kernel_core::constants::WORD_NUM_ELEMENTS
 use miden::core::mem
+use {
+    ACCOUNT_PROCEDURE_DATA_LENGTH,
+    MAX_ASSETS_PER_NOTE,
+    NOTE_MEM_SIZE,
+    WORD_NUM_ELEMENTS,
+} from $kernel::constants
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
 
