@@ -45,6 +45,7 @@ const ASSET_PTR = 0
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
 const ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
 
 # =================================================================================================
 # PRIVATE HELPERS
@@ -174,11 +175,16 @@ pub proc mint_and_send
     dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    # run the active mint policy over the asset value; ignore value mutation for NFTs
+    # run the active mint policy over the asset value
     exec.policy_manager::execute_mint_policy
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    dropw
+    # assert the policy did not modify the asset value: for an NFT the value must remain the
+    # unmodified commitment, so a policy that mutates it is rejected
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    # => [ORIG_ASSET_VALUE, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    assert_eqw.err=ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     # build the status key from the asset id (commitment elements 0 and 1)
