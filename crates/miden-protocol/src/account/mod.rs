@@ -50,7 +50,9 @@ pub use patch::{
     AccountUpdateDetails,
     AccountVaultPatch,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlotPatch,
+    StorageValuePatch,
 };
 
 pub mod delta;
@@ -408,7 +410,10 @@ impl TryFrom<Account> for AccountDelta {
             .map(StorageSlot::into_parts)
             .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_patch = AccountStoragePatch::from_raw(slot_deltas);
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
+            .expect("number of slot patches is bounded by the account's storage slots");
 
         let mut fungible_delta = FungibleAssetDelta::default();
         let mut non_fungible_delta = NonFungibleAssetDelta::default();
@@ -467,7 +472,10 @@ impl TryFrom<Account> for AccountPatch {
             .map(StorageSlot::into_parts)
             .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_patch = AccountStoragePatch::from_raw(slot_patches);
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_patches)
+            .expect("number of slot patches is bounded by the account's storage slots");
 
         let mut vault_patch = AccountVaultPatch::default();
         for asset in vault.assets() {
@@ -593,7 +601,6 @@ mod tests {
         PartialAccount,
         StorageMap,
         StorageMapKey,
-        StorageMapPatch,
         StorageSlot,
         StorageSlotContent,
         StorageSlotName,
@@ -625,9 +632,10 @@ mod tests {
         let nonce_delta = Felt::from(2_u32);
         let asset_0 = FungibleAsset::mock(15);
         let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
-        let storage_patch = AccountStoragePatch::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
+        let storage_patch = AccountStoragePatch::builder()
+            .update_value(StorageSlotName::mock(0), Word::empty())
+            .update_value(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))
+            .build();
         let account_delta =
             build_account_delta(vec![asset_1], vec![asset_0], nonce_delta, storage_patch);
 
@@ -663,15 +671,15 @@ mod tests {
         );
 
         let value = Word::from([9, 10, 11, 12u32]);
-        let updated_map = StorageMapPatch::from_iters([], [(map_key_0, value)]);
         storage_map.insert(map_key_0, value).unwrap();
 
         // build account patch
         let final_nonce = init_nonce + Felt::ONE;
-        let storage_patch = AccountStoragePatch::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))])
-            .add_updated_maps([(StorageSlotName::mock(2), updated_map)]);
+        let storage_patch = AccountStoragePatch::builder()
+            .update_value(StorageSlotName::mock(0), Word::empty())
+            .update_value(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))
+            .update_map(StorageSlotName::mock(2), [(map_key_0, value)])
+            .build();
         let account_patch =
             build_account_patch(final_nonce, vec![asset_1], vec![asset_0], storage_patch);
 
