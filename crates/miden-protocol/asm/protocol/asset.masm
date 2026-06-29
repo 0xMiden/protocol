@@ -10,6 +10,7 @@ pub use miden::protocol::util::asset::key_to_faucet_id
 pub use miden::protocol::util::asset::key_into_faucet_id
 pub use miden::protocol::util::asset::key_to_asset_id
 pub use miden::protocol::util::asset::key_into_asset_id
+pub use miden::protocol::util::asset::non_fungible_value_into_asset_id
 pub use miden::protocol::util::asset::key_to_callbacks_enabled
 pub use miden::protocol::util::asset::key_to_composition
 pub use miden::protocol::util::asset::COMPOSITION_NONE
