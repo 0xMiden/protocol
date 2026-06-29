@@ -49,6 +49,7 @@ use crate::host::{
     TransactionEvent,
     TransactionProgress,
     TransactionProgressEvent,
+    TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 
@@ -580,14 +581,14 @@ where
 
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
-                    tx_summary,
-                    signature,
-                } => {
-                    if let Some(signature) = signature {
+                    tx_summary_or_signature,
+                } => match tx_summary_or_signature {
+                    TxSummaryOrSignature::Signature(signature) => {
                         Ok(self.base_host.on_auth_requested(signature))
-                    } else {
+                    },
+                    TxSummaryOrSignature::TxSummary(tx_summary) => {
                         self.on_auth_requested(pub_key_commitment, tx_summary).await
-                    }
+                    },
                 },
 
                 // This always returns an error to abort the transaction.

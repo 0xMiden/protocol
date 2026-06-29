@@ -186,6 +186,8 @@ pub enum AccountError {
     PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
+    #[error("unknown storage patch operation tag {0}")]
+    UnknownStoragePatchOperation(u8),
     /// This variant can be used by methods that are not inherent to the account but want to return
     /// this error type.
     #[error("{error_msg}")]
@@ -458,8 +460,28 @@ pub enum AccountPatchError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
+    #[error("storage slot name {0} is assigned to more than one slot patch")]
+    DuplicateStorageSlotName(StorageSlotName),
+
+    #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
+    TooManyStorageSlotPatches(usize),
+
     #[error("cannot merge two full state patches")]
     MergingFullStatePatches,
+
+    #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
+    StoragePatchMergeDoubleCreate(StorageSlotName),
+
+    #[error(
+        "failed to merge storage patch for slot {0}: cannot create a slot after it was updated, which indicates it already exists"
+    )]
+    StoragePatchMergeCreateAfterUpdate(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot update slot after it was removed")]
+    StoragePatchMergeUpdateAfterRemove(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot remove a slot twice")]
+    StoragePatchMergeDoubleRemove(StorageSlotName),
 
     #[error(
         "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"

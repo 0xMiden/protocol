@@ -78,6 +78,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
         use miden::tx_kernel_core::prologue
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::asset_vault
+        use miden::core::crypto::hashes::poseidon2
 
         begin
             exec.prologue::prepare_transaction
@@ -87,9 +88,13 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             # => [ASSET_KEY, account_vault_root_ptr]
 
             # emit an event to fetch the merkle path for the asset since peek_asset does not do
-            # that
+            # that. the event handler expects the raw ASSET_KEY, so it is emitted before hashing.
             emit.event("miden::protocol::account::vault_before_get_asset")
             # => [ASSET_KEY, account_vault_root_ptr]
+
+            # hash the asset vault key into the SMT key that peek_asset expects
+            exec.poseidon2::hash
+            # => [ASSET_KEY_HASH, account_vault_root_ptr]
 
             exec.asset_vault::peek_asset
             # => [PEEKED_ASSET_VALUE]
