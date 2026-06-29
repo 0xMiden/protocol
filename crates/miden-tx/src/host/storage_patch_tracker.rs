@@ -131,9 +131,7 @@ impl StoragePatchTracker {
             slot_name,
             StorageSlotPatch::Value(StorageValuePatch::Update { value: new_value }),
         )]))
-        .map_err(|source| {
-            TransactionKernelError::other_with_source("failed to build set_item patch", source)
-        })?;
+        .expect("single entry does not exceed max num entries");
 
         self.patch.merge(update_patch).map_err(|source| {
             TransactionKernelError::other_with_source("failed to set_item on patch", source)
@@ -163,12 +161,7 @@ impl StoragePatchTracker {
                     entries: StorageMapPatchEntries::from_iter([(key, new_value)]),
                 }),
             )]))
-            .map_err(|source| {
-                TransactionKernelError::other_with_source(
-                    "failed to build set_map_item patch",
-                    source,
-                )
-            })?;
+            .expect("single entry does not exceed max num entries");
 
             self.patch.merge(update_patch).map_err(|source| {
                 TransactionKernelError::other_with_source("failed to set_map_item on patch", source)
