@@ -207,7 +207,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
-            use miden::tx_kernel_core::account_id
+            use miden::protocol::account_id
 
             begin
                 exec.account_id::validate

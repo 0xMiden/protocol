@@ -311,7 +311,7 @@ fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
 /// just declare it by version in the manifest.
 fn core_package_registry() -> Result<InMemoryPackageRegistry> {
     // TODO: once miden_core_lib gets updated to v0.24, `CoreLibrary` will be a `Package` so we
-    // won't need to add the dummy metadata
+    // won't need to add the metadata manually
     let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
     let package = Package::from_library(
         PackageId::from("miden-core"),
