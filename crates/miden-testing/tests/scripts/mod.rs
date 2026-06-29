@@ -1,6 +1,7 @@
 mod allowlist;
 mod authority;
 mod blocklist;
+mod code_inspection;
 mod expiration;
 mod faucet;
 mod ownable2step;

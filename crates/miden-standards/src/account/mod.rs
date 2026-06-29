@@ -1,5 +1,6 @@
 pub mod access;
 pub mod auth;
+pub mod code_inspection;
 pub mod components;
 pub mod faucets;
 pub mod interface;
