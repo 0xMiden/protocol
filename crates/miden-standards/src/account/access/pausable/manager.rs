@@ -27,9 +27,9 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// `PausableManager` works uniformly with every standard access scheme:
-/// - [`crate::account::access::Authority::AuthControlled`] — installed directly by
-///   [`crate::account::faucets::create_user_fungible_faucet`]; gates pause / unpause via the
-///   account's own auth component.
+/// - [`crate::account::access::Authority::AuthControlled`] — installed directly by the user-account
+///   faucet factories (e.g. [`crate::account::faucets::create_singlesig_user_fungible_faucet`]);
+///   gates pause / unpause via the account's own auth component.
 /// - [`crate::account::access::AccessControl::Ownable2Step`] →
 ///   [`crate::account::access::Authority::OwnerControlled`] requires the Ownable2Step owner.
 /// - [`crate::account::access::AccessControl::Rbac`] →
