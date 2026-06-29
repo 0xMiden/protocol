@@ -341,7 +341,6 @@ impl AccountStorage {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - A slot with the provided name already exists.
     /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
     fn create_value_slot(
         &mut self,
@@ -356,7 +355,6 @@ impl AccountStorage {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - A slot with the provided name already exists.
     /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
     fn create_map_slot(
         &mut self,
