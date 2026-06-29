@@ -4,7 +4,6 @@
 
 ### Changes
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2-falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
-
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `MintNote` marker type and its `MintNote::create` factory with a struct built via a `bon` typestate builder (`MintNote::builder()`); a `MintNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `BurnNote` marker type and its `BurnNote::create` factory with a struct built via a `bon` typestate builder (`BurnNote::builder()`); a `BurnNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
