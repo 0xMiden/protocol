@@ -51,6 +51,7 @@ pub use patch::{
     AccountVaultPatch,
     StorageMapPatch,
     StorageMapPatchEntries,
+    StoragePatchOperation,
     StorageSlotPatch,
     StorageValuePatch,
 };
