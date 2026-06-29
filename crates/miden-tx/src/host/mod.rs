@@ -369,7 +369,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         slot_name: StorageSlotName,
         new_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.storage().set_item(slot_name, new_value);
+        self.update_tracker.storage().set_item(slot_name, new_value)?;
 
         Ok(Vec::new())
     }
@@ -384,7 +384,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         self.update_tracker
             .storage()
-            .set_map_item(slot_name, key, old_map_value, new_map_value);
+            .set_map_item(slot_name, key, old_map_value, new_map_value)?;
 
         Ok(Vec::new())
     }

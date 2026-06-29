@@ -1,15 +1,7 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::{
-    Account,
-    AccountCode,
-    AccountId,
-    AccountStorage,
-    AccountStoragePatch,
-    StorageSlot,
-    StorageSlotType,
-};
+use crate::account::{Account, AccountCode, AccountId, AccountStorage, AccountStoragePatch};
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
@@ -350,19 +342,9 @@ impl TryFrom<&AccountDelta> for Account {
             vault.insert_asset(added_asset).map_err(AccountError::AssetVaultUpdateError)?;
         }
 
-        // Once we support addition and removal of storage slots, we may be able to change
-        // this to create an empty account and use `Account::apply_delta` instead.
-        // For now, we need to create the initial storage of the account with the same slot types.
-        let mut empty_storage_slots = Vec::new();
-        for (slot_name, slot_patch) in delta.storage().slots() {
-            let slot = match slot_patch.slot_type() {
-                StorageSlotType::Value => StorageSlot::with_empty_value(slot_name.clone()),
-                StorageSlotType::Map => StorageSlot::with_empty_map(slot_name.clone()),
-            };
-            empty_storage_slots.push(slot);
-        }
-        let mut storage = AccountStorage::new(empty_storage_slots)
-            .expect("storage patch should contain a valid number of slots");
+        // A full state delta consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
+        let mut storage = AccountStorage::default();
         storage.apply_patch(delta.storage())?;
 
         // The nonce of the account is the initial nonce of 0 plus the nonce_delta, so the
