@@ -60,7 +60,12 @@ use miden_protocol::transaction::{
     TransactionMeasurements,
     TransactionSummary,
 };
-pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
+pub(crate) use tx_event::{
+    RecipientData,
+    TransactionEvent,
+    TransactionProgressEvent,
+    TxSummaryOrSignature,
+};
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;

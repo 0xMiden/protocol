@@ -3,7 +3,6 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use either::Either;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
@@ -50,6 +49,7 @@ use crate::host::{
     TransactionEvent,
     TransactionProgress,
     TransactionProgressEvent,
+    TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 
@@ -579,13 +579,16 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_commitment, signature_or_summary } => {
-                    match signature_or_summary {
-                        Either::Left(signature) => Ok(self.base_host.on_auth_requested(signature)),
-                        Either::Right(tx_summary) => {
-                            self.on_auth_requested(pub_key_commitment, tx_summary).await
-                        },
-                    }
+                TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary_or_signature,
+                } => match tx_summary_or_signature {
+                    TxSummaryOrSignature::Signature(signature) => {
+                        Ok(self.base_host.on_auth_requested(signature))
+                    },
+                    TxSummaryOrSignature::TxSummary(tx_summary) => {
+                        self.on_auth_requested(pub_key_commitment, tx_summary).await
+                    },
                 },
 
                 // This always returns an error to abort the transaction.

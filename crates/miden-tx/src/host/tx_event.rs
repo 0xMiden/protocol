@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use either::Either;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -146,13 +145,9 @@ pub(crate) enum TransactionEvent {
     },
 
     /// The data necessary to handle an auth request.
-    ///
-    /// Carries either the signature already present in the advice provider (`Left`), or the
-    /// transaction summary to be signed when no signature is available yet (`Right`). Only one is
-    /// ever needed, so the summary is only reconstructed when a signature is absent.
     AuthRequest {
         pub_key_commitment: PublicKeyCommitment,
-        signature_or_summary: Either<Vec<Felt>, TransactionSummary>,
+        tx_summary_or_signature: TxSummaryOrSignature,
     },
 
     Unauthorized {
@@ -167,21 +162,6 @@ pub(crate) enum TransactionEvent {
     },
 
     Progress(TransactionProgressEvent),
-}
-
-#[derive(Debug)]
-pub(crate) struct AssetPatch {
-    pub asset_key: AssetVaultKey,
-    /// The absolute value of `asset_key` in the vault before the operation.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation.
-    pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -498,21 +478,24 @@ impl TransactionEvent {
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
                 let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let signature = process
+                let auth_request = if let Some(signature) = process
                     .advice_provider()
                     .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec());
-
-                // The transaction summary only needs to be reconstructed when a signature must be
-                // produced (none is available yet). When a signature is already present, it is used
-                // directly and the message is not required to be the current transaction's summary
-                // (this lets a procedure verify a signature over a provided commitment).
-                let signature_or_summary = match signature {
-                    Some(signature) => Either::Left(signature),
-                    None => Either::Right(extract_tx_summary(base_host, process, message)?),
+                    .map(|slice| slice.to_vec())
+                {
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
+                    }
+                } else {
+                    let tx_summary = extract_tx_summary(base_host, process, message)?;
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
+                    }
                 };
 
-                Some(TransactionEvent::AuthRequest { pub_key_commitment, signature_or_summary })
+                Some(auth_request)
             },
 
             TransactionEventId::Unauthorized => {
@@ -586,6 +569,34 @@ impl TransactionEvent {
 
         Ok(tx_event)
     }
+}
+
+// TX SUMMARY OR SIGNATURE
+// ================================================================================================
+
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(crate) enum TxSummaryOrSignature {
+    TxSummary(TransactionSummary),
+    Signature(Vec<Felt>),
+}
+
+// ASSET PATCH AND DELTA
+// ================================================================================================
+
+#[derive(Debug)]
+pub(crate) struct AssetPatch {
+    pub asset_key: AssetVaultKey,
+    /// The absolute value of `asset_key` in the vault before the operation.
+    pub initial_vault_value: Word,
+    /// The absolute value of `asset_key` in the vault after the operation.
+    pub final_vault_value: Word,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
 }
 
 // RECIPIENT DATA

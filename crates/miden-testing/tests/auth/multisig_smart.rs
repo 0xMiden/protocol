@@ -12,7 +12,12 @@ use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
 };
-use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig};
+use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -38,15 +43,13 @@ use super::multisig::{
 fn create_multisig_smart_account(
     threshold: u32,
     public_keys: &[PublicKey],
-    auth_scheme: AuthScheme,
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> =
-        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config =
-        AuthMultisigSmartConfig::new(approvers, threshold, DelayedExecutionPolicy::new(30, 2)?)?
-            .with_proc_policies(proc_policy_map)?;
+    let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
+    let config = AuthMultisigSmartConfig::new(approver_set, DelayedExecutionPolicy::new(30, 2)?)
+        .with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
@@ -98,8 +101,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let proc_policy_map =
         vec![(BasicWallet::receive_asset_root().as_word(), receive_asset_one_signature_policy)];
 
-    let mut multisig_account =
-        create_multisig_smart_account(3, &public_keys, auth_scheme, 10, proc_policy_map)?;
+    let mut multisig_account = create_multisig_smart_account(3, &public_keys, 10, proc_policy_map)?;
 
     let mut mock_chain_builder =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -169,7 +171,6 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
             BasicWallet::receive_asset_root().as_word(),
@@ -242,7 +243,6 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
             BasicWallet::move_asset_to_note_root().as_word(),
@@ -310,8 +310,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 10, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
     let account_id = multisig_account.id();
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -418,8 +417,7 @@ async fn test_multisig_smart_set_procedure_policy(
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     // Account starts with no procedure policies configured.
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -519,13 +517,8 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     // set_procedure_policy intentionally left unpolicied.
     let receive_policy = ProcedurePolicy::with_immediate_threshold(1)?;
     let proc_policy_map = vec![(BasicWallet::receive_asset_root().as_word(), receive_policy)];
-    let multisig_account = create_multisig_smart_account(
-        default_threshold,
-        &public_keys,
-        auth_scheme,
-        10,
-        proc_policy_map,
-    )?;
+    let multisig_account =
+        create_multisig_smart_account(default_threshold, &public_keys, 10, proc_policy_map)?;
 
     // Tx-script calls the unpolicied `set_procedure_policy` proc. The tx also consumes a P2ID
     // note (which calls the policied receive_asset). With per-proc-contribute, set_procedure_policy
@@ -758,7 +751,6 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        auth_scheme,
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
@@ -817,7 +809,6 @@ async fn test_multisig_smart_delayed_only_proc_returns_tx_summary_on_dry_run(
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        auth_scheme,
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
@@ -866,8 +857,7 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
-    let multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
 
@@ -914,8 +904,7 @@ async fn test_multisig_smart_double_propose_fails(
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -971,7 +960,6 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     let mut multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        auth_scheme,
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
@@ -1055,7 +1043,6 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     let mut multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        auth_scheme,
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
@@ -1166,8 +1153,7 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -1221,8 +1207,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     // No proc policy on `update_delayed_execution_policy` — it runs on the immediate path under
     // the default threshold, which makes the rotation a single round-trip.
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -1316,8 +1301,7 @@ async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;

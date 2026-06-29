@@ -31,7 +31,6 @@ miden-processor = { workspace = true }
 miden-prover    = { workspace = true }
 
 # External dependencies
-either    = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
