@@ -66,6 +66,7 @@
 - [BREAKING] PSWAP notes now treat the requested asset amount as a minimum rather than an exact cap: a fill at or above it is accepted and takes the whole offered side with no remainder note (fills above the requested amount previously reverted). Partial fills below the minimum are unchanged. The `PswapNoteStorage` accessors `requested_asset` and `requested_asset_amount` were renamed to `min_requested_asset` and `min_requested_amount` (`requested_faucet_id` is unchanged), and the `ERR_PSWAP_FILL_EXCEEDS_REQUESTED` error was removed ([#3148](https://github.com/0xMiden/protocol/pull/3148)).
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
 
 ### Fixes
 
