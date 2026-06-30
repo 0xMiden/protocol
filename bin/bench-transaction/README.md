@@ -38,7 +38,7 @@ Each of the above transactions is measured in two groups:
 
   Notice that the `Poseidon2` hash function is used during the proving process.
 
-  This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. The benchmark ID encodes what was measured: the signing scheme of the benchmarked account (`falcon`/`ecdsa`) and, for the proving group, the hash function used during proving (`poseidon2`). Network-authenticated transactions (CLAIM, B2AGG) carry no signing scheme. Results are printed to the terminal and look like so:
+  This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. The benchmark ID encodes what was measured as separate path segments: the signing scheme of the benchmarked account (`falcon`/`ecdsa`) and, for the proving group, the hash function used during proving (`poseidon2`). Network-authenticated transactions (CLAIM, B2AGG) carry no signing scheme. Results are printed to the terminal and look like so:
   ```zsh
   Execute transaction/falcon/single-p2id-note
                         time:   [4.5477 ms 4.5691 ms 4.5900 ms]
@@ -53,11 +53,11 @@ Each of the above transactions is measured in two groups:
                         change: [-3.0893% -2.2258% -1.4266%] (p = 0.00 < 0.05)
                         Performance has improved.
 
-  Execute and prove transaction/poseidon2-falcon/single-p2id-note
+  Execute and prove transaction/poseidon2/falcon/single-p2id-note
                         time:   [3.4986 s 3.5265 s 3.5558 s]
                         change: [-0.1326% +0.6794% +1.5087%] (p = 0.15 > 0.05)
                         No change in performance detected.
-  Execute and prove transaction/poseidon2-ecdsa/two-p2id-notes
+  Execute and prove transaction/poseidon2/ecdsa/two-p2id-notes
                         time:   [865.50 ms 869.96 ms 875.46 ms]
                         change: [-4.1704% -3.3025% -2.4024%] (p = 0.00 < 0.05)
                         Performance has improved.

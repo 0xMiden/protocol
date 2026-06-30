@@ -60,11 +60,11 @@ fn execute_id(signing: Option<Signing>, scenario: &str) -> String {
     }
 }
 
-/// Builds the Criterion ID for the execute-and-prove group, prefixing the proving hash function,
-/// e.g. `poseidon2-falcon/single-p2id-note` or `poseidon2/claim-note-l1`.
+/// Builds the Criterion ID for the execute-and-prove group, prefixing the proving hash function as
+/// its own path segment, e.g. `poseidon2/falcon/single-p2id-note` or `poseidon2/claim-note-l1`.
 fn prove_id(signing: Option<Signing>, scenario: &str) -> String {
     match signing {
-        Some(signing) => format!("poseidon2-{}/{scenario}", signing.as_str()),
+        Some(signing) => format!("poseidon2/{}/{scenario}", signing.as_str()),
         None => format!("poseidon2/{scenario}"),
     }
 }
