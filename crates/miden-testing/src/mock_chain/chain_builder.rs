@@ -34,11 +34,14 @@ use miden_protocol::block::{
     BlockNoteTree,
     BlockNumber,
     BlockProof,
+    BlockSignatures,
     Blockchain,
     FeeParameters,
     OutputNoteBatch,
     ProvenBlock,
+    ValidatorKeys,
 };
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
@@ -240,8 +243,11 @@ impl MockChainBuilder {
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
-        let validator_secret_key = random_secret_key();
-        let validator_public_key = validator_secret_key.public_key();
+        let validator_secret_keys: [SigningKey; ValidatorKeys::COUNT] =
+            core::array::from_fn(|_| random_secret_key());
+        let validator_keys =
+            ValidatorKeys::new(validator_secret_keys.each_ref().map(|sk| sk.public_key()))
+                .expect("randomly generated genesis validator keys should be distinct");
 
         let header = BlockHeader::new(
             version,
@@ -253,7 +259,7 @@ impl MockChainBuilder {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_public_key,
+            validator_keys.clone(),
             fee_parameters,
             timestamp,
         );
@@ -265,15 +271,26 @@ impl MockChainBuilder {
             transactions,
         );
 
-        let signature = validator_secret_key.sign(header.commitment());
+        // The genesis block is the trust root: it is self-signed by the validator set it commits
+        // as the signer of block 1.
+        let slots = core::array::from_fn(|i| {
+            let key = &validator_keys.as_keys()[i];
+            let signer = validator_secret_keys
+                .iter()
+                .find(|sk| &sk.public_key() == key)
+                .expect("a signer should exist for every validator key");
+            Some(signer.sign(header.commitment()))
+        });
+        let signatures =
+            BlockSignatures::new(slots).expect("genesis is signed by the full validator set");
         let block_proof = BlockProof::new_dummy();
-        let genesis_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
+        let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
             genesis_block,
             account_tree,
             self.account_authenticators,
-            validator_secret_key,
+            validator_secret_keys,
             full_notes,
         )
     }

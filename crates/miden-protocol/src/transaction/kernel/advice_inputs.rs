@@ -166,7 +166,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.nullifier_root());
         self.extend_stack(header.tx_commitment());
         self.extend_stack(header.tx_kernel_commitment());
-        self.extend_stack(header.validator_key().to_commitment());
+        self.extend_stack(header.validator_keys().commitment());
         self.extend_stack([
             header.block_num().into(),
             Felt::from(header.version()),

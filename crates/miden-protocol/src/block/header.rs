@@ -1,10 +1,7 @@
 use alloc::vec::Vec;
 
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
-
 use crate::account::AccountId;
-use crate::block::BlockNumber;
-use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use crate::block::{BlockNumber, BlockSignatures, ValidatorKeys};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -32,7 +29,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
 /// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
-/// - `validator_key` is the public key of the validator authorized to sign the *next* block.
+/// - `validator_keys` is the set of validator public keys authorized to sign the *next* block.
 /// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
 /// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
@@ -50,7 +47,7 @@ pub struct BlockHeader {
     note_root: Word,
     tx_commitment: Word,
     tx_kernel_commitment: Word,
-    validator_key: PublicKey,
+    validator_keys: ValidatorKeys,
     fee_parameters: FeeParameters,
     timestamp: u32,
     sub_commitment: Word,
@@ -70,7 +67,7 @@ impl BlockHeader {
         note_root: Word,
         tx_commitment: Word,
         tx_kernel_commitment: Word,
-        validator_key: PublicKey,
+        validator_keys: ValidatorKeys,
         fee_parameters: FeeParameters,
         timestamp: u32,
     ) -> Self {
@@ -83,7 +80,7 @@ impl BlockHeader {
             nullifier_root,
             tx_commitment,
             tx_kernel_commitment,
-            &validator_key,
+            &validator_keys,
             &fee_parameters,
             timestamp,
             block_num,
@@ -105,7 +102,7 @@ impl BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_keys,
             fee_parameters,
             timestamp,
             sub_commitment,
@@ -173,12 +170,12 @@ impl BlockHeader {
         self.note_root
     }
 
-    /// Returns the public key of the validator authorized to sign the *next* block.
+    /// Returns the set of validator public keys authorized to sign the *next* block.
     ///
-    /// A block's signature is verified against the `validator_key` committed to by its parent
+    /// A block's signatures are verified against the `validator_keys` committed to by its parent
     /// block, not against this field. See the [`BlockHeader`] docs for details.
-    pub fn validator_key(&self) -> &PublicKey {
-        &self.validator_key
+    pub fn validator_keys(&self) -> &ValidatorKeys {
+        &self.validator_keys
     }
 
     /// Returns the commitment to all transactions in this block.
@@ -218,18 +215,20 @@ impl BlockHeader {
 
     /// Validates that `parent` precedes and authorizes this block.
     ///
-    /// The `signature` is the signature of the validator defined by the parent block against this
-    /// header.
+    /// The `signatures` are positional with respect to the validator set committed to by `parent`
+    /// (see [`ValidatorKeys`]): the signature in slot `i` must verify against the parent's
+    /// validator key at index `i`. The block is authorized when at least
+    /// [`BlockSignatures::MIN_SIGNATURES`] slots are filled with signatures that verify.
     ///
     /// # Errors
     ///
     /// Returns an error if the block is the genesis block (no parent), the parent's number or
-    /// commitment do not match, or the signature does not verify against the parent's validator
-    /// key.
+    /// commitment do not match, a filled signature does not verify against its validator key, or
+    /// fewer than [`BlockSignatures::MIN_SIGNATURES`] signatures verify.
     pub(crate) fn validate_against_parent(
         &self,
         parent: &BlockHeader,
-        signature: &Signature,
+        signatures: &BlockSignatures,
     ) -> Result<(), ParentValidationError> {
         // Block 0 does not have a parent.
         let Some(expected_parent_num) = self.block_num().checked_sub(1) else {
@@ -255,9 +254,31 @@ impl BlockHeader {
             });
         }
 
-        // Verify the signature against the validator key authorized by the parent block.
-        if !signature.verify(self.commitment(), parent.validator_key()) {
-            return Err(ParentValidationError::InvalidSignature);
+        // The signatures are positional against the parent's validator set: one slot per validator
+        // key, both fixed at [`ValidatorKeys::COUNT`].
+        let validator_keys = parent.validator_keys().as_keys();
+
+        // Verify each filled signature against the validator key at the same position. A filled
+        // signature that does not verify rejects the whole block.
+        let block_commitment = self.commitment();
+        let mut valid_signatures = 0;
+        for (position, (slot, validator_key)) in
+            signatures.as_slots().iter().zip(validator_keys).enumerate()
+        {
+            if let Some(signature) = slot {
+                if !signature.verify(block_commitment, validator_key) {
+                    return Err(ParentValidationError::InvalidSignatureAtPosition { position });
+                }
+                valid_signatures += 1;
+            }
+        }
+
+        // The block must carry at least the minimum number of valid signatures.
+        if valid_signatures < BlockSignatures::MIN_SIGNATURES {
+            return Err(ParentValidationError::InsufficientSignatures {
+                valid: valid_signatures,
+                required: BlockSignatures::MIN_SIGNATURES,
+            });
         }
 
         Ok(())
@@ -270,8 +291,9 @@ impl BlockHeader {
     ///
     /// The sub commitment is computed as a sequential hash of the following fields:
     /// `prev_block_commitment`, `chain_commitment`, `account_root`, `nullifier_root`, `note_root`,
-    /// `tx_commitment`, `tx_kernel_commitment`, `validator_key_commitment`, `version`, `timestamp`,
-    /// `block_num`, `fee_faucet_id`, `verification_base_fee` (all fields except the `note_root`).
+    /// `tx_commitment`, `tx_kernel_commitment`, `validator_keys_commitment`, `version`,
+    /// `timestamp`, `block_num`, `fee_faucet_id`, `verification_base_fee` (all fields except
+    /// the `note_root`).
     #[allow(clippy::too_many_arguments)]
     fn compute_sub_commitment(
         version: u32,
@@ -281,7 +303,7 @@ impl BlockHeader {
         nullifier_root: Word,
         tx_commitment: Word,
         tx_kernel_commitment: Word,
-        validator_key: &PublicKey,
+        validator_keys: &ValidatorKeys,
         fee_parameters: &FeeParameters,
         timestamp: u32,
         block_num: BlockNumber,
@@ -293,7 +315,7 @@ impl BlockHeader {
         elements.extend_from_slice(nullifier_root.as_elements());
         elements.extend_from_slice(tx_commitment.as_elements());
         elements.extend_from_slice(tx_kernel_commitment.as_elements());
-        elements.extend(validator_key.to_commitment());
+        elements.extend(validator_keys.commitment());
         elements.extend([block_num.into(), Felt::from(version), Felt::from(timestamp), ZERO]);
         elements.extend([
             ZERO,
@@ -309,7 +331,7 @@ impl BlockHeader {
     // --------------------------------------------------------------------------------------------
 
     /// Builds a minimal block header with a controllable block number, previous-block commitment,
-    /// and validator key.
+    /// and validator key set.
     ///
     /// The remaining roots are zeroed except the note root and transaction commitment, which match
     /// the empty [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
@@ -318,7 +340,7 @@ impl BlockHeader {
     pub(crate) fn new_dummy(
         block_num: u32,
         prev_block_commitment: Word,
-        validator_key: miden_crypto::dsa::ecdsa_k256_keccak::PublicKey,
+        validator_keys: ValidatorKeys,
     ) -> Self {
         use crate::block::{BlockBody, FeeParameters};
         use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -345,7 +367,7 @@ impl BlockHeader {
             note_root,
             tx_commitment,
             Word::empty(),
-            validator_key,
+            validator_keys,
             fee_parameters,
             0,
         )
@@ -367,7 +389,7 @@ impl Serializable for BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_keys,
             fee_parameters,
             timestamp,
             // Don't serialize sub commitment and commitment as they can be derived.
@@ -384,7 +406,7 @@ impl Serializable for BlockHeader {
         note_root.write_into(target);
         tx_commitment.write_into(target);
         tx_kernel_commitment.write_into(target);
-        validator_key.write_into(target);
+        validator_keys.write_into(target);
         fee_parameters.write_into(target);
         timestamp.write_into(target);
     }
@@ -401,7 +423,7 @@ impl Deserializable for BlockHeader {
         let note_root = source.read()?;
         let tx_commitment = source.read()?;
         let tx_kernel_commitment = source.read()?;
-        let validator_key = source.read()?;
+        let validator_keys = source.read()?;
         let fee_parameters = source.read()?;
         let timestamp = source.read()?;
 
@@ -415,7 +437,7 @@ impl Deserializable for BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_keys,
             fee_parameters,
             timestamp,
         ))
@@ -491,7 +513,13 @@ impl Deserializable for FeeParameters {
 /// `From`, which preserves that type's specific error messages.
 #[derive(Debug)]
 pub(crate) enum ParentValidationError {
-    InvalidSignature,
+    InvalidSignatureAtPosition {
+        position: usize,
+    },
+    InsufficientSignatures {
+        valid: usize,
+        required: usize,
+    },
     ParentNumberMismatch {
         expected: BlockNumber,
         parent: BlockNumber,
@@ -514,6 +542,7 @@ mod tests {
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
+    use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::testing::random_secret_key::random_secret_key;
 
     #[test]
@@ -534,77 +563,170 @@ mod tests {
         assert_eq!(deserialized, header);
     }
 
-    /// Expected outcome of a [`BlockHeader::validate_against_parent`] case.
-    enum Expect {
-        Ok,
-        InvalidSignature,
-        Genesis,
-        ParentNumber,
-        ParentCommitment,
+    /// Generates a full set of validator signing keys alongside the [`ValidatorKeys`] set
+    /// committing to their public keys.
+    fn validator_set() -> (Vec<SigningKey>, ValidatorKeys) {
+        let signers: Vec<SigningKey> =
+            (0..ValidatorKeys::COUNT).map(|_| random_secret_key()).collect();
+        let keys = ValidatorKeys::new(core::array::from_fn(|i| signers[i].public_key())).unwrap();
+        (signers, keys)
     }
 
-    /// Exercises `validate_against_parent` against a parent that commits `validator` as the signer
-    /// of the child. Each case tweaks one input: the child's block number, whether it links to the
-    /// parent, and whether it is signed by the committed key.
-    #[rstest::rstest]
-    // Signed by the committed key and correctly linked: accepted. The next key it commits is free.
-    #[case::accepts(1, true, true, Expect::Ok)]
-    // The rotation bug: self-signed with a key the parent never committed.
-    #[case::self_signed_uncommitted_key(1, true, false, Expect::InvalidSignature)]
-    // Genesis has no parent to anchor against.
-    #[case::genesis(0, true, true, Expect::Genesis)]
-    // Child claims to be block 2, but the parent is block 0.
-    #[case::wrong_parent_number(2, true, true, Expect::ParentNumber)]
-    // Child's prev_block_commitment does not match the parent's commitment.
-    #[case::wrong_parent_commitment(1, false, true, Expect::ParentCommitment)]
-    fn validate_against_parent_cases(
-        #[case] child_num: u32,
-        #[case] link_to_parent: bool,
-        #[case] sign_with_committed_key: bool,
-        #[case] expected: Expect,
-    ) {
-        let validator = random_secret_key();
-        let parent = BlockHeader::new_dummy(0, Word::empty(), validator.public_key());
+    /// Builds positional [`BlockSignatures`] over `message` aligned to `validator_keys`.
+    ///
+    /// `present[i]` decides whether the validator at position `i` signs. The matching signer is
+    /// located by public key, since [`ValidatorKeys`] reorders the keys into a canonical order.
+    /// Uses `new_unchecked` so under-signed sets can be built to exercise validation failures.
+    fn positional_signatures(
+        validator_keys: &ValidatorKeys,
+        signers: &[SigningKey],
+        message: Word,
+        present: [bool; ValidatorKeys::COUNT],
+    ) -> BlockSignatures {
+        let slots = core::array::from_fn(|i| {
+            if !present[i] {
+                return None;
+            }
+            let key = &validator_keys.as_keys()[i];
+            let signer = signers
+                .iter()
+                .find(|sk| &sk.public_key() == key)
+                .expect("a signer should exist for every committed validator key");
+            Some(signer.sign(message))
+        });
+        BlockSignatures::new_unchecked(slots)
+    }
 
-        let prev_commitment = if link_to_parent {
-            parent.commitment()
-        } else {
-            Word::empty()
-        };
+    /// Builds a child of `parent` committing a fresh validator set as the signer of the *next*
+    /// block.
+    fn child_of(parent: &BlockHeader, child_num: u32) -> BlockHeader {
+        let (_, next_keys) = validator_set();
+        BlockHeader::new_dummy(child_num, parent.commitment(), next_keys)
+    }
 
-        // The signer and the key the child commits as the next block's signer.
-        let (signer, child_validator_key) = if sign_with_committed_key {
-            (validator, random_secret_key().public_key())
-        } else {
-            let impostor = random_secret_key();
-            let key = impostor.public_key();
-            (impostor, key)
-        };
+    #[test]
+    fn validate_against_parent_accepts_full_quorum() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let child = child_of(&parent, 1);
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true; ValidatorKeys::COUNT],
+        );
 
-        let child = BlockHeader::new_dummy(child_num, prev_commitment, child_validator_key);
-        let signature = signer.sign(child.commitment());
-        let result = child.validate_against_parent(&parent, &signature);
+        child.validate_against_parent(&parent, &signatures).unwrap();
+    }
 
-        match expected {
-            Expect::Ok => result.unwrap(),
-            Expect::InvalidSignature => {
-                assert!(matches!(result, Err(ParentValidationError::InvalidSignature)));
-            },
-            Expect::Genesis => {
-                assert!(matches!(
-                    result,
-                    Err(ParentValidationError::GenesisBlockHasNoParent { .. })
-                ));
-            },
-            Expect::ParentNumber => {
-                assert!(matches!(result, Err(ParentValidationError::ParentNumberMismatch { .. })));
-            },
-            Expect::ParentCommitment => {
-                assert!(matches!(
-                    result,
-                    Err(ParentValidationError::ParentCommitmentMismatch { .. })
-                ));
-            },
-        }
+    #[test]
+    fn validate_against_parent_accepts_quorum_with_empty_slots() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let child = child_of(&parent, 1);
+        // Only two of the five validators sign; the remaining slots stay empty.
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true, false, true, false, false],
+        );
+
+        child.validate_against_parent(&parent, &signatures).unwrap();
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_insufficient_signatures() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let child = child_of(&parent, 1);
+        // Only one validator signs, below the minimum quorum.
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true, false, false, false, false],
+        );
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(
+            result,
+            Err(ParentValidationError::InsufficientSignatures { valid: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_invalid_signature_at_position() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let child = child_of(&parent, 1);
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true, true, false, false, false],
+        );
+        let mut slots: [_; ValidatorKeys::COUNT] =
+            core::array::from_fn(|i| signatures.as_slots()[i].clone());
+        // Replace a committed validator's signature with one from a key not in the set.
+        slots[1] = Some(random_secret_key().sign(child.commitment()));
+        let signatures = BlockSignatures::new_unchecked(slots);
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(
+            result,
+            Err(ParentValidationError::InvalidSignatureAtPosition { position: 1 })
+        ));
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_genesis() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        // Block 0 has no parent to anchor against.
+        let child = BlockHeader::new_dummy(0, parent.commitment(), validator_set().1);
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true; ValidatorKeys::COUNT],
+        );
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(result, Err(ParentValidationError::GenesisBlockHasNoParent { .. })));
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_wrong_parent_number() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        // Child claims to be block 2, but the parent is block 0.
+        let child = child_of(&parent, 2);
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true; ValidatorKeys::COUNT],
+        );
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(result, Err(ParentValidationError::ParentNumberMismatch { .. })));
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_wrong_parent_commitment() {
+        let (signers, keys) = validator_set();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        // Child does not link to the parent's commitment.
+        let child = BlockHeader::new_dummy(1, Word::empty(), validator_set().1);
+        let signatures = positional_signatures(
+            &keys,
+            &signers,
+            child.commitment(),
+            [true; ValidatorKeys::COUNT],
+        );
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(result, Err(ParentValidationError::ParentCommitmentMismatch { .. })));
     }
 }
