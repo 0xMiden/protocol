@@ -28,8 +28,8 @@ use crate::MockChain;
 /// A crate-internal builder that makes a [TransactionContext] for tests.
 ///
 /// Use it when a test just needs some valid chain data to run against and does not care about the
-/// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and gets
-/// the inputs from [`crate::MockChain::build_tx_context`].
+/// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and builds
+/// the transaction against it through [`crate::MockChain::build_transaction`].
 #[derive(Clone)]
 pub(crate) struct TestTransactionBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
@@ -161,10 +161,11 @@ impl TestTransactionBuilder {
     /// Builds the [TransactionContext].
     ///
     /// An ad-hoc [`crate::MockChain`] is created to generate valid block data for the requested
-    /// input notes, and the account plus those notes are resolved into transaction inputs through
-    /// [`crate::MockChain::build_tx_context`]. The rest of the configuration (advice inputs,
-    /// transaction script, expected output notes, ...) is then applied on top of the resolved
-    /// inputs before the [TransactionContext] is assembled.
+    /// input notes, and the transaction is then built against it through
+    /// [`crate::MockChain::build_transaction`]. The account is passed by value so that it is used
+    /// directly without requiring it to be committed to the chain. The rest of the configuration
+    /// (advice inputs, transaction script, expected output notes, ...) is forwarded to the
+    /// [`crate::MockTransactionBuilder`] before the [TransactionContext] is assembled.
     pub(crate) fn build(self) -> anyhow::Result<TransactionContext> {
         // Spin up an ad-hoc mock chain that commits the requested input notes, so that valid block
         // data (block headers and the chain's Merkle Mountain Range) can be generated for them.
@@ -179,13 +180,11 @@ impl TestTransactionBuilder {
         mock_chain.prove_next_block().context("failed to prove first block")?;
         mock_chain.prove_next_block().context("failed to prove second block")?;
 
-        // Resolve the transaction inputs against the ad-hoc chain through the chain-coupled
-        // builder, instead of re-implementing the resolution. The account is passed by value so
-        // that it is used directly without requiring it to be committed to the chain. Once
-        // `build_tx_context` is replaced by `build_transaction`, only this call needs to change.
+        // Build the transaction against the ad-hoc chain through the public chain-coupled builder.
+        // The committed input notes are resolved as authenticated input notes by their ID.
         let mut builder = mock_chain
-            .build_tx_context(self.account, &input_note_ids, &[])
-            .context("failed to build transaction context from mock chain")?
+            .build_transaction(self.account)
+            .authenticated_input_notes(input_note_ids)
             .extend_advice_inputs(self.advice_inputs)
             .tx_script_args(self.tx_script_args)
             .auth_args(self.auth_args)

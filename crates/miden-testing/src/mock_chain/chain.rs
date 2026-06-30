@@ -35,7 +35,7 @@ use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializabl
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
-use crate::{MockChainBuilder, TransactionContextBuilder};
+use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder};
 
 // MOCK CHAIN
 // ================================================================================================
@@ -99,7 +99,8 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// // --------------------------------------------------------------------------------------------
 ///
 /// let transaction = mock_chain
-///     .build_tx_context(receiver.id(), &[note.id()], &[])?
+///     .build_transaction(receiver.id())
+///     .authenticated_input_note(note.id())
 ///     .build()?
 ///     .execute()
 ///     .await?;
@@ -135,7 +136,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType
 /// # };
-/// # use miden_testing::{Auth, MockChain, TransactionContextBuilder};
+/// # use miden_testing::{Auth, MockChain};
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<()> {
@@ -161,9 +162,12 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// let mock_chain = builder.build()?;
 ///
-/// // The target account is a new account so we move it into the build_tx_context, since the
+/// // The target account is a new account so we move it into the transaction builder, since the
 /// // chain's committed accounts do not yet contain it.
-/// let tx_context = mock_chain.build_tx_context(target, &[note.id()], &[])?.build()?;
+/// let tx_context = mock_chain
+///     .build_transaction(target)
+///     .authenticated_input_note(note.id())
+///     .build()?;
 /// let executed_transaction = tx_context.execute().await?;
 /// # Ok(())
 /// # }
@@ -609,9 +613,7 @@ impl MockChain {
         let input = input.into();
         let reference_block = reference_block.into();
 
-        let authenticator = self.account_authenticators.get(&input.id());
-        let authenticator =
-            authenticator.and_then(|authenticator| authenticator.authenticator().cloned());
+        let authenticator = self.account_authenticator(input.id());
 
         anyhow::ensure!(
             reference_block.as_usize() < self.blocks.len(),
@@ -619,23 +621,7 @@ impl MockChain {
             self.latest_block_header().block_num()
         );
 
-        let account = match input {
-            TxContextInput::AccountId(account_id) => {
-                if account_id.is_private() {
-                    return Err(anyhow::anyhow!(
-                        "transaction contexts for private accounts should be created with TxContextInput::Account"
-                    ));
-                }
-
-                self.committed_accounts
-                    .get(&account_id)
-                    .with_context(|| {
-                        format!("account {account_id} not found in committed accounts")
-                    })?
-                    .clone()
-            },
-            TxContextInput::Account(account) => account,
-        };
+        let account = self.resolve_tx_account(input)?;
 
         let tx_inputs = self
             .get_transaction_inputs_at(reference_block, &account, note_ids, unauthenticated_notes)
@@ -646,6 +632,48 @@ impl MockChain {
             .tx_inputs(tx_inputs);
 
         Ok(tx_context_builder)
+    }
+
+    /// Returns a [`MockTransactionBuilder`] for executing a transaction against this chain.
+    ///
+    /// This is the public entry point for creating and executing transactions against a concrete
+    /// [`MockChain`]. Contrary to [`Self::build_tx_context`], input notes are not passed up front
+    /// but added explicitly on the returned builder, and the transaction inputs are only resolved
+    /// against the chain once all input notes are known. See [`MockTransactionBuilder`] for
+    /// details.
+    pub fn build_transaction(
+        &self,
+        input: impl Into<TxContextInput>,
+    ) -> MockTransactionBuilder<'_> {
+        MockTransactionBuilder::new(self, input)
+    }
+
+    /// Resolves the account referenced by `input` into a concrete [`Account`].
+    ///
+    /// For [`TxContextInput::AccountId`], the public account committed to the chain is returned.
+    /// For [`TxContextInput::Account`], the account is returned as-is.
+    pub(crate) fn resolve_tx_account(&self, input: TxContextInput) -> anyhow::Result<Account> {
+        match input {
+            TxContextInput::AccountId(account_id) => {
+                anyhow::ensure!(
+                    !account_id.is_private(),
+                    "transaction contexts for private accounts should be created with TxContextInput::Account"
+                );
+
+                self.committed_account(account_id).cloned()
+            },
+            TxContextInput::Account(account) => Ok(account),
+        }
+    }
+
+    /// Returns the authenticator the chain holds for the given account, if any.
+    pub(crate) fn account_authenticator(
+        &self,
+        account_id: AccountId,
+    ) -> Option<BasicAuthenticator> {
+        self.account_authenticators
+            .get(&account_id)
+            .and_then(|authenticator| authenticator.authenticator().cloned())
     }
 
     /// Initializes a [`TransactionContextBuilder`] for executing against the last block header.
@@ -1239,7 +1267,7 @@ pub enum TxContextInput {
 
 impl TxContextInput {
     /// Returns the account ID that this input references.
-    fn id(&self) -> AccountId {
+    pub(crate) fn id(&self) -> AccountId {
         match self {
             TxContextInput::AccountId(account_id) => *account_id,
             TxContextInput::Account(account) => account.id(),

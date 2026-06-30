@@ -55,7 +55,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -80,7 +81,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
 
     // Execute the transaction and get the result
     let executed_transaction_2 = mock_chain
-        .build_tx_context(malicious_account.id(), &[], &[note])?
+        .build_transaction(malicious_account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await;
@@ -121,7 +123,8 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
 
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(target_account.clone(), &[note.id()], &[])?
+        .build_transaction(target_account.clone())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -170,7 +173,8 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_notes([note_1.id(), note_2.id()])
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
