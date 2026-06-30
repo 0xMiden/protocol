@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::block::{BlockNumber, BlockSignatures, ValidatorKeys};
+use crate::block::{BlockNumber, BlockSignatures, BlockSignaturesError, ValidatorKeys};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -254,26 +254,16 @@ impl BlockHeader {
             });
         }
 
-        // The signatures are positional against the parent's validator set: one slot per validator
-        // key, both fixed at [`ValidatorKeys::COUNT`].
-        let validator_keys = parent.validator_keys().as_keys();
+        // Verify the signatures positionally against the parent's validator set using the shared,
+        // canonical verifier. A filled signature that does not verify rejects the whole block.
+        let valid_signatures = signatures
+            .verify_against(self.commitment(), parent.validator_keys())
+            .map_err(|BlockSignaturesError::InvalidSignatureAtPosition { position }| {
+                ParentValidationError::InvalidSignatureAtPosition { position }
+            })?;
 
-        // Verify each filled signature against the validator key at the same position. A filled
-        // signature that does not verify rejects the whole block.
-        let block_commitment = self.commitment();
-        let mut valid_signatures = 0;
-        for (position, (slot, validator_key)) in
-            signatures.as_slots().iter().zip(validator_keys).enumerate()
-        {
-            if let Some(signature) = slot {
-                if !signature.verify(block_commitment, validator_key) {
-                    return Err(ParentValidationError::InvalidSignatureAtPosition { position });
-                }
-                valid_signatures += 1;
-            }
-        }
-
-        // The block must carry at least the minimum number of valid signatures.
+        // The block must carry at least the minimum number of valid signatures. This threshold is a
+        // validation policy and is intentionally not enforced by `BlockSignatures` itself.
         if valid_signatures < BlockSignatures::MIN_SIGNATURES {
             return Err(ParentValidationError::InsufficientSignatures {
                 valid: valid_signatures,
@@ -594,7 +584,7 @@ mod tests {
                 .expect("a signer should exist for every committed validator key");
             Some(signer.sign(message))
         });
-        BlockSignatures::new_unchecked(slots)
+        BlockSignatures::new(slots)
     }
 
     /// Builds a child of `parent` committing a fresh validator set as the signer of the *next*
@@ -670,7 +660,7 @@ mod tests {
             core::array::from_fn(|i| signatures.as_slots()[i].clone());
         // Replace a committed validator's signature with one from a key not in the set.
         slots[1] = Some(random_secret_key().sign(child.commitment()));
-        let signatures = BlockSignatures::new_unchecked(slots);
+        let signatures = BlockSignatures::new(slots);
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(

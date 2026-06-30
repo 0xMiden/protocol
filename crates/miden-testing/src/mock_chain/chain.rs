@@ -431,7 +431,7 @@ impl MockChain {
                 .expect("a signer should exist for every validator key");
             Some(signer.sign(commitment))
         });
-        BlockSignatures::new(slots).expect("the mock chain signs with at least the minimum quorum")
+        BlockSignatures::new(slots)
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.

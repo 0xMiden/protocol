@@ -265,7 +265,7 @@ mod tests {
                 .find(|sk| &sk.public_key() == key)
                 .map(|sk| sk.sign(header.commitment()))
         });
-        let signatures = BlockSignatures::new_unchecked(slots);
+        let signatures = BlockSignatures::new(slots);
         let body = BlockBody::new_unchecked(
             Vec::new(),
             Vec::new(),
@@ -291,7 +291,7 @@ mod tests {
 
         // Fill every slot with a signature from a key the parent never committed.
         let slots = core::array::from_fn(|_| Some(random_secret_key().sign(header.commitment())));
-        let signatures = BlockSignatures::new_unchecked(slots);
+        let signatures = BlockSignatures::new(slots);
         let body = BlockBody::new_unchecked(
             Vec::new(),
             Vec::new(),

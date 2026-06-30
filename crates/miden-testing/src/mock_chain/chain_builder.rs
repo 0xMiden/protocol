@@ -280,8 +280,7 @@ impl MockChainBuilder {
                 .expect("a signer should exist for every validator key");
             Some(signer.sign(header.commitment()))
         });
-        let signatures =
-            BlockSignatures::new(slots).expect("genesis is signed by the full validator set");
+        let signatures = BlockSignatures::new(slots);
         let block_proof = BlockProof::new_dummy();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
