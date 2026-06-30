@@ -14,6 +14,7 @@ use miden::standards::access::authority
 use miden::standards::access::pausable
 
 pub mod fungible
+pub mod non_fungible
 pub mod policies
 
 # =================================================================================================
