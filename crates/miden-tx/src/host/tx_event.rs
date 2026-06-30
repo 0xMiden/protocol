@@ -147,8 +147,7 @@ pub(crate) enum TransactionEvent {
     /// The data necessary to handle an auth request.
     AuthRequest {
         pub_key_commitment: PublicKeyCommitment,
-        tx_summary: TransactionSummary,
-        signature: Option<Vec<Felt>>,
+        tx_summary_or_signature: TxSummaryOrSignature,
     },
 
     Unauthorized {
@@ -163,21 +162,6 @@ pub(crate) enum TransactionEvent {
     },
 
     Progress(TransactionProgressEvent),
-}
-
-#[derive(Debug)]
-pub(crate) struct AssetPatch {
-    pub asset_key: AssetVaultKey,
-    /// The absolute value of `asset_key` in the vault before the operation.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation.
-    pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -494,18 +478,24 @@ impl TransactionEvent {
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
                 let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let signature = process
+                let auth_request = if let Some(signature) = process
                     .advice_provider()
                     .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec());
+                    .map(|slice| slice.to_vec())
+                {
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
+                    }
+                } else {
+                    let tx_summary = extract_tx_summary(base_host, process, message)?;
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
+                    }
+                };
 
-                let tx_summary = extract_tx_summary(base_host, process, message)?;
-
-                Some(TransactionEvent::AuthRequest {
-                    pub_key_commitment,
-                    tx_summary,
-                    signature,
-                })
+                Some(auth_request)
             },
 
             TransactionEventId::Unauthorized => {
@@ -579,6 +569,34 @@ impl TransactionEvent {
 
         Ok(tx_event)
     }
+}
+
+// TX SUMMARY OR SIGNATURE
+// ================================================================================================
+
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(crate) enum TxSummaryOrSignature {
+    TxSummary(TransactionSummary),
+    Signature(Vec<Felt>),
+}
+
+// ASSET PATCH AND DELTA
+// ================================================================================================
+
+#[derive(Debug)]
+pub(crate) struct AssetPatch {
+    pub asset_key: AssetVaultKey,
+    /// The absolute value of `asset_key` in the vault before the operation.
+    pub initial_vault_value: Word,
+    /// The absolute value of `asset_key` in the vault after the operation.
+    pub final_vault_value: Word,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
 }
 
 // RECIPIENT DATA

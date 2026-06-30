@@ -213,9 +213,9 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    let map_patch = tx.account_patch().storage().get_map(mock_map_slot).unwrap();
-    assert_eq!(map_patch.entries().get(&existing_key).unwrap(), &value0);
-    assert_eq!(map_patch.entries().get(&non_existent_key).unwrap(), &value1);
+    let storage_patch = tx.account_patch().storage();
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &existing_key), Some(value0));
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &non_existent_key), Some(value1));
 
     Ok(())
 }
