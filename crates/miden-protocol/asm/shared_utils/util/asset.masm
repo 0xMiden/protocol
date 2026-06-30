@@ -12,7 +12,7 @@ const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata com
 
 # Specifies the maximum amount a fungible asset can represent.
 #
-# This is 2^63 - 2^31. See account_delta.masm for more details.
+# This is 2^63 - 2^31. See account_update.masm for more details.
 pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
 
 # The number of elements in an asset, i.e. vault key and value.
@@ -121,6 +121,22 @@ pub proc fungible_to_amount
     # => [ASSET_KEY, [amount, 0, 0, 0]]
     dup.4
     # => [amount, ASSET_KEY, ASSET_VALUE]
+end
+
+#! Returns the asset ID of the given non-fungible asset value and consumes the value.
+#!
+#! WARNING: Assumes that the given asset value is non-fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [asset_id_suffix, asset_id_prefix]
+#!
+#! Where:
+#! - ASSET_VALUE is the non-fungible asset value, whose first two elements are the asset ID.
+#! - asset_id is the (suffix, prefix) pair of the non-fungible asset.
+pub proc non_fungible_value_into_asset_id
+    # => [asset_id_suffix, asset_id_prefix, value_2, value_3]
+    movup.3 drop movup.2 drop
+    # => [asset_id_suffix, asset_id_prefix]
 end
 
 #! Returns the faucet ID from an asset vault key.

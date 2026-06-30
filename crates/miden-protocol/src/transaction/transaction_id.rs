@@ -4,7 +4,6 @@ use core::fmt::{Debug, Display};
 use miden_crypto_derive::WordWrapper;
 
 use super::{Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
-use crate::asset::{Asset, FungibleAsset};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -36,7 +35,7 @@ pub struct TransactionId(Word);
 
 impl TransactionId {
     /// Length of the felt sequence hashed by [`Self::new`] / [`Self::input_elements`].
-    pub(crate) const INPUT_ELEMENTS_LEN: usize = 6 * WORD_SIZE;
+    pub(crate) const INPUT_ELEMENTS_LEN: usize = 4 * WORD_SIZE;
 
     /// Returns a new [TransactionId] instantiated from the provided transaction components.
     pub fn new(
@@ -44,21 +43,19 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        fee_asset: FungibleAsset,
     ) -> Self {
         Self(Hasher::hash_elements(&Self::input_elements(
             init_account_commitment,
             final_account_commitment,
             input_notes_commitment,
             output_notes_commitment,
-            fee_asset,
         )))
     }
 
     /// Returns the felt sequence that [`Self::new`] hashes to produce a [`TransactionId`].
     ///
     /// The layout is:
-    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4], FEE_ASSET[8]]`
+    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4]]`
     ///
     /// The batch kernel pipes this same felt sequence from the advice provider to memory and
     /// asserts the resulting hash matches a previously-verified `tx_id`.
@@ -67,14 +64,12 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        fee_asset: FungibleAsset,
     ) -> [Felt; Self::INPUT_ELEMENTS_LEN] {
         let mut elements = [ZERO; Self::INPUT_ELEMENTS_LEN];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
-        elements[16..].copy_from_slice(&Asset::from(fee_asset).as_elements());
         elements
     }
 }
@@ -101,7 +96,6 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.account_update().final_state_commitment(),
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
-            tx.fee(),
         )
     }
 }

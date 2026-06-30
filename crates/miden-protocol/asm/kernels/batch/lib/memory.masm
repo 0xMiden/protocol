@@ -22,27 +22,26 @@
 # |                   |                         | account_id_suffix, 0, 0]`        |
 # |                   |                         | (8 felts each, sized for up to   |
 # |                   |                         | 1024 transactions).              |
-# | 8212..32788       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
+# | 8212..24596       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
 # |                   |                         | transaction `[INIT, FINAL,       |
 # |                   |                         | INPUT_NOTES_COMMITMENT,          |
-# |                   |                         | OUTPUT_NOTES_COMMITMENT,         |
-# |                   |                         | FEE_ASSET[8]]` (24 felts each,   |
-# |                   |                         | sized for up to 1024             |
-# |                   |                         | transactions).                   |
-# | 32788..40980      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
+# |                   |                         | OUTPUT_NOTES_COMMITMENT]`        |
+# |                   |                         | (16 felts each, sized for up     |
+# |                   |                         | to 1024 transactions).           |
+# | 24596..32788      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
 # |                   |                         | for Layer 3a / Layer 3b note     |
 # |                   |                         | data (overwritten each tx).      |
-# | 40980..49172      | INPUT_NOTES_PTR         | Nullifier-sorted input-note      |
+# | 32788..40980      | INPUT_NOTES_PTR         | Nullifier-sorted input-note      |
 # |                   |                         | list: `[NULLIFIER,               |
 # |                   |                         | NOTE_ID_OR_EMPTY]` per note      |
 # |                   |                         | (8 felts each, up to 1024).      |
-# | 49172..53268      | INPUT_NOTE_FLAGS_PTR    | Parallel input-note flags:       |
+# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | Parallel input-note flags:       |
 # |                   |                         | `[erasure, consumption, 0, 0]`   |
 # |                   |                         | per note (4 felts each).         |
-# | 53268..61460      | OUTPUT_NOTES_PTR        | Note-id-sorted output-note       |
+# | 45076..53268      | OUTPUT_NOTES_PTR        | Note-id-sorted output-note       |
 # |                   |                         | list: `[NOTE_ID, 0, 0, 0,        |
 # |                   |                         | 0]` per note (8 felts each).     |
-# | 61460..65556      | OUTPUT_NOTE_FLAGS_PTR   | Parallel output-note flags:      |
+# | 53268..57364      | OUTPUT_NOTE_FLAGS_PTR   | Parallel output-note flags:      |
 # |                   |                         | `[will_be_erased, is_created,    |
 # |                   |                         | linked_input_index, 0]` per note |
 # |                   |                         | (4 felts each).                  |
@@ -85,13 +84,13 @@ pub const TX_TUPLES_PTR=20
 #! Number of felts each transaction occupies in TX_TUPLES_PTR.
 const TX_TUPLE_FELT_LEN=8
 
-#! Base of the Layer 2 piped data region. Per transaction, 24 felts:
-#!   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FEE_ASSET[8]]`.
+#! Base of the Layer 2 piped data region. Per transaction, 16 felts:
+#!   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]`.
 #! This must match the felt-sequence layout of `TransactionId::new`.
 const TX_HEADERS_PTR=8212
 
 #! Number of felts each transaction occupies in TX_HEADERS_PTR.
-const TX_HEADER_FELT_LEN=24
+const TX_HEADER_FELT_LEN=16
 
 #! Felt offset within a transaction header where INPUT_NOTES_COMMITMENT starts.
 const TX_HEADER_INPUT_NOTES_OFFSET=8
@@ -100,7 +99,7 @@ const TX_HEADER_INPUT_NOTES_OFFSET=8
 const TX_HEADER_OUTPUT_NOTES_OFFSET=12
 
 #! Per-transaction scratch space for Layer 3a / 3b note data, overwritten between iterations.
-pub const TX_NOTES_SCRATCH_PTR=32788
+pub const TX_NOTES_SCRATCH_PTR=24596
 
 # SORTED NOTE LISTS
 # =================================================================================================
@@ -110,7 +109,7 @@ pub const TX_NOTES_SCRATCH_PTR=32788
 #! where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
 #! note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
 #! of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
-pub const INPUT_NOTES_PTR=40980
+pub const INPUT_NOTES_PTR=32788
 
 #! Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
 pub const NOTE_ENTRY_FELT_LEN=8
@@ -120,7 +119,7 @@ pub const NOTE_ENTRY_FELT_LEN=8
 #! output note created by another transaction within this batch -- its "creator" -- which has not
 #! been processed yet) or 2 (erased: the creator output note has been processed). `consumption` is
 #! 0 or 1.
-pub const INPUT_NOTE_FLAGS_PTR=49172
+pub const INPUT_NOTE_FLAGS_PTR=40980
 
 #! Number of felts each note occupies in the flag arrays (one word).
 pub const NOTE_FLAGS_FELT_LEN=4
@@ -134,11 +133,11 @@ pub const INPUT_NOTE_CONSUMPTION_OFFSET=1
 #! Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #!   `[NOTE_ID, 0, 0, 0, 0]`
 #! where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
-pub const OUTPUT_NOTES_PTR=53268
+pub const OUTPUT_NOTES_PTR=45076
 
 #! Base of the parallel output-note flags array. Per note, one word
 #!   `[will_be_erased, is_created, linked_input_index, 0]`.
-pub const OUTPUT_NOTE_FLAGS_PTR=61460
+pub const OUTPUT_NOTE_FLAGS_PTR=53268
 
 #! Felt offset of the `will_be_erased` flag within an output-note flag word.
 pub const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET=0

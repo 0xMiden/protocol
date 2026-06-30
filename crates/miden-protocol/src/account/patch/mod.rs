@@ -1,14 +1,32 @@
 mod vault;
 
 mod storage;
+mod update_details;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
-pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
+pub use storage::{
+    AccountStoragePatch,
+    StorageMapPatch,
+    StorageMapPatchEntries,
+    StoragePatchOperation,
+    StorageSlotPatch,
+    StorageValuePatch,
+};
+pub use update_details::AccountUpdateDetails;
 pub use vault::AccountVaultPatch;
 
-use crate::account::{AccountCode, AccountId};
+use crate::account::{Account, AccountCode, AccountId, AccountStorage};
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
-use crate::errors::AccountPatchError;
+use crate::errors::{AccountError, AccountPatchError};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
@@ -19,6 +37,16 @@ use crate::{Felt, Word};
 /// USDC balance is 100". This means a patch can be applied to compute the new account state
 /// without loading the previous state and without invoking any custom asset compose logic (e.g.
 /// merge/split procedures defined by the issuing faucet).
+///
+/// ## Full and Partial State Patches
+///
+/// The presence of the code in a patch signals if the patch is a _full state_ or _partial state_
+/// patch. A full state patch must be converted into an [`Account`] object, while a partial state
+/// patch must be applied to an existing [`Account`]. Because a full state patch reconstructs the
+/// account from empty storage, its storage patch may only create slots, never update or remove
+/// them; [`AccountPatch::new`] enforces this. A full state patch can only be the base of a
+/// [`merge`](AccountPatch::merge), never the incoming patch (see its docs for the permutation
+/// rules).
 ///
 /// The patch represents updates to the account as follows:
 /// - storage: an [`AccountStoragePatch`] containing the new values of changed storage slots and map
@@ -67,8 +95,10 @@ impl AccountPatch {
     /// - `final_nonce` is `Some(Felt::ZERO)`. The tx kernel guarantees that an updated nonce is at
     ///   least one, so a zero nonce is never a valid post-tx-state. Empty patches must be
     ///   constructed with `None` instead.
-    /// - `storage` or `vault` contain updates but `final_nonce` is `None`. The tx kernel mandates
-    ///   that the nonce is incremented whenever account state changes.
+    /// - `storage` or `vault` contain updates or code is present but `final_nonce` is `None`. The
+    ///   tx kernel mandates that the nonce is incremented whenever account state changes.
+    /// - `final_nonce` is 1 but `code` is not `Some`. Such a patch describes a new account and
+    ///   should be convertible into a full [`Account`], so account code is required.
     pub fn new(
         account_id: AccountId,
         storage: AccountStoragePatch,
@@ -83,16 +113,29 @@ impl AccountPatch {
             return Err(AccountPatchError::FinalNonceIsZero);
         }
 
-        // If account storage or vault were updated the nonce cannot be zero, as mandated by the tx
-        // kernel
-        if (!storage.is_empty() || !vault.is_empty()) && final_nonce.is_none() {
-            return Err(AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
+        // If account storage or vault were updated or code is present, the patch represents a state
+        // change and so the nonce cannot be zero. The tx kernel mandates this (except it does not
+        // consider code yet).
+        if (!storage.is_empty() || !vault.is_empty() || code.is_some()) && final_nonce.is_none() {
+            return Err(AccountPatchError::StateChangeRequiresNonceUpdate);
         }
 
-        // Code must be provided for new accounts (nonce = 1) to be able to reconstruct the full
-        // Account.
+        // Code must be provided for new accounts to be able to reconstruct the full Account.
+        // New accounts are defined with nonce 0, but here we have the post-creation
+        // final nonce, so we define new accounts as having final_nonce = 1.
         if final_nonce.is_some_and(|final_nonce| final_nonce == Felt::ONE) && code.is_none() {
             return Err(AccountPatchError::CodeMustBeProvidedForNewAccounts);
+        }
+
+        // A full state patch (carrying code) must reconstruct the account from empty storage, so it
+        // may only create slots. An `Update` or `Remove` assumes the slot already exists and would
+        // make reconstruction impossible.
+        //
+        // It is not required that the vault patch contains no remove operations, since valid
+        // patches could be merged that add and remove an asset and so even a full state
+        // patch can validly end up with remove operations.
+        if code.is_some() && storage.contains_non_create_ops() {
+            return Err(AccountPatchError::FullStatePatchContainsNonCreateStorageOp);
         }
 
         Ok(Self {
@@ -102,6 +145,105 @@ impl AccountPatch {
             code,
             final_nonce,
         })
+    }
+
+    /// Returns an empty patch for the provided account ID.
+    pub fn empty(account_id: AccountId) -> Self {
+        AccountPatch::new(
+            account_id,
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            None,
+            None,
+        )
+        .expect("empty patch should be valid")
+    }
+
+    // PUBLIC MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Merges the `other` [`AccountPatch`] into this one with patch semantics: entries present in
+    /// `other` overwrite their counterparts in `self`, and `other.final_nonce`, if present,
+    /// becomes the new final nonce.
+    ///
+    /// Both patches must apply to the same account, and `other.final_nonce` must be exactly one
+    /// greater than `self.final_nonce` whenever both are set. The exact `+1` requirement reflects
+    /// the tx kernel invariants that (a) a state-changing transaction must increment the nonce,
+    /// and (b) the nonce can be incremented at most once per transaction. As a consequence
+    /// the patch of the next transaction always lands at `self.final_nonce + 1`. The same nonce in
+    /// both patches represents a fork and a nonce delta larger than 1 means a missed transaction.
+    ///
+    /// ## Full and Partial State
+    ///
+    /// The patches' full/partial state determines whether the merge is allowed. In short, the
+    /// incoming patch (`other`) must never be a full state patch. In more detail:
+    /// - `full_state + partial_state`: allowed. The full state (account-creation) patch is the base
+    ///   and later partial patches layer on top of it.
+    /// - `partial_state + partial_state`: allowed. Both are incremental updates.
+    /// - `partial_state + full_state`: disallowed. A full state patch describes the account's
+    ///   initial state, so it cannot follow an earlier (partial) patch.
+    /// - `full_state + full_state`: disallowed. An account is created once, so two creation patches
+    ///   cannot both apply.
+    ///
+    /// Empty patches are neutral and handled before this rule: merging into an empty `self` adopts
+    /// `other`, and merging an empty `other` is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the two patches apply to different accounts.
+    /// - both patches carry a final nonce and the nonce in `other` is not exactly one greater than
+    ///   the nonce in `self`.
+    /// - the incoming patch (`other`) is a full state patch (see permutations above).
+    /// - a storage slot is used as different slot types in the two patches.
+    pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
+        if self.account_id != other.account_id {
+            return Err(AccountPatchError::AccountIdMismatch {
+                expected: self.account_id,
+                actual: other.account_id,
+            });
+        }
+
+        match (self.final_nonce, other.final_nonce) {
+            // Both patches are empty, nothing to merge.
+            (None, None) => return Ok(()),
+
+            // `self` is empty, so `other` becomes the merged result.
+            (None, Some(_)) => {
+                *self = other;
+                return Ok(());
+            },
+
+            // `other` is empty, nothing to merge.
+            (Some(_), None) => return Ok(()),
+
+            (Some(current), Some(new)) => {
+                if new != current + Felt::ONE {
+                    return Err(AccountPatchError::NonceMustIncrementByOne { current, new });
+                }
+                self.final_nonce = Some(new);
+            },
+        }
+
+        // A full state patch describes account creation and can only be the merge base (`self`),
+        // never the incoming patch.
+        if other.is_full_state() {
+            return Err(AccountPatchError::MergeIncomingFullStatePatch);
+        }
+
+        self.storage.merge(other.storage)?;
+        self.vault.merge(other.vault);
+
+        // A full state `self` contains all of its slots as `Create`, so merging a partial patch
+        // only ever updates a created slot (staying `Create`) or removes it (dropping the patch
+        // entirely), preserving the invariant that full state patches contain only `Create`s.
+        // Check that we have either a partial patch or only storage creates.
+        debug_assert!(
+            !self.is_full_state() || !self.storage.contains_non_create_ops(),
+            "merging should never add storage updates or removals to a full state patch",
+        );
+
+        Ok(())
     }
 
     // PUBLIC ACCESSORS
@@ -131,6 +273,22 @@ impl AccountPatch {
     /// the nonce wasn't updated.
     pub fn final_nonce(&self) -> Option<Felt> {
         self.final_nonce
+    }
+
+    /// Returns `true` if this patch is a "full state" patch, `false` otherwise, i.e. if it is a
+    /// "partial state" patch.
+    ///
+    /// See the type-level docs for more on this distinction.
+    pub fn is_full_state(&self) -> bool {
+        // TODO(code_upgrades): Change this to another detection mechanism once we have code upgrade
+        // support, at which point the presence of code may not be enough of an indication that a
+        // patch can be converted to a full account.
+        //
+        // The presence of code alone is sufficient to identify a full state patch: the constructor
+        // enforces that `code.is_some()` implies `final_nonce.is_some()` and that the storage patch
+        // contains only `Create` ops, and `merge` preserves both, so a code-carrying patch always
+        // reconstructs a full account.
+        self.code.is_some()
     }
 
     /// Returns true if this account patch does not contain any vault or storage updates and the
@@ -172,27 +330,74 @@ impl AccountPatch {
     ///       `num_changed_assets` is the number of assets that were appended. Note that this is a
     ///       distinct domain from the delta asset domain (`3`), so an asset delta and an asset
     ///       patch can never produce the same commitment.
-    /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
-    ///   value has changed**, depending on the slot type:
+    /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
+    ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
+    ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
+    ///   slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 5, 0, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
-    ///       `NEW_VALUE` is the new value of the slot and `slot_id_{suffix, prefix}` is the
-    ///       identifier of the slot.
+    ///     - Append `[[domain = 5, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///       `NEW_VALUE` is the new value of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - Append `[[domain = 6, num_changed_entries, slot_id_suffix, slot_id_prefix], 0, 0, 0,
-    ///       0]`, where `slot_id_{suffix, prefix}` are the slot identifiers and
-    ///       `num_changed_entries` is the number of changed key-value pairs in the map.
-    ///         - For partial state deltas, the map header must only be included if
-    ///           `num_changed_entries` is not zero.
-    ///         - For full state deltas, the map header must always be included.
+    ///     - The map trailer is constructed as `[[domain = 6, patch_op, slot_id_suffix,
+    ///       slot_id_prefix], [num_changed_entries, 0, 0, 0]]`, where `num_changed_entries` is the
+    ///       number of key-value pairs appended above. Whether the trailer is included depends on
+    ///       `patch_op`:
+    ///         - For
+    ///           [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create),
+    ///           the trailer is always included, since the slot's creation must be committed to even
+    ///           when the map is created empty (`num_changed_entries == 0`).
+    ///         - For
+    ///           [`StoragePatchOperation::Update`](crate::account::StoragePatchOperation::Update),
+    ///           the trailer is included only if `num_changed_entries != 0`. An update that changes
+    ///           no entries is a no-op and is omitted entirely.
+    ///         - For
+    ///           [`StoragePatchOperation::Remove`](crate::account::StoragePatchOperation::Remove),
+    ///           the trailer is always included with `num_changed_entries` set to zero, since the
+    ///           number of removed entries is unknown.
     ///
     /// Headers for storage map slots and asset patches are appended rather than prepended since the
     /// tx kernel cannot efficiently get the number of changed entries before the iteration.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
+    }
+}
+
+impl TryFrom<&AccountPatch> for Account {
+    type Error = AccountError;
+
+    /// Converts an [`AccountPatch`] into an [`Account`].
+    ///
+    /// Conceptually, this applies the patch onto an empty account. Only patches that fully
+    /// describe an account (i.e. carry account code and a final nonce) can be converted; see
+    /// [`AccountPatch`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The patch does not carry account code or a final nonce.
+    /// - Applying the vault patch to an empty vault fails.
+    /// - Applying the storage patch to empty storage fails.
+    fn try_from(patch: &AccountPatch) -> Result<Self, Self::Error> {
+        if !patch.is_full_state() {
+            return Err(AccountError::PartialStatePatchToAccount);
+        }
+
+        // The constructor guarantees that a full state patch carries both code and a final nonce.
+        let code = patch.code().cloned().expect("full state patch must carry code");
+        let nonce = patch.final_nonce().expect("full state patch must carry final nonce");
+
+        let mut vault = AssetVault::default();
+        vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
+
+        // A full state patch consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
+        let mut storage = AccountStorage::default();
+        storage.apply_patch(patch.storage())?;
+
+        Account::new(patch.id(), vault, storage, code, nonce, None)
     }
 }
 
@@ -237,19 +442,108 @@ impl SequentialCommit for AccountPatch {
     }
 }
 
+impl Serializable for AccountPatch {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        self.account_id.write_into(target);
+        self.storage.write_into(target);
+        self.vault.write_into(target);
+        self.code.write_into(target);
+        self.final_nonce.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.account_id.get_size_hint()
+            + self.storage.get_size_hint()
+            + self.vault.get_size_hint()
+            + self.code.get_size_hint()
+            + self.final_nonce.get_size_hint()
+    }
+}
+
+impl Deserializable for AccountPatch {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let account_id = AccountId::read_from(source)?;
+        let storage = AccountStoragePatch::read_from(source)?;
+        let vault = AccountVaultPatch::read_from(source)?;
+        let code = <Option<AccountCode>>::read_from(source)?;
+        let final_nonce = <Option<Felt>>::read_from(source)?;
+
+        Self::new(account_id, storage, vault, code, final_nonce)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_core::serde::Deserializable;
+    use rstest::rstest;
 
     use super::{AccountPatch, AccountVaultPatch};
-    use crate::Felt;
-    use crate::account::{AccountCode, AccountId, AccountStoragePatch, StorageSlotName};
-    use crate::asset::FungibleAsset;
-    use crate::errors::AccountPatchError;
-    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::account::{
+        Account,
+        AccountCode,
+        AccountId,
+        AccountStoragePatch,
+        StorageMapKey,
+        StorageMapPatch,
+        StorageSlotName,
+        StorageSlotPatch,
+        StorageValuePatch,
+    };
+    use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+    use crate::errors::{AccountError, AccountPatchError};
+    use crate::testing::account_id::{
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    };
+    use crate::utils::serde::Serializable;
+    use crate::{Felt, Word};
+
+    fn patch_id() -> AccountId {
+        AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
+    }
+
+    #[test]
+    fn account_patch_serde() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+        let asset_0 = FungibleAsset::mock(100);
+        let asset_1 = FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_2 = NonFungibleAsset::mock(&[10]);
+        let asset_3 = NonFungibleAsset::mock(&[20]);
+        let vault_patch = AccountVaultPatch::with_assets([asset_0, asset_1, asset_2, asset_3]);
+
+        let storage_patch = AccountStoragePatch::from_iters(
+            [StorageSlotName::mock(1)],
+            [
+                (StorageSlotName::mock(2), Word::from([1, 1, 1, 1u32])),
+                (StorageSlotName::mock(3), Word::from([1, 1, 0, 1u32])),
+            ],
+            [(
+                StorageSlotName::mock(4),
+                StorageMapPatch::from_iters(
+                    [
+                        StorageMapKey::from_array([1, 1, 1, 0]),
+                        StorageMapKey::from_array([0, 1, 1, 1]),
+                    ],
+                    [(StorageMapKey::from_array([1, 1, 1, 1]), Word::from([1, 1, 1, 1u32]))],
+                ),
+            )],
+        );
+
+        assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
+        assert_eq!(vault_patch.to_bytes().len(), vault_patch.get_size_hint());
+
+        let account_patch =
+            AccountPatch::new(account_id, storage_patch, vault_patch, None, Some(Felt::from(5u8)))?;
+        assert_eq!(AccountPatch::read_from_bytes(&account_patch.to_bytes())?, account_patch);
+        assert_eq!(account_patch.to_bytes().len(), account_patch.get_size_hint());
+
+        Ok(())
+    }
 
     /// A `final_nonce` set to `Some(Felt::ZERO)` is rejected: the tx kernel guarantees the nonce of
     /// an updated account is at least one, so empty patches must pass `None` instead.
@@ -271,28 +565,34 @@ mod tests {
         Ok(())
     }
 
-    /// A patch that updates storage or the vault but leaves `final_nonce` as `None` is rejected,
-    /// since any account state change requires the nonce to be incremented.
+    /// A patch that updates storage, the vault, or carries code but leaves `final_nonce` as `None`
+    /// is rejected, since any account state change requires the nonce to be incremented.
+    #[rstest::rstest]
+    #[case::non_empty_storage(
+        AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []),
+        AccountVaultPatch::default(),
+        None,
+    )]
+    #[case::non_empty_vault(
+        AccountStoragePatch::new(),
+        AccountVaultPatch::with_assets([FungibleAsset::mock(100)]),
+        None,
+    )]
+    #[case::present_code(
+        AccountStoragePatch::new(),
+        AccountVaultPatch::default(),
+        Some(AccountCode::mock())
+    )]
     #[test]
-    fn account_patch_non_empty_with_no_nonce_update() -> anyhow::Result<()> {
+    fn account_patch_with_state_change_requires_nonce_update(
+        #[case] storage: AccountStoragePatch,
+        #[case] vault: AccountVaultPatch,
+        #[case] code: Option<AccountCode>,
+    ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        let non_empty_storage = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
-        let storage_error = AccountPatch::new(
-            account_id,
-            non_empty_storage,
-            AccountVaultPatch::default(),
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert_matches!(storage_error, AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
-
-        let non_empty_vault = AccountVaultPatch::with_assets([FungibleAsset::mock(100)]);
-        let vault_error =
-            AccountPatch::new(account_id, AccountStoragePatch::new(), non_empty_vault, None, None)
-                .unwrap_err();
-        assert_matches!(vault_error, AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
+        let error = AccountPatch::new(account_id, storage, vault, code, None).unwrap_err();
+        assert_matches!(error, AccountPatchError::StateChangeRequiresNonceUpdate);
 
         Ok(())
     }
@@ -321,6 +621,448 @@ mod tests {
             Some(AccountCode::mock()),
             Some(Felt::ONE),
         )?;
+
+        Ok(())
+    }
+
+    /// A patch carrying account code and a final nonce can be converted to an [`Account`] and back,
+    /// preserving all components.
+    #[test]
+    fn account_patch_roundtrip() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let code = AccountCode::mock();
+        let asset = FungibleAsset::mock(42);
+
+        let slot_name = StorageSlotName::mock(4);
+        let slot_value = Word::from([1, 2, 3, 4u32]);
+
+        // A full state patch is composed of `Create` slot patches.
+        let storage_patch = AccountStoragePatch::from_entries([(
+            slot_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: slot_value }),
+        )])?;
+
+        let patch = AccountPatch::new(
+            account_id,
+            storage_patch,
+            AccountVaultPatch::with_assets([asset]),
+            Some(code.clone()),
+            Some(Felt::ONE),
+        )?;
+
+        let account = Account::try_from(&patch)?;
+
+        assert_eq!(account.id(), account_id);
+        assert_eq!(account.code(), &code);
+        assert_eq!(account.nonce(), Felt::ONE);
+        assert_eq!(account.storage().get_item(&slot_name)?, slot_value);
+        assert_eq!(account.vault().get(asset.vault_key()), Some(asset));
+
+        // Roundtrip back to a patch should reproduce the original.
+        let roundtripped_patch = AccountPatch::try_from(account)?;
+        assert_eq!(roundtripped_patch, patch);
+
+        Ok(())
+    }
+
+    /// A patch lacking code cannot be converted to an [`Account`], whether or not a final nonce
+    /// is present.
+    #[rstest::rstest]
+    #[case::missing_code(Some(Felt::from(2_u32)))]
+    #[case::empty_patch(None)]
+    #[test]
+    fn account_try_from_partial_patch_fails(
+        #[case] final_nonce: Option<Felt>,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        let patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            None,
+            final_nonce,
+        )?;
+        assert_matches!(
+            Account::try_from(&patch).unwrap_err(),
+            AccountError::PartialStatePatchToAccount
+        );
+
+        Ok(())
+    }
+
+    /// A full state patch (carrying code) must only contain `Create` storage ops, since an `Update`
+    /// or `Remove` could not be applied to the empty storage of a new account.
+    #[rstest]
+    #[case::update(
+        AccountStoragePatch::builder().update_value(StorageSlotName::mock(1), Word::empty()).build()
+    )]
+    #[case::remove(
+        AccountStoragePatch::builder().remove_value(StorageSlotName::mock(1)).build()
+    )]
+    fn account_patch_new_rejects_full_state_with_non_create_op(
+        #[case] storage: AccountStoragePatch,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        let error = AccountPatch::new(
+            account_id,
+            storage,
+            AccountVaultPatch::default(),
+            Some(AccountCode::mock()),
+            Some(Felt::ONE),
+        )
+        .unwrap_err();
+        assert_matches!(error, AccountPatchError::FullStatePatchContainsNonCreateStorageOp);
+
+        Ok(())
+    }
+
+    /// A full state patch whose storage only creates slots can be reconstructed into an account.
+    #[test]
+    fn account_patch_full_state_with_create_reconstructs() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let code = AccountCode::mock();
+        let created_slot = StorageSlotName::mock(1);
+        let created_value = Word::from([7u32, 0, 0, 0]);
+
+        let storage = AccountStoragePatch::builder()
+            .create_value(created_slot.clone(), created_value)
+            .build();
+
+        let patch = AccountPatch::new(
+            account_id,
+            storage,
+            AccountVaultPatch::default(),
+            Some(code.clone()),
+            Some(Felt::ONE),
+        )?;
+
+        assert!(patch.is_full_state());
+
+        let account = Account::try_from(&patch)?;
+        assert_eq!(account.code(), &code);
+        assert_eq!(account.storage().get_item(&created_slot)?, created_value);
+
+        Ok(())
+    }
+
+    // MERGE TESTS
+    // ============================================================================================
+
+    /// Returns a full-state patch with a single created value slot and the provided final
+    /// nonce.
+    fn full_patch(account_id: AccountId, final_nonce: u32) -> anyhow::Result<AccountPatch> {
+        let storage_patch = AccountStoragePatch::builder()
+            .create_value(StorageSlotName::mock(1), Word::from([1u32, 0, 0, 0]))
+            .build();
+
+        AccountPatch::new(
+            account_id,
+            storage_patch,
+            AccountVaultPatch::default(),
+            Some(AccountCode::mock()),
+            Some(Felt::from(final_nonce)),
+        )
+        .map_err(Into::into)
+    }
+
+    /// Returns a partial-state patch with a single updated value slot and the provided final
+    /// nonce.
+    fn partial_patch(account_id: AccountId, final_nonce: u32) -> anyhow::Result<AccountPatch> {
+        let storage = AccountStoragePatch::from_iters(
+            [],
+            [(StorageSlotName::mock(1), Word::from([1u32, 0, 0, 0]))],
+            [],
+        );
+        AccountPatch::new(
+            account_id,
+            storage,
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(final_nonce)),
+        )
+        .map_err(Into::into)
+    }
+
+    #[test]
+    fn account_patch_merge_rejects_id_mismatch() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let other_account_id =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+
+        let mut patch = partial_patch(account_id, 2)?;
+        let other = partial_patch(other_account_id, 3)?;
+
+        assert_matches!(
+            patch.merge(other).unwrap_err(),
+            AccountPatchError::AccountIdMismatch { expected, actual } => {
+                assert_eq!(expected, account_id);
+                assert_eq!(actual, other_account_id);
+            }
+        );
+
+        Ok(())
+    }
+
+    /// A full state patch describes account creation and can only be the merge base, never the
+    /// incoming patch, so merging it into a partial or full patch is rejected.
+    #[rstest]
+    #[case::partial_state_plus_full_state(
+        partial_patch(patch_id(), 3)?
+    )]
+    #[case::full_state_plus_full_state(
+        full_patch(patch_id(), 3)?
+    )]
+    fn account_patch_merge_rejects_incoming_full_state(
+        #[case] mut patch: AccountPatch,
+    ) -> anyhow::Result<()> {
+        let other = full_patch(patch_id(), 4)?;
+        assert_matches!(
+            patch.merge(other).unwrap_err(),
+            AccountPatchError::MergeIncomingFullStatePatch
+        );
+
+        Ok(())
+    }
+
+    #[rstest::rstest]
+    #[case::equal(3, 3)]
+    #[case::smaller(3, 2)]
+    #[case::gap(3, 5)]
+    fn account_patch_merge_rejects_non_incrementing_nonce(
+        #[case] self_nonce: u32,
+        #[case] other_nonce: u32,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let mut patch = partial_patch(account_id, self_nonce)?;
+        let other = partial_patch(account_id, other_nonce)?;
+
+        assert_matches!(
+            patch.merge(other).unwrap_err(),
+            AccountPatchError::NonceMustIncrementByOne { current, new } => {
+                assert_eq!(current, Felt::from(self_nonce));
+                assert_eq!(new, Felt::from(other_nonce));
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_patch_merge_rejects_storage_slot_type_conflict() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let shared_slot = StorageSlotName::mock(7);
+
+        let value_storage = AccountStoragePatch::from_iters(
+            [],
+            [(shared_slot.clone(), Word::from([9u32, 0, 0, 0]))],
+            [],
+        );
+        let map_storage = AccountStoragePatch::from_iters(
+            [],
+            [],
+            [(shared_slot.clone(), StorageMapPatch::from_iters([], []))],
+        );
+
+        let mut patch = AccountPatch::new(
+            account_id,
+            value_storage,
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2u32)),
+        )?;
+        let other = AccountPatch::new(
+            account_id,
+            map_storage,
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(3u32)),
+        )?;
+
+        assert_matches!(
+            patch.merge(other).unwrap_err(),
+            AccountPatchError::StorageSlotUsedAsDifferentTypes(slot) => {
+                assert_eq!(slot, shared_slot);
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_patch_merge_overrides_vault_entry() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let asset_initial: Asset = FungibleAsset::mock(100);
+        let asset_updated: Asset = FungibleAsset::mock(250);
+        assert_eq!(asset_initial.vault_key(), asset_updated.vault_key());
+
+        let mut patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::with_assets([asset_initial]),
+            None,
+            Some(Felt::from(2u32)),
+        )?;
+        let other = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::with_assets([asset_updated]),
+            None,
+            Some(Felt::from(3u32)),
+        )?;
+
+        patch.merge(other)?;
+
+        assert_eq!(patch.vault().num_assets(), 1);
+        assert_eq!(
+            patch.vault().as_map().get(&asset_updated.vault_key()).copied(),
+            Some(asset_updated.to_value_word())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_patch_merge_overrides_storage_value() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let slot_name = StorageSlotName::mock(1);
+        let initial_value = Word::from([1u32, 0, 0, 0]);
+        let updated_value = Word::from([2u32, 0, 0, 0]);
+
+        let mut patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::from_iters([], [(slot_name.clone(), initial_value)], []),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2u32)),
+        )?;
+        let other = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::from_iters([], [(slot_name.clone(), updated_value)], []),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(3u32)),
+        )?;
+
+        patch.merge(other)?;
+
+        assert_eq!(patch.storage().num_slots(), 1);
+        assert_eq!(patch.storage().updated_value(&slot_name), Some(updated_value));
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_patch_merge_extends_storage_map() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let map_slot = StorageSlotName::mock(1);
+        let key_self = StorageMapKey::from_array([1, 0, 0, 0]);
+        let value_self = Word::from([10u32, 0, 0, 0]);
+        let key_other = StorageMapKey::from_array([2, 0, 0, 0]);
+        let value_other = Word::from([20u32, 0, 0, 0]);
+
+        let mut patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::from_iters(
+                [],
+                [],
+                [(map_slot.clone(), StorageMapPatch::from_iters([], [(key_self, value_self)]))],
+            ),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2u32)),
+        )?;
+        let other = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::from_iters(
+                [],
+                [],
+                [(map_slot.clone(), StorageMapPatch::from_iters([], [(key_other, value_other)]))],
+            ),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(3u32)),
+        )?;
+
+        patch.merge(other)?;
+
+        assert_eq!(patch.storage().num_slots(), 1);
+        assert_eq!(patch.storage().updated_map(&map_slot).unwrap().num_entries(), 2);
+        assert_eq!(patch.storage().updated_map_item(&map_slot, &key_self), Some(value_self));
+        assert_eq!(patch.storage().updated_map_item(&map_slot, &key_other), Some(value_other));
+
+        Ok(())
+    }
+
+    /// A full state patch as the merge base, with a partial patch updating one of its created
+    /// slots, stays a full state patch carrying only `Create` ops.
+    #[test]
+    fn account_patch_merge_full_base_with_partial_stays_full_state() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let code = AccountCode::mock();
+        let slot_name = StorageSlotName::mock(1);
+        let created_value = Word::from([1u32, 0, 0, 0]);
+        let updated_value = Word::from([2u32, 0, 0, 0]);
+
+        // Full state base: a created value slot, code and the account-creation nonce of 1.
+        let mut patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::builder()
+                .create_value(slot_name.clone(), created_value)
+                .build(),
+            AccountVaultPatch::default(),
+            Some(code.clone()),
+            Some(Felt::ONE),
+        )?;
+
+        // Partial patch updating the same slot in the next transaction.
+        let other = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::builder()
+                .update_value(slot_name.clone(), updated_value)
+                .build(),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2u32)),
+        )?;
+
+        patch.merge(other)?;
+
+        assert!(patch.is_full_state());
+        assert_eq!(patch.code(), Some(&code));
+        assert_eq!(patch.final_nonce(), Some(Felt::from(2u32)));
+        assert!(!patch.storage().contains_non_create_ops());
+        assert_eq!(patch.storage().created_value(&slot_name), Some(updated_value));
+
+        Ok(())
+    }
+
+    /// A + B_empty = A
+    #[test]
+    fn account_patch_merge_empty_other_is_noop() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let mut patch = partial_patch(account_id, 4)?;
+        let snapshot = patch.clone();
+
+        let empty = AccountPatch::empty(account_id);
+
+        patch.merge(empty)?;
+        assert_eq!(patch, snapshot);
+
+        Ok(())
+    }
+
+    /// A_empty + B = B
+    #[test]
+    fn account_patch_merge_empty_self_adopts_other() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let mut empty = AccountPatch::empty(account_id);
+        let other = partial_patch(account_id, 7)?;
+        let expected = other.clone();
+
+        empty.merge(other)?;
+        assert_eq!(empty, expected);
 
         Ok(())
     }

@@ -16,7 +16,7 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistOwnerControlled,
@@ -84,6 +84,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
                 .active_receive_policy(TransferPolicy::empty_basic_blocklist())
                 .build(),
         )
+        .with_component(Pausable::unpaused())
         .with_component(BlocklistOwnerControlled);
 
     builder.add_account_from_builder(

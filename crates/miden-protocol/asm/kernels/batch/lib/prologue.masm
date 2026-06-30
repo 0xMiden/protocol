@@ -153,15 +153,14 @@ end
 #!   Advice map:
 #!     BATCH_ID |-> [(tx_id_0, account_id_0_pair), (tx_id_1, account_id_1_pair), ...]
 #!     For each verified tx_id_i:
-#!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
-#!                    FEE_ASSET_i]
+#!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i]
 #!
 #! Outputs:
 #!   Operand stack: []
 #!
 #! Panics if:
 #! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
-#! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FEE_ASSET)`
+#! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)`
 #!   data piped from the advice map does not hash to its `tx_id`.
 #!
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at

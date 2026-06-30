@@ -135,7 +135,6 @@ impl BatchKernel {
                 tx.account_update().final_state_commitment(),
                 tx.input_notes().commitment(),
                 tx.output_notes().commitment(),
-                tx.fee(),
             );
             advice_inputs.map.extend([(tx.id().as_word(), header_data.to_vec())]);
 

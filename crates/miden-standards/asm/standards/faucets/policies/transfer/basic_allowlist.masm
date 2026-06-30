@@ -17,8 +17,12 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
 #! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - custom_data is `0` for the receive (account) callback and the output note index for the
+#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
 #!
 #! Panics if:
 #! - the native account is not allowed on the issuing faucet.
@@ -26,10 +30,10 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Invocation: call
 pub proc check_policy
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
 
     exec.allowlist::assert_allowed
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
 
     dropw
     # => [ASSET_VALUE, pad(12)]

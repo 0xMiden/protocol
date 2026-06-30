@@ -42,6 +42,7 @@ use miden_protocol::account::{
     AccountDelta,
     AccountHeader,
     AccountId,
+    AccountPatch,
     AccountStorageHeader,
     PartialAccount,
     StorageMapKey,
@@ -59,7 +60,12 @@ use miden_protocol::transaction::{
     TransactionMeasurements,
     TransactionSummary,
 };
-pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
+pub(crate) use tx_event::{
+    RecipientData,
+    TransactionEvent,
+    TransactionProgressEvent,
+    TxSummaryOrSignature,
+};
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
@@ -197,10 +203,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.update_tracker.into_delta(), self.input_notes, output_notes)
+        (self.update_tracker.into_patch(), self.input_notes, output_notes)
     }
 
     // MUTATORS
@@ -363,7 +369,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         slot_name: StorageSlotName,
         new_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.storage().set_item(slot_name, new_value);
+        self.update_tracker.storage().set_item(slot_name, new_value)?;
 
         Ok(Vec::new())
     }
@@ -378,7 +384,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         self.update_tracker
             .storage()
-            .set_map_item(slot_name, key, old_map_value, new_map_value);
+            .set_map_item(slot_name, key, old_map_value, new_map_value)?;
 
         Ok(Vec::new())
     }

@@ -6,13 +6,19 @@ use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, MastForestStore, ProcessorState};
 use miden_protocol::Word;
-use miden_protocol::account::{AccountDelta, PartialAccount};
+use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 use miden_protocol::vm::{EventId, EventName};
 
-use crate::host::{RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent};
+use crate::host::{
+    RecipientData,
+    ScriptMastForestStore,
+    TransactionBaseHost,
+    TransactionEvent,
+    TxSummaryOrSignature,
+};
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
 
 /// The transaction prover host is responsible for handling [`Host`] requests made by the
@@ -55,7 +61,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         self.base_host.into_parts()
     }
 }
@@ -185,8 +191,8 @@ where
                 .on_note_before_add_attachment(note_idx, attachment)
                 .map(|_| Vec::new()),
 
-            TransactionEvent::AuthRequest { signature, .. } => {
-                if let Some(signature) = signature {
+            TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
+                if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {
                     Ok(self.base_host.on_auth_requested(signature))
                 } else {
                     Err(TransactionKernelError::other(
@@ -201,11 +207,6 @@ where
                     tx_summary.to_commitment()
                 )))
             },
-
-            // We don't track enough information to handle this event. Since this just improves
-            // error messages for users and the error should not be relevant during proving, we
-            // ignore it.
-            TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { .. } => Ok(Vec::new()),
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
             TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

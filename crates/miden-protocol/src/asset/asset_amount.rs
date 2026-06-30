@@ -32,6 +32,9 @@ impl AssetAmount {
     /// The zero amount.
     pub const ZERO: Self = Self(0);
 
+    /// The serialized size of an [`AssetAmount`] in bytes.
+    pub const SERIALIZED_SIZE: usize = core::mem::size_of::<u64>();
+
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
     /// # Errors

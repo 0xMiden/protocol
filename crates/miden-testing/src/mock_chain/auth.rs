@@ -4,13 +4,15 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::TransactionScriptRoot;
 use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
@@ -40,33 +42,28 @@ pub enum Auth {
 
     /// Multisig
     Multisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Guarded multisig.
     GuardedMultisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Multisig with smart per-procedure policy configuration.
     MultisigSmart {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthSingleSigAcl]. Authentication will only be
-    /// triggered if any of the procedures specified in the list are called during execution.
+    /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
+    /// in `exempt_procedures` forces signature verification.
     Acl {
-        auth_trigger_procedures: Vec<AccountProcedureRoot>,
-        allow_unauthorized_output_notes: bool,
-        allow_unauthorized_input_notes: bool,
+        exempt_procedures: BTreeSet<AccountProcedureRoot>,
         auth_scheme: AuthScheme,
     },
 
@@ -114,14 +111,14 @@ impl Auth {
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthSingleSig::new(pub_key, *auth_scheme).into();
+                let component = AuthSingleSig::new(Approver::new(pub_key, *auth_scheme)).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
                 (component, Some(authenticator))
             },
-            Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+            Auth::Multisig { approver_set, proc_threshold_map } => {
+                let config = AuthMultisigConfig::new(approver_set.clone())
+                    .with_proc_thresholds(proc_threshold_map.clone())
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
@@ -129,24 +126,22 @@ impl Auth {
                 (component, None)
             },
             Auth::GuardedMultisig {
-                threshold,
-                approvers,
+                approver_set,
                 guardian_config,
                 proc_threshold_map,
             } => {
-                let config =
-                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
-                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                        .expect("invalid guarded multisig config");
+                let config = AuthGuardedMultisigConfig::new(approver_set.clone(), *guardian_config)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid guarded multisig config");
                 let component = AuthGuardedMultisig::new(config)
                     .expect("guarded multisig component creation failed")
                     .into();
 
                 (component, None)
             },
-            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
-                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+            Auth::MultisigSmart { approver_set, proc_policy_map } => {
+                let config = AuthMultisigSmartConfig::new(approver_set.clone())
+                    .with_proc_policies(proc_policy_map.clone())
                     .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
@@ -155,26 +150,18 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::Acl {
-                auth_trigger_procedures,
-                allow_unauthorized_output_notes,
-                allow_unauthorized_input_notes,
-                auth_scheme,
-            } => {
+            Auth::Acl { exempt_procedures, auth_scheme } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
                 let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
                 let component = AuthSingleSigAcl::new(
-                    pub_key,
-                    *auth_scheme,
-                    AuthSingleSigAclConfig::new()
-                        .with_auth_trigger_procedures(auth_trigger_procedures.clone())
-                        .with_allow_unauthorized_output_notes(*allow_unauthorized_output_notes)
-                        .with_allow_unauthorized_input_notes(*allow_unauthorized_input_notes),
+                    Approver::new(pub_key, *auth_scheme),
+                    AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
+                        "AuthSingleSigAcl component creation failed: too many exempt procedures",
+                    ),
                 )
-                .expect("component creation failed")
                 .into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 

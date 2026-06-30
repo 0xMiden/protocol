@@ -4,8 +4,8 @@
 # `Authority` component via `exec.authority::assert_authorized`.
 #
 # Companion components required:
-# - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac` /
-#   `AccessControl::AuthControlled`).
+# - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac`, or
+#   `Authority::AuthControlled` directly by `create_user_fungible_faucet`).
 # - `Pausable` — provides the `is_paused` storage slot.
 
 pub use ::miden::standards::access::pausable::manager::pause

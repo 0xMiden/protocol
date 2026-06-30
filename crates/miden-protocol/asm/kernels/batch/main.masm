@@ -17,7 +17,7 @@ use miden::batch_kernel::epilogue
 #!
 #!   `BATCH_ID` (public input)        -> `(tx_id, account_id)` tuple list
 #!   each `tx_id`                     -> per-tx
-#!     `(INIT, FINAL, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i, FEE_ASSET)`
+#!     `(INIT, FINAL, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i)`
 #!   each `INPUT_NOTES_COMMITMENT_i`  -> `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples
 #!
 #! Inputs: [

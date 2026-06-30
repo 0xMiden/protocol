@@ -2,8 +2,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 
-use crate::AuthMethod;
-
 #[cfg(test)]
 mod test;
 
@@ -19,7 +17,6 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AuthMethod>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -29,14 +26,20 @@ impl AccountInterface {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AccountInterface`] instance from the provided account ID, authentication
-    /// schemes and account component interfaces.
-    pub fn new(
-        account_id: AccountId,
-        auth: Vec<AuthMethod>,
-        components: Vec<AccountComponentInterface>,
-    ) -> Self {
-        Self { account_id, auth, components }
+    /// Creates a new [`AccountInterface`] instance from the provided account ID and account
+    /// component interfaces.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `components` does not contain exactly one auth component. Every account installs
+    /// a single auth component. Zero or multiple auth components is a malformed account.
+    pub fn new(account_id: AccountId, components: Vec<AccountComponentInterface>) -> Self {
+        let auth_count = components.iter().filter(|c| c.is_auth_component()).count();
+        assert_eq!(
+            auth_count, 1,
+            "account interface must contain exactly one auth component, found {auth_count}"
+        );
+        Self { account_id, components }
     }
 
     // PUBLIC ACCESSORS
@@ -57,13 +60,18 @@ impl AccountInterface {
         self.account_id.is_public()
     }
 
-    /// Returns a reference to the vector of used authentication methods.
-    pub fn auth(&self) -> &Vec<AuthMethod> {
-        &self.auth
-    }
-
     /// Returns a reference to the set of used component interfaces.
     pub fn components(&self) -> &Vec<AccountComponentInterface> {
         &self.components
+    }
+
+    /// Returns a reference to the single auth component installed on this account.
+    ///
+    /// Every account installs exactly one auth component (validated in [`Self::new`]).
+    pub fn auth_component(&self) -> &AccountComponentInterface {
+        self.components
+            .iter()
+            .find(|c| c.is_auth_component())
+            .expect("AccountInterface invariant: exactly one auth component present")
     }
 }

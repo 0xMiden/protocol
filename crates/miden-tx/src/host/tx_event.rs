@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
@@ -11,7 +12,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -145,17 +146,12 @@ pub(crate) enum TransactionEvent {
 
     /// The data necessary to handle an auth request.
     AuthRequest {
-        pub_key_hash: Word,
-        tx_summary: TransactionSummary,
-        signature: Option<Vec<Felt>>,
+        pub_key_commitment: PublicKeyCommitment,
+        tx_summary_or_signature: TxSummaryOrSignature,
     },
 
     Unauthorized {
         tx_summary: TransactionSummary,
-    },
-
-    EpilogueBeforeTxFeeRemovedFromAccount {
-        fee_asset: FungibleAsset,
     },
 
     LinkMapSet {
@@ -166,21 +162,6 @@ pub(crate) enum TransactionEvent {
     },
 
     Progress(TransactionProgressEvent),
-}
-
-#[derive(Debug)]
-pub(crate) struct AssetPatch {
-    pub asset_key: AssetVaultKey,
-    /// The absolute value of `asset_key` in the vault before the operation.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation.
-    pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -494,17 +475,27 @@ impl TransactionEvent {
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
-                let pub_key_hash = process.get_stack_word(5);
-                let signature_key = Hasher::merge(&[pub_key_hash, message]);
+                let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
+                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let signature = process
+                let auth_request = if let Some(signature) = process
                     .advice_provider()
                     .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec());
+                    .map(|slice| slice.to_vec())
+                {
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
+                    }
+                } else {
+                    let tx_summary = extract_tx_summary(base_host, process, message)?;
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
+                    }
+                };
 
-                let tx_summary = extract_tx_summary(base_host, process, message)?;
-
-                Some(TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature })
+                Some(auth_request)
             },
 
             TransactionEventId::Unauthorized => {
@@ -513,17 +504,6 @@ impl TransactionEvent {
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
                 Some(TransactionEvent::Unauthorized { tx_summary })
-            },
-
-            TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
-                // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
-                let fee_asset_key = process.get_stack_word(1);
-                let fee_asset_value = process.get_stack_word(5);
-
-                let fee_asset = FungibleAsset::from_key_value_words(fee_asset_key, fee_asset_value)
-                    .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
-
-                Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })
             },
 
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
@@ -589,6 +569,34 @@ impl TransactionEvent {
 
         Ok(tx_event)
     }
+}
+
+// TX SUMMARY OR SIGNATURE
+// ================================================================================================
+
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(crate) enum TxSummaryOrSignature {
+    TxSummary(TransactionSummary),
+    Signature(Vec<Felt>),
+}
+
+// ASSET PATCH AND DELTA
+// ================================================================================================
+
+#[derive(Debug)]
+pub(crate) struct AssetPatch {
+    pub asset_key: AssetVaultKey,
+    /// The absolute value of `asset_key` in the vault before the operation.
+    pub initial_vault_value: Word,
+    /// The absolute value of `asset_key` in the vault after the operation.
+    pub final_vault_value: Word,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
 }
 
 // RECIPIENT DATA
