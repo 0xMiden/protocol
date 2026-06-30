@@ -73,7 +73,7 @@ impl ValidatorKeys {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the validator public keys in canonical order.
-    pub fn as_keys(&self) -> &[PublicKey] {
+    pub fn as_keys(&self) -> &[PublicKey; Self::COUNT] {
         &self.keys
     }
 

@@ -259,8 +259,7 @@ mod tests {
     ) -> SignedBlock {
         let next_keys = validator_set().1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
-        let slots = core::array::from_fn(|i| {
-            let key = &parent_keys.as_keys()[i];
+        let slots = parent_keys.as_keys().each_ref().map(|key| {
             signers
                 .iter()
                 .find(|sk| &sk.public_key() == key)

@@ -423,8 +423,7 @@ impl MockChain {
     /// [`BlockSignatures`] aligned to [`Self::validator_keys`].
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
         let validator_keys = self.validator_keys();
-        let slots = core::array::from_fn(|i| {
-            let key = &validator_keys.as_keys()[i];
+        let slots = validator_keys.as_keys().each_ref().map(|key| {
             let signer = self
                 .validator_secret_keys
                 .iter()

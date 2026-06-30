@@ -273,8 +273,7 @@ impl MockChainBuilder {
 
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
-        let slots = core::array::from_fn(|i| {
-            let key = &validator_keys.as_keys()[i];
+        let slots = validator_keys.as_keys().each_ref().map(|key| {
             let signer = validator_secret_keys
                 .iter()
                 .find(|sk| &sk.public_key() == key)
