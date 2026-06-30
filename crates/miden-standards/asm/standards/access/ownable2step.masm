@@ -35,6 +35,7 @@ const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_co
 # ERRORS
 # ================================================================================================
 
+const ERR_NO_OWNER = "component has no owner"
 const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
 const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
 const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
@@ -260,6 +261,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the component has no owner (owner is zero).
 #! - there is no nominated ownership transfer (nominated owner is zero).
 #! - the note sender is not the nominated owner.
 #!
@@ -268,7 +270,17 @@ pub proc accept_ownership
     push.0.0
     # => [0, 0, pad(16)]
 
-    exec.get_nominated_owner_internal
+    exec.load_ownership_info
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+
+    # Check that the component currently has an owner (owner is not zero).
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [owner_is_zero, owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+
+    assertz.err=ERR_NO_OWNER
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+
+    drop drop
     # => [nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
 
     # Check that a nominated transfer exists (nominated owner is not zero).
