@@ -9,6 +9,7 @@ use crate::utils::sync::LazyLock;
 // ================================================================================================
 
 const ADD_CODE: &str = "
+    @account_procedure
     pub proc add5
         add.5
     end

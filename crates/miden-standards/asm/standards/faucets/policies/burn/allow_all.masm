@@ -8,6 +8,7 @@
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
 #! Invocation: dynexec
+@account_procedure
 pub proc check_policy
     dropw dropw
     # => []

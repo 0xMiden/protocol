@@ -93,6 +93,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, pad(8)]
@@ -110,6 +111,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
@@ -319,6 +321,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -517,6 +520,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -618,6 +622,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         dropw
         # => [ASSET_VALUE, pad(12)]
@@ -627,6 +632,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let note_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         dropw movup.4 drop
         # => [ASSET_VALUE, pad(12)]

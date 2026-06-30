@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use miden_assembly::library::ProcedureExport;
 use miden_mast_package::Package;
 use miden_processor::mast::MastNodeExt;
 
@@ -20,13 +21,16 @@ use crate::errors::AccountError;
 /// The attribute name used to mark the authentication procedure in an account component.
 const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
+/// The attribute name used to mark a procedure as a member of an account component's interface.
+const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
+
 // ACCOUNT COMPONENT
 // ================================================================================================
 
 /// An [`AccountComponent`] defines a [`Library`](miden_assembly::Library) of code and the initial
 /// value and types of the [`StorageSlot`]s it accesses.
 ///
-/// One or more components can be used to built [`AccountCode`](crate::account::AccountCode) and
+/// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
 /// [`AccountStorage`](crate::account::AccountStorage).
 ///
 /// Each component is independent of other components and can only access its own storage slots.
@@ -46,8 +50,9 @@ impl AccountComponent {
     /// Returns a new [`AccountComponent`] constructed from the provided `library`,
     /// `storage_slots`, and `metadata`.
     ///
-    /// All procedures exported from the provided code will become members of the account's public
-    /// interface when added to an [`AccountCode`](crate::account::AccountCode).
+    /// Procedures exported from the provided code that are marked with the `@account_procedure`
+    /// attribute or with `@auth_script` will become members of the account's public interface when
+    /// added to an [`AccountCode`](crate::account::AccountCode).
     ///
     /// # Errors
     ///
@@ -172,23 +177,26 @@ impl AccountComponent {
         self.metadata.storage_schema()
     }
 
-    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
-    /// component.
+    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all interface procedures
+    /// in this component.
     ///
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
-    /// attribute.
+    /// attribute. A procedure is part of the component interface if it has either the
+    /// `@account_procedure` or `@auth_script` attributes.
     pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
         let library = self.code.as_library();
         library.exports().filter_map(|export| {
-            export.as_procedure().map(|proc_export| {
-                let digest = library
-                    .mast_forest()
-                    .get_node_by_id(proc_export.node)
-                    .expect("export node not in the forest")
-                    .digest();
-                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-                (AccountProcedureRoot::from_raw(digest), is_auth)
-            })
+            let proc_export = export.as_procedure()?;
+            if !is_interface_procedure(proc_export) {
+                return None;
+            }
+            let digest = library
+                .mast_forest()
+                .get_node_by_id(proc_export.node)
+                .expect("export node not in the forest")
+                .digest();
+            let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+            Some((AccountProcedureRoot::from_raw(digest), is_auth))
         })
     }
 
@@ -206,6 +214,15 @@ impl AccountComponent {
     pub fn has_procedure(&self, root: AccountProcedureRoot) -> bool {
         self.procedures().any(|(proc_root, _)| proc_root == root)
     }
+}
+
+/// Returns `true` if the given exported procedure is part of the component interface.
+///
+/// A procedure is part of the interface if it has the `@account_procedure` or `@auth_script`
+/// attributes.
+pub(super) fn is_interface_procedure(proc_export: &ProcedureExport) -> bool {
+    proc_export.attributes.has(ACCOUNT_PROCEDURE_ATTRIBUTE)
+        || proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE)
 }
 
 impl From<AccountComponent> for AccountComponentCode {

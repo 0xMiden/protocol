@@ -114,6 +114,7 @@ end
 #! Outputs: [symbol, pad(15)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_symbol
     push.SYMBOL_SLOT[0..2] exec.active_account::get_item
     # => [symbol, 0, 0, 0, pad(16)]
@@ -136,6 +137,7 @@ end
 #! - status is 0 if not issued, 1 if issued, 2 if burned.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_asset_status
     exec.create_status_key
     # => [STATUS_KEY, pad(14)]
@@ -170,6 +172,7 @@ end
 #!
 #! Invocation: call
 @locals(4)
+@account_procedure
 pub proc mint_and_send
     # stash the commitment for the status key and the asset creation
     dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
@@ -252,6 +255,7 @@ end
 #! - the asset is not in the issued state.
 #!
 #! Invocation: call
+@account_procedure
 pub proc receive_and_burn
     # get the single asset from the note (fails if not called from a note context)
     push.ASSET_PTR exec.active_note::get_assets

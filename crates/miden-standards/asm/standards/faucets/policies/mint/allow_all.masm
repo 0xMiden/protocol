@@ -8,6 +8,7 @@
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Invocation: dynexec
+@account_procedure
 pub proc check_policy
     push.0 drop
 end
