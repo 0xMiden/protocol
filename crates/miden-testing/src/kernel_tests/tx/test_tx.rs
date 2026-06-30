@@ -281,7 +281,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
         ## TRANSACTION SCRIPT
         ## ========================================================================================
-        begin
+        @transaction_script
+        pub proc main
             ## Send some assets from the account vault
             ## ------------------------------------------------------------------------------------
             # partially deplete fungible asset balance
@@ -598,7 +599,8 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     use test::module_1
     use miden::core::sys
 
-    begin
+    @transaction_script
+    pub proc main
         push.1.2
         call.module_1::foo
         exec.sys::truncate_stack
@@ -638,7 +640,8 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
     let tx_script_input_value = Word::from([9, 8, 7, 6u32]);
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # push the tx script input key onto the stack
             push.{tx_script_input_key}
 
@@ -671,7 +674,8 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # => [TX_SCRIPT_ARGS]
             # `TX_SCRIPT_ARGS` value is a user provided word, which could be used during the
             # transaction execution. In this example it is a `[1, 2, 3, 4]` word.
@@ -710,7 +714,8 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 /// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
 #[tokio::test]
 async fn test_get_script_root_with_script() -> anyhow::Result<()> {
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
     let expected_root = tx_script.root();
 
     let code = format!(
@@ -793,7 +798,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let script = r#"
             adv_map A([1,2,3,4]) = [5,6,7,8]
 
-            begin
+            @transaction_script
+            pub proc main
                 call.::test::adv_map_component::assert_adv_map
 
                 # test account code advice map

@@ -222,7 +222,8 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         account,
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::get_name
                 push.{n0}
                 assert_eqw.err="name chunk 0 does not match"
@@ -257,7 +258,8 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     execute_tx_script(
         account,
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::get_name
             padw assert_eqw.err="name chunk 0 should be empty"
             padw assert_eqw.err="name chunk 1 should be empty"
@@ -278,7 +280,8 @@ async fn faucet_get_decimals() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_decimals
                 push.{expected} assert_eq.err="decimals does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -296,7 +299,8 @@ async fn faucet_get_token_symbol() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_token_symbol
                 push.{expected} assert_eq.err="token_symbol does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -312,7 +316,8 @@ async fn faucet_get_token_supply() -> anyhow::Result<()> {
     execute_tx_script(
         build_pol_faucet_account(),
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::fungible::get_token_supply
             push.0 assert_eq.err="token_supply does not match"
             push.0 assert_eq.err="clean stack: pad must be 0"
@@ -329,7 +334,8 @@ async fn faucet_get_max_supply() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_max_supply
                 push.{expected} assert_eq.err="max_supply does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -351,7 +357,8 @@ async fn faucet_get_token_config() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_token_config
                 push.0 assert_eq.err="token_supply does not match"
                 push.{expected_max_supply} assert_eq.err="max_supply does not match"
@@ -375,7 +382,8 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_decimals
                 push.{expected_decimals} assert_eq.err="decimals does not match"
                 call.::miden::standards::faucets::fungible::get_token_symbol
@@ -415,7 +423,8 @@ async fn get_mutability_config() -> anyhow::Result<()> {
     execute_tx_script(
         account,
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::get_mutability_config
             push.1 assert_eq.err="desc_mutable should be 1"
             push.0 assert_eq.err="logo_mutable should be 0"
@@ -458,7 +467,8 @@ async fn is_field_mutable_checks(
     execute_tx_script(
         account,
         format!(
-            "begin
+            "@transaction_script
+            pub proc main
                 call.{proc_path}
                 push.{expected}
                 assert_eq.err=\"{proc_path} returned unexpected value\"
@@ -617,7 +627,8 @@ async fn test_field_setter_immutable_fails(
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::{proc_name}
         end
     "#
@@ -866,7 +877,8 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
-        begin
+        @transaction_script
+        pub proc main
             push.2000
             call.::miden::standards::faucets::fungible::set_max_supply
         end

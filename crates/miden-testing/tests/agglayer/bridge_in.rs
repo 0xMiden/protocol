@@ -92,7 +92,8 @@ fn merkle_proof_verification_code(
         r#"
         use agglayer::bridge::bridge_in
 
-        begin
+        @transaction_script
+        pub proc main
             {store_path_source}
 
             push.{root_lo} mem_storew_le.256 dropw

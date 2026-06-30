@@ -55,7 +55,8 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with fungible asset
             push.{RECIPIENT}
             push.{note_type}

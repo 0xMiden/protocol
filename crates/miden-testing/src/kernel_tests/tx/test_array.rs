@@ -91,7 +91,8 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     let tx_script_code = r#"
         use wrapper::component->wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index 0 (should return [42, 42, 42, 42])
             push.0
             # => [index, pad(16)]
@@ -206,7 +207,8 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         r#"
         use wrapper::component->wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index {index} (should return the initial double-word)
             push.{index}
             call.wrapper::test_get

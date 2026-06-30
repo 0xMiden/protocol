@@ -106,7 +106,8 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             exec.active_account::get_initial_commitment
             # => [INITIAL_COMMITMENT]
 
@@ -454,7 +455,8 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
 
             const UNKNOWN_SLOT_NAME = word("unknown::slot::name")
 
-            begin
+            @transaction_script
+            pub proc main
                 push.UNKNOWN_SLOT_NAME[0..2]
                 call.account::get_item
             end
@@ -997,7 +999,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         r#"
         use miden::protocol::active_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
             push.{ASSET_KEY}
             exec.active_account::get_balance
@@ -1046,7 +1049,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         r#"
         use miden::protocol::active_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
             push.{ASSET_KEY}
             exec.active_account::get_balance
@@ -1125,7 +1129,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
@@ -1217,7 +1222,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create default note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
@@ -1345,7 +1351,8 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
 
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
-        begin
+        @transaction_script
+        pub proc main
             # First check that get_item procedure hasn't been called yet
             procref.mock_account::get_item
             exec.native_account::was_procedure_called
@@ -1441,7 +1448,8 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let tx_script_src = "\
           use account_component::account_module
 
-          begin
+          @transaction_script
+          pub proc main
             call.account_module::custom_setter
           end";
 
@@ -1530,7 +1538,8 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         use mock::account->mock_account
         use miden::protocol::active_account
 
-        begin
+        @transaction_script
+        pub proc main
             # check that get_item procedure is available on the mock account
             procref.mock_account::get_item
             # => [GET_ITEM_ROOT]
@@ -1662,7 +1671,8 @@ async fn test_faucet_has_callbacks(
         r#"
         use miden::protocol::faucet
 
-        begin
+        @transaction_script
+        pub proc main
             exec.faucet::has_callbacks
             push.{has_callbacks}
             assert_eq.err="has_callbacks returned unexpected value"
@@ -2021,7 +2031,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
       use component1::interface->comp1_interface
       use component2::interface->comp2_interface
 
-      begin
+      @transaction_script
+      pub proc main
           call.comp1_interface::get_slot_content
           push.{slot_content1}
           assert_eqw.err="failed to get slot content1"

@@ -37,7 +37,8 @@ use crate::errors::CodeBuilderError;
 /// [`FungibleFaucet`]:
 ///
 /// ```masm
-/// begin
+/// @transaction_script
+/// pub proc main
 ///     push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta
 ///
 ///     push.{note information}
@@ -101,7 +102,8 @@ impl SendNotesTransactionScript {
             return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
         };
 
-        let script = format!("begin\n{expiration_prelude}\n{body}\nend");
+        let script =
+            format!("@transaction_script\npub proc main\n{expiration_prelude}\n{body}\nend");
 
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {

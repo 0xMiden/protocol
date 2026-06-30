@@ -11,6 +11,7 @@ use miden_mast_package::Package;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
+use crate::assembly::Library;
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
@@ -318,6 +319,9 @@ impl Deserializable for TransactionScriptRoot {
 // TRANSACTION SCRIPT
 // ================================================================================================
 
+/// The attribute name used to mark the entrypoint procedure in a transaction script library.
+const TRANSACTION_SCRIPT_ATTRIBUTE: &str = "transaction_script";
+
 /// Transaction script.
 ///
 /// A transaction script is a program that is executed in a transaction after all input notes
@@ -336,6 +340,8 @@ impl TransactionScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [TransactionScript] instantiated with the provided code.
+    // TODO: we can remove this `Program` based constructor once the compiler integrates the
+    // `@transaction_script` attribute (https://github.com/0xMiden/compiler/issues/1190).
     pub fn new(code: Program) -> Self {
         Self::from_parts(code.mast_forest().clone(), code.entrypoint())
     }
@@ -362,6 +368,37 @@ impl TransactionScript {
             package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
         Ok(TransactionScript::new(program))
+    }
+
+    /// Returns a new [TransactionScript] instantiated from the provided library.
+    ///
+    /// The library must contain exactly one procedure with the `@transaction_script` attribute,
+    /// which will be used as the entrypoint.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The library does not contain a procedure with the `@transaction_script` attribute.
+    /// - The library contains multiple procedures with the `@transaction_script` attribute.
+    pub fn from_library(library: &Library) -> Result<Self, TransactionScriptError> {
+        let mut entrypoint = None;
+
+        for export in library.exports() {
+            if let Some(proc_export) = export.as_procedure()
+                && proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE)
+            {
+                if entrypoint.is_some() {
+                    return Err(TransactionScriptError::MultipleProceduresWithAttribute);
+                }
+                entrypoint = Some(proc_export.node);
+            }
+        }
+
+        let entrypoint = entrypoint.ok_or(TransactionScriptError::NoProcedureWithAttribute)?;
+
+        Ok(Self {
+            mast: library.mast_forest().clone(),
+            entrypoint,
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -460,5 +497,49 @@ mod tests {
         let mast = script.mast();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_transaction_script_from_library() {
+        use assert_matches::assert_matches;
+
+        use super::TransactionScript;
+        use crate::assembly::Assembler;
+        use crate::errors::TransactionScriptError;
+        use crate::utils::serde::{Deserializable, Serializable};
+
+        let source = "
+            @transaction_script
+            pub proc main
+                push.1 drop
+            end
+        ";
+        let library = Assembler::default().assemble_library([source]).unwrap();
+
+        let script = TransactionScript::from_library(&library).unwrap();
+
+        // the script must round-trip through serialization unchanged
+        let bytes = script.to_bytes();
+        let decoded = TransactionScript::read_from_bytes(&bytes).unwrap();
+        assert_eq!(script, decoded);
+
+        // a library without the attribute is rejected
+        let no_attr = Assembler::default()
+            .assemble_library(["pub proc main push.1 drop end"])
+            .unwrap();
+        assert_matches!(
+            TransactionScript::from_library(&no_attr),
+            Err(TransactionScriptError::NoProcedureWithAttribute)
+        );
+
+        // a library with multiple tagged procedures is rejected
+        let multiple = Assembler::default()
+            .assemble_library(["@transaction_script pub proc main_a push.1 drop end
+                 @transaction_script pub proc main_b push.2 drop end"])
+            .unwrap();
+        assert_matches!(
+            TransactionScript::from_library(&multiple),
+            Err(TransactionScriptError::MultipleProceduresWithAttribute)
+        );
     }
 }

@@ -63,7 +63,7 @@ use crate::standards_lib::StandardsLib;
 /// # use miden_protocol::CoreLibrary;
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
-/// # let script_code = "begin nop end";
+/// # let script_code = "@transaction_script pub proc main nop end";
 /// # // Create sample libraries for the example
 /// # let my_lib: Library = CoreLibrary::default().into(); // Convert CoreLibrary to Library
 /// # let fpi_lib: Library = CoreLibrary::default().into();
@@ -293,20 +293,6 @@ impl CodeBuilder {
     // PRIVATE HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the advice map to a program if it's non-empty.
-    ///
-    /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map(
-        advice_map: AdviceMap,
-        program: miden_protocol::vm::Program,
-    ) -> miden_protocol::vm::Program {
-        if advice_map.is_empty() {
-            program
-        } else {
-            program.with_advice_map(advice_map)
-        }
-    }
-
     /// Applies the advice map to a library if it's non-empty.
     ///
     /// This avoids cloning the MAST forest when there are no advice map entries.
@@ -363,7 +349,8 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `tx_script` - The transaction script source code
+    /// - `tx_script` - the transaction script source code which is expected to have a single public
+    ///   procedure marked with the @transaction_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
@@ -374,11 +361,23 @@ impl CodeBuilder {
     ) -> Result<TransactionScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(tx_script).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
+        let tx_script_lib = assembler.assemble_library([tx_script]).map_err(|err| {
+            CodeBuilderError::build_error_with_report(
+                "failed to parse transaction script library",
+                err,
+            )
         })?;
 
-        Ok(TransactionScript::new(Self::apply_advice_map(advice_map, program)))
+        TransactionScript::from_library(&Self::apply_advice_map_to_library(
+            advice_map,
+            Arc::unwrap_or_clone(tx_script_lib),
+        ))
+        .map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create transaction script from library",
+                err,
+            )
+        })
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].
@@ -525,7 +524,7 @@ mod tests {
     fn test_code_builder_basic_script_compiling() -> anyhow::Result<()> {
         let builder = CodeBuilder::default();
         builder
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to parse basic tx script")?;
         Ok(())
     }
@@ -535,7 +534,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -573,7 +573,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -624,7 +625,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -656,8 +658,7 @@ mod tests {
 
     #[test]
     fn test_multiple_chained_modules() -> anyhow::Result<()> {
-        let script_code =
-            "use test::lib1 use test::lib2 begin exec.lib1::test1 exec.lib2::test2 end";
+        let script_code = "use test::lib1 use test::lib2 @transaction_script pub proc main exec.lib1::test1 exec.lib2::test2 end";
 
         // Test chaining multiple modules
         let builder = CodeBuilder::default()
@@ -676,7 +677,8 @@ mod tests {
         let script_code = "
             use contracts::static_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.static_contract::increment_1
             end
         ";
@@ -732,7 +734,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script with advice map")?;
 
         let mast = script.mast();
@@ -753,7 +755,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_extended_advice_map(advice_map)
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script")?;
 
         let mast = script.mast();

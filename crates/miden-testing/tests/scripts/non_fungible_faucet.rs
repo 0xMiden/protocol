@@ -84,7 +84,10 @@ fn nft_mint_body(commitment: Word, recipient: Word) -> String {
 
 /// Builds a tx script that mints an NFT for `commitment` and sends it to `recipient`.
 fn nft_mint_script(commitment: Word, recipient: Word) -> String {
-    format!("begin\n{}\nend", nft_mint_body(commitment, recipient))
+    format!(
+        "@transaction_script\npub proc main\n{}\nend",
+        nft_mint_body(commitment, recipient)
+    )
 }
 
 async fn execute_nft_mint(
@@ -152,7 +155,7 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
 
     // mint the same commitment twice in one transaction; the second call must fail
     let body = nft_mint_body(commitment, recipient);
-    let code = format!("begin\n{body}\n{body}\nend");
+    let code = format!("@transaction_script\npub proc main\n{body}\n{body}\nend");
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script =
@@ -380,7 +383,8 @@ async fn nft_public_getters() -> anyhow::Result<()> {
     let expected_symbol: Felt = TokenSymbol::new("EC")?.into();
     let code = format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             # status of an unissued asset id is 0 (not issued)
             push.42.123
             call.::miden::standards::faucets::non_fungible::get_asset_status

@@ -459,7 +459,8 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
@@ -571,7 +572,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         r#"
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # Create note 0 (just to consume index 0)
             exec.util::create_default_note drop
             # => []
@@ -646,7 +648,8 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}

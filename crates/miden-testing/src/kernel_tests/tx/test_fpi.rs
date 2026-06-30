@@ -625,7 +625,8 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             # => [pad(16)]
 
             ### get the storage item ##########################################
@@ -812,7 +813,8 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             # Get the added balance of two assets from foreign account
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -918,7 +920,8 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             # Get the initial balance of the fungible asset from the foreign account
 
             # pad the stack for the `execute_foreign_procedure` execution
@@ -1154,7 +1157,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         use miden::core::sys
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1315,7 +1319,8 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         use miden::core::sys
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1499,7 +1504,8 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
             use miden::protocol::tx
 
-            begin
+            @transaction_script
+            pub proc main
                 # pad the stack for the `execute_foreign_procedure` execution
                 padw padw padw push.0.0.0
                 # => [pad(15)]
@@ -1595,7 +1601,8 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
 
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1802,7 +1809,8 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
         use miden::protocol::tx
         use miden::protocol::account_id
 
-        begin
+        @transaction_script
+        pub proc main
             # get the IDs of the foreign and native accounts
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -1926,7 +1934,8 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             # Test get_initial_item on foreign account
             padw padw padw push.0.0.0
             # => [pad(15)]
