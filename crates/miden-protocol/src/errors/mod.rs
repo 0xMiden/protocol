@@ -442,6 +442,8 @@ pub enum AccountDeltaError {
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
+    #[error("a full state delta must only contain storage create operations")]
+    FullStateDeltaContainsNonCreateOp,
 }
 
 #[derive(Debug, Error)]
@@ -457,6 +459,9 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
+    #[error("a full state patch must only contain storage create operations")]
+    FullStatePatchContainsNonCreateStorageOp,
+
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
@@ -466,8 +471,10 @@ pub enum AccountPatchError {
     #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     TooManyStorageSlotPatches(usize),
 
-    #[error("cannot merge two full state patches")]
-    MergingFullStatePatches,
+    #[error(
+        "a full state patch cannot be merged on top of another patch; it must be the merge base"
+    )]
+    MergeIncomingFullStatePatch,
 
     #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
     StoragePatchMergeDoubleCreate(StorageSlotName),

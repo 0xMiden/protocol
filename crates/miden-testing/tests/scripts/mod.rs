@@ -4,6 +4,7 @@ mod blocklist;
 mod code_inspection;
 mod expiration;
 mod faucet;
+mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;
 mod p2ide;
