@@ -1442,7 +1442,7 @@ end
 #!   the first two felts of the hashed slot name.
 #! - INITIAL_VALUE is the initial value of the item at the beginning of the transaction.
 #! - CURRENT_VALUE is the current value of the item.
-pub proc get_item_delta
+pub proc get_item_patch
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
