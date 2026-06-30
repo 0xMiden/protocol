@@ -15,7 +15,7 @@ pub enum AccountComponentInterface {
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
     /// Exposes procedures from the
-    /// [`CodeInspection`][crate::account::code_inspection::CodeInspection] component.
+    /// [`CodeInspection`][crate::account::metadata::CodeInspection] component.
     CodeInspection,
     /// Exposes procedures from the
     /// [`Authority`][crate::account::access::Authority] access component.

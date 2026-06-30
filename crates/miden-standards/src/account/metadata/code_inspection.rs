@@ -7,7 +7,7 @@ use crate::procedure_root;
 // CODE INSPECTION
 // ================================================================================================
 
-account_component_code!(CODE_INSPECTION_CODE, "code_inspection.masl");
+account_component_code!(CODE_INSPECTION_CODE, "metadata/code_inspection.masl");
 
 // Initialize the procedure root of the `has_procedure` procedure only once.
 procedure_root!(
@@ -43,7 +43,7 @@ procedure_root!(
 
 /// An [`AccountComponent`] exposing read-only introspection over the account's own code.
 ///
-/// It reexports the procedures from `miden::standards::code_inspection`, which wrap the
+/// It reexports the procedures from `miden::standards::metadata::code_inspection`, which wrap the
 /// account-related kernel procedures. When linking against this component, the `miden` library
 /// (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is
 /// the case when using [`CodeBuilder`][builder]. The procedures of this component are:
@@ -65,7 +65,7 @@ impl CodeInspection {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::code_inspection";
+    pub const NAME: &'static str = "miden::standards::components::metadata::code_inspection";
 
     const HAS_PROCEDURE_PROC_NAME: &str = "has_procedure";
     const GET_CODE_COMMITMENT_PROC_NAME: &str = "get_code_commitment";

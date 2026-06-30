@@ -2,7 +2,7 @@ extern crate alloc;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_standards::account::code_inspection::CodeInspection;
+use miden_standards::account::metadata::CodeInspection;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
@@ -37,7 +37,7 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
     // `call`. No `procref` is used so the stack depth stays at 16 across the call boundary.
     let tx_script_code = format!(
         r#"
-        use miden::standards::components::code_inspection->code_inspection
+        use miden::standards::components::metadata::code_inspection->code_inspection
 
         begin
             # stack: [PROC_ROOT, pad(12)]

@@ -13,9 +13,9 @@ use crate::account::auth::{
     AuthSingleSigAcl,
     NoAuth,
 };
-use crate::account::code_inspection::CodeInspection;
 use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::AccountComponentInterface;
+use crate::account::metadata::CodeInspection;
 use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
