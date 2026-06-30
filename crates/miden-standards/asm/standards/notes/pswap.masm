@@ -26,7 +26,7 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # - requested_enable_callbacks [0]  : 1 felt
 # - requested_faucet_suffix    [1]  : 1 felt
 # - requested_faucet_prefix    [2]  : 1 felt
-# - requested_amount           [3]  : 1 felt
+# - min_requested_amount       [3]  : 1 felt
 # - payback_note_type          [4]  : 1 felt
 # - creator_id_prefix          [5]  : 1 felt
 # - creator_id_suffix          [6]  : 1 felt
@@ -37,7 +37,7 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
 # - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
-# - requested_amount: Amount of the requested fungible asset (Felt)
+# - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - payback_note_type: The NoteType used for the P2ID payback note
 # - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
@@ -52,7 +52,7 @@ const STORAGE_PTR = 0
 const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
-const REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
+const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
 const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
@@ -355,7 +355,7 @@ proc create_remainder_note
     # => [remaining_requested, note_type, tag]
 
     # Update note storage with new requested amount (needed by compute_and_store_recipient)
-    mem_store.REQUESTED_AMOUNT_ITEM
+    mem_store.MIN_REQUESTED_AMOUNT_ITEM
     # => [note_type, tag]
 
     # Build PSWAP remainder recipient using the same script as the active note.
@@ -603,7 +603,7 @@ proc execute_pswap
     # => []
 
     # Read the requested minimum directly from note storage
-    mem_load.REQUESTED_AMOUNT_ITEM
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM
     loc_store.EXEC_AMT_MIN_REQUESTED
     # => []
 
@@ -805,7 +805,7 @@ pub proc main
     dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill_amount, note_fill_amount]
     if.true
-        drop mem_load.REQUESTED_AMOUNT_ITEM
+        drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
         # => [account_fill_amount, note_fill_amount]
     end
     # => [account_fill_amount, note_fill_amount]
