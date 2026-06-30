@@ -759,13 +759,12 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
+        // This is a new account, so its full state patch creates the map slots.
         let map_patch_entries = tx
             .account_patch()
             .storage()
-            .get_map(&slot_name)
-            .unwrap()
-            .entries()
-            .expect("map patch should have entries")
+            .created_map(&slot_name)
+            .expect("created map patch should be present")
             .as_map();
         let expected: BTreeMap<_, _> = expected_map.entries().map(|(k, v)| (*k, *v)).collect();
         assert_eq!(map_patch_entries, &expected, "map delta does not match for slot {slot_name}",);
@@ -1282,6 +1281,7 @@ impl AccountUpdateTest {
             account.id(),
             expected_storage_patch.clone(),
             expected_vault_delta,
+            None,
             expected_nonce_delta,
         )?;
         let expected_patch = AccountPatch::new(
