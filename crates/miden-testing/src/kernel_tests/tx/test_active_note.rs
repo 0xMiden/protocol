@@ -36,7 +36,7 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_transaction_executor_error,
 };
@@ -92,7 +92,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -143,7 +143,7 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -208,7 +208,7 @@ async fn test_active_note_is_public_and_is_private(
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -254,7 +254,7 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -300,7 +300,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -647,7 +647,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     let input_note = Note::new(vault.clone(), metadata, recipient);
 
     // provide this input note to the transaction context
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_input_notes(vec![input_note])
         .build()?;
 
@@ -796,7 +796,7 @@ async fn test_note_find_attachment(
             .attachment(NoteAttachment::with_word(scheme_1, word_1))
             .build()?;
 
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note0, input_note1])
             .build()?
     };
