@@ -442,8 +442,8 @@ pub enum AccountDeltaError {
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
-    #[error("a full state delta must not contain storage update operations")]
-    FullStateDeltaContainsUpdate,
+    #[error("a full state delta must only contain storage create operations")]
+    FullStateDeltaContainsNonCreateOp,
 }
 
 #[derive(Debug, Error)]
@@ -459,8 +459,8 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
-    #[error("a full state patch must not contain storage update operations")]
-    FullStatePatchContainsStorageUpdate,
+    #[error("a full state patch must only contain storage create operations")]
+    FullStatePatchContainsNonCreateStorageOp,
 
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),

@@ -140,9 +140,8 @@ mod tests {
     fn account_update_details_size_hint() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        // A full state patch may only create or remove slots, so build it with create/remove ops.
+        // A full state patch may only create slots, so build it with create ops.
         let storage_patch = AccountStoragePatch::builder()
-            .remove_value(StorageSlotName::mock(1))
             .create_value(StorageSlotName::mock(2), Word::from([1, 1, 1, 1u32]))
             .create_value(StorageSlotName::mock(3), Word::from([1, 1, 0, 1u32]))
             .create_map(

@@ -41,7 +41,7 @@ pub use vault::{
 /// The presence of the code in a delta signals if the delta is a _full state_ or _partial state_
 /// delta. A full state delta must be converted into an [`Account`] object, while a partial state
 /// delta must be applied to an existing [`Account`]. Because a full state delta reconstructs the
-/// account from empty storage, its storage patch may only create or remove slots, never update
+/// account from empty storage, its storage patch may only create slots, never update or remove
 /// them; [`AccountDelta::new`] enforces this.
 ///
 /// TODO(code_upgrades): The ability to track account code updates is an outstanding feature. For
@@ -80,9 +80,9 @@ impl AccountDelta {
     /// # Errors
     ///
     /// - Returns an error if storage or vault were updated, but the nonce_delta is 0.
-    /// - Returns an error if `code` is provided but the storage patch contains an `Update`
-    ///   operation. A full state delta must reconstruct the account from empty storage, so it may
-    ///   only create or remove slots.
+    /// - Returns an error if `code` is provided but the storage patch contains an `Update` or
+    ///   `Remove` operation. A full state delta must reconstruct the account from empty storage, so
+    ///   it may only create slots.
     pub fn new(
         account_id: AccountId,
         storage: AccountStoragePatch,
@@ -94,10 +94,10 @@ impl AccountDelta {
         validate_nonce(nonce_delta, &storage, &vault)?;
 
         // A full state delta (carrying code) must reconstruct the account from empty storage, so it
-        // may only create or remove slots. An `Update` assumes the slot already exists and would
+        // may only create slots. An `Update` or `Remove` assumes the slot already exists and would
         // make reconstruction impossible.
-        if code.is_some() && storage.contains_updates() {
-            return Err(AccountDeltaError::FullStateDeltaContainsUpdate);
+        if code.is_some() && storage.contains_non_create_ops() {
+            return Err(AccountDeltaError::FullStateDeltaContainsNonCreateOp);
         }
 
         Ok(Self {
@@ -135,7 +135,7 @@ impl AccountDelta {
         // that a delta can be converted to a full account.
         //
         // The presence of code alone is sufficient to identify a full state delta: the constructor
-        // enforces that a code-carrying delta's storage patch contains no `Update` ops, so it
+        // enforces that a code-carrying delta's storage patch contains only `Create` ops, so it
         // always reconstructs a full account.
         self.code.is_some()
     }
@@ -367,8 +367,8 @@ impl TryFrom<&AccountDelta> for Account {
             vault.insert_asset(added_asset).map_err(AccountError::AssetVaultUpdateError)?;
         }
 
-        // A full state delta consists of `Create` or `Remove` slot patches, so applying it to empty
-        // storage reconstructs the account's full storage.
+        // A full state delta consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
         let mut storage = AccountStorage::default();
         storage.apply_patch(delta.storage())?;
 
@@ -490,6 +490,7 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
     use crate::account::{
@@ -542,14 +543,19 @@ mod tests {
             .unwrap();
     }
 
-    /// A full state delta (carrying code) must not contain an `Update` storage op, since it could
-    /// not be applied to empty storage to reconstruct the account.
-    #[test]
-    fn account_delta_new_rejects_full_state_with_update() -> anyhow::Result<()> {
+    /// A full state delta (carrying code) must only contain `Create` storage ops, since an `Update`
+    /// or `Remove` could not be applied to the empty storage of a new account.
+    #[rstest]
+    #[case::update(
+        AccountStoragePatch::builder().update_value(StorageSlotName::mock(1), Word::empty()).build()
+    )]
+    #[case::remove(
+        AccountStoragePatch::builder().remove_value(StorageSlotName::mock(1)).build()
+    )]
+    fn account_delta_new_rejects_full_state_with_non_create_op(
+        #[case] storage: AccountStoragePatch,
+    ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
-        let storage = AccountStoragePatch::builder()
-            .update_value(StorageSlotName::mock(1), Word::empty())
-            .build();
 
         let error = AccountDelta::new(
             account_id,
@@ -559,24 +565,21 @@ mod tests {
             ONE,
         )
         .unwrap_err();
-        assert_matches!(error, AccountDeltaError::FullStateDeltaContainsUpdate);
+        assert_matches!(error, AccountDeltaError::FullStateDeltaContainsNonCreateOp);
 
         Ok(())
     }
 
-    /// A full state delta whose storage creates and removes slots can be reconstructed into an
-    /// account; the `Remove` is a no-op on the empty storage of a new account.
+    /// A full state delta whose storage only creates slots can be reconstructed into an account.
     #[test]
-    fn account_delta_full_state_with_create_and_remove_reconstructs() -> anyhow::Result<()> {
+    fn account_delta_full_state_with_create_reconstructs() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let code = AccountCode::mock();
         let created_slot = StorageSlotName::mock(1);
         let created_value = Word::from([7u32, 0, 0, 0]);
-        let removed_slot = StorageSlotName::mock(2);
 
         let storage = AccountStoragePatch::builder()
             .create_value(created_slot.clone(), created_value)
-            .remove_value(removed_slot)
             .build();
 
         let delta = AccountDelta::new(

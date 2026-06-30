@@ -43,7 +43,7 @@ use crate::{Felt, Word};
 /// The presence of the code in a patch signals if the patch is a _full state_ or _partial state_
 /// patch. A full state patch must be converted into an [`Account`] object, while a partial state
 /// patch must be applied to an existing [`Account`]. Because a full state patch reconstructs the
-/// account from empty storage, its storage patch may only create or remove slots, never update
+/// account from empty storage, its storage patch may only create slots, never update or remove
 /// them; [`AccountPatch::new`] enforces this. A full state patch can only be the base of a
 /// [`merge`](AccountPatch::merge), never the incoming patch (see its docs for the permutation
 /// rules).
@@ -128,14 +128,14 @@ impl AccountPatch {
         }
 
         // A full state patch (carrying code) must reconstruct the account from empty storage, so it
-        // may only create or remove slots. An `Update` assumes the slot already exists and would
+        // may only create slots. An `Update` or `Remove` assumes the slot already exists and would
         // make reconstruction impossible.
         //
         // It is not required that the vault patch contains no remove operations, since valid
         // patches could be merged that add and remove an asset and so even a full state
         // patch can validly end up with remove operations.
-        if code.is_some() && storage.contains_updates() {
-            return Err(AccountPatchError::FullStatePatchContainsStorageUpdate);
+        if code.is_some() && storage.contains_non_create_ops() {
+            return Err(AccountPatchError::FullStatePatchContainsNonCreateStorageOp);
         }
 
         Ok(Self {
@@ -234,13 +234,13 @@ impl AccountPatch {
         self.storage.merge(other.storage)?;
         self.vault.merge(other.vault);
 
-        // A full state `self` contains all of its slots as `Create`/`Remove`, so merging a partial
-        // patch only ever results in `Create`/`Remove`, preserving the invariant that full state
-        // patches contain no `Update`s.
-        // Check that we have either a partial patch or no storage updates.
+        // A full state `self` contains all of its slots as `Create`, so merging a partial patch
+        // only ever updates a created slot (staying `Create`) or removes it (dropping the patch
+        // entirely), preserving the invariant that full state patches contain only `Create`s.
+        // Check that we have either a partial patch or only storage creates.
         debug_assert!(
-            !self.is_full_state() || !self.storage.contains_updates(),
-            "merging should never add storage _updates_ to a full state patch",
+            !self.is_full_state() || !self.storage.contains_non_create_ops(),
+            "merging should never add storage updates or removals to a full state patch",
         );
 
         Ok(())
@@ -286,7 +286,7 @@ impl AccountPatch {
         //
         // The presence of code alone is sufficient to identify a full state patch: the constructor
         // enforces that `code.is_some()` implies `final_nonce.is_some()` and that the storage patch
-        // contains no `Update` ops, and `merge` preserves both, so a code-carrying patch always
+        // contains only `Create` ops, and `merge` preserves both, so a code-carrying patch always
         // reconstructs a full account.
         self.code.is_some()
     }
@@ -392,8 +392,8 @@ impl TryFrom<&AccountPatch> for Account {
         let mut vault = AssetVault::default();
         vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
 
-        // A full state patch consists of `Create` or `Remove` slot patches, so applying it to empty
-        // storage reconstructs the account's full storage.
+        // A full state patch consists of `Create` slot patches, so applying it to empty storage
+        // reconstructs the account's full storage.
         let mut storage = AccountStorage::default();
         storage.apply_patch(patch.storage())?;
 
@@ -691,14 +691,19 @@ mod tests {
         Ok(())
     }
 
-    /// A full state patch (carrying code) must not contain an `Update` storage op, since it could
-    /// not be applied to empty storage to reconstruct the account.
-    #[test]
-    fn account_patch_new_rejects_full_state_with_update() -> anyhow::Result<()> {
+    /// A full state patch (carrying code) must only contain `Create` storage ops, since an `Update`
+    /// or `Remove` could not be applied to the empty storage of a new account.
+    #[rstest]
+    #[case::update(
+        AccountStoragePatch::builder().update_value(StorageSlotName::mock(1), Word::empty()).build()
+    )]
+    #[case::remove(
+        AccountStoragePatch::builder().remove_value(StorageSlotName::mock(1)).build()
+    )]
+    fn account_patch_new_rejects_full_state_with_non_create_op(
+        #[case] storage: AccountStoragePatch,
+    ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
-        let storage = AccountStoragePatch::builder()
-            .update_value(StorageSlotName::mock(1), Word::empty())
-            .build();
 
         let error = AccountPatch::new(
             account_id,
@@ -708,24 +713,21 @@ mod tests {
             Some(Felt::ONE),
         )
         .unwrap_err();
-        assert_matches!(error, AccountPatchError::FullStatePatchContainsStorageUpdate);
+        assert_matches!(error, AccountPatchError::FullStatePatchContainsNonCreateStorageOp);
 
         Ok(())
     }
 
-    /// A full state patch whose storage creates and removes slots can be reconstructed into an
-    /// account; the `Remove` is a no-op on the empty storage of a new account.
+    /// A full state patch whose storage only creates slots can be reconstructed into an account.
     #[test]
-    fn account_patch_full_state_with_create_and_remove_reconstructs() -> anyhow::Result<()> {
+    fn account_patch_full_state_with_create_reconstructs() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let code = AccountCode::mock();
         let created_slot = StorageSlotName::mock(1);
         let created_value = Word::from([7u32, 0, 0, 0]);
-        let removed_slot = StorageSlotName::mock(2);
 
         let storage = AccountStoragePatch::builder()
             .create_value(created_slot.clone(), created_value)
-            .remove_value(removed_slot)
             .build();
 
         let patch = AccountPatch::new(
@@ -1030,7 +1032,7 @@ mod tests {
         assert!(patch.is_full_state());
         assert_eq!(patch.code(), Some(&code));
         assert_eq!(patch.final_nonce(), Some(Felt::from(2u32)));
-        assert!(!patch.storage().contains_updates());
+        assert!(!patch.storage().contains_non_create_ops());
         assert_eq!(patch.storage().created_value(&slot_name), Some(updated_value));
 
         Ok(())
