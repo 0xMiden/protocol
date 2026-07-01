@@ -2,12 +2,13 @@ use std::env;
 use std::path::Path;
 use std::sync::Arc;
 
-use miden_assembly::debuginfo::DefaultSourceManager;
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::{Assembler, Library, ProjectTargetSelector};
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
 use miden_protocol::transaction::TransactionKernel;
 
@@ -52,8 +53,8 @@ fn main() -> Result<()> {
     // The miden-core library is provided through an in-memory registry
     let mut registry = build_registry()?;
 
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let assembler = Assembler::new(source_manager).with_warnings_as_errors(true);
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
     // compile standards library (includes note scripts) and seed it into the registry
     compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
@@ -64,6 +65,7 @@ fn main() -> Result<()> {
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
         assembler,
+        source_manager,
     )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
@@ -132,23 +134,25 @@ fn compile_standards_lib(
 // COMPILE ACCOUNT COMPONENTS
 // ================================================================================================
 
-/// Assembles each account-component project in `source_dir` into a package and saves it to
-/// `target_dir`. Each file is named after its package (e.g. `miden-standards-auth-singlesig.masp`),
-/// so the include path used by `account_component_code!` is the package name.
+/// Assembles each member of the account-components workspace in `source_dir` into a package and
+/// saves it to `target_dir`. Each file is named after its package (e.g.
+/// `miden-standards-auth-singlesig.masp`), so the include path used by `account_component_code!`
+/// is the package name.
 fn compile_account_components(
     registry: &mut InMemoryPackageRegistry,
     source_dir: &Path,
     target_dir: &Path,
     assembler: Assembler,
+    source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
-    // Each component is the sole `.masm` in its leaf directory, alongside its manifest.
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        let component_dir = masm_file_path.parent().expect("component file should have a parent");
-        let manifest_path = component_dir.join(PROJECT_MANIFEST);
+    let manifest =
+        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
+    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
 
+    for component in workspace.members() {
         let package = assembler
             .clone()
-            .for_project_at_path(&manifest_path, registry)?
+            .for_project(component.clone(), registry)?
             .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
         package.write_masp_file(target_dir).into_diagnostic()?;
@@ -214,29 +218,6 @@ mod shared {
     use miden_assembly::diagnostics::{IntoDiagnostic, Result};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Returns a vector with paths to all MASM files in the specified directory and its
-    /// subdirectories.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            for entry in WalkDir::new(path) {
-                let entry = entry.into_diagnostic()?;
-                let file_path = entry.path().to_path_buf();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
-    }
 
     /// Returns true if the provided path resolves to a file with `.masm` extension.
     ///

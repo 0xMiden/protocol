@@ -2034,6 +2034,7 @@ dependencies = [
  "miden-core-lib",
  "miden-mast-package",
  "miden-package-registry",
+ "miden-project",
  "miden-protocol",
  "miden-standards",
  "rand 0.9.4",
