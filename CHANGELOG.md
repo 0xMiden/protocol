@@ -48,6 +48,7 @@
 - [BREAKING] Added GER removal mechanism with a dedicated `ger_remover` role, `remove_ger` MASM procedure, `REMOVE_GER` note script, `RemoveGerNote` Rust helper, and a running keccak256 removed-GER hash chain; `AggLayerBridge::new`, `create_bridge_account`, and `create_existing_bridge_account` now take a `ger_remover_id` argument ([#2837](https://github.com/0xMiden/protocol/pull/2837)).
 - [BREAKING] Unified the fungible and non-fungible asset vault deltas into a single asset delta, changing the on-chain account delta commitment layout ([#3038](https://github.com/0xMiden/protocol/pull/3038)).
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
+- [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
@@ -66,6 +67,7 @@
 - Added a zero-root check before dispatching the active mint and burn policy in `TokenPolicyManager`, failing with a descriptive error ([#3121](https://github.com/0xMiden/protocol/pull/3121)).
 - [BREAKING] PSWAP notes now treat the requested asset amount as a minimum rather than an exact cap: a fill at or above it is accepted and takes the whole offered side with no remainder note (fills above the requested amount previously reverted). Partial fills below the minimum are unchanged. The `PswapNoteStorage` accessors `requested_asset` and `requested_asset_amount` were renamed to `min_requested_asset` and `min_requested_amount` (`requested_faucet_id` is unchanged), and the `ERR_PSWAP_FILL_EXCEEDS_REQUESTED` error was removed ([#3148](https://github.com/0xMiden/protocol/pull/3148)).
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
+- Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
 
 ### Fixes

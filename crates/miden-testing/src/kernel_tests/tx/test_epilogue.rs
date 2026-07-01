@@ -58,8 +58,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
-        use $kernel::epilogue
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::epilogue
         use miden::protocol::output_note
         use miden::core::sys
 
@@ -167,8 +167,8 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         .build()?;
 
     let mut code = "
-            use $kernel::prologue
-            use $kernel::epilogue
+            use miden::tx_kernel_core::prologue
+            use miden::tx_kernel_core::epilogue
             use miden::protocol::output_note
             use miden::core::sys
 
@@ -302,10 +302,10 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
 
     let test_pairs: [(u64, u64); 3] = [(9, 12), (18, 3), (20, 20)];
     let code_template = "
-        use $kernel::prologue
-        use $kernel::tx
-        use $kernel::epilogue
-        use $kernel::account
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::tx
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::account
 
         begin
             exec.prologue::prepare_transaction
@@ -352,7 +352,7 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 
     let test_values = [0u64, u16::MAX as u64 + 1, u32::MAX as u64];
     let code_template = "
-        use $kernel::tx
+        use miden::tx_kernel_core::tx
 
         begin
             push.{value_1}
@@ -375,10 +375,10 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code_template = "
-    use $kernel::prologue
-    use $kernel::epilogue
-    use $kernel::tx
-    use $kernel::account
+    use miden::tx_kernel_core::prologue
+    use miden::tx_kernel_core::epilogue
+    use miden::tx_kernel_core::tx
+    use miden::tx_kernel_core::account
 
     begin
         exec.prologue::prepare_transaction
@@ -413,10 +413,10 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
-        use $kernel::epilogue
-        use $kernel::memory
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::memory
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -523,9 +523,9 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
         r#"
         use miden::core::word
         use miden::protocol::output_note
-        use $kernel::prologue
-        use $kernel::epilogue
-        use $kernel::note
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::note
 
         begin
             exec.prologue::prepare_transaction
