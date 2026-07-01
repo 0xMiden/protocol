@@ -169,7 +169,7 @@ fn compile_tx_kernel(
 
     // Assemble the executable targets and write their packages to the `target_dir`.
     //
-    // The kernel internals now live in the `miden-tx-kernel-core` library, which both programs
+    // The kernel internals live in the `miden-tx-kernel-core` library, which both programs
     // depend on, so the executables are assembled directly through the project manifest.
     for target_name in [TX_KERNEL_MAIN_TARGET, TX_SCRIPT_MAIN_TARGET] {
         let package = project_assembler
@@ -368,7 +368,7 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
     let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
         .context("failed to extract all masm errors")?;
-    // Most kernel error constants live in the internals library, which is a separate project.
+    // Most kernel error constants live in the tx kernel core library, which is a separate project.
     let kernel_core_dir = asm_source_dir.join(ASM_TX_KERNEL_CORE_DIR);
     errors.extend(
         shared::extract_all_masm_errors(&kernel_core_dir)
