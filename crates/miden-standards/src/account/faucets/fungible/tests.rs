@@ -25,7 +25,6 @@ use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, T
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{
-    all_authority_gated_setter_roots,
     user_faucet_guarded,
     user_faucet_multisig,
     user_faucet_single_sig_acl,
@@ -166,18 +165,8 @@ fn user_fungible_faucet_with_multisig() {
         [Felt::from(threshold), Felt::from(num_approvers), Felt::ZERO, Felt::ZERO].into()
     );
 
-    // Every authority-gated setter requires the configured multisig threshold.
-    let expected_threshold: Word = [Felt::from(2_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
-    for root in all_authority_gated_setter_roots() {
-        let stored = faucet_account
-            .storage()
-            .get_map_item(
-                AuthMultisig::procedure_thresholds_slot(),
-                StorageMapKey::new(root.as_word()),
-            )
-            .unwrap();
-        assert_eq!(stored, expected_threshold);
-    }
+    // No per-procedure overrides are configured, so every authority-gated setter is governed by
+    // the default threshold asserted above (`AuthMultisig` is fail-closed).
 
     // The faucet component round-trips from the built account.
     let _faucet_component = FungibleFaucet::try_from(faucet_account).unwrap();
@@ -213,18 +202,8 @@ fn user_fungible_faucet_with_guarded_multisig() {
         [Felt::from(threshold), Felt::from(num_approvers), Felt::ZERO, Felt::ZERO].into()
     );
 
-    // Every authority-gated setter requires the configured multisig threshold.
-    let expected_threshold: Word = [Felt::from(2_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
-    for root in all_authority_gated_setter_roots() {
-        let stored = faucet_account
-            .storage()
-            .get_map_item(
-                AuthGuardedMultisig::procedure_thresholds_slot(),
-                StorageMapKey::new(root.as_word()),
-            )
-            .unwrap();
-        assert_eq!(stored, expected_threshold);
-    }
+    // No per-procedure overrides are configured, so every authority-gated setter is governed by
+    // the default threshold asserted above (`AuthGuardedMultisig` is fail-closed).
 
     // The faucet component round-trips from the built account.
     let _faucet_component = FungibleFaucet::try_from(faucet_account).unwrap();
