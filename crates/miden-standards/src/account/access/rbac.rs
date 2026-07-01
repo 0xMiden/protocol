@@ -116,12 +116,6 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 pub struct RoleBasedAccessControl {
     /// Initial role members seeded at account creation, keyed by role symbol. Empty for a
     /// runtime-populated component (see [`RoleBasedAccessControl::empty`]).
-    ///
-    /// Seeding a role with a set of members is equivalent to the owner calling `grant_role` for
-    /// each member at runtime: it sets each member's membership flag and the role's member count.
-    /// Modeling this as a map of sets makes duplicate roles and duplicate members impossible by
-    /// construction. Seeded roles are owner-managed (no delegated admin); delegated admins can be
-    /// configured later via the `set_role_admin` procedure.
     roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
 }
 

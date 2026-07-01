@@ -123,10 +123,6 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 // BRIDGE RBAC ROLES
 // ================================================================================================
 
-// Namespace of the assembled bridge account component library (the `asm/components/bridge.masm`
-// wrapper). Procedure roots are resolved as `<namespace>::<proc_name>`.
-const BRIDGE_COMPONENT_NAMESPACE: &str = "bridge";
-
 static FAUCET_ADMIN_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
     RoleSymbol::new("FAUCET_ADMIN").expect("FAUCET_ADMIN role symbol should be valid")
 });
@@ -142,33 +138,29 @@ static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
 static BRIDGE_COMPONENT_CODE: LazyLock<AccountComponentCode> =
     LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_library()));
 
-fn bridge_component_code() -> &'static AccountComponentCode {
-    &BRIDGE_COMPONENT_CODE
-}
-
 procedure_root!(
     REGISTER_FAUCET_ROOT,
-    BRIDGE_COMPONENT_NAMESPACE,
+    AggLayerBridge::COMPONENT_NAMESPACE,
     "register_faucet",
-    bridge_component_code()
+    AggLayerBridge::code()
 );
 procedure_root!(
     STORE_FAUCET_METADATA_HASH_ROOT,
-    BRIDGE_COMPONENT_NAMESPACE,
+    AggLayerBridge::COMPONENT_NAMESPACE,
     "store_faucet_metadata_hash",
-    bridge_component_code()
+    AggLayerBridge::code()
 );
 procedure_root!(
     UPDATE_GER_ROOT,
-    BRIDGE_COMPONENT_NAMESPACE,
+    AggLayerBridge::COMPONENT_NAMESPACE,
     "update_ger",
-    bridge_component_code()
+    AggLayerBridge::code()
 );
 procedure_root!(
     REMOVE_GER_ROOT,
-    BRIDGE_COMPONENT_NAMESPACE,
+    AggLayerBridge::COMPONENT_NAMESPACE,
     "remove_ger",
-    bridge_component_code()
+    AggLayerBridge::code()
 );
 
 /// A privileged AggLayer bridge role together with the accounts that initially hold it.
@@ -273,8 +265,18 @@ impl AggLayerBridge {
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
+    /// Namespace of the assembled bridge account component library (the
+    /// `asm/components/bridge.masm` wrapper). Procedure roots are resolved as
+    /// `<namespace>::<proc_name>`.
+    const COMPONENT_NAMESPACE: &'static str = "bridge";
+
     // RBAC ROLES
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the assembled bridge account component code.
+    pub fn code() -> &'static AccountComponentCode {
+        &BRIDGE_COMPONENT_CODE
+    }
 
     /// Returns the `FAUCET_ADMIN` role symbol. Holders may register faucets and store faucet
     /// metadata (`register_faucet`, `store_faucet_metadata_hash`).
