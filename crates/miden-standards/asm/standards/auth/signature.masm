@@ -15,13 +15,12 @@ const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
 
 # Local Memory Addresses for multisig operations
-const NUM_OF_APPROVERS_LOC=0
-const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=4
-const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=5
-const CURRENT_PK_LOC=8
-const SUCCESSFUL_VERIFICATIONS_LOC=12
-const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=16
-const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=17
+const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
+const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
+const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=2
+const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=3
+const CURRENT_PK_LOC=4
+const SUCCESSFUL_VERIFICATIONS_LOC=8
 
 # ERRORS
 # =================================================================================================
@@ -179,7 +178,7 @@ end
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(18)
+@locals(9)
 pub proc verify_signatures
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
@@ -270,7 +269,7 @@ pub proc verify_signatures
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
             # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
-            
+
             # Get scheme_id for signer index i-1 from initial storage state.
             exec.active_account::get_initial_map_item
             # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
