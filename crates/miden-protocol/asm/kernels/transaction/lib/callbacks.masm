@@ -22,7 +22,7 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT = word("miden::protocol::
 # ==================================================================================================
 
 #! Invokes the `on_before_asset_added_to_account` callback on the faucet that issued the asset,
-#! if the asset's faucet has callbacks enabled.
+#! if the asset's issuer has callbacks enabled.
 #!
 #! The callback invocation is skipped in these cases:
 #! - If the issuing faucet's account ID has the asset callback flag disabled.
@@ -59,7 +59,7 @@ pub proc on_before_asset_added_to_account
 end
 
 #! Invokes the `on_before_asset_added_to_note` callback on the faucet that issued the asset,
-#! if the asset's faucet has callbacks enabled.
+#! if the asset's issuer has callbacks enabled.
 #!
 #! The callback invocation is skipped in these cases:
 #! - If the issuing faucet's account ID has the asset callback flag disabled.

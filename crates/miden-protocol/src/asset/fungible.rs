@@ -4,7 +4,7 @@ use core::fmt;
 use super::vault::AssetVaultKey;
 use super::{Asset, AssetAmount, AssetComposition, AssetError, Word};
 use crate::Felt;
-use crate::account::AccountId;
+use crate::account::{AccountId, AssetCallbackFlag};
 use crate::asset::AssetId;
 use crate::utils::serde::{
     ByteReader,
@@ -110,6 +110,11 @@ impl FungibleAsset {
     /// Return ID of the faucet which issued this asset.
     pub fn faucet_id(&self) -> AccountId {
         self.faucet_id
+    }
+
+    /// Returns the [`AssetCallbackFlag`] of the faucet which issued this asset.
+    pub fn callbacks(&self) -> AssetCallbackFlag {
+        self.faucet_id.asset_callback_flag()
     }
 
     /// Returns the amount of this asset.

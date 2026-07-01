@@ -5,7 +5,7 @@ use core::fmt;
 use miden_crypto::merkle::smt::LeafIndex;
 use miden_crypto_derive::WordWrapper;
 
-use crate::account::AccountId;
+use crate::account::{AccountId, AssetCallbackFlag};
 use crate::asset::vault::AssetId;
 use crate::asset::{Asset, AssetComposition, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
@@ -141,6 +141,11 @@ impl AssetVaultKey {
     /// Returns the [`AccountId`] of the faucet that issued the asset.
     pub fn faucet_id(&self) -> AccountId {
         self.faucet_id
+    }
+
+    /// Returns the [`AssetCallbackFlag`] of the faucet that issued the asset.
+    pub fn callback_flag(&self) -> AssetCallbackFlag {
+        self.faucet_id.asset_callback_flag()
     }
 
     /// Returns the [`AssetComposition`] of the vault key.
