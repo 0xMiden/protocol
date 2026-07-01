@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_assembly::library::ProcedureExport;
 use miden_mast_package::Package;
 use miden_processor::mast::MastNodeExt;
 
@@ -184,19 +183,10 @@ impl AccountComponent {
     /// attribute. A procedure is part of the component interface if it has either the
     /// `@account_procedure` or `@auth_script` attributes.
     pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
-        let library = self.code.as_library();
-        library.exports().filter_map(|export| {
-            let proc_export = export.as_procedure()?;
-            if !is_interface_procedure(proc_export) {
-                return None;
-            }
-            let digest = library
-                .mast_forest()
-                .get_node_by_id(proc_export.node)
-                .expect("export node not in the forest")
-                .digest();
+        self.code.exports().map(|proc_export| {
+            let digest = self.code.mast_forest()[proc_export.node].digest();
             let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-            Some((AccountProcedureRoot::from_raw(digest), is_auth))
+            (AccountProcedureRoot::from_raw(digest), is_auth)
         })
     }
 
@@ -214,15 +204,6 @@ impl AccountComponent {
     pub fn has_procedure(&self, root: AccountProcedureRoot) -> bool {
         self.procedures().any(|(proc_root, _)| proc_root == root)
     }
-}
-
-/// Returns `true` if the given exported procedure is part of the component interface.
-///
-/// A procedure is part of the interface if it has the `@account_procedure` or `@auth_script`
-/// attributes.
-pub(super) fn is_interface_procedure(proc_export: &ProcedureExport) -> bool {
-    proc_export.attributes.has(ACCOUNT_PROCEDURE_ATTRIBUTE)
-        || proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE)
 }
 
 impl From<AccountComponent> for AccountComponentCode {

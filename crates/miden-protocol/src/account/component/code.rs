@@ -39,11 +39,17 @@ impl AccountComponentCode {
     }
 
     /// Returns the interface procedure exports of this component.
+    ///
+    /// A procedure is part of the interface if it has the `@account_procedure` or `@auth_script`
+    /// attributes.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
         self.0
             .exports()
             .filter_map(|export| export.as_procedure())
-            .filter(|proc_export| super::is_interface_procedure(proc_export))
+            .filter(|proc_export| {
+                proc_export.attributes.has(super::ACCOUNT_PROCEDURE_ATTRIBUTE)
+                    || proc_export.attributes.has(super::AUTH_SCRIPT_ATTRIBUTE)
+            })
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
