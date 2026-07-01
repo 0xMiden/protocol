@@ -18,7 +18,7 @@ The B2AGG note benchmark measures the bridge-out flow: the benchmark setup regis
 
 Each of the above transactions is measured in two groups:
 - Benchmarking the transaction execution.
-  
+
   For each transaction, data is collected on the number of cycles required to complete:
   - Prologue
   - All notes processing
@@ -41,30 +41,75 @@ Each of the above transactions is measured in two groups:
   This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. The benchmark ID encodes what was measured as separate path segments: the signing scheme of the benchmarked account (`falcon`/`ecdsa`) and, for the proving group, the hash function used during proving (`poseidon2`). Network-authenticated transactions (CLAIM, B2AGG) carry no signing scheme. Results are printed to the terminal and look like so:
   ```zsh
   Execute transaction/falcon/single-p2id-note
-                        time:   [4.5477 ms 4.5691 ms 4.5900 ms]
-                        change: [+0.6557% +1.4158% +2.1447%] (p = 0.00 < 0.05)
-                        Change within noise threshold.
+                          time:   [4.3236 ms 4.3544 ms 4.3862 ms]
+                          change: [-7.0844% -4.9883% -3.4045%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute transaction/ecdsa/single-p2id-note
+                          time:   [2.1275 ms 2.1294 ms 2.1317 ms]
+                          change: [-6.5976% -6.1261% -5.7058%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute transaction/falcon/two-p2id-notes
+                          time:   [5.1385 ms 5.1585 ms 5.1815 ms]
+                          change: [-8.6872% -8.0431% -7.4236%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
   Execute transaction/ecdsa/two-p2id-notes
-                        time:   [3.1504 ms 3.1623 ms 3.1764 ms]
-                        change: [-3.7669% -3.0640% -2.3537%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                          time:   [3.0454 ms 3.0503 ms 3.0567 ms]
+                          change: [-5.9796% -5.5470% -5.1069%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute transaction/claim-note-l1
+                          time:   [3.9404 ms 3.9586 ms 3.9790 ms]
+                          change: [-7.4014% -6.1927% -5.0437%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
   Execute transaction/claim-note-l2
-                        time:   [4.6662 ms 4.6822 ms 4.6996 ms]
-                        change: [-3.0893% -2.2258% -1.4266%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                          time:   [4.4660 ms 4.4774 ms 4.4902 ms]
+                          change: [-9.7807% -8.4338% -7.1374%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute transaction/b2agg-note
+                          time:   [30.228 ms 30.283 ms 30.367 ms]
+                          change: [-6.6415% -6.1561% -5.6679%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
 
   Execute and prove transaction/poseidon2/falcon/single-p2id-note
-                        time:   [3.4986 s 3.5265 s 3.5558 s]
-                        change: [-0.1326% +0.6794% +1.5087%] (p = 0.15 > 0.05)
-                        No change in performance detected.
+                          time:   [3.3744 s 3.3833 s 3.3942 s]
+                          change: [-11.007% -10.319% -9.7045%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute and prove transaction/poseidon2/ecdsa/single-p2id-note
+                          time:   [870.68 ms 874.08 ms 877.59 ms]
+                          change: [-12.232% -10.510% -8.9920%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute and prove transaction/poseidon2/falcon/two-p2id-notes
+                          time:   [3.4046 s 3.4149 s 3.4255 s]
+                          change: [-1.9928% -1.0219% -0.2023%] (p = 0.03 < 0.05)
+                          Change within noise threshold.
+
   Execute and prove transaction/poseidon2/ecdsa/two-p2id-notes
-                        time:   [865.50 ms 869.96 ms 875.46 ms]
-                        change: [-4.1704% -3.3025% -2.4024%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                          time:   [873.72 ms 876.86 ms 880.41 ms]
+                          change: [-3.7161% -2.4053% -1.1572%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
   Execute and prove transaction/poseidon2/claim-note-l1
-                        time:   [1.7053 s 1.7118 s 1.7194 s]
-                        change: [-4.2221% -3.5400% -2.8705%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                          time:   [1.7146 s 1.7209 s 1.7276 s]
+                          change: [-15.987% -13.815% -11.896%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute and prove transaction/poseidon2/claim-note-l2
+                          time:   [1.7157 s 1.7250 s 1.7364 s]
+                          change: [-8.5252% -6.8302% -5.0772%] (p = 0.00 < 0.05)
+                          Performance has improved.
+
+  Execute and prove transaction/poseidon2/b2agg-note
+                          time:   [6.8425 s 6.8683 s 6.8967 s]
+                          change: [-10.551% -9.8033% -9.0014%] (p = 0.00 < 0.05)
+                          Performance has improved.
   ```
 
   The results above were obtained on the MacBook Pro M2 with 32 GB of RAM.
