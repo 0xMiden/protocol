@@ -1,0 +1,13 @@
+[package]
+name    = "miden-standards-faucets-policies-mint-owner-controlled-owner-only"
+version = "0.16.0"
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::mint::owner_controlled::owner_only"
+path      = "owner_only.masm"
+
+[dependencies]
+miden-core      = { linkage = "dynamic", version = "0.23.4" }
+miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
+miden-standards = { linkage = "static", version = "0.16.0" }

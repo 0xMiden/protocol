@@ -1,0 +1,13 @@
+[package]
+name    = "miden-standards-faucets-policies-burn-min-burn-amount"
+version = "0.16.0"
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::burn::min_burn_amount"
+path      = "min_burn_amount.masm"
+
+[dependencies]
+miden-core      = { linkage = "dynamic", version = "0.23.4" }
+miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
+miden-standards = { linkage = "static", version = "0.16.0" }

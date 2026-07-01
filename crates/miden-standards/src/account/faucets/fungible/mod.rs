@@ -65,7 +65,7 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(FUNGIBLE_FAUCET_CODE, "faucets/fungible_faucet.masl");
+account_component_code!(FUNGIBLE_FAUCET_CODE, "miden-standards-faucets-fungible-faucet.masp");
 
 // Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
 procedure_root!(
