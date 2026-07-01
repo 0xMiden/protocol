@@ -1,10 +1,10 @@
 [package]
-name              = "miden-standards-access-pausable-mod"
+name              = "miden-standards-access-pausable"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::access::pausable::mod"
+namespace = "miden::standards::components::access::pausable"
 path      = "mod.masm"
 
 [dependencies]

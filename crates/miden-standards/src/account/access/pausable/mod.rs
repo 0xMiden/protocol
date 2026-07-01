@@ -22,7 +22,7 @@ pub use manager::PausableManager;
 // IS_PAUSED STORAGE
 // ================================================================================================
 
-account_component_code!(PAUSABLE_CODE, "miden-standards-access-pausable-mod.masp");
+account_component_code!(PAUSABLE_CODE, "miden-standards-access-pausable.masp");
 
 static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::pausable::is_paused")
