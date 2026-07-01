@@ -138,7 +138,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -193,7 +193,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::tx
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -252,7 +252,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -416,7 +416,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -1725,7 +1725,7 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
         "
       use miden::core::sys
 
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
       use miden::protocol::tx
 
       begin
