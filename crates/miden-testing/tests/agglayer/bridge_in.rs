@@ -33,7 +33,7 @@ use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType}
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{NoteAssets, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
@@ -42,14 +42,7 @@ use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_TH
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_testing::utils::create_p2id_note_exact;
-use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    TransactionContextBuilder,
-    assert_transaction_executor_error,
-};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use rand::Rng;
 
@@ -383,14 +376,16 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             .unwrap()
             .with_callbacks(AssetCallbackFlag::Enabled)
             .into();
-    let expected_output_p2id_note = create_p2id_note_exact(
-        agglayer_faucet.id(),
-        destination_account_id,
-        vec![expected_asset],
-        NoteType::Public,
-        serial_num,
-    )
-    .unwrap();
+    let expected_output_p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(agglayer_faucet.id())
+            .target(destination_account_id)
+            .assets(vec![expected_asset])
+            .note_type(NoteType::Public)
+            .serial_number(serial_num)
+            .build()
+            .unwrap(),
+    );
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
@@ -1307,14 +1302,16 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // Cross-check storage directly: it should encode the destination account ID the same way
     // `P2idNoteStorage::from` does ([suffix, prefix]).
-    let expected_p2id_note = create_p2id_note_exact(
-        bridge_account.id(),
-        destination_account_id,
-        vec![expected_asset],
-        NoteType::Public,
-        serial_num,
-    )
-    .unwrap();
+    let expected_p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(bridge_account.id())
+            .target(destination_account_id)
+            .assets(vec![expected_asset])
+            .note_type(NoteType::Public)
+            .serial_number(serial_num)
+            .build()
+            .unwrap(),
+    );
     let actual_storage = output_note.recipient().storage();
     let expected_storage = expected_p2id_note.recipient().storage();
     assert_eq!(
@@ -1580,6 +1577,10 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
     assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
     assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
 
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+
     for leaf_index in 0..32 {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
@@ -1587,7 +1588,8 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
             .with_statically_linked_library(&agglayer_library())?
             .compile_tx_script(source)?;
 
-        TransactionContextBuilder::with_existing_mock_account()
+        mock_chain
+            .build_tx_context(account.id(), &[], &[])?
             .tx_script(tx_script.clone())
             .build()?
             .execute()

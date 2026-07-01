@@ -64,7 +64,7 @@ To illustrate the `Transaction` protocol, we provide two examples for a basic `T
 
 ### Creating a P2ID note
 
-Let's assume account A wants to create a P2ID note. P2ID notes are pay-to-ID notes that can only be consumed by a specified target account ID. Note creators can provide the target account ID using the [note storage](note#inputs).
+Let's assume account A wants to create a P2ID note. P2ID notes are pay-to-ID notes that can only be consumed by a specified target account ID. Note creators can provide the target account ID using the [note storage](note#storage).
 
 In this example, account A uses the basic wallet and the single-sig authentication component provided by `miden-standards`. The basic wallet component defines the methods `wallets::basic::create_note` and `wallets::basic::move_asset_to_note` to create notes with assets, and `wallets::basic::receive_asset` to receive assets. The authentication component exposes `auth::singlesig::auth_tx` which allows for signing a transaction. Some account methods like `active_account::get_id` are always exposed.
 

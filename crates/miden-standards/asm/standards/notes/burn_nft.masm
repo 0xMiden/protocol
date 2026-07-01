@@ -1,0 +1,25 @@
+use miden::standards::faucets::non_fungible->faucet
+
+#! BURN script (non-fungible): burns the NFT carried by the note by calling the faucet's
+#! `receive_and_burn` procedure. Intended to be executed against a non-fungible faucet account.
+#!
+#! The receive_and_burn procedure handles all validations (exactly one asset, asset issued by
+#! this faucet, asset in the ISSUED state) and marks the commitment permanently BURNED.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::faucets::non_fungible::receive_and_burn` procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - account does not expose receive_and_burn procedure.
+#! - any of the validations in the receive_and_burn procedure fail.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    call.faucet::receive_and_burn
+    # => [pad(16)]
+end

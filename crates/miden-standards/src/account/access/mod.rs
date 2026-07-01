@@ -13,8 +13,8 @@ pub mod rbac;
 ///
 /// User-account faucets (where the auth component is itself the setter gate) install
 /// [`Authority::AuthControlled`] directly via factories like
-/// [`create_user_fungible_faucet`][crate::account::faucets::create_user_fungible_faucet]; they
-/// do not need this enum.
+/// [`create_singlesig_user_fungible_faucet`][crate::account::faucets::create_singlesig_user_fungible_faucet];
+/// they do not need this enum.
 ///
 /// - [`AccessControl::Ownable2Step`] → [`Ownable2Step`] + [`Authority::OwnerControlled`]. The
 ///   setter gate enforces `sender == owner`.
