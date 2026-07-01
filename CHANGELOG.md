@@ -75,6 +75,7 @@
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
+- Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
 
 ## v0.15.2 (2026-06-05)
 
