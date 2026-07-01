@@ -47,6 +47,3 @@ miden-protocol = { features = ["testing"], workspace = true }
 # enable the `testing` feature. This is a workaround for Cargo's lack of test-specific features.
 # See: https://github.com/rust-lang/cargo/issues/2911#issuecomment-1483256987
 miden-standards = { features = ["testing"], path = "." }
-
-[package.metadata.cargo-shear]
-ignored = ["miden-core-lib"]
