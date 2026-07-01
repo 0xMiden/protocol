@@ -261,8 +261,12 @@ end
 
 #! Executes active mint policy by dynamic execution.
 #!
-#! Inputs:  [amount, tag, note_type, RECIPIENT]
-#! Outputs: [amount, tag, note_type, RECIPIENT]
+#! The policy operates on the full asset value word so the interface is shared across fungible
+#! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
+#! `note_type`, and `RECIPIENT`.
+#!
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
+#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
 #! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
@@ -274,23 +278,23 @@ end
 @locals(4)
 pub proc execute_mint_policy
     exec.pausable::assert_not_paused
-    # => [amount, tag, note_type, RECIPIENT]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
     exec.get_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
+    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     exec.word::testz
     assertz.err=ERR_ACTIVE_MINT_POLICY_NOT_SET
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
+    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-    # => [amount, tag, note_type, RECIPIENT]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
     locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, amount, tag, note_type, RECIPIENT]
+    # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     dynexec
-    # => [amount, tag, note_type, RECIPIENT]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
 #! Returns active mint policy root.

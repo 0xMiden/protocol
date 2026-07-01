@@ -126,6 +126,13 @@ impl AccountStoragePatch {
         self.patches.is_empty()
     }
 
+    /// Returns `true` if any slot patch is not a
+    /// [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create), i.e. it
+    /// updates or removes an existing slot.
+    pub(in crate::account) fn contains_non_create_ops(&self) -> bool {
+        self.patches.values().any(|slot_patch| !slot_patch.patch_op().is_create())
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
