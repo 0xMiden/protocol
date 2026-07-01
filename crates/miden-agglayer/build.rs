@@ -344,7 +344,7 @@ fn generate_agglayer_constants(
             components.extend(AccessControl::Rbac {
                 owner: dummy_owner,
                 roles: BTreeMap::new(),
-                members: Vec::new(),
+                members: BTreeMap::new(),
             });
         } else if lib_name == "faucet" {
             components.push(AccountComponent::from(

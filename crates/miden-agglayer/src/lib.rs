@@ -150,7 +150,7 @@ fn create_bridge_account_builder(
         .with_components(AccessControl::Rbac {
             owner,
             roles: AggLayerBridge::procedure_roles(),
-            members: AggLayerBridge::rbac_role_assignments(&role_members),
+            members: AggLayerBridge::rbac_role_members(&role_members),
         })
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())

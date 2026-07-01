@@ -18,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
-use miden_standards::account::access::RoleAssignment;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -300,32 +299,16 @@ impl AggLayerBridge {
         ])
     }
 
-    /// Groups the given role members into [`RoleAssignment`]s for seeding the account's RBAC
-    /// component (one assignment per role, in faucet-admin / GER-injector / GER-remover order).
+    /// Groups the given role members by role symbol for seeding the account's RBAC component.
     /// Roles with no provided members are omitted.
-    pub fn rbac_role_assignments(members: &[BridgeRoleMember]) -> Vec<RoleAssignment> {
-        let mut faucet_admins = Vec::new();
-        let mut ger_injectors = Vec::new();
-        let mut ger_removers = Vec::new();
+    pub fn rbac_role_members(
+        members: &[BridgeRoleMember],
+    ) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
+        let mut roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>> = BTreeMap::new();
         for member in members {
-            match member {
-                BridgeRoleMember::FaucetAdmin(id) => faucet_admins.push(*id),
-                BridgeRoleMember::GerInjector(id) => ger_injectors.push(*id),
-                BridgeRoleMember::GerRemover(id) => ger_removers.push(*id),
-            }
+            roles.entry(member.role_symbol()).or_default().insert(member.account_id());
         }
-
-        let mut assignments = Vec::new();
-        if !faucet_admins.is_empty() {
-            assignments.push(RoleAssignment::new(Self::faucet_admin_role(), faucet_admins));
-        }
-        if !ger_injectors.is_empty() {
-            assignments.push(RoleAssignment::new(Self::ger_injector_role(), ger_injectors));
-        }
-        if !ger_removers.is_empty() {
-            assignments.push(RoleAssignment::new(Self::ger_remover_role(), ger_removers));
-        }
-        assignments
+        roles
     }
 
     // PUBLIC ACCESSORS

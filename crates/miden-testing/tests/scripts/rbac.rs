@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use core::slice;
 
@@ -17,12 +17,7 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{
-    AccessControl,
-    Ownable2Step,
-    RoleAssignment,
-    RoleBasedAccessControl,
-};
+use miden_standards::account::access::{AccessControl, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ROLE_SYMBOL_ZERO,
@@ -42,7 +37,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
         .with_components(AccessControl::Rbac {
             owner,
             roles: BTreeMap::new(),
-            members: Vec::new(),
+            members: BTreeMap::new(),
         })
         .build_existing()?;
 
@@ -51,7 +46,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
 
 fn create_rbac_account_with_members(
     owner: AccountId,
-    members: Vec<RoleAssignment>,
+    members: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
 ) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
@@ -371,7 +366,7 @@ async fn test_rbac_with_roles_matches_runtime_grants() -> anyhow::Result<()> {
     // Account seeded with two MINTER members at construction.
     let seeded = create_rbac_account_with_members(
         owner,
-        vec![RoleAssignment::new(minter.clone(), vec![alice, bob])],
+        BTreeMap::from([(minter.clone(), BTreeSet::from([alice, bob]))]),
     )?;
 
     // Account built empty, then granted the same two members at runtime.

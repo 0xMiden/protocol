@@ -82,7 +82,7 @@ fn add_rbac_faucet(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { owner, roles, members: Vec::new() })
+        .with_components(AccessControl::Rbac { owner, roles, members: BTreeMap::new() })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 

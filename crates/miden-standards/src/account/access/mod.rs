@@ -1,6 +1,5 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
-use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
 
@@ -22,7 +21,7 @@ pub mod rbac;
 /// - [`AccessControl::Rbac`] → [`Ownable2Step`] + [`RoleBasedAccessControl`] +
 ///   [`Authority::RbacControlled`]. The `roles` map assigns a role to individual gated procedures
 ///   (keyed by procedure root); procedures without a mapping fall back to the `owner` check. The
-///   `members` list seeds initial role holders at account creation.
+///   `members` map seeds initial role holders at account creation.
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
@@ -38,7 +37,7 @@ pub mod rbac;
 /// AccountBuilder::new(init_seed).with_components(AccessControl::Rbac {
 ///     owner,
 ///     roles: BTreeMap::new(),
-///     members: Vec::new(),
+///     members: BTreeMap::new(),
 /// });
 /// ```
 ///
@@ -62,7 +61,7 @@ pub enum AccessControl {
     Rbac {
         owner: AccountId,
         roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
-        members: Vec<RoleAssignment>,
+        members: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
     },
 }
 
@@ -93,4 +92,4 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::{RbacError, RoleAssignment, RoleBasedAccessControl};
+pub use rbac::{RbacError, RoleBasedAccessControl};
