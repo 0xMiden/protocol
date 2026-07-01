@@ -18,12 +18,7 @@ const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is
 # CONSTANTS
 # =================================================================================================
 
-# Storage slots.
-#
-# The privileged roles (faucet admin, GER injector, GER remover) are no longer stored as plain
-# account IDs here. Authorization for the role-gated procedures below is delegated to the account's
-# `Authority` component (RBAC-controlled), which maps each procedure root to the role required to
-# invoke it. See `authority::assert_authorized`.
+# Storage slots
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")

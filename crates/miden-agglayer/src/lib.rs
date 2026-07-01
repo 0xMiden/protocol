@@ -133,9 +133,8 @@ fn create_agglayer_faucet_component(
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
 /// Access control is provided by the RBAC stack: `owner` becomes the account's `Ownable2Step`
-/// governance owner (able to grant/revoke roles and transfer ownership), and `role_members` seeds
-/// the initial holders of the `FAUCET_ADMIN`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate
-/// the bridge's privileged procedures.
+/// governance owner, and `role_members` seeds the initial holders of the `FAUCET_ADMIN`,
+/// `GER_INJECTOR`, and `GER_REMOVER` roles that gate the bridge's privileged procedures.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.

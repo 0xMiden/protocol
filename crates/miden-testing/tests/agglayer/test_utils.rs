@@ -70,9 +70,9 @@ pub fn create_existing_bridge_account_with_roles(
         seed,
         bridge_test_owner(),
         vec![
-            BridgeRoleMember::FaucetAdmin(faucet_admin),
-            BridgeRoleMember::GerInjector(ger_injector),
-            BridgeRoleMember::GerRemover(ger_remover),
+            BridgeRoleMember::FaucetAdmin(vec![faucet_admin]),
+            BridgeRoleMember::GerInjector(vec![ger_injector]),
+            BridgeRoleMember::GerRemover(vec![ger_remover]),
         ],
     )
 }

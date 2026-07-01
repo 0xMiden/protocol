@@ -18,6 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
+use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -136,33 +137,58 @@ static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
     RoleSymbol::new("GER_REMOVER").expect("GER_REMOVER role symbol should be valid")
 });
 
-static REGISTER_FAUCET_ROOT: LazyLock<AccountProcedureRoot> =
-    LazyLock::new(|| bridge_procedure_root("register_faucet"));
-static STORE_FAUCET_METADATA_HASH_ROOT: LazyLock<AccountProcedureRoot> =
-    LazyLock::new(|| bridge_procedure_root("store_faucet_metadata_hash"));
-static UPDATE_GER_ROOT: LazyLock<AccountProcedureRoot> =
-    LazyLock::new(|| bridge_procedure_root("update_ger"));
-static REMOVE_GER_ROOT: LazyLock<AccountProcedureRoot> =
-    LazyLock::new(|| bridge_procedure_root("remove_ger"));
+/// The assembled bridge account component code, used to resolve the roots of the bridge's
+/// role-gated procedures.
+static BRIDGE_COMPONENT_CODE: LazyLock<AccountComponentCode> =
+    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_library()));
 
-/// A privileged AggLayer bridge role together with the account that initially holds it.
+fn bridge_component_code() -> &'static AccountComponentCode {
+    &BRIDGE_COMPONENT_CODE
+}
+
+procedure_root!(
+    REGISTER_FAUCET_ROOT,
+    BRIDGE_COMPONENT_NAMESPACE,
+    "register_faucet",
+    bridge_component_code()
+);
+procedure_root!(
+    STORE_FAUCET_METADATA_HASH_ROOT,
+    BRIDGE_COMPONENT_NAMESPACE,
+    "store_faucet_metadata_hash",
+    bridge_component_code()
+);
+procedure_root!(
+    UPDATE_GER_ROOT,
+    BRIDGE_COMPONENT_NAMESPACE,
+    "update_ger",
+    bridge_component_code()
+);
+procedure_root!(
+    REMOVE_GER_ROOT,
+    BRIDGE_COMPONENT_NAMESPACE,
+    "remove_ger",
+    bridge_component_code()
+);
+
+/// A privileged AggLayer bridge role together with the accounts that initially hold it.
 ///
 /// Used to seed the bridge account's RBAC role membership at creation. Each variant maps to a
 /// distinct role symbol and gates a specific set of bridge procedures:
-/// - [`BridgeRoleMember::FaucetAdmin`] (`FAUCET_ADMIN`) gates `register_faucet` and
+/// - [`FAUCET_ADMIN`][BridgeRoleMember::FaucetAdmin] gates `register_faucet` and
 ///   `store_faucet_metadata_hash`.
-/// - [`BridgeRoleMember::GerInjector`] (`GER_INJECTOR`) gates `update_ger`.
-/// - [`BridgeRoleMember::GerRemover`] (`GER_REMOVER`) gates `remove_ger`.
+/// - [`GER_INJECTOR`][BridgeRoleMember::GerInjector] gates `update_ger`.
+/// - [`GER_REMOVER`][BridgeRoleMember::GerRemover] gates `remove_ger`.
 ///
-/// Pass several entries with the same variant to seed multiple holders of a role.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Each variant carries all accounts that initially hold the role.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeRoleMember {
-    /// Holder of the `FAUCET_ADMIN` role.
-    FaucetAdmin(AccountId),
-    /// Holder of the `GER_INJECTOR` role.
-    GerInjector(AccountId),
-    /// Holder of the `GER_REMOVER` role.
-    GerRemover(AccountId),
+    /// Holders of the `FAUCET_ADMIN` role.
+    FaucetAdmin(Vec<AccountId>),
+    /// Holders of the `GER_INJECTOR` role.
+    GerInjector(Vec<AccountId>),
+    /// Holders of the `GER_REMOVER` role.
+    GerRemover(Vec<AccountId>),
 }
 
 impl BridgeRoleMember {
@@ -175,12 +201,12 @@ impl BridgeRoleMember {
         }
     }
 
-    /// Returns the account ID that holds the role.
-    pub fn account_id(&self) -> AccountId {
+    /// Returns the accounts that hold the role.
+    pub fn account_ids(&self) -> &[AccountId] {
         match self {
-            BridgeRoleMember::FaucetAdmin(id)
-            | BridgeRoleMember::GerInjector(id)
-            | BridgeRoleMember::GerRemover(id) => *id,
+            BridgeRoleMember::FaucetAdmin(ids)
+            | BridgeRoleMember::GerInjector(ids)
+            | BridgeRoleMember::GerRemover(ids) => ids,
         }
     }
 }
@@ -202,10 +228,9 @@ impl BridgeRoleMember {
 ///
 /// The bridge's privileged roles are managed by the account's RBAC stack (`Ownable2Step` +
 /// `RoleBasedAccessControl` + `Authority`), installed alongside this component at account
-/// creation, rather than stored as plain account IDs in the bridge component. The role-gated
-/// procedures (`register_faucet`, `store_faucet_metadata_hash`, `update_ger`, `remove_ger`) call
-/// `authority::assert_authorized`, which requires the note sender to hold the role mapped to the
-/// procedure. See [`BridgeRoleMember`] and [`AggLayerBridge::procedure_roles`].
+/// creation. The role-gated procedures call `authority::assert_authorized`, which requires the note
+/// sender to hold the role mapped to the procedure. See [`BridgeRoleMember`] and
+/// [`AggLayerBridge::procedure_roles`].
 ///
 /// ## Storage Layout
 ///
@@ -306,7 +331,10 @@ impl AggLayerBridge {
     ) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
         let mut roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>> = BTreeMap::new();
         for member in members {
-            roles.entry(member.role_symbol()).or_default().insert(member.account_id());
+            roles
+                .entry(member.role_symbol())
+                .or_default()
+                .extend(member.account_ids().iter().copied());
         }
         roles
     }
@@ -671,19 +699,6 @@ pub enum AgglayerBridgeError {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// Resolves the [`AccountProcedureRoot`] of a procedure exported by the bridge account component
-/// library, by its name (e.g. `update_ger`).
-///
-/// # Panics
-///
-/// Panics if the bridge component library does not export a procedure with the given name.
-fn bridge_procedure_root(proc_name: &str) -> AccountProcedureRoot {
-    let code = AccountComponentCode::from(agglayer_bridge_component_library());
-    let path = alloc::format!("{BRIDGE_COMPONENT_NAMESPACE}::{proc_name}");
-    code.get_procedure_root_by_path(path.as_str())
-        .unwrap_or_else(|| panic!("bridge component library should export `{path}`"))
-}
 
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {

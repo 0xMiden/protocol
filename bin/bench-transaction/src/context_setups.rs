@@ -44,9 +44,9 @@ fn bench_bridge_account(
         seed,
         owner,
         vec![
-            BridgeRoleMember::FaucetAdmin(faucet_admin),
-            BridgeRoleMember::GerInjector(ger_injector),
-            BridgeRoleMember::GerRemover(ger_remover),
+            BridgeRoleMember::FaucetAdmin(vec![faucet_admin]),
+            BridgeRoleMember::GerInjector(vec![ger_injector]),
+            BridgeRoleMember::GerRemover(vec![ger_remover]),
         ],
     )
 }

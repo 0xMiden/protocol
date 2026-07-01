@@ -110,7 +110,7 @@ Global Exit Roots represent a snapshot of exit tree roots across all AggLayer-co
 chains. A `GER_INJECTOR` role holder observes L1 GER updates and creates [`UPDATE_GER`](#44-update_ger) notes
 on Miden. The bridge consumes these notes:
 
-1. Asserts (via `authority::assert_authorized`) that the note sender holds the `GER_INJECTOR` role.
+1. Asserts that the note sender holds the `GER_INJECTOR` role.
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Stores `KEY -> [1, 0, 0, 0]` in the `ger_map`, marking the GER as known.
 4. Reverts if the GER was already present in the map (duplicate insertions are rejected).
@@ -128,7 +128,7 @@ to be valid.
 A separate `GER_REMOVER` role can revoke a previously-registered GER by sending a
 [`REMOVE_GER`](#45-remove_ger) note. The bridge consumes such a note and:
 
-1. Asserts (via `authority::assert_authorized`) that the note sender holds the `GER_REMOVER`
+1. Asserts that the note sender holds the `GER_REMOVER`
    role (a role distinct from the `GER_INJECTOR` role so that insertion and revocation
    authority can be split).
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
@@ -174,8 +174,7 @@ TODO: No hash chain tracks GER insertions for proof generation
 Each bridged token (wrapped or Miden-native) requires registration in the bridge's
 registries. The Bridge Operator creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes
 carrying the faucet's account ID, the origin token address, the origin network, the scale
-factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting,
-via `authority::assert_authorized`, that the sender holds the `FAUCET_ADMIN` role) and runs
+factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting that the sender holds the `FAUCET_ADMIN` role) and runs
 two calls back-to-back:
 
 - `bridge_config::register_faucet` writes the registration flag plus `is_native` into
@@ -272,7 +271,7 @@ Bridges an asset out of Miden into the AggLayer:
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
 | **Panics** | Note sender does not hold the `FAUCET_ADMIN` role |
 
-Asserts (via `authority::assert_authorized`) that the note sender holds the `FAUCET_ADMIN`
+Asserts that the note sender holds the `FAUCET_ADMIN`
 role, then performs a two-step registration:
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
@@ -295,7 +294,7 @@ role, then performs a two-step registration:
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
 | **Panics** | Note sender does not hold the `GER_INJECTOR` role; GER has already been registered in storage |
 
-Asserts (via `authority::assert_authorized`) that the note sender holds the `GER_INJECTOR`
+Asserts that the note sender holds the `GER_INJECTOR`
 role, then computes
 `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
@@ -618,7 +617,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `sender` | Holder of the `FAUCET_ADMIN` role (sender authorization enforced by the bridge's `register_faucet` procedure via `authority::assert_authorized`) |
+| `sender` | Holder of the `FAUCET_ADMIN` role (sender authorization enforced by the bridge's `register_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -645,7 +644,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | 7 | `faucet_id_prefix` | Felt (AccountId prefix) |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::register_faucet` (which asserts, via `authority::assert_authorized`, that the
+`bridge_config::register_faucet` (which asserts that the
 sender holds the `FAUCET_ADMIN` role and performs two-step registration into
 `faucet_registry_map` and `token_registry_map`).
 
@@ -653,7 +652,7 @@ sender holds the `FAUCET_ADMIN` role and performs two-step registration into
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the `FAUCET_ADMIN` role only -- **enforced** by `bridge_config::register_faucet` via `authority::assert_authorized` |
+| **Issuer** | Holders of the `FAUCET_ADMIN` role only -- **enforced** by `bridge_config::register_faucet` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.4 UPDATE_GER
@@ -667,7 +666,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | Holder of the `GER_INJECTOR` role (sender authorization enforced by the bridge's `update_ger` procedure via `authority::assert_authorized`) |
+| `sender` | Holder of the `GER_INJECTOR` role (sender authorization enforced by the bridge's `update_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -692,7 +691,7 @@ CLAIM notes can be verified against it.
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::update_ger` (which asserts, via `authority::assert_authorized`, that the
+`bridge_config::update_ger` (which asserts that the
 sender holds the `GER_INJECTOR` role), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
@@ -700,7 +699,7 @@ sender holds the `GER_INJECTOR` role), which computes
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the `GER_INJECTOR` role only -- **enforced** by `bridge_config::update_ger` via `authority::assert_authorized` |
+| **Issuer** | Holders of the `GER_INJECTOR` role only -- **enforced** by `bridge_config::update_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.5 REMOVE_GER
@@ -715,7 +714,7 @@ removed-GER keccak256 hash chain.
 
 | Field | Value |
 |-------|-------|
-| `sender` | Holder of the `GER_REMOVER` role (sender authorization enforced by the bridge's `remove_ger` procedure via `authority::assert_authorized`) |
+| `sender` | Holder of the `GER_REMOVER` role (sender authorization enforced by the bridge's `remove_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -740,7 +739,7 @@ removed-GER keccak256 hash chain.
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::remove_ger` (which asserts, via `authority::assert_authorized`, that the
+`bridge_config::remove_ger` (which asserts that the
 sender holds the `GER_REMOVER` role), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)`, asserts the GER map entry equals `[1, 0, 0, 0]`
 while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain as
@@ -750,7 +749,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` via `authority::assert_authorized` |
+| **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.6 BURN (generated)

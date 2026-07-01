@@ -154,8 +154,9 @@ impl RoleBasedAccessControl {
     ///
     /// # Errors
     ///
-    /// Returns an error if a role maps to an empty member set, or a role has more members than
-    /// `u32::MAX`.
+    /// Returns an error if:
+    /// - a role maps to an empty member set.
+    /// - a role has more members than `u32::MAX`.
     pub fn with_roles(roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>>) -> Result<Self, RbacError> {
         for (role, members) in &roles {
             if members.is_empty() {
