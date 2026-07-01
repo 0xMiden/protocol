@@ -3,4 +3,4 @@ name              = "miden-batch-kernel"
 version.workspace = true
 
 [[bin]]
-path = "main.masm"
+path = "src/main.masm"

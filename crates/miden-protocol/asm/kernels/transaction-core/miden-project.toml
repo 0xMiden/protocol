@@ -4,7 +4,7 @@ version.workspace = true
 
 [lib]
 namespace = "miden::tx_kernel_core"
-path      = "mod.masm"
+path      = "src/mod.masm"
 
 [dependencies]
 miden-core.workspace           = true

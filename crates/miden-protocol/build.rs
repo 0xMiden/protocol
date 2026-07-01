@@ -214,8 +214,10 @@ fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Res
     let (_, module_info, _) = kernel.into_parts();
 
     let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
-    let offsets_filename =
-        Path::new(ASM_DIR).join(ASM_PROTOCOL_DIR).join("kernel_proc_offsets.masm");
+    let offsets_filename = Path::new(ASM_DIR)
+        .join(ASM_PROTOCOL_DIR)
+        .join("src")
+        .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
     let generated_procs: BTreeMap<usize, String> = module_info

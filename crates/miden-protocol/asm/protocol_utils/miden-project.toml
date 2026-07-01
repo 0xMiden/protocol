@@ -4,4 +4,4 @@ version.workspace = true
 
 [lib]
 namespace = "miden::protocol_utils"
-path      = "mod.masm"
+path      = "src/mod.masm"

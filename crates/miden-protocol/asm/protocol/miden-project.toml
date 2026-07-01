@@ -4,7 +4,7 @@ version.workspace = true
 
 [lib]
 namespace = "miden::protocol"
-path      = "mod.masm"
+path      = "src/mod.masm"
 
 [dependencies]
 miden-core.workspace           = true
