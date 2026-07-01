@@ -452,8 +452,8 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // note is outdated. It holds 1 if some changes were made to the note assets since the last
 // re-computation, and 0 otherwise.
 // It is set to 0 after every recomputation of the assets commitment in the
-// `$kernel::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
-// `$kernel::output_note::add_asset` procedure after any change was made to the assets data.
+// `miden::tx_kernel_core::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
+// `miden::tx_kernel_core::output_note::add_asset` procedure after any change was made to the assets data.
 
 /// The memory address at which the output notes section begins.
 pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
