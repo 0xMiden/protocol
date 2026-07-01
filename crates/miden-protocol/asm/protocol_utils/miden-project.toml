@@ -1,0 +1,7 @@
+[package]
+name              = "miden-protocol-utils"
+version.workspace = true
+
+[lib]
+namespace = "miden::protocol_utils"
+path      = "src/mod.masm"

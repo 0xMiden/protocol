@@ -50,7 +50,7 @@ use crate::MockChain;
 /// let tx_context = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?;
 ///
 /// let code = "
-/// use $kernel::prologue
+/// use miden::tx_kernel_core::prologue
 ///
 /// begin
 ///     exec.prologue::prepare_transaction
