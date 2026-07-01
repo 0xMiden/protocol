@@ -3,7 +3,11 @@ use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use crate::Word;
 use crate::block::ValidatorKeys;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 // BLOCK SIGNATURES ERROR
@@ -197,7 +201,8 @@ mod tests {
     fn verify_against_rejects_invalid_signature() {
         let (signers, keys) = validator_set();
         let commitment = Word::empty();
-        let mut slots = signed_slots(&keys, &signers, commitment, [true, true, false, false, false]);
+        let mut slots =
+            signed_slots(&keys, &signers, commitment, [true, true, false, false, false]);
         // Replace a committed validator's signature with one from a key not in the set.
         slots[1] = Some(random_secret_key().sign(commitment));
         let signatures = BlockSignatures::new(slots);
