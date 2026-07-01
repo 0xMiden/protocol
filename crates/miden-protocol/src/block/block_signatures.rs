@@ -24,11 +24,6 @@ pub enum BlockSignaturesError {
     UnknownValidatorKey,
     #[error("multiple signatures were supplied for the same validator key")]
     DuplicateValidatorKey,
-    #[error(
-        "{valid} valid signatures were supplied but at least {min} are required",
-        min = BlockSignatures::MIN_SIGNATURES,
-    )]
-    InsufficientSignatures { valid: usize },
     #[error(transparent)]
     Verification(#[from] SignatureVerificationError),
 }
@@ -42,6 +37,11 @@ pub enum SignatureVerificationError {
         "block signature at position {position} does not verify against the validator key at that position"
     )]
     InvalidSignatureAtPosition { position: usize },
+    #[error(
+        "{valid} valid signatures were provided but at least {min} are required",
+        min = BlockSignatures::MIN_SIGNATURES,
+    )]
+    InsufficientSignatures { valid: usize },
 }
 
 // BLOCK SIGNATURES
@@ -54,10 +54,10 @@ pub enum SignatureVerificationError {
 /// slot is `None` when its validator did not sign.
 ///
 /// It has exactly [`BlockSignatures::SLOT_COUNT`] slots. A value produced by
-/// [`BlockSignatures::new`] has its present signatures verified against a validator set and meets
-/// the [`BlockSignatures::MIN_SIGNATURES`] quorum, so it is always valid. Deserialized values carry
-/// no such guarantee until checked with [`BlockSignatures::verify_against`] and the quorum policy
-/// during block validation (see
+/// [`BlockSignatures::new`] has its present signatures verified against a validator set and carries
+/// at least [`BlockSignatures::MIN_SIGNATURES`] valid signatures, so it is always valid.
+/// Deserialized values carry no such guarantee until checked with
+/// [`BlockSignatures::verify_against`], as block validation does (see
 /// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader)).
 ///
 /// The only ways to construct a [`BlockSignatures`] are [`BlockSignatures::new`], which coalesces
@@ -74,9 +74,9 @@ impl BlockSignatures {
 
     /// The minimum number of valid signatures required to authorize a block.
     ///
-    /// This quorum is enforced by construction ([`BlockSignatures::new`]) and by
-    /// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader), but not by
-    /// deserialization.
+    /// This minimum is enforced by [`BlockSignatures::verify_against`] -- and therefore by
+    /// [`BlockSignatures::new`] and [`BlockHeader::validate_against_parent`](crate::block::BlockHeader),
+    /// which both call it -- but not by deserialization.
     pub const MIN_SIGNATURES: usize = 2;
 
     /// The number of signature slots, matching the size of a validator set.
@@ -103,8 +103,8 @@ impl BlockSignatures {
     /// - a supplied signature does not verify against its validator key over `commitment`;
     /// - fewer than [`BlockSignatures::MIN_SIGNATURES`] valid signatures are supplied.
     pub fn new(
-        validator_keys: &ValidatorKeys,
         commitment: Word,
+        validator_keys: &ValidatorKeys,
         signatures: Vec<(PublicKey, Signature)>,
     ) -> Result<Self, BlockSignaturesError> {
         let mut slots: [Option<Signature>; Self::SLOT_COUNT] = core::array::from_fn(|_| None);
@@ -121,10 +121,7 @@ impl BlockSignatures {
         }
 
         let block_signatures = Self { signatures: slots };
-        let valid = block_signatures.verify_against(commitment, validator_keys)?;
-        if valid < Self::MIN_SIGNATURES {
-            return Err(BlockSignaturesError::InsufficientSignatures { valid });
-        }
+        block_signatures.verify_against(commitment, validator_keys)?;
         Ok(block_signatures)
     }
 
@@ -154,21 +151,18 @@ impl BlockSignatures {
     // VERIFICATION
     // --------------------------------------------------------------------------------------------
 
-    /// Verifies the filled signatures positionally against `validator_keys` over `commitment` and
-    /// returns the number of valid signatures.
+    /// Verifies the filled signatures positionally against `validator_keys` over `commitment`,
+    /// requiring at least [`BlockSignatures::MIN_SIGNATURES`] valid signatures, and returns the
+    /// number of valid signatures.
     ///
     /// This is the canonical verification of a positional signature set: the signature in slot `i`
     /// is verified against the validator key at index `i`. Empty slots are skipped, and a filled
     /// slot whose signature does not verify rejects the whole set.
     ///
-    /// This does NOT enforce any quorum: it returns the count of valid signatures and lets the
-    /// caller decide whether that meets the required threshold (see
-    /// [`BlockSignatures::MIN_SIGNATURES`]).
-    ///
     /// # Errors
     ///
     /// Returns an error if a filled signature does not verify against the validator key at its
-    /// position.
+    /// position, or if fewer than [`BlockSignatures::MIN_SIGNATURES`] valid signatures are present.
     pub fn verify_against(
         &self,
         commitment: Word,
@@ -186,6 +180,12 @@ impl BlockSignatures {
                 }
                 valid_signatures += 1;
             }
+        }
+
+        if valid_signatures < Self::MIN_SIGNATURES {
+            return Err(SignatureVerificationError::InsufficientSignatures {
+                valid: valid_signatures,
+            });
         }
         Ok(valid_signatures)
     }
@@ -239,7 +239,7 @@ mod tests {
             (signers[0].public_key(), signers[0].sign(commitment)),
         ];
 
-        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
+        let signatures = BlockSignatures::new(commitment, &keys, pairs).unwrap();
 
         assert_eq!(signatures.num_signatures(), 2);
         // Correct positional placement means the signatures verify against their keys.
@@ -253,7 +253,7 @@ mod tests {
         let pairs = vec![(outsider.public_key(), outsider.sign(Word::empty()))];
 
         assert!(matches!(
-            BlockSignatures::new(&keys, Word::empty(), pairs),
+            BlockSignatures::new(Word::empty(), &keys, pairs),
             Err(BlockSignaturesError::UnknownValidatorKey)
         ));
     }
@@ -268,7 +268,7 @@ mod tests {
         ];
 
         assert!(matches!(
-            BlockSignatures::new(&keys, commitment, pairs),
+            BlockSignatures::new(commitment, &keys, pairs),
             Err(BlockSignaturesError::DuplicateValidatorKey)
         ));
     }
@@ -285,7 +285,7 @@ mod tests {
         ];
 
         assert!(matches!(
-            BlockSignatures::new(&keys, commitment, pairs),
+            BlockSignatures::new(commitment, &keys, pairs),
             Err(BlockSignaturesError::Verification(
                 SignatureVerificationError::InvalidSignatureAtPosition { .. }
             ))
@@ -305,7 +305,7 @@ mod tests {
                 (key.clone(), signer.sign(commitment))
             })
             .collect();
-        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
+        let signatures = BlockSignatures::new(commitment, &keys, pairs).unwrap();
 
         // ...does not verify against a different validator set.
         let (_, other_keys) = validator_set();
@@ -319,12 +319,14 @@ mod tests {
     fn new_rejects_insufficient_signatures() {
         let (signers, keys) = validator_set();
         let commitment = Word::empty();
-        // A single valid signature is below the quorum.
+        // A single valid signature is below the minimum.
         let pairs = vec![(signers[0].public_key(), signers[0].sign(commitment))];
 
         assert!(matches!(
-            BlockSignatures::new(&keys, commitment, pairs),
-            Err(BlockSignaturesError::InsufficientSignatures { valid: 1 })
+            BlockSignatures::new(commitment, &keys, pairs),
+            Err(BlockSignaturesError::Verification(
+                SignatureVerificationError::InsufficientSignatures { valid: 1 }
+            ))
         ));
     }
 
@@ -336,7 +338,7 @@ mod tests {
             (signers[0].public_key(), signers[0].sign(commitment)),
             (signers[1].public_key(), signers[1].sign(commitment)),
         ];
-        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
+        let signatures = BlockSignatures::new(commitment, &keys, pairs).unwrap();
 
         let bytes = signatures.to_bytes();
         let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();

@@ -255,21 +255,21 @@ impl BlockHeader {
         }
 
         // Verify the signatures positionally against the parent's validator set using the shared,
-        // canonical verifier. A filled signature that does not verify rejects the whole block.
-        let valid_signatures = signatures
+        // canonical verifier, which also enforces the minimum number of valid signatures. A filled
+        // signature that does not verify rejects the whole block.
+        signatures
             .verify_against(self.commitment(), parent.validator_keys())
-            .map_err(|SignatureVerificationError::InvalidSignatureAtPosition { position }| {
-                ParentValidationError::InvalidSignatureAtPosition { position }
+            .map_err(|err| match err {
+                SignatureVerificationError::InvalidSignatureAtPosition { position } => {
+                    ParentValidationError::InvalidSignatureAtPosition { position }
+                },
+                SignatureVerificationError::InsufficientSignatures { valid } => {
+                    ParentValidationError::InsufficientSignatures {
+                        valid,
+                        required: BlockSignatures::MIN_SIGNATURES,
+                    }
+                },
             })?;
-
-        // The block must carry at least the minimum number of valid signatures. This threshold is a
-        // validation policy and is intentionally not enforced by `BlockSignatures` itself.
-        if valid_signatures < BlockSignatures::MIN_SIGNATURES {
-            return Err(ParentValidationError::InsufficientSignatures {
-                valid: valid_signatures,
-                required: BlockSignatures::MIN_SIGNATURES,
-            });
-        }
 
         Ok(())
     }
@@ -567,7 +567,7 @@ mod tests {
     /// `present[i]` decides whether the validator at position `i` signs. The matching signer is
     /// located by public key, since [`ValidatorKeys`] reorders the keys into a canonical order.
     /// `present` must select at least [`BlockSignatures::MIN_SIGNATURES`] validators, since
-    /// [`BlockSignatures::new`] enforces the quorum.
+    /// [`BlockSignatures::new`] enforces the minimum.
     fn positional_signatures(
         validator_keys: &ValidatorKeys,
         signers: &[SigningKey],
@@ -589,14 +589,15 @@ mod tests {
                 Some((key.clone(), signer.sign(message)))
             })
             .collect();
-        BlockSignatures::new(validator_keys, message, pairs).unwrap()
+        BlockSignatures::new(message, validator_keys, pairs).unwrap()
     }
 
-    /// Builds a sub-quorum [`BlockSignatures`] holding a single valid signature at position 0.
+    /// Builds a [`BlockSignatures`] holding a single valid signature at position 0, below the
+    /// minimum.
     ///
-    /// [`BlockSignatures::new`] enforces the quorum, so this bypasses it via a serialization
-    /// round-trip to model a sub-quorum set arriving over the wire.
-    fn sub_quorum_signatures(
+    /// [`BlockSignatures::new`] enforces the minimum, so this bypasses it via a serialization
+    /// round-trip to model an under-signed set arriving over the wire.
+    fn under_minimum_signatures(
         validator_keys: &ValidatorKeys,
         signers: &[SigningKey],
         message: Word,
@@ -616,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_against_parent_accepts_full_quorum() {
+    fn validate_against_parent_accepts_all_signatures() {
         let (signers, keys) = validator_set();
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1);
@@ -631,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_against_parent_accepts_quorum_with_empty_slots() {
+    fn validate_against_parent_accepts_partial_signatures() {
         let (signers, keys) = validator_set();
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1);
@@ -651,8 +652,8 @@ mod tests {
         let (signers, keys) = validator_set();
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1);
-        // A deserialized block carrying only one valid signature, below the minimum quorum.
-        let signatures = sub_quorum_signatures(&keys, &signers, child.commitment());
+        // A deserialized block carrying only one valid signature, below the minimum.
+        let signatures = under_minimum_signatures(&keys, &signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(

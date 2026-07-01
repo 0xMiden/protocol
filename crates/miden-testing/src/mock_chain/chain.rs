@@ -428,7 +428,7 @@ impl MockChain {
             .iter()
             .map(|sk| (sk.public_key(), sk.sign(commitment)))
             .collect();
-        BlockSignatures::new(&validator_keys, commitment, signatures)
+        BlockSignatures::new(commitment, &validator_keys, signatures)
             .expect("the mock chain signs with its own validator keys")
     }
 

@@ -263,7 +263,7 @@ mod tests {
                 (key.clone(), signer.sign(commitment))
             })
             .collect();
-        BlockSignatures::new(keys, commitment, pairs).unwrap()
+        BlockSignatures::new(commitment, keys, pairs).unwrap()
     }
 
     fn empty_body() -> BlockBody {
