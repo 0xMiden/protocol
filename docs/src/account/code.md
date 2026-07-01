@@ -35,6 +35,15 @@ Such an authentication procedure typically inspects the transaction and then dec
 
 Recall that an [account's nonce](index.md#nonce) must be incremented whenever its state changes. Only authentication procedures are allowed to do so, to prevent accidental or unintended authorization of state changes.
 
+### Signature schemes and privacy
+
+The standard signature-based authentication components support two schemes, and they differ in what they reveal at proving time:
+
+- `falcon512_poseidon2` is verified entirely in-circuit. The public key is supplied non-deterministically and checked against the on-chain `Poseidon2(pk)` commitment inside the proof, so neither the public key nor the signature leaves the prover.
+- `ecdsa_k256_keccak` is verified via a precompile. Under the current native re-verification model, the precompile calldata - the raw compressed secp256k1 public key and the signature - must be carried inside the transaction proof for it to verify: the verifier recomputes the precompile transcript from that calldata and binds it into the proof's public inputs, so it cannot be stripped or withheld. As a consequence, the public key and signature are disclosed to the node operator and to any party on the transaction submission or gossip path, even though the account commits on-chain only to `Poseidon2(pk)`.
+
+In other words, `ecdsa_k256_keccak` does not provide the public-key privacy that commitment-based storage otherwise implies. Integrators requiring signer-key privacy should select `falcon512_poseidon2`.
+
 ### Procedure invocation checks
 
 The authentication procedure can base its authentication decision on whether a specific account procedure was called during the transaction. A procedure invocation is tracked by the kernel only if it invokes account-restricted kernel APIs (procedures that are only allowed to be called from the account context, e.g. `exec.faucet::mint`). Invocation of procedures that execute only local instructions (e.g., a noop `push.0 drop`) will not be tracked by the kernel.
