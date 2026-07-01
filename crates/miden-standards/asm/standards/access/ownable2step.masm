@@ -236,7 +236,7 @@ pub proc transfer_ownership
 
     # Detect explicit cancel via the zero address. The zero address is not a valid
     # account ID, so we must check for it before validating.
-    dup.1 eq.0 dup.1 eq.0 and
+    dup.1 dup.1 exec.account_id::eqz
     # => [is_zero_address, new_owner_suffix, new_owner_prefix, pad(14)]
 
     if.false
@@ -271,17 +271,14 @@ pub proc accept_ownership
     # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     # Check that the component currently has an owner (owner is not zero).
-    dup.1 eq.0 dup.1 eq.0 and
-    # => [owner_is_zero, owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+    exec.account_id::eqz
+    # => [owner_is_zero, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assertz.err=ERR_NO_OWNER
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
-
-    drop drop
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     # Check that a nominated transfer exists (nominated owner is not zero).
-    dup.1 eq.0 dup.1 eq.0 and
+    dup.1 dup.1 exec.account_id::eqz
     # => [is_zero, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assertz.err=ERR_NO_NOMINATED_OWNER

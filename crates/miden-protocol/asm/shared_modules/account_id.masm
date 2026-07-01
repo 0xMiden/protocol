@@ -39,6 +39,19 @@ pub proc is_equal
     # => [is_id_equal]
 end
 
+#! Returns a boolean indicating whether the given account ID is the zero ID, consuming the inputs.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_zero]
+#!
+#! Where:
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
+#! - is_zero is a boolean indicating whether both felts of the account ID are zero.
+pub proc eqz
+    eq.0 swap eq.0 and
+    # => [is_zero]
+end
+
 #! Validates an account ID.
 #!
 #! Note that this does not validate anything about the account type, since any 1-bit pattern is a
