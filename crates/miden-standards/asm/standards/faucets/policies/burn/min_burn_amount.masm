@@ -39,6 +39,7 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must exceed s
 #! - the burn amount is below the configured minimum burn amount.
 #!
 #! Invocation: dynexec
+# TODO(call invocation)
 @account_procedure
 pub proc check_policy
     dropw
