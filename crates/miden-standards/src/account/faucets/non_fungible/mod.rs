@@ -402,9 +402,11 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The caller passes a fully-configured [`AuthSingleSigAcl`]; its trigger procedure list must
-/// cover every authority-gated setter (`mint_and_send`, the metadata setters, the policy setters,
-/// and `pause` / `unpause`).
+/// The caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list
+/// semantics, every authority-gated setter (`mint_and_send`, the metadata setters, the policy
+/// setters, and `pause` / `unpause`) requires a signature by default. A setter only becomes
+/// callable without a signature if its root is explicitly added to the exempt set, so
+/// authority-gated setters must never be exempted.
 pub fn create_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
