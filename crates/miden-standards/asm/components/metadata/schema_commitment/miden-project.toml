@@ -1,6 +1,6 @@
 [package]
-name    = "miden-standards-metadata-schema-commitment"
-version = "0.16.0"
+name              = "miden-standards-metadata-schema-commitment"
+version.workspace = true
 
 [lib]
 kind      = "account-component"
@@ -8,6 +8,6 @@ namespace = "miden::standards::components::metadata::schema_commitment"
 path      = "schema_commitment.masm"
 
 [dependencies]
-miden-core      = { linkage = "dynamic", version = "0.23.4" }
-miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
-miden-standards = { linkage = "static", version = "0.16.0" }
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
