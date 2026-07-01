@@ -33,9 +33,8 @@ impl BlockHeader {
         let account_root = acct_db.root();
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
-        let validator_keys =
-            ValidatorKeys::new(core::array::from_fn(|_| random_secret_key().public_key()))
-                .expect("randomly generated validator keys should be distinct");
+        let validator_keys = ValidatorKeys::new(alloc::vec![random_secret_key().public_key()])
+            .expect("randomly generated validator keys should be distinct");
 
         #[cfg(not(target_family = "wasm"))]
         let (

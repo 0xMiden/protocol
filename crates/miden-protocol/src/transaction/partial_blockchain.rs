@@ -479,10 +479,8 @@ mod tests {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let validator_keys = ValidatorKeys::new(core::array::from_fn(|_| {
-            SigningKey::with_rng(&mut rng).public_key()
-        }))
-        .unwrap();
+        let validator_keys =
+            ValidatorKeys::new(alloc::vec![SigningKey::with_rng(&mut rng).public_key()]).unwrap();
 
         BlockHeader::new(
             0,

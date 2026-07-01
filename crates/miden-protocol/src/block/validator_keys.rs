@@ -18,6 +18,8 @@ use crate::{Felt, Hasher, Word};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ValidatorKeysError {
+    #[error("validator set must contain at least one key")]
+    EmptySet,
     #[error("validator set contains duplicate public keys")]
     DuplicateKey,
 }
@@ -31,33 +33,36 @@ pub enum ValidatorKeysError {
 /// signatures are verified positionally against the validator set committed to by its parent: the
 /// signature in slot `i` is checked against the key at index `i` in this set.
 ///
-/// The set always holds exactly [`ValidatorKeys::COUNT`] distinct keys, kept in a canonical order
-/// (sorted by their serialized bytes) so that the [`ValidatorKeys::commitment`] is independent of
-/// the order in which the keys were provided.
+/// The number of validators is not fixed by the protocol: a chain may run with a single validator
+/// and grow its validator set over time by rotating in a larger [`ValidatorKeys`] set (see
+/// [`ProposedBlock::with_next_validator_keys`](crate::block::ProposedBlock::with_next_validator_keys)).
+/// The set holds at least one key, kept in a canonical order (sorted by their serialized bytes) so
+/// that the [`ValidatorKeys::commitment`] is independent of the order in which the keys were
+/// provided.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatorKeys {
     /// Distinct validator public keys, sorted by their serialized bytes.
-    keys: [PublicKey; ValidatorKeys::COUNT],
+    keys: Vec<PublicKey>,
 }
 
 impl ValidatorKeys {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The number of validator keys in a set.
-    pub const COUNT: usize = 5;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`ValidatorKeys`] from the provided [`ValidatorKeys::COUNT`] public keys.
+    /// Returns a new [`ValidatorKeys`] from the provided public keys.
     ///
     /// The keys are sorted into a canonical order by their serialized bytes.
     ///
     /// # Errors
     ///
-    /// Returns an error if the set contains duplicate keys.
-    pub fn new(mut keys: [PublicKey; Self::COUNT]) -> Result<Self, ValidatorKeysError> {
+    /// Returns an error if:
+    /// - `keys` is empty;
+    /// - the set contains duplicate keys.
+    pub fn new(mut keys: Vec<PublicKey>) -> Result<Self, ValidatorKeysError> {
+        if keys.is_empty() {
+            return Err(ValidatorKeysError::EmptySet);
+        }
+
         // Sort into a canonical order so the commitment is independent of input order.
         keys.sort_by_key(|key| key.to_bytes());
 
@@ -73,16 +78,16 @@ impl ValidatorKeys {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the validator public keys in canonical order.
-    pub fn as_keys(&self) -> &[PublicKey; Self::COUNT] {
+    pub fn as_keys(&self) -> &[PublicKey] {
         &self.keys
     }
 
-    /// Returns the number of validator keys in the set, which is always [`ValidatorKeys::COUNT`].
+    /// Returns the number of validator keys in the set.
     pub fn len(&self) -> usize {
-        Self::COUNT
+        self.keys.len()
     }
 
-    /// Returns `false`, as a validator set always contains [`ValidatorKeys::COUNT`] keys.
+    /// Returns `false`, as a validator set always contains at least one key.
     pub fn is_empty(&self) -> bool {
         false
     }
@@ -90,7 +95,8 @@ impl ValidatorKeys {
     /// Returns a commitment to the validator set.
     ///
     /// The commitment is a sequential hash of the per-key commitments in canonical order, and is
-    /// committed to by the [`BlockHeader`](crate::block::BlockHeader) as a single word.
+    /// committed to by the [`BlockHeader`](crate::block::BlockHeader) as a single word. Since the
+    /// hash covers every key, the commitment also implicitly binds the number of validators.
     pub fn commitment(&self) -> Word {
         let mut elements: Vec<Felt> = Vec::new();
         for key in &self.keys {
@@ -111,7 +117,7 @@ impl Serializable for ValidatorKeys {
 
 impl Deserializable for ValidatorKeys {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let keys = <[PublicKey; Self::COUNT]>::read_from(source)?;
+        let keys = Vec::<PublicKey>::read_from(source)?;
         Self::new(keys).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -124,13 +130,25 @@ mod tests {
     use super::*;
     use crate::testing::random_secret_key::random_secret_key;
 
-    fn random_keys() -> [PublicKey; ValidatorKeys::COUNT] {
-        core::array::from_fn(|_| random_secret_key().public_key())
+    fn random_keys(count: usize) -> Vec<PublicKey> {
+        (0..count).map(|_| random_secret_key().public_key()).collect()
+    }
+
+    #[test]
+    fn new_rejects_empty_set() {
+        let result = ValidatorKeys::new(Vec::new());
+        assert!(matches!(result, Err(ValidatorKeysError::EmptySet)));
+    }
+
+    #[test]
+    fn new_accepts_single_validator() {
+        let keys = ValidatorKeys::new(random_keys(1)).unwrap();
+        assert_eq!(keys.len(), 1);
     }
 
     #[test]
     fn new_rejects_duplicate_keys() {
-        let mut keys = random_keys();
+        let mut keys = random_keys(3);
         keys[1] = keys[0].clone();
         let result = ValidatorKeys::new(keys);
         assert!(matches!(result, Err(ValidatorKeysError::DuplicateKey)));
@@ -138,7 +156,7 @@ mod tests {
 
     #[test]
     fn new_sorts_into_canonical_order() {
-        let keys = random_keys();
+        let keys = random_keys(5);
         let forward = ValidatorKeys::new(keys.clone()).unwrap();
 
         let mut reversed = keys;
@@ -152,7 +170,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let validator_keys = ValidatorKeys::new(random_keys()).unwrap();
+        let validator_keys = ValidatorKeys::new(random_keys(4)).unwrap();
         let bytes = validator_keys.to_bytes();
         let deserialized = ValidatorKeys::read_from_bytes(&bytes).unwrap();
         assert_eq!(validator_keys, deserialized);

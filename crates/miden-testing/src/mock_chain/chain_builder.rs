@@ -9,6 +9,11 @@ use anyhow::Context;
 /// Default number of decimals for faucets created in tests.
 const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 
+/// Default number of validators committed to by the genesis block of a mock chain.
+///
+/// This is purely a test default -- the protocol does not fix the size of a validator set.
+const DEFAULT_VALIDATOR_COUNT: usize = 3;
+
 // IMPORTS
 // ================================================================================================
 
@@ -243,10 +248,10 @@ impl MockChainBuilder {
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
-        let validator_secret_keys: [SigningKey; ValidatorKeys::COUNT] =
-            core::array::from_fn(|_| random_secret_key());
+        let validator_secret_keys: Vec<SigningKey> =
+            (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
         let validator_keys =
-            ValidatorKeys::new(validator_secret_keys.each_ref().map(|sk| sk.public_key()))
+            ValidatorKeys::new(validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
                 .expect("randomly generated genesis validator keys should be distinct");
 
         let header = BlockHeader::new(

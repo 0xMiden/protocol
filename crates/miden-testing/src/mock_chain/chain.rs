@@ -206,8 +206,8 @@ pub struct MockChain {
     /// simplify transaction creation.
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
 
-    /// Validator secret keys used for signing blocks.
-    validator_secret_keys: [SigningKey; ValidatorKeys::COUNT],
+    /// Validator secret keys used for signing blocks. All of them must sign each block.
+    validator_secret_keys: Vec<SigningKey>,
 }
 
 impl MockChain {
@@ -239,7 +239,7 @@ impl MockChain {
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
-        secret_keys: [SigningKey; ValidatorKeys::COUNT],
+        secret_keys: Vec<SigningKey>,
         genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
@@ -415,7 +415,7 @@ impl MockChain {
 
     /// Returns the set of validator public keys that sign the next block produced by this chain.
     pub fn validator_keys(&self) -> ValidatorKeys {
-        ValidatorKeys::new(self.validator_secret_keys.each_ref().map(|sk| sk.public_key()))
+        ValidatorKeys::new(self.validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
             .expect("the mock chain holds distinct validator keys")
     }
 
@@ -858,10 +858,11 @@ impl MockChain {
     /// This commits all currently pending transactions into the chain state.
     pub fn prove_next_block_with_validator_keys_rotation(
         &mut self,
-        new_validator_keys: [SigningKey; ValidatorKeys::COUNT],
+        new_validator_keys: Vec<SigningKey>,
     ) -> anyhow::Result<ProvenBlock> {
-        let next_keys = ValidatorKeys::new(new_validator_keys.each_ref().map(|sk| sk.public_key()))
-            .context("invalid rotated validator key set")?;
+        let next_keys =
+            ValidatorKeys::new(new_validator_keys.iter().map(|sk| sk.public_key()).collect())
+                .context("invalid rotated validator key set")?;
         let block = self.prove_and_apply_block(None, Some(next_keys))?;
         self.validator_secret_keys = new_validator_keys;
         Ok(block)
@@ -1158,7 +1159,7 @@ impl Deserializable for MockChain {
         let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
         let account_authenticators =
             BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
-        let secret_keys = <[SigningKey; ValidatorKeys::COUNT]>::read_from(source)?;
+        let secret_keys = Vec::<SigningKey>::read_from(source)?;
 
         Ok(Self {
             chain,
@@ -1318,11 +1319,10 @@ mod tests {
         chain.prove_next_block()?;
         assert_eq!(chain.validator_keys(), original_keys);
 
-        // Rotate to a new validator key set.
-        let new_signers: [SigningKey; ValidatorKeys::COUNT] =
-            core::array::from_fn(|_| random_secret_key());
+        // Rotate to a new, larger validator key set.
+        let new_signers: Vec<SigningKey> = (0..4).map(|_| random_secret_key()).collect();
         let new_keys =
-            ValidatorKeys::new(new_signers.each_ref().map(|sk| sk.public_key())).unwrap();
+            ValidatorKeys::new(new_signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
         let rotation_block = chain.prove_next_block_with_validator_keys_rotation(new_signers)?;
 
         // The rotation block is still signed by (and validates against) the original keys, but
@@ -1342,8 +1342,7 @@ mod tests {
     fn proposed_block_serialization_round_trip() -> anyhow::Result<()> {
         let chain = MockChain::new();
         let timestamp = chain.latest_block_header().timestamp() + 1;
-        let next_keys =
-            ValidatorKeys::new(core::array::from_fn(|_| random_secret_key().public_key())).unwrap();
+        let next_keys = ValidatorKeys::new(alloc::vec![random_secret_key().public_key()]).unwrap();
         let proposed = chain
             .propose_block_at(Vec::<ProvenBatch>::new(), timestamp)?
             .with_next_validator_keys(next_keys.clone());
@@ -1465,16 +1464,14 @@ mod tests {
         assert_eq!(chain.account_authenticators, deserialized.account_authenticators);
     }
 
-    /// Asserts that every positional signature slot is filled and verifies against the validator
-    /// key at the same position.
+    /// Asserts that every validator has a positional signature that verifies against its key.
     fn assert_signatures_verify(
         signatures: &BlockSignatures,
         validator_keys: &ValidatorKeys,
         commitment: Word,
     ) {
         assert_eq!(signatures.len(), validator_keys.len());
-        for (slot, key) in signatures.as_slots().iter().zip(validator_keys.as_keys()) {
-            let signature = slot.as_ref().expect("the mock chain fills every signature slot");
+        for (signature, key) in signatures.as_signatures().iter().zip(validator_keys.as_keys()) {
             assert!(signature.verify(commitment, key));
         }
     }

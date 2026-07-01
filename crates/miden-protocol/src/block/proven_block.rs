@@ -17,11 +17,13 @@ use crate::utils::serde::{
 #[derive(Debug, thiserror::Error)]
 pub enum ProvenBlockError {
     #[error(
+        "proven block has {actual} signatures but its parent's validator set has {expected} keys"
+    )]
+    SignatureCountMismatch { expected: usize, actual: usize },
+    #[error(
         "proven block signature at position {position} does not verify against the parent's validator key at that position"
     )]
     InvalidSignatureAtPosition { position: usize },
-    #[error("proven block has {valid} valid validator signatures but requires at least {required}")]
-    InsufficientSignatures { valid: usize, required: usize },
     #[error(
         "header tx commitment ({header_tx_commitment}) does not match body tx commitment ({body_tx_commitment})"
     )]
@@ -49,11 +51,11 @@ pub enum ProvenBlockError {
 impl From<ParentValidationError> for ProvenBlockError {
     fn from(err: ParentValidationError) -> Self {
         match err {
+            ParentValidationError::SignatureCountMismatch { expected, actual } => {
+                Self::SignatureCountMismatch { expected, actual }
+            },
             ParentValidationError::InvalidSignatureAtPosition { position } => {
                 Self::InvalidSignatureAtPosition { position }
-            },
-            ParentValidationError::InsufficientSignatures { valid, required } => {
-                Self::InsufficientSignatures { valid, required }
             },
             ParentValidationError::ParentNumberMismatch { expected, parent } => {
                 Self::ParentNumberMismatch { expected, parent }
@@ -293,12 +295,11 @@ mod tests {
     use crate::testing::random_secret_key::random_secret_key;
     use crate::transaction::OrderedTransactionHeaders;
 
-    /// Generates a full set of validator signing keys alongside the [`ValidatorKeys`] set
-    /// committing to their public keys.
-    fn validator_set() -> (Vec<SigningKey>, ValidatorKeys) {
-        let signers: Vec<SigningKey> =
-            (0..ValidatorKeys::COUNT).map(|_| random_secret_key()).collect();
-        let keys = ValidatorKeys::new(core::array::from_fn(|i| signers[i].public_key())).unwrap();
+    /// Generates `count` validator signing keys alongside the [`ValidatorKeys`] set committing to
+    /// their public keys.
+    fn validator_set(count: usize) -> (Vec<SigningKey>, ValidatorKeys) {
+        let signers: Vec<SigningKey> = (0..count).map(|_| random_secret_key()).collect();
+        let keys = ValidatorKeys::new(signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
         (signers, keys)
     }
 
@@ -333,7 +334,7 @@ mod tests {
         parent_keys: &ValidatorKeys,
         signers: &[SigningKey],
     ) -> ProvenBlock {
-        let next_keys = validator_set().1;
+        let next_keys = validator_set(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
         let signatures = sign_all(parent_keys, signers, header.commitment());
         ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy())
@@ -341,20 +342,28 @@ mod tests {
 
     #[test]
     fn validate_accepts_committed_signers() {
-        let (signers, keys) = validator_set();
+        let (signers, keys) = validator_set(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_single_validator() {
+        let (signers, keys) = validator_set(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_rejects_uncommitted_signers() {
-        let (_, keys) = validator_set();
+        let (_, keys) = validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        let next_keys = validator_set().1;
+        let next_keys = validator_set(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
 
-        // The block is signed by a full, valid validator set the parent never committed.
-        let (impostor_signers, impostor_keys) = validator_set();
+        // The block is signed by a full, valid validator set of the same size the parent never
+        // committed.
+        let (impostor_signers, impostor_keys) = validator_set(3);
         let signatures = sign_all(&impostor_keys, &impostor_signers, header.commitment());
         let block =
             ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy());
