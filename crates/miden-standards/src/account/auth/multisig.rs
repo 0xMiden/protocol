@@ -117,6 +117,15 @@ impl AuthMultisigConfig {
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
 ///
+/// # Privacy
+///
+/// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
+/// at proving time and therefore do not get public-key privacy; approvers using
+/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
+///
+/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
+/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+///
 /// # Security: private accounts and state withholding
 ///
 /// A private account's state lives off-chain; the chain only holds a commitment to it. Whoever
