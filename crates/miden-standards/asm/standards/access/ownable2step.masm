@@ -267,37 +267,38 @@ end
 #!
 #! Invocation: call
 pub proc accept_ownership
-    push.0.0
-    # => [0, 0, pad(16)]
-
     exec.load_ownership_info
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     # Check that the component currently has an owner (owner is not zero).
     dup.1 eq.0 dup.1 eq.0 and
-    # => [owner_is_zero, owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [owner_is_zero, owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assertz.err=ERR_NO_OWNER
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     drop drop
-    # => [nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     # Check that a nominated transfer exists (nominated owner is not zero).
     dup.1 eq.0 dup.1 eq.0 and
-    # => [is_zero, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [is_zero, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assertz.err=ERR_NO_NOMINATED_OWNER
-    # => [nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [sender_suffix, sender_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     dup.3 dup.3
     exec.account_id::is_equal
-    # => [is_sender_nominated_owner, nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+    # => [is_sender_nominated_owner, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assert.err=ERR_SENDER_NOT_NOMINATED_OWNER
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    # Nominated owner becomes the new owner; clear the nominated field.
+    push.0.0 movup.3 movup.3
     # => [nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
 
     exec.save_ownership_info
