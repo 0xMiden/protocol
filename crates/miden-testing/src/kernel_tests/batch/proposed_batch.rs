@@ -11,7 +11,7 @@ use miden_protocol::asset::NonFungibleAsset;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
-use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
+use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError, ProvenBatchError};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -31,11 +31,13 @@ use miden_protocol::transaction::{
     RawOutputNote,
     TransactionScript,
 };
+use miden_protocol::vm::AdviceInputs;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
+use miden_tx_batch::BatchExecutor;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
@@ -620,6 +622,67 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
             .any(|commitment| commitment == &InputNoteCommitment::from(&input_note2))
     );
     assert_eq!(batch.output_notes().len(), 0);
+
+    Ok(())
+}
+
+/// A note authenticated within the batch (an unauthenticated note converted to authenticated via a
+/// supplied inclusion proof) is not yet supported by the batch kernel: the kernel reconstructs the
+/// commitment from the per-transaction `(NULLIFIER, NOTE_ID)` tuple, while the batch commits
+/// `(NULLIFIER, EMPTY)`, so the two diverge. Execution must reject such a batch early rather than
+/// emit an unverifiable proof. Proper support is the note-authentication TODO in
+/// `asm/kernels/batch/main.masm`.
+#[tokio::test]
+async fn batch_kernel_rejects_in_batch_authenticated_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account1 = generate_account(&mut builder);
+    let note1 = create_p2any_note(account1.id(), NoteType::Public, [], builder.rng_mut());
+    let note2 = create_p2any_note(account1.id(), NoteType::Public, [], builder.rng_mut());
+    let spawn_note = builder.add_spawn_note([&note1, &note2])?;
+    let mut chain = builder.build()?;
+
+    let tx = chain
+        .build_tx_context(account1.clone(), &[spawn_note.id()], &[])?
+        .extend_expected_output_notes(vec![
+            RawOutputNote::Full(note1.clone()),
+            RawOutputNote::Full(note2.clone()),
+        ])
+        .build()?
+        .execute()
+        .await?;
+    chain.add_pending_executed_transaction(&tx)?;
+
+    // Note2 is created in block1 and therefore provable against it.
+    let _block1 = chain.prove_next_block()?;
+    let block2 = chain.prove_next_block()?;
+    let block3 = chain.prove_next_block()?;
+
+    // Consume the note as unauthenticated, then supply its inclusion proof so the batch
+    // authenticates it (rewriting `(NULLIFIER, NOTE_ID)` to `(NULLIFIER, EMPTY)`).
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(block2.header())
+            .unauthenticated_notes(vec![note2.clone()])
+            .build()?;
+
+    let input_note2 = chain.get_public_note(&note2.id()).expect("note not found");
+    let note_inclusion_proof2 = input_note2.proof().expect("note should be of type authenticated");
+
+    let batch = ProposedBatch::new_unverified(
+        [tx1].into_iter().map(Arc::new).collect(),
+        block3.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::from_iter([(input_note2.id(), note_inclusion_proof2.clone())]),
+    )?;
+    // The unauthenticated input note became authenticated at the batch level.
+    assert_eq!(batch.input_notes().num_notes(), 1);
+
+    // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
+    match BatchExecutor::new().execute(batch, AdviceInputs::default()) {
+        Err(ProvenBatchError::UnsupportedInBatchAuthenticatedNote(_)) => {},
+        Ok(_) => panic!("expected the batch execution to reject the in-batch authenticated note"),
+        Err(other) => panic!("expected UnsupportedInBatchAuthenticatedNote, got: {other}"),
+    }
 
     Ok(())
 }

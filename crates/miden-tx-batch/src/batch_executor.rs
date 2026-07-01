@@ -28,6 +28,8 @@ impl BatchExecutor {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - the batch contains a feature the kernel does not yet support (an input note authenticated
+    ///   within the batch, or a pre-erasure note union exceeding the kernel's fixed-size regions);
     /// - the batch kernel program fails to execute;
     /// - the kernel output stack fails to parse.
     pub fn execute(
@@ -35,6 +37,8 @@ impl BatchExecutor {
         proposed_batch: ProposedBatch,
         advice_inputs: AdviceInputs,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
+        BatchKernel::ensure_supported(&proposed_batch)?;
+
         let (stack_inputs, mut batch_advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
         batch_advice_inputs.extend(advice_inputs);
 

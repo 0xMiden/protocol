@@ -1,15 +1,17 @@
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
 use miden_core::utils::hash_string_to_word;
 
 use crate::batch::{BatchId, ProposedBatch};
+use crate::errors::ProvenBatchError;
 use crate::note::{NoteId, Nullifier};
 use crate::transaction::TransactionId;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs};
-use crate::{Felt, Word};
+use crate::{Felt, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 
 // CONSTANTS
 // ================================================================================================
@@ -70,6 +72,58 @@ impl BatchKernel {
         let advice_inputs = Self::build_advice_inputs(proposed_batch);
 
         (stack_inputs, advice_inputs)
+    }
+
+    /// Rejects a [`ProposedBatch`] the batch kernel cannot yet correctly prove, surfacing a clear
+    /// error early instead of an opaque in-kernel failure. Both cases are temporary limitations:
+    ///
+    /// - An input note authenticated within the batch (an unauthenticated note converted to
+    ///   authenticated via a supplied inclusion proof). The kernel reconstructs its commitment from
+    ///   the per-transaction `(NULLIFIER, NOTE_ID)` tuples, whereas the batch commits `(NULLIFIER,
+    ///   EMPTY)` for such a note, so the two commitments diverge. Proper support needs in-kernel
+    ///   note authentication (the TODO in `asm/kernels/batch/main.masm`).
+    /// - A pre-erasure note union larger than `MAX_INPUT_NOTES_PER_BATCH` /
+    ///   `MAX_OUTPUT_NOTES_PER_BATCH`. The kernel stores the pre-erasure lists in fixed-size
+    ///   regions, so it rejects such a batch even when it is valid post-erasure. Tracked in
+    ///   <https://github.com/0xMiden/protocol/issues/3184>.
+    pub fn ensure_supported(proposed_batch: &ProposedBatch) -> Result<(), ProvenBatchError> {
+        // The pre-erasure note unions must fit the kernel's fixed-size note regions.
+        let input_notes: usize = proposed_batch
+            .transactions()
+            .iter()
+            .map(|tx| usize::from(tx.input_notes().num_notes()))
+            .sum();
+        if input_notes > MAX_INPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyPreErasureInputNotes(input_notes));
+        }
+        let output_notes: usize = proposed_batch
+            .transactions()
+            .iter()
+            .map(|tx| tx.output_notes().num_notes())
+            .sum();
+        if output_notes > MAX_OUTPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyPreErasureOutputNotes(output_notes));
+        }
+
+        // An input note that some transaction consumed as unauthenticated but which the batch
+        // authenticated (header erased to the `(NULLIFIER, EMPTY)` form) is not yet supported.
+        // Erased notes are absent from `input_notes()`, so they are not flagged.
+        let consumed_unauthenticated: BTreeSet<Nullifier> = proposed_batch
+            .transactions()
+            .iter()
+            .flat_map(|tx| tx.input_notes().iter())
+            .filter(|note| note.header().is_some())
+            .map(|note| note.nullifier())
+            .collect();
+        for note in proposed_batch.input_notes().iter() {
+            if note.header().is_none() && consumed_unauthenticated.contains(&note.nullifier()) {
+                return Err(ProvenBatchError::UnsupportedInBatchAuthenticatedNote(
+                    note.nullifier(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Returns the stack with the public inputs required by the batch kernel.

@@ -1192,6 +1192,18 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
+    #[error(
+        "input note {0} is authenticated within the batch, which the batch kernel does not yet support (see the note-authentication TODO in asm/kernels/batch/main.masm)"
+    )]
+    UnsupportedInBatchAuthenticatedNote(Nullifier),
+    #[error(
+        "batch has {0} pre-erasure input notes but the batch kernel temporarily supports at most {MAX_INPUT_NOTES_PER_BATCH} (see https://github.com/0xMiden/protocol/issues/3184)"
+    )]
+    TooManyPreErasureInputNotes(usize),
+    #[error(
+        "batch has {0} pre-erasure output notes but the batch kernel temporarily supports at most {MAX_OUTPUT_NOTES_PER_BATCH} (see https://github.com/0xMiden/protocol/issues/3184)"
+    )]
+    TooManyPreErasureOutputNotes(usize),
 }
 
 // BATCH OUTPUT ERROR
