@@ -249,18 +249,6 @@ impl AggLayerBridge {
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Creates a new AggLayer bridge component.
-    ///
-    /// The bridge's privileged roles (faucet admin, GER injector, GER remover) are not part of
-    /// this component; they are managed by the account's RBAC / `Authority` components and seeded
-    /// at account creation. See [`create_bridge_account`][crate::create_bridge_account].
-    pub fn new() -> Self {
-        Self
-    }
-
     // RBAC ROLES
     // --------------------------------------------------------------------------------------------
 

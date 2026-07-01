@@ -146,7 +146,7 @@ fn create_bridge_account_builder(
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
-        .with_component(AggLayerBridge::new())
+        .with_component(AggLayerBridge)
         .with_components(AccessControl::Rbac {
             owner,
             roles: AggLayerBridge::procedure_roles(),
