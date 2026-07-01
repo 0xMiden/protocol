@@ -98,7 +98,7 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     for package in [
         Arc::from(core_package),
         Arc::new(Package::from(ProtocolLib::default())),
-        TransactionKernel::kernel(),
+        TransactionKernel::package(),
     ] {
         registry.cache_package(package).into_diagnostic()?;
     }

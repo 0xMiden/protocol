@@ -81,7 +81,7 @@ impl TransactionKernel {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the assembled transaction kernel as a [`Package`].
-    pub fn kernel() -> Arc<Package> {
+    pub fn package() -> Arc<Package> {
         KERNEL_PACKAGE.clone()
     }
 
@@ -108,7 +108,7 @@ impl TransactionKernel {
     pub fn program_info() -> ProgramInfo {
         // TODO: make static
         let program_hash = Self::main().hash();
-        let kernel = Self::kernel()
+        let kernel = Self::package()
             .to_kernel()
             .expect("transaction kernel package should describe a valid kernel");
 
@@ -148,7 +148,7 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        let kernel_lib = Self::kernel()
+        let kernel_lib = Self::package()
             .try_into_kernel_library()
             .expect("transaction kernel package should contain a kernel library");
         Assembler::with_kernel(source_manager, kernel_lib)
