@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::block::{BlockNumber, BlockSignatures, BlockSignaturesError, ValidatorKeys};
+use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorKeys};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -258,7 +258,7 @@ impl BlockHeader {
         // canonical verifier. A filled signature that does not verify rejects the whole block.
         let valid_signatures = signatures
             .verify_against(self.commitment(), parent.validator_keys())
-            .map_err(|BlockSignaturesError::InvalidSignatureAtPosition { position }| {
+            .map_err(|SignatureVerificationError::InvalidSignatureAtPosition { position }| {
                 ParentValidationError::InvalidSignatureAtPosition { position }
             })?;
 
@@ -566,25 +566,46 @@ mod tests {
     ///
     /// `present[i]` decides whether the validator at position `i` signs. The matching signer is
     /// located by public key, since [`ValidatorKeys`] reorders the keys into a canonical order.
-    /// Uses `new_unchecked` so under-signed sets can be built to exercise validation failures.
+    /// `present` must select at least [`BlockSignatures::MIN_SIGNATURES`] validators, since
+    /// [`BlockSignatures::new`] enforces the quorum.
     fn positional_signatures(
         validator_keys: &ValidatorKeys,
         signers: &[SigningKey],
         message: Word,
         present: [bool; ValidatorKeys::COUNT],
     ) -> BlockSignatures {
-        let slots = core::array::from_fn(|i| {
-            if !present[i] {
-                return None;
-            }
-            let key = &validator_keys.as_keys()[i];
-            let signer = signers
-                .iter()
-                .find(|sk| &sk.public_key() == key)
-                .expect("a signer should exist for every committed validator key");
-            Some(signer.sign(message))
-        });
-        BlockSignatures::new(slots)
+        let pairs = validator_keys
+            .as_keys()
+            .iter()
+            .zip(present)
+            .filter_map(|(key, is_present)| {
+                if !is_present {
+                    return None;
+                }
+                let signer = signers
+                    .iter()
+                    .find(|sk| &sk.public_key() == key)
+                    .expect("a signer should exist for every committed validator key");
+                Some((key.clone(), signer.sign(message)))
+            })
+            .collect();
+        BlockSignatures::new(validator_keys, message, pairs).unwrap()
+    }
+
+    /// Builds a sub-quorum [`BlockSignatures`] holding a single valid signature at position 0.
+    ///
+    /// [`BlockSignatures::new`] enforces the quorum, so this bypasses it via a serialization
+    /// round-trip to model a sub-quorum set arriving over the wire.
+    fn sub_quorum_signatures(
+        validator_keys: &ValidatorKeys,
+        signers: &[SigningKey],
+        message: Word,
+    ) -> BlockSignatures {
+        let key = &validator_keys.as_keys()[0];
+        let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
+        let mut slots: [Option<_>; ValidatorKeys::COUNT] = core::array::from_fn(|_| None);
+        slots[0] = Some(signer.sign(message));
+        BlockSignatures::read_from_bytes(&slots.to_bytes()).unwrap()
     }
 
     /// Builds a child of `parent` committing a fresh validator set as the signer of the *next*
@@ -630,13 +651,8 @@ mod tests {
         let (signers, keys) = validator_set();
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1);
-        // Only one validator signs, below the minimum quorum.
-        let signatures = positional_signatures(
-            &keys,
-            &signers,
-            child.commitment(),
-            [true, false, false, false, false],
-        );
+        // A deserialized block carrying only one valid signature, below the minimum quorum.
+        let signatures = sub_quorum_signatures(&keys, &signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(
@@ -646,27 +662,23 @@ mod tests {
     }
 
     #[test]
-    fn validate_against_parent_rejects_invalid_signature_at_position() {
-        let (signers, keys) = validator_set();
+    fn validate_against_parent_rejects_uncommitted_signatures() {
+        let (_, keys) = validator_set();
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1);
+
+        // The child is signed by a full, valid validator set the parent never committed, so the
+        // signatures do not verify against the parent's validator keys.
+        let (impostor_signers, impostor_keys) = validator_set();
         let signatures = positional_signatures(
-            &keys,
-            &signers,
+            &impostor_keys,
+            &impostor_signers,
             child.commitment(),
-            [true, true, false, false, false],
+            [true; ValidatorKeys::COUNT],
         );
-        let mut slots: [_; ValidatorKeys::COUNT] =
-            core::array::from_fn(|i| signatures.as_slots()[i].clone());
-        // Replace a committed validator's signature with one from a key not in the set.
-        slots[1] = Some(random_secret_key().sign(child.commitment()));
-        let signatures = BlockSignatures::new(slots);
 
         let result = child.validate_against_parent(&parent, &signatures);
-        assert!(matches!(
-            result,
-            Err(ParentValidationError::InvalidSignatureAtPosition { position: 1 })
-        ));
+        assert!(matches!(result, Err(ParentValidationError::InvalidSignatureAtPosition { .. })));
     }
 
     #[test]

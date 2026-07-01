@@ -1,4 +1,6 @@
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
+use alloc::vec::Vec;
+
+use miden_crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 
 use crate::Word;
 use crate::block::ValidatorKeys;
@@ -13,10 +15,29 @@ use crate::utils::serde::{
 // BLOCK SIGNATURES ERROR
 // ================================================================================================
 
-/// Error returned when verifying [`BlockSignatures`] against a validator set.
+/// Error returned when constructing [`BlockSignatures`] from validator key / signature pairs (see
+/// [`BlockSignatures::new`]).
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BlockSignaturesError {
+    #[error("supplied public key is not part of the validator set")]
+    UnknownValidatorKey,
+    #[error("multiple signatures were supplied for the same validator key")]
+    DuplicateValidatorKey,
+    #[error(
+        "{valid} valid signatures were supplied but at least {min} are required",
+        min = BlockSignatures::MIN_SIGNATURES,
+    )]
+    InsufficientSignatures { valid: usize },
+    #[error(transparent)]
+    Verification(#[from] SignatureVerificationError),
+}
+
+/// Error returned when verifying [`BlockSignatures`] against a validator set (see
+/// [`BlockSignatures::verify_against`]).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum SignatureVerificationError {
     #[error(
         "block signature at position {position} does not verify against the validator key at that position"
     )]
@@ -32,12 +53,15 @@ pub enum BlockSignaturesError {
 /// signature in slot `i` is produced by, and verified against, the validator key at index `i`. A
 /// slot is `None` when its validator did not sign.
 ///
-/// This is a pure structural container of exactly [`BlockSignatures::SLOT_COUNT`] slots; it does
-/// not enforce any quorum. The minimum number of valid signatures required to authorize a block is
-/// a policy applied during validation (see [`BlockSignatures::MIN_SIGNATURES`] and
-/// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader)), not by this type. This
-/// allows sub-quorum artifacts -- such as a single validator's signature or the genesis block's
-/// signatures -- to be represented and serialized.
+/// It has exactly [`BlockSignatures::SLOT_COUNT`] slots. A value produced by
+/// [`BlockSignatures::new`] has its present signatures verified against a validator set and meets
+/// the [`BlockSignatures::MIN_SIGNATURES`] quorum, so it is always valid. Deserialized values carry
+/// no such guarantee until checked with [`BlockSignatures::verify_against`] and the quorum policy
+/// during block validation (see
+/// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader)).
+///
+/// The only ways to construct a [`BlockSignatures`] are [`BlockSignatures::new`], which coalesces
+/// and verifies validator key / signature pairs, and deserialization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSignatures {
     /// Positional signature slots; `signatures[i]` corresponds to validator key `i`.
@@ -50,9 +74,9 @@ impl BlockSignatures {
 
     /// The minimum number of valid signatures required to authorize a block.
     ///
-    /// This is a validation policy; it is enforced by
-    /// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader), not by this type's
-    /// constructor or deserialization.
+    /// This quorum is enforced by construction ([`BlockSignatures::new`]) and by
+    /// [`BlockHeader::validate_against_parent`](crate::block::BlockHeader), but not by
+    /// deserialization.
     pub const MIN_SIGNATURES: usize = 2;
 
     /// The number of signature slots, matching the size of a validator set.
@@ -61,9 +85,47 @@ impl BlockSignatures {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`BlockSignatures`] from the provided positional signature slots.
-    pub fn new(signatures: [Option<Signature>; Self::SLOT_COUNT]) -> Self {
-        Self { signatures }
+    /// Coalesces the supplied validator key / signature pairs into a [`BlockSignatures`] set
+    /// positioned against `validator_keys`, and verifies each signature over `commitment`.
+    ///
+    /// Each signature is placed at the positional slot of its public key within `validator_keys`
+    /// and verified against that key over `commitment`; slots for validators without a supplied
+    /// signature are left empty. The pairs may be given in any order.
+    ///
+    /// The returned set is therefore always cryptographically valid and meets the minimum of
+    /// [`BlockSignatures::MIN_SIGNATURES`] valid signatures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - a supplied public key is not part of `validator_keys`;
+    /// - more than one signature is supplied for the same public key;
+    /// - a supplied signature does not verify against its validator key over `commitment`;
+    /// - fewer than [`BlockSignatures::MIN_SIGNATURES`] valid signatures are supplied.
+    pub fn new(
+        validator_keys: &ValidatorKeys,
+        commitment: Word,
+        signatures: Vec<(PublicKey, Signature)>,
+    ) -> Result<Self, BlockSignaturesError> {
+        let mut slots: [Option<Signature>; Self::SLOT_COUNT] = core::array::from_fn(|_| None);
+        for (public_key, signature) in signatures {
+            let position = validator_keys
+                .as_keys()
+                .iter()
+                .position(|key| *key == public_key)
+                .ok_or(BlockSignaturesError::UnknownValidatorKey)?;
+            if slots[position].is_some() {
+                return Err(BlockSignaturesError::DuplicateValidatorKey);
+            }
+            slots[position] = Some(signature);
+        }
+
+        let block_signatures = Self { signatures: slots };
+        let valid = block_signatures.verify_against(commitment, validator_keys)?;
+        if valid < Self::MIN_SIGNATURES {
+            return Err(BlockSignaturesError::InsufficientSignatures { valid });
+        }
+        Ok(block_signatures)
     }
 
     // PUBLIC ACCESSORS
@@ -111,14 +173,16 @@ impl BlockSignatures {
         &self,
         commitment: Word,
         validator_keys: &ValidatorKeys,
-    ) -> Result<usize, BlockSignaturesError> {
+    ) -> Result<usize, SignatureVerificationError> {
         let mut valid_signatures = 0;
         for (position, (slot, validator_key)) in
             self.signatures.iter().zip(validator_keys.as_keys()).enumerate()
         {
             if let Some(signature) = slot {
                 if !signature.verify(commitment, validator_key) {
-                    return Err(BlockSignaturesError::InvalidSignatureAtPosition { position });
+                    return Err(SignatureVerificationError::InvalidSignatureAtPosition {
+                        position,
+                    });
                 }
                 valid_signatures += 1;
             }
@@ -139,7 +203,7 @@ impl Serializable for BlockSignatures {
 impl Deserializable for BlockSignatures {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let signatures = <[Option<Signature>; Self::SLOT_COUNT]>::read_from(source)?;
-        Ok(Self::new(signatures))
+        Ok(Self { signatures })
     }
 }
 
@@ -148,6 +212,7 @@ impl Deserializable for BlockSignatures {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -164,68 +229,114 @@ mod tests {
         (signers, keys)
     }
 
-    /// Builds positional slots over `commitment` aligned to `keys`, signing the slots selected by
-    /// `present`.
-    fn signed_slots(
-        keys: &ValidatorKeys,
-        signers: &[SigningKey],
-        commitment: Word,
-        present: [bool; ValidatorKeys::COUNT],
-    ) -> [Option<Signature>; ValidatorKeys::COUNT] {
-        core::array::from_fn(|i| {
-            if !present[i] {
-                return None;
-            }
-            let key = &keys.as_keys()[i];
-            let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
-            Some(signer.sign(commitment))
-        })
-    }
-
     #[test]
-    fn verify_against_counts_valid_signatures() {
+    fn new_places_and_verifies_signatures_positionally() {
         let (signers, keys) = validator_set();
         let commitment = Word::empty();
-        let signatures = BlockSignatures::new(signed_slots(
-            &keys,
-            &signers,
-            commitment,
-            [true, false, true, false, false],
-        ));
+        // Two arbitrary validators sign, supplied out of order.
+        let pairs = vec![
+            (signers[3].public_key(), signers[3].sign(commitment)),
+            (signers[0].public_key(), signers[0].sign(commitment)),
+        ];
+
+        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
 
         assert_eq!(signatures.num_signatures(), 2);
+        // Correct positional placement means the signatures verify against their keys.
         assert_eq!(signatures.verify_against(commitment, &keys).unwrap(), 2);
     }
 
     #[test]
-    fn verify_against_rejects_invalid_signature() {
-        let (signers, keys) = validator_set();
-        let commitment = Word::empty();
-        let mut slots =
-            signed_slots(&keys, &signers, commitment, [true, true, false, false, false]);
-        // Replace a committed validator's signature with one from a key not in the set.
-        slots[1] = Some(random_secret_key().sign(commitment));
-        let signatures = BlockSignatures::new(slots);
+    fn new_rejects_unknown_key() {
+        let (_, keys) = validator_set();
+        let outsider = random_secret_key();
+        let pairs = vec![(outsider.public_key(), outsider.sign(Word::empty()))];
 
-        let result = signatures.verify_against(commitment, &keys);
         assert!(matches!(
-            result,
-            Err(BlockSignaturesError::InvalidSignatureAtPosition { position: 1 })
+            BlockSignatures::new(&keys, Word::empty(), pairs),
+            Err(BlockSignaturesError::UnknownValidatorKey)
         ));
     }
 
     #[test]
-    fn serde_round_trip_allows_sub_quorum() {
+    fn new_rejects_duplicate_key() {
         let (signers, keys) = validator_set();
-        // A single filled slot is below the quorum but must still round-trip through the wire
-        // format, as the type does not enforce a threshold.
-        let signatures = BlockSignatures::new(signed_slots(
-            &keys,
-            &signers,
-            Word::empty(),
-            [true, false, false, false, false],
+        let commitment = Word::empty();
+        let pairs = vec![
+            (signers[0].public_key(), signers[0].sign(commitment)),
+            (signers[0].public_key(), signers[0].sign(commitment)),
+        ];
+
+        assert!(matches!(
+            BlockSignatures::new(&keys, commitment, pairs),
+            Err(BlockSignaturesError::DuplicateValidatorKey)
         ));
-        assert_eq!(signatures.num_signatures(), 1);
+    }
+
+    #[test]
+    fn new_rejects_invalid_signature() {
+        let (signers, keys) = validator_set();
+        let commitment = Word::empty();
+        let outsider = random_secret_key();
+        // A committed validator's key is paired with a signature that does not verify against it.
+        let pairs = vec![
+            (signers[0].public_key(), signers[0].sign(commitment)),
+            (signers[1].public_key(), outsider.sign(commitment)),
+        ];
+
+        assert!(matches!(
+            BlockSignatures::new(&keys, commitment, pairs),
+            Err(BlockSignaturesError::Verification(
+                SignatureVerificationError::InvalidSignatureAtPosition { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn verify_against_rejects_mismatched_keys() {
+        let (signers, keys) = validator_set();
+        let commitment = Word::empty();
+        // A fully valid set signed by `keys`...
+        let pairs = keys
+            .as_keys()
+            .iter()
+            .map(|key| {
+                let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
+                (key.clone(), signer.sign(commitment))
+            })
+            .collect();
+        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
+
+        // ...does not verify against a different validator set.
+        let (_, other_keys) = validator_set();
+        assert!(matches!(
+            signatures.verify_against(commitment, &other_keys),
+            Err(SignatureVerificationError::InvalidSignatureAtPosition { .. })
+        ));
+    }
+
+    #[test]
+    fn new_rejects_insufficient_signatures() {
+        let (signers, keys) = validator_set();
+        let commitment = Word::empty();
+        // A single valid signature is below the quorum.
+        let pairs = vec![(signers[0].public_key(), signers[0].sign(commitment))];
+
+        assert!(matches!(
+            BlockSignatures::new(&keys, commitment, pairs),
+            Err(BlockSignaturesError::InsufficientSignatures { valid: 1 })
+        ));
+    }
+
+    #[test]
+    fn serde_round_trip() {
+        let (signers, keys) = validator_set();
+        let commitment = Word::empty();
+        let pairs = vec![
+            (signers[0].public_key(), signers[0].sign(commitment)),
+            (signers[1].public_key(), signers[1].sign(commitment)),
+        ];
+        let signatures = BlockSignatures::new(&keys, commitment, pairs).unwrap();
 
         let bytes = signatures.to_bytes();
         let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();

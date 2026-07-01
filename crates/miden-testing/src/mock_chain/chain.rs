@@ -419,19 +419,17 @@ impl MockChain {
             .expect("the mock chain holds distinct validator keys")
     }
 
-    /// Signs `commitment` with every validator secret key, producing positional
-    /// [`BlockSignatures`] aligned to [`Self::validator_keys`].
+    /// Signs `commitment` with every validator secret key, coalescing the signatures into a
+    /// positional [`BlockSignatures`] set aligned to [`Self::validator_keys`].
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
         let validator_keys = self.validator_keys();
-        let slots = validator_keys.as_keys().each_ref().map(|key| {
-            let signer = self
-                .validator_secret_keys
-                .iter()
-                .find(|sk| &sk.public_key() == key)
-                .expect("a signer should exist for every validator key");
-            Some(signer.sign(commitment))
-        });
-        BlockSignatures::new(slots)
+        let signatures = self
+            .validator_secret_keys
+            .iter()
+            .map(|sk| (sk.public_key(), sk.sign(commitment)))
+            .collect();
+        BlockSignatures::new(&validator_keys, commitment, signatures)
+            .expect("the mock chain signs with its own validator keys")
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.

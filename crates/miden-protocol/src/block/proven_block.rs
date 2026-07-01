@@ -302,8 +302,31 @@ mod tests {
         (signers, keys)
     }
 
-    /// Builds block 1 linked to `parent` and signed positionally by `signers` over the validator
-    /// set `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
+    /// Signs `commitment` with `signers` and coalesces into a full, valid [`BlockSignatures`] set
+    /// positioned against `keys`.
+    fn sign_all(keys: &ValidatorKeys, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
+        let pairs = keys
+            .as_keys()
+            .iter()
+            .map(|key| {
+                let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
+                (key.clone(), signer.sign(commitment))
+            })
+            .collect();
+        BlockSignatures::new(keys, commitment, pairs).unwrap()
+    }
+
+    fn empty_body() -> BlockBody {
+        BlockBody::new_unchecked(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            OrderedTransactionHeaders::new_unchecked(Vec::new()),
+        )
+    }
+
+    /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
+    /// `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
     /// wires the signatures and parent header through to the shared check.
     fn block_one(
         parent: &BlockHeader,
@@ -312,20 +335,8 @@ mod tests {
     ) -> ProvenBlock {
         let next_keys = validator_set().1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
-        let slots = parent_keys.as_keys().each_ref().map(|key| {
-            signers
-                .iter()
-                .find(|sk| &sk.public_key() == key)
-                .map(|sk| sk.sign(header.commitment()))
-        });
-        let signatures = BlockSignatures::new(slots);
-        let body = BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        );
-        ProvenBlock::new_unchecked(header, body, signatures, BlockProof::new_dummy())
+        let signatures = sign_all(parent_keys, signers, header.commitment());
+        ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy())
     }
 
     #[test]
@@ -342,16 +353,11 @@ mod tests {
         let next_keys = validator_set().1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
 
-        // Fill every slot with a signature from a key the parent never committed.
-        let slots = core::array::from_fn(|_| Some(random_secret_key().sign(header.commitment())));
-        let signatures = BlockSignatures::new(slots);
-        let body = BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        );
-        let block = ProvenBlock::new_unchecked(header, body, signatures, BlockProof::new_dummy());
+        // The block is signed by a full, valid validator set the parent never committed.
+        let (impostor_signers, impostor_keys) = validator_set();
+        let signatures = sign_all(&impostor_keys, &impostor_signers, header.commitment());
+        let block =
+            ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy());
 
         let result = block.validate(Some(&parent));
         assert!(matches!(result, Err(ProvenBlockError::InvalidSignatureAtPosition { .. })));
