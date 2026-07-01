@@ -64,6 +64,7 @@ const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 #!
 #! Invocation: call
 @locals(1)
+@account_procedure
 pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_public_key: word)
     # Validate supported signature scheme before committing it to storage.
     dup exec.signature::assert_supported_scheme

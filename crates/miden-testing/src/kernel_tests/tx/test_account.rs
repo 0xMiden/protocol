@@ -1411,6 +1411,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     const ACCOUNT_COMPONENT_CODE: &str = "
       use external_library::external_module
 
+      @account_procedure
       pub proc custom_setter
         exec.external_module::external_setter
       end";
@@ -1929,6 +1930,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
@@ -1954,12 +1956,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
                   swapw dropw
               end
 
+              @account_procedure
               pub proc set_slot_content
                   push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]

@@ -26,6 +26,7 @@ use miden::standards::access::pausable
 #! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: call
+@account_procedure
 pub proc pause
     exec.authority::assert_authorized
     # => [pad(16)]
@@ -43,6 +44,7 @@ end
 #! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: call
+@account_procedure
 pub proc unpause
     exec.authority::assert_authorized
     # => [pad(16)]

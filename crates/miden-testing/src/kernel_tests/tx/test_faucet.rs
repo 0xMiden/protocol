@@ -688,8 +688,17 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     ))
     .compile_component_code(
         "test::non_faucet_component",
-        "pub use ::miden::protocol::faucet::mint
-         pub use ::miden::protocol::faucet::burn",
+        "use miden::protocol::faucet
+
+         @account_procedure
+         pub proc mint
+             exec.faucet::mint
+         end
+
+         @account_procedure
+         pub proc burn
+             exec.faucet::burn
+         end",
     )?;
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;

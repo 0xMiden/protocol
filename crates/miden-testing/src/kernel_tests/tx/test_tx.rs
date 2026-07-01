@@ -770,6 +770,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let account_component_masm = r#"
             adv_map A([6,7,8,9]) = [10,11,12,13]
 
+            @account_procedure
             pub proc assert_adv_map
                 # test tx script advice map
                 push.[1,2,3,4]
