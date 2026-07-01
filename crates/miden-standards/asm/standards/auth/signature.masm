@@ -16,7 +16,6 @@ const FALCON_512_POSEIDON2_SCHEME_ID=2
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0
-const SIGNER_INDEX_LOC=1
 const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=4
 const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=5
 const CURRENT_PK_LOC=8
@@ -83,10 +82,6 @@ pub proc authenticate_transaction
     # OS => [scheme_id, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
-    dup.0 exec.assert_supported_scheme
-    # OS => [scheme_id, PUB_KEY, MESSAGE]
-    # AS => [SIGNATURE]
-
     # Verify the signature against the public key and the message. The procedure gets as inputs the
     # hash of the public key and the message via the operand stack. The signature is provided via
     # the advice stack. The signature is valid if and only if the procedure returns.
@@ -113,11 +108,10 @@ proc verify_signature_by_scheme
         # OS => []
         # AS => []
     else
-        dup eq.FALCON_512_POSEIDON2_SCHEME_ID
-        # => [is_2, scheme_id, PUB_KEY, MESSAGE]
+        eq.FALCON_512_POSEIDON2_SCHEME_ID
+        # => [is_2, PUB_KEY, MESSAGE]
 
         if.true
-            drop
             # OS => [PUB_KEY, MESSAGE]
 
             exec.falcon512_poseidon2::verify
@@ -163,9 +157,9 @@ pub proc assert_supported_scheme_word
     dupw exec.assert_supported_scheme
     # => [0, 0, 0, SCHEME_ID_WORD]
 
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
     # => [SCHEME_ID_WORD]
 end
 
@@ -212,7 +206,7 @@ pub proc verify_signatures
         # Fetch public key from storage map.
         # -----------------------------------------------------------------------------------------
 
-        sub.1 dup dup loc_store.SIGNER_INDEX_LOC
+        sub.1 dup
         # => [i-1, i-1, MSG]
 
         exec.create_approver_map_key
@@ -270,8 +264,8 @@ pub proc verify_signatures
             swapw
             # => [PUB_KEY, MSG, MSG, i-1]
 
-            # Build map key from the current signer index.
-            loc_load.SIGNER_INDEX_LOC exec.create_approver_map_key
+            # Build map key from the signer index, still held on the stack as the loop counter.
+            dup.12 exec.create_approver_map_key
             # => [APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
