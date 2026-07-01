@@ -20,7 +20,7 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_PROTOCOL_DIR: &str = "protocol";
 
-const UTILS_DIR: &str = "utils";
+const ASM_PROTOCOL_UTILS_DIR: &str = "protocol_utils";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
 const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
@@ -361,7 +361,7 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // For now these are duplicated in the tx kernel and protocol error module.
     // ------------------------------------------
 
-    let shared_utils_dir = asm_source_dir.join(UTILS_DIR);
+    let shared_utils_dir = asm_source_dir.join(ASM_PROTOCOL_UTILS_DIR);
     let shared_utils_errors = shared::extract_all_masm_errors(&shared_utils_dir)
         .context("failed to extract all masm errors")?;
 
