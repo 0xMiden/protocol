@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::vec::Vec;
 
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
@@ -10,11 +10,18 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::errors::AccountError;
-use thiserror::Error;
 
-use super::AuthMethod;
 use crate::account::account_component_code;
-use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
+use crate::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    GuardianConfig,
+};
 use crate::procedure_root;
 
 // BASIC WALLET
@@ -105,70 +112,98 @@ impl From<BasicWallet> for AccountComponent {
     }
 }
 
-// BASIC WALLET ERROR
+// WALLET CREATION
 // ================================================================================================
 
-/// Basic wallet related errors.
-#[derive(Debug, Error)]
-pub enum BasicWalletError {
-    #[error("unsupported authentication method: {0}")]
-    UnsupportedAuthMethod(String),
-    #[error("account creation failed")]
-    AccountError(#[source] AccountError),
-}
-
-/// Creates a new account with basic wallet interface, the specified authentication scheme and the
-/// account storage type. Basic wallets can be specified to have either mutable or immutable code.
+/// Creates a new account with a basic wallet interface, single signature authentication and the
+/// specified account type.
 ///
-/// The basic wallet interface exposes three procedures:
+/// The basic wallet interface exposes two procedures:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
 ///
-/// All methods require authentication. The authentication procedure is defined by the specified
-/// authentication scheme.
+/// All methods require authentication, which is provided by an [`AuthSingleSig`] component
+/// configured with the given approver.
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
-    auth_method: AuthMethod,
-    account_storage_mode: AccountType,
-) -> Result<Account, BasicWalletError> {
-    let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            AuthSingleSig::new(pub_key, auth_scheme).into()
-        },
-        AuthMethod::Multisig { threshold, approvers } => {
-            let config = AuthMultisigConfig::new(approvers, threshold)
-                .and_then(|cfg| {
-                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 1)])
-                })
-                .map_err(BasicWalletError::AccountError)?;
-            AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
-        },
-        AuthMethod::NoAuth => {
-            return Err(BasicWalletError::UnsupportedAuthMethod(
-                "basic wallets cannot be created with NoAuth authentication method".into(),
-            ));
-        },
-        AuthMethod::NetworkAccount { .. } => {
-            return Err(BasicWalletError::UnsupportedAuthMethod(
-                "basic wallets cannot be created with NetworkAccount authentication method".into(),
-            ));
-        },
-        AuthMethod::Unknown => {
-            return Err(BasicWalletError::UnsupportedAuthMethod(
-                "basic wallets cannot be created with Unknown authentication method".into(),
-            ));
-        },
-    };
+    approver: Approver,
+    account_type: AccountType,
+) -> Result<Account, AccountError> {
+    let auth_component: AccountComponent = AuthSingleSig::new(approver).into();
 
-    let account = AccountBuilder::new(init_seed)
-        .account_type(account_storage_mode)
+    create_wallet(init_seed, auth_component, account_type)
+}
+
+/// Creates a new account with a basic wallet interface, multi-signature authentication and the
+/// specified account type.
+///
+/// Authentication is provided by an [`AuthMultisig`] component requiring the default threshold of
+/// `approver_set` approver signatures, with optional per-procedure threshold overrides in
+/// `proc_thresholds`.
+///
+/// # Security
+///
+/// See [`AuthMultisig`] for important caveats regarding per-procedure thresholds and private
+/// account state withholding. For private accounts this constructor rejects per-procedure
+/// thresholds below the default threshold (a lower threshold would let a sub-quorum advance and
+/// withhold the private account state); public accounts allow any per-procedure threshold.
+pub fn create_multisig_wallet(
+    init_seed: [u8; 32],
+    approver_set: ApproverSet,
+    proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
+    account_type: AccountType,
+) -> Result<Account, AccountError> {
+    let default_threshold = approver_set.threshold().get();
+    if account_type == AccountType::Private
+        && proc_thresholds
+            .iter()
+            .any(|(_, proc_threshold)| *proc_threshold < default_threshold)
+    {
+        return Err(AccountError::other(
+            "private multisig wallets do not allow per-procedure thresholds below the default \
+             threshold, as a lower threshold would let a sub-quorum advance and withhold the \
+             private account state; use a guarded wallet to lower thresholds safely",
+        ));
+    }
+
+    let config = AuthMultisigConfig::new(approver_set).with_proc_thresholds(proc_thresholds)?;
+    let auth_component: AccountComponent = AuthMultisig::new(config)?.into();
+
+    create_wallet(init_seed, auth_component, account_type)
+}
+
+/// Creates a new account with a basic wallet interface, guarded multi-signature authentication and
+/// the specified account type.
+///
+/// Authentication is provided by an [`AuthGuardedMultisig`] component: every operation requires
+/// both the default threshold of `approver_set` approver signatures (with optional per-procedure
+/// overrides in `proc_thresholds`) and a valid signature from the configured `guardian`.
+pub fn create_guarded_wallet(
+    init_seed: [u8; 32],
+    approver_set: ApproverSet,
+    proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
+    guardian: GuardianConfig,
+    account_type: AccountType,
+) -> Result<Account, AccountError> {
+    let config = AuthGuardedMultisigConfig::new(approver_set, guardian)?
+        .with_proc_thresholds(proc_thresholds)?;
+    let auth_component: AccountComponent = AuthGuardedMultisig::new(config)?.into();
+
+    create_wallet(init_seed, auth_component, account_type)
+}
+
+/// Creates a basic wallet account from the given authentication component and account type.
+fn create_wallet(
+    init_seed: [u8; 32],
+    auth_component: AccountComponent,
+    account_type: AccountType,
+) -> Result<Account, AccountError> {
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build()
-        .map_err(BasicWalletError::AccountError)?;
-
-    Ok(account)
 }
 
 // TESTS
@@ -176,42 +211,117 @@ pub fn create_basic_wallet(
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use miden_protocol::account::auth::{self, PublicKeyCommitment};
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountType, AuthMethod, create_basic_wallet};
+    use super::{
+        Account,
+        AccountType,
+        Approver,
+        ApproverSet,
+        GuardianConfig,
+        create_basic_wallet,
+        create_guarded_wallet,
+        create_multisig_wallet,
+    };
     use crate::account::wallets::BasicWallet;
 
-    #[test]
-    fn test_create_basic_wallet() {
-        let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
-        let wallet = create_basic_wallet(
-            [1; 32],
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::Public,
-        );
-
-        wallet.unwrap_or_else(|err| {
-            panic!("{}", err);
-        });
+    fn approver(seed: u32) -> Approver {
+        Approver::new(
+            PublicKeyCommitment::from(Word::from([seed, seed, seed, seed])),
+            auth::AuthScheme::Falcon512Poseidon2,
+        )
     }
 
     #[test]
-    fn test_serialize_basic_wallet() {
-        let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let auth_scheme = auth::AuthScheme::EcdsaK256Keccak;
-        let wallet = create_basic_wallet(
-            [1; 32],
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::Public,
-        )
-        .unwrap();
+    fn test_create_basic_wallet() -> anyhow::Result<()> {
+        create_basic_wallet([1; 32], approver(1), AccountType::Public)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_serialize_basic_wallet() -> anyhow::Result<()> {
+        let approver = Approver::new(
+            PublicKeyCommitment::from(Word::from([ONE; 4])),
+            auth::AuthScheme::EcdsaK256Keccak,
+        );
+        let wallet = create_basic_wallet([1; 32], approver, AccountType::Public)?;
 
         let bytes = wallet.to_bytes();
-        let deserialized_wallet = Account::read_from_bytes(&bytes).unwrap();
+        let deserialized_wallet = Account::read_from_bytes(&bytes)?;
         assert_eq!(wallet, deserialized_wallet);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_multisig_wallet_public_allows_lower_override() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
+        let proc_thresholds = vec![(BasicWallet::receive_asset_root(), 1)];
+
+        // A public account may use a per-procedure threshold below the default.
+        create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Public)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_multisig_wallet_private_no_override_succeeds() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
+
+        // No overrides is always allowed for private accounts.
+        create_multisig_wallet([1; 32], approver_set, vec![], AccountType::Private)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_multisig_wallet_private_higher_override_succeeds() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2), approver(3)], 2)?;
+        // Hardening a procedure above the default (2 -> 3) is safe for private accounts.
+        let proc_thresholds = vec![(BasicWallet::move_asset_to_note_root(), 3)];
+
+        create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_multisig_wallet_private_lower_override_rejected() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
+        let proc_thresholds = vec![(BasicWallet::receive_asset_root(), 1)];
+
+        let err =
+            create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)
+                .expect_err("private multisig with a below-default threshold must be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("do not allow per-procedure thresholds below the default threshold")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_guarded_wallet_private_override_allowed() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
+        let proc_thresholds = vec![(BasicWallet::receive_asset_root(), 1)];
+        let guardian = GuardianConfig::new(approver(3));
+
+        // The guardian forwards state, so a private guarded wallet may use overrides.
+        create_guarded_wallet(
+            [1; 32],
+            approver_set,
+            proc_thresholds,
+            guardian,
+            AccountType::Private,
+        )?;
+
+        Ok(())
     }
 
     /// Check that the obtaining of the basic wallet procedure roots does not panic.

@@ -1,56 +1,117 @@
-//! Burn policy components and the burn policy configuration enum used by
+//! Burn policy components and the burn policy descriptor used by
 //! [`super::TokenPolicyManager`].
 
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountComponent;
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use miden_protocol::asset::AssetAmount;
+use thiserror::Error;
 
 mod allow_all;
+mod min_burn_amount;
 mod owner_only;
 
 pub use allow_all::BurnAllowAll;
+pub use min_burn_amount::MinBurnAmount;
 pub use owner_only::BurnOwnerOnly;
 
-// CONFIG
+// BURN POLICY ERROR
 // ================================================================================================
 
-/// Selects which burn policy is registered with a [`super::TokenPolicyManager`].
-///
-/// Pass to [`super::TokenPolicyManager::with_burn_policy`] together with a
-/// [`super::PolicyRegistration`] to register the policy as either active or as a reserved
-/// alternative.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum BurnPolicyConfig {
-    /// Policy root = [`BurnAllowAll::root`] (burns open to anyone).
-    #[default]
-    AllowAll,
-    /// Policy root = [`BurnOwnerOnly::root`] (burns gated by the account owner).
-    OwnerOnly,
-    /// Policy root = the provided word. The corresponding component must be installed by the
-    /// caller separately; resolving this variant into built-in components yields an empty list.
-    Custom(Word),
+/// Errors returned by [`BurnPolicy::custom`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum BurnPolicyError {
+    /// The procedure root supplied to [`BurnPolicy::custom`] is not exported by any of the
+    /// provided components.
+    #[error(
+        "custom burn policy root must match a procedure root in one of the provided components"
+    )]
+    RootNotInComponents,
 }
 
-impl BurnPolicyConfig {
-    /// Returns the procedure root of the policy this variant resolves to.
-    pub fn root(self) -> Word {
-        match self {
-            Self::AllowAll => BurnAllowAll::root().as_word(),
-            Self::OwnerOnly => BurnOwnerOnly::root().as_word(),
-            Self::Custom(root) => root,
+// BURN POLICY
+// ================================================================================================
+
+/// Descriptor for the burn policy registered with a [`super::TokenPolicyManager`].
+///
+/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// [`AccountComponent`]s that must be installed for the procedure to work.
+///
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::min_burn_amount`], or
+/// [`Self::custom`]. Pass to the [`super::TokenPolicyManager`] builder via `active_burn_policy`
+/// or `allowed_burn_policy`.
+#[derive(Debug, Clone)]
+pub struct BurnPolicy {
+    root: AccountProcedureRoot,
+    components: Vec<AccountComponent>,
+}
+
+impl BurnPolicy {
+    /// Returns a burn policy that accepts every burn unconditionally.
+    pub fn allow_all() -> Self {
+        Self {
+            root: BurnAllowAll::root(),
+            components: vec![BurnAllowAll.into()],
         }
     }
 
-    /// Returns the [`AccountComponent`]s that must accompany this burn policy variant.
-    ///
-    /// For [`Self::Custom`] this is empty — the caller installs whatever the chosen root
-    /// requires.
-    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
-        match self {
-            Self::AllowAll => vec![BurnAllowAll.into()],
-            Self::OwnerOnly => vec![BurnOwnerOnly.into()],
-            Self::Custom(_) => Vec::new(),
+    /// Returns a burn policy gated by the account owner.
+    pub fn owner_only() -> Self {
+        Self {
+            root: BurnOwnerOnly::root(),
+            components: vec![BurnOwnerOnly.into()],
         }
+    }
+
+    /// Returns a burn policy that rejects burns below `min_burn_amount`.
+    ///
+    /// The threshold is written to the [`MinBurnAmount`] component's storage slot and can be
+    /// updated at runtime through the owner-gated `set_min_burn_amount` procedure.
+    pub fn min_burn_amount(min_burn_amount: AssetAmount) -> Self {
+        Self {
+            root: MinBurnAmount::root(),
+            components: vec![MinBurnAmount::new(min_burn_amount).into()],
+        }
+    }
+
+    /// Returns a burn policy resolving to `root` and shipping the provided companion
+    /// `components` (anything that can be converted into an [`AccountComponent`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BurnPolicyError::RootNotInComponents`] if `root` is not the procedure root of
+    /// any procedure exported by the provided components.
+    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Result<Self, BurnPolicyError>
+    where
+        I: IntoIterator,
+        I::Item: Into<AccountComponent>,
+    {
+        let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
+        if !components.iter().any(|component| component.has_procedure(root)) {
+            return Err(BurnPolicyError::RootNotInComponents);
+        }
+        Ok(Self { root, components })
+    }
+
+    /// Returns the procedure root of the policy this descriptor resolves to.
+    pub fn root(&self) -> AccountProcedureRoot {
+        self.root
+    }
+}
+
+impl Default for BurnPolicy {
+    fn default() -> Self {
+        Self::allow_all()
+    }
+}
+
+impl IntoIterator for BurnPolicy {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s carried by this burn policy descriptor in installation
+    /// order.
+    fn into_iter(self) -> Self::IntoIter {
+        self.components.into_iter()
     }
 }

@@ -29,17 +29,21 @@ use rand::Rng;
 // P2ID NOTE SETUPS
 // ================================================================================================
 
+pub fn tx_create_single_p2id_note_falcon() -> Result<TransactionContext> {
+    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+}
+
+pub fn tx_create_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+    tx_create_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
+}
+
 /// Returns the transaction context which could be used to run the transaction which creates a
 /// single P2ID note.
-pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
+fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        [fungible_asset],
-    )?;
+    let account = builder
+        .add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme }, [fungible_asset])?;
 
     let output_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -130,14 +134,20 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Tran
         .build()
 }
 
+pub fn tx_consume_two_p2id_notes_falcon() -> Result<TransactionContext> {
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
+}
+
+pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<TransactionContext> {
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::EcdsaK256Keccak)
+}
+
 /// Returns the transaction context which could be used to run the transaction which consumes two
 /// P2ID notes into an existing basic wallet.
-pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
+fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme })?;
     let fungible_asset_1: Asset = FungibleAsset::mock(100);
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
@@ -182,15 +192,24 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (not used in this benchmark, but distinct from admin and injector)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON
@@ -266,7 +285,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN
@@ -392,8 +411,13 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // CREATE GER MANAGER ACCOUNT (not used in bridge-out, but required for bridge creation)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE GER INJECTOR ACCOUNT (not used in bridge-out, but required for bridge creation)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (not used in bridge-out, but required for bridge creation)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -401,7 +425,8 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
 
     // Pre-populate frontier before adding the account to the mock chain

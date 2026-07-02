@@ -62,9 +62,6 @@ pub use recipient::NoteRecipient;
 mod script;
 pub use script::{NoteScript, NoteScriptRoot};
 
-mod file;
-pub use file::NoteFile;
-
 // NOTE
 // ================================================================================================
 
@@ -182,6 +179,11 @@ impl Note {
     /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         &self.attachments
+    }
+
+    /// Returns `true` if the note has at least one attachment.
+    pub fn has_attachments(&self) -> bool {
+        !self.attachments.is_empty()
     }
 
     /// Returns a reference to the note's metadata.

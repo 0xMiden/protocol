@@ -8,8 +8,10 @@ pub mod utils;
 pub enum ExecutionBenchmark {
     ConsumeSingleP2IDFalcon,
     ConsumeSingleP2IDEcdsa,
-    ConsumeTwoP2ID,
-    CreateSingleP2ID,
+    ConsumeTwoP2IDFalcon,
+    ConsumeTwoP2IDEcdsa,
+    CreateSingleP2IDFalcon,
+    CreateSingleP2IDEcdsa,
     ConsumeClaimNoteL1ToMiden,
     ConsumeClaimNoteL2ToMiden,
     ConsumeB2AggNote,
@@ -26,8 +28,18 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeSingleP2IDEcdsa => {
                 write!(f, "consume single P2ID note with ECDSA signing")
             },
-            ExecutionBenchmark::ConsumeTwoP2ID => write!(f, "consume two P2ID notes"),
-            ExecutionBenchmark::CreateSingleP2ID => write!(f, "create single P2ID note"),
+            ExecutionBenchmark::ConsumeTwoP2IDFalcon => {
+                write!(f, "consume two P2ID notes with Falcon signing")
+            },
+            ExecutionBenchmark::ConsumeTwoP2IDEcdsa => {
+                write!(f, "consume two P2ID notes with ECDSA signing")
+            },
+            ExecutionBenchmark::CreateSingleP2IDFalcon => {
+                write!(f, "create single P2ID note with Falcon signing")
+            },
+            ExecutionBenchmark::CreateSingleP2IDEcdsa => {
+                write!(f, "create single P2ID note with ECDSA signing")
+            },
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden => {
                 write!(f, "consume CLAIM note (L1 to Miden)")
             },

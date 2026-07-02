@@ -6,6 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::core::word
 use miden::standards::auth::note_script_allowlist
+use miden::standards::auth::tx_script_allowlist
 
 # CONSTANTS
 # =================================================================================================
@@ -14,13 +15,18 @@ use miden::standards::auth::note_script_allowlist
 # (defined as Word); any non-empty value marks a root as allowed.
 const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_note_scripts")
 
+# The slot holding the map of allowed tx script roots. Keys are tx script roots (defined as Word);
+# any non-empty value marks a root as allowed.
+const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_tx_scripts")
+
 # AUTH PROCEDURE
 # =================================================================================================
 
 #! Authenticates a transaction against an `AuthNetworkAccount` component.
 #!
 #! Enforces two invariants:
-#! 1. No transaction script was executed in this transaction.
+#! 1. The transaction script root, if any, must be present in the allowlist stored at
+#!    `ALLOWED_TX_SCRIPTS_SLOT` (a transaction that executed no tx script is always allowed).
 #! 2. Every consumed input note must have a script root present in the allowlist stored at
 #!    `ALLOWED_NOTE_SCRIPTS_SLOT`.
 #!
@@ -36,8 +42,11 @@ pub proc auth_network_transaction(auth_args: word)
     dropw
     # => [pad(16)]
 
-    # ---- Reject transactions that executed a tx script ----
-    exec.note_script_allowlist::assert_no_tx_script
+    # ---- Reject any tx script whose root is not allowlisted ----
+    push.ALLOWED_TX_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, pad(16)]
+
+    exec.tx_script_allowlist::assert_tx_script_allowed
     # => [pad(16)]
 
     # ---- Reject any input note whose script root is not allowlisted ----

@@ -147,7 +147,7 @@ end
 #! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_sender_owner_internal
+pub proc is_sender_owner
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix]
 
@@ -164,8 +164,8 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: exec
-pub proc assert_sender_is_owner_internal
-    exec.is_sender_owner_internal
+pub proc assert_sender_is_owner
+    exec.is_sender_owner
     # => [is_sender_owner]
 
     assert.err=ERR_SENDER_NOT_OWNER
@@ -174,20 +174,6 @@ end
 
 # PUBLIC INTERFACE
 # ================================================================================================
-
-#! Checks if the note sender is the owner and panics if not.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: call
-pub proc assert_sender_is_owner
-    exec.assert_sender_is_owner_internal
-    # => [pad(16)]
-end
 
 #! Returns the owner account ID.
 #!
@@ -198,6 +184,7 @@ end
 #! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_owner
     exec.get_owner_internal
     # => [owner_suffix, owner_prefix, pad(16)]
@@ -216,6 +203,7 @@ end
 #!   owner account ID. Both are zero if no nominated transfer exists.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_nominated_owner
     exec.get_nominated_owner_internal
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
@@ -244,8 +232,9 @@ end
 #! - new_owner is non-zero and the account ID is invalid.
 #!
 #! Invocation: call
+@account_procedure
 pub proc transfer_ownership
-    exec.assert_sender_is_owner_internal
+    exec.assert_sender_is_owner
     # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
     # Detect explicit cancel via the zero address. The zero address is not a valid
@@ -253,27 +242,17 @@ pub proc transfer_ownership
     dup.1 eq.0 dup.1 eq.0 and
     # => [is_zero_address, new_owner_suffix, new_owner_prefix, pad(14)]
 
-    if.true
-        # Cancel via zero address: drop the (0, 0) inputs and write [owner, 0, 0].
-        drop drop
-        # => [pad(14)]
-
-        exec.get_owner_internal
-        # => [owner_suffix, owner_prefix, pad(14)]
-
-        push.0.0 movup.3 movup.3
-        # => [owner_suffix, owner_prefix, 0, 0, pad(14)]
-    else
-        # Non-zero new owner: validate and store as the nominated owner.
+    if.false
+        # Non-zero new owner: validate before storing as the nominated owner.
         dup.1 dup.1 exec.account_id::validate
-        # => [new_owner_suffix, new_owner_prefix, pad(14)]
-
-        exec.get_owner_internal
-        # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
     end
+    # => [new_owner_suffix, new_owner_prefix, pad(14)]
+
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
 
     exec.save_ownership_info
-    # => [pad(14)]
+    # => [pad(16)]
 end
 
 #! Accepts a nominated ownership transfer. The nominated owner becomes the new owner
@@ -289,6 +268,7 @@ end
 #! - the note sender is not the nominated owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc accept_ownership
     exec.get_nominated_owner_internal
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
@@ -341,8 +321,9 @@ end
 #! - an ownership transfer is currently in progress.
 #!
 #! Invocation: call
+@account_procedure
 pub proc renounce_ownership
-    exec.assert_sender_is_owner_internal
+    exec.assert_sender_is_owner
     # => [pad(16)]
 
     exec.get_nominated_owner_internal

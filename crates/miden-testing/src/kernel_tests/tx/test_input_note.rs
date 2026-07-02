@@ -16,7 +16,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -60,8 +60,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     ",
         check_note_0 = check_asset_info_code(
             0,
-            p2id_note_0_assets.assets().commitment(),
-            p2id_note_0_assets.assets().num_assets()
+            p2any_note_0_assets.assets().commitment(),
+            p2any_note_0_assets.assets().num_assets()
         ),
         check_note_1 = check_asset_info_code(
             1,
@@ -81,7 +81,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2any_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -98,7 +98,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -151,7 +151,7 @@ async fn test_get_sender() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -200,7 +200,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -283,7 +283,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
             {check_note_2}
         end
     ",
-        check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
+        check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
@@ -294,7 +294,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2any_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -311,7 +311,7 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -361,7 +361,7 @@ async fn test_get_script_root() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -404,7 +404,7 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;

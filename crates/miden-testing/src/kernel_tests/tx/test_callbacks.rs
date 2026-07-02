@@ -33,14 +33,9 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
-    TokenPolicyManager,
-};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -98,6 +93,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, pad(8)]
@@ -115,6 +111,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
@@ -324,6 +321,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -522,6 +520,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -623,6 +622,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         dropw
         # => [ASSET_VALUE, pad(12)]
@@ -632,6 +632,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let note_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         dropw movup.4 drop
         # => [ASSET_VALUE, pad(12)]
@@ -773,10 +774,12 @@ fn add_faucet_with_callbacks(
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?,
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build(),
         )
+        .with_component(Pausable::unpaused())
         .with_component(callback_component);
 
     builder.add_account_from_builder(

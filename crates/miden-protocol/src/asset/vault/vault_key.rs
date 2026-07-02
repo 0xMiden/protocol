@@ -1,8 +1,9 @@
 use alloc::boxed::Box;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use core::fmt;
 
 use miden_crypto::merkle::smt::LeafIndex;
+use miden_crypto_derive::WordWrapper;
 
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
@@ -16,7 +17,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
+use crate::{Felt, Hasher, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
@@ -33,6 +34,10 @@ use crate::{Felt, Word};
 /// The composition is the discriminator between assets and so it is placed at a static offset much
 /// like the version in an account ID. This makes it slightly easier to change the asset metadata in
 /// the future without affecting identification of previous assets.
+///
+/// Use [`AssetVaultKey::hash`] to produce the corresponding [`AssetVaultKeyHash`] that is used as
+/// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
+/// leaves regardless of how faucet IDs or asset IDs are chosen.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AssetVaultKey {
     /// The asset ID of the vault key.
@@ -163,9 +168,39 @@ impl AssetVaultKey {
         self.composition
     }
 
-    /// Returns the leaf index of a vault key.
+    /// Hashes this raw vault key to produce the [`AssetVaultKeyHash`] used as the key in the asset
+    /// vault's underlying SMT.
+    pub fn hash(&self) -> AssetVaultKeyHash {
+        AssetVaultKeyHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
+    }
+}
+
+// ASSET VAULT KEY HASH
+// ================================================================================================
+
+/// A hashed [`AssetVaultKey`].
+///
+/// This is produced by hashing an [`AssetVaultKey`] and is used as the actual key in the
+/// underlying SMT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
+pub struct AssetVaultKeyHash(Word);
+
+impl AssetVaultKeyHash {
+    /// Returns the leaf index in the SMT for this hashed key.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.to_word())
+        self.0.into()
+    }
+}
+
+impl From<AssetVaultKeyHash> for Word {
+    fn from(key: AssetVaultKeyHash) -> Self {
+        key.0
+    }
+}
+
+impl From<AssetVaultKey> for AssetVaultKeyHash {
+    fn from(key: AssetVaultKey) -> Self {
+        key.hash()
     }
 }
 

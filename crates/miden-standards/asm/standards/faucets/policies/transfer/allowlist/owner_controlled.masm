@@ -24,12 +24,13 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! - the sender is not the account owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc allow_account
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.allowlist::allow_account
-    # => [pad(14)]
+    # => [pad(16)]
 end
 
 #! Disallow an account, gated by the Ownable2Step owner.
@@ -41,10 +42,11 @@ end
 #! - the sender is not the account owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc disallow_account
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
     exec.allowlist::disallow_account
-    # => [pad(14)]
+    # => [pad(16)]
 end

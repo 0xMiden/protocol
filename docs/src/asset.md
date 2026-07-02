@@ -145,6 +145,8 @@ Examples of such assets include NFTs like a DevCon ticket.
 
 [Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 64 assets.
 
+Asset vault keys are hashed before being used as keys in the underlying sparse Merkle tree. Hashing the raw key ensures a uniform leaf distribution: in particular, it prevents non-fungible assets issued by the same faucet from sharing an SMT leaf (their raw vault keys share the fourth element - the faucet ID prefix - which the SMT uses to determine leaf membership).
+
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-storage.png').default} style={{width: '70%'}} alt="Asset storage"/>
 </p>

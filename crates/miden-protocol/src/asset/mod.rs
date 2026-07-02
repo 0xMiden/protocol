@@ -33,7 +33,14 @@ mod asset_composition;
 pub use asset_composition::AssetComposition;
 
 mod vault;
-pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+pub use vault::{
+    AssetId,
+    AssetVault,
+    AssetVaultKey,
+    AssetVaultKeyHash,
+    AssetWitness,
+    PartialVault,
+};
 
 // ASSET
 // ================================================================================================

@@ -27,6 +27,9 @@ pub enum TransactionEventId {
     AccountVaultBeforeRemoveAsset = ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_ID,
     AccountVaultAfterRemoveAsset = ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID,
 
+    AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
+    AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
+
     AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET_ID,
 
     AccountStorageBeforeSetItem = ACCOUNT_STORAGE_BEFORE_SET_ITEM_ID,
@@ -71,7 +74,6 @@ pub enum TransactionEventId {
     EpilogueAuthProcEnd = EPILOGUE_AUTH_PROC_END_ID,
 
     EpilogueAfterTxCyclesObtained = EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID,
-    EpilogueBeforeTxFeeRemovedFromAccount = EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID,
 
     LinkMapSet = LINK_MAP_SET_ID,
     LinkMapGet = LINK_MAP_GET_ID,
@@ -100,6 +102,10 @@ impl TransactionEventId {
             Self::AccountVaultAfterAddAsset => &ACCOUNT_VAULT_AFTER_ADD_ASSET_NAME,
             Self::AccountVaultBeforeRemoveAsset => &ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_NAME,
             Self::AccountVaultAfterRemoveAsset => &ACCOUNT_VAULT_AFTER_REMOVE_ASSET_NAME,
+            Self::AccountBeforeAssetDeltaComputation => {
+                &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
+            },
+            Self::AccountOnAssetDeltaComputation => &ACCOUNT_ON_ASSET_DELTA_COMPUTATION_NAME,
             Self::AccountVaultBeforeGetAsset => &ACCOUNT_VAULT_BEFORE_GET_ASSET_NAME,
             Self::AccountStorageBeforeSetItem => &ACCOUNT_STORAGE_BEFORE_SET_ITEM_NAME,
             Self::AccountStorageAfterSetItem => &ACCOUNT_STORAGE_AFTER_SET_ITEM_NAME,
@@ -128,9 +134,6 @@ impl TransactionEventId {
             Self::EpilogueAuthProcStart => &EPILOGUE_AUTH_PROC_START_NAME,
             Self::EpilogueAuthProcEnd => &EPILOGUE_AUTH_PROC_END_NAME,
             Self::EpilogueAfterTxCyclesObtained => &EPILOGUE_AFTER_TX_CYCLES_OBTAINED_NAME,
-            Self::EpilogueBeforeTxFeeRemovedFromAccount => {
-                &EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_NAME
-            },
             Self::LinkMapSet => &LINK_MAP_SET_NAME,
             Self::LinkMapGet => &LINK_MAP_GET_NAME,
             Self::Unauthorized => &AUTH_UNAUTHORIZED_NAME,
@@ -161,6 +164,13 @@ impl TryFrom<EventId> for TransactionEventId {
             },
             ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID => {
                 Ok(TransactionEventId::AccountVaultAfterRemoveAsset)
+            },
+
+            ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID => {
+                Ok(TransactionEventId::AccountOnAssetDeltaComputation)
+            },
+            ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID => {
+                Ok(TransactionEventId::AccountBeforeAssetDeltaComputation)
             },
 
             ACCOUNT_VAULT_BEFORE_GET_ASSET_ID => Ok(TransactionEventId::AccountVaultBeforeGetAsset),
@@ -215,9 +225,6 @@ impl TryFrom<EventId> for TransactionEventId {
             EPILOGUE_AUTH_PROC_END_ID => Ok(TransactionEventId::EpilogueAuthProcEnd),
             EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID => {
                 Ok(TransactionEventId::EpilogueAfterTxCyclesObtained)
-            },
-            EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID => {
-                Ok(TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount)
             },
             EPILOGUE_END_ID => Ok(TransactionEventId::EpilogueEnd),
 

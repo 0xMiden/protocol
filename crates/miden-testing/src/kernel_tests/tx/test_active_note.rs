@@ -36,7 +36,7 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_transaction_executor_error,
 };
@@ -92,15 +92,15 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -114,6 +114,68 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 
             push.{METADATA}
             assert_eqw.err="note 0 has incorrect metadata"
+            # => []
+
+            # truncate the stack
+            swapw dropw
+        end
+        "#,
+        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
+    );
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `get_metadata` returns only a single word (the metadata) on the stack.
+///
+/// We push a marker word before the call, then assert the metadata sits directly on top of it.
+/// This catches a leaked word at either position: a word left above the metadata fails the first
+/// `assert_eqw` (metadata mismatch), and a word left below the metadata pushes the marker one
+/// word deeper and fails the second `assert_eqw`.
+#[tokio::test]
+async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let input_note = create_public_p2any_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            [FungibleAsset::mock(100)],
+        );
+        TestTransactionBuilder::new(account)
+            .extend_input_notes(vec![input_note])
+            .build()?
+    };
+
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
+        use miden::protocol::active_note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+            # => []
+
+            # marker word to detect any extra word left by get_metadata.
+            # must match the verifying push below.
+            push.1.2.3.4
+            # => [MARKER]
+
+            exec.active_note::get_metadata
+            # => [METADATA, MARKER]   (correct: exactly one word added)
+
+            push.{METADATA}
+            assert_eqw.err="active note metadata mismatch"
+            # => [MARKER]
+
+            # if get_metadata leaked a word, METADATA would be here instead of MARKER.
+            # must match the marker pushed above.
+            push.1.2.3.4
+            assert_eqw.err="get_metadata left an extra word on the stack"
             # => []
 
             # truncate the stack
@@ -146,7 +208,7 @@ async fn test_active_note_is_public_and_is_private(
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
@@ -158,8 +220,8 @@ async fn test_active_note_is_public_and_is_private(
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -192,15 +254,15 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
 
     // calling get_sender should return sender of the active note
     let code = "
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -238,14 +300,14 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note])
             .build()?
     };
 
     let code = "
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
         use miden::protocol::note
 
@@ -366,8 +428,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
 
         proc process_note_0
@@ -496,8 +558,8 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -585,12 +647,12 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     let input_note = Note::new(vault.clone(), metadata, recipient);
 
     // provide this input note to the transaction context
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_input_notes(vec![input_note])
         .build()?;
 
     let tx_code = "
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
             use miden::protocol::active_note
 
             begin
@@ -635,7 +697,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 
     // calling get_serial_number should return the serial number of the active note
     let code = "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_note
 
         begin
@@ -676,7 +738,7 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
 
     // calling get_script_root should return script root of the active note
     let code = "
-    use $kernel::prologue
+    use miden::tx_kernel_core::prologue
     use miden::protocol::active_note
 
     begin
@@ -734,7 +796,7 @@ async fn test_note_find_attachment(
             .attachment(NoteAttachment::with_word(scheme_1, word_1))
             .build()?;
 
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note0, input_note1])
             .build()?
     };
@@ -756,8 +818,8 @@ async fn test_note_find_attachment(
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::note->note_internal
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note->note_internal
         use miden::protocol::active_note
         use miden::protocol::input_note
 

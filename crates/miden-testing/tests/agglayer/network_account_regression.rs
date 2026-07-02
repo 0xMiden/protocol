@@ -24,7 +24,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
-    ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
+    ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -38,7 +38,7 @@ end
 ";
 
 /// Asserts that a transaction submitting any tx script against a bridge account fails with
-/// [`ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`], even when the transaction also consumes
+/// [`ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`], even when the transaction also consumes
 /// an allowlisted input note (UPDATE_GER). This proves the tx-script check fires regardless of
 /// what allowlisted input notes accompany it — the two allowlist checks are independent.
 #[tokio::test]
@@ -48,14 +48,19 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -65,7 +70,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     // check.
     let ger = ExitRoot::from([0u8; 32]);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mock_chain = builder.build()?;
@@ -79,7 +84,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
+    assert_transaction_executor_error!(result, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
     Ok(())
 }
@@ -94,14 +99,19 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
-        ger_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -126,7 +136,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
 }
 
 /// Asserts that a transaction submitting any tx script against an AggLayer faucet account fails
-/// with [`ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`]. Symmetric to
+/// with [`ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`]. Symmetric to
 /// [`bridge_rejects_tx_script`]: the faucet's [`AuthNetworkAccount`] allowlist (MINT, BURN) must
 /// reject every tx script, regardless of which input notes (if any) accompany it.
 ///
@@ -162,7 +172,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
+    assert_transaction_executor_error!(result, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
     Ok(())
 }

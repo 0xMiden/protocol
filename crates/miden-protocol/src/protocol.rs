@@ -4,45 +4,55 @@ use crate::assembly::Library;
 use crate::assembly::mast::MastForest;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
+use crate::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
 
-const PROTOCOL_LIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masl"));
+const PROTOCOL_PACKAGE_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-protocol.masp"));
+
+static PROTOCOL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    Arc::new(
+        Package::read_from_bytes(PROTOCOL_PACKAGE_BYTES)
+            .expect("protocol lib masp should be well-formed"),
+    )
+});
 
 // PROTOCOL LIBRARY
 // ================================================================================================
 
 #[derive(Clone)]
-pub struct ProtocolLib(Library);
+pub struct ProtocolLib(Arc<Package>);
 
 impl ProtocolLib {
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
-        self.0.mast_forest()
+        self.0.mast.mast_forest()
     }
 }
 
 impl AsRef<Library> for ProtocolLib {
     fn as_ref(&self) -> &Library {
-        &self.0
+        self.0.mast.as_ref()
     }
 }
 
 impl From<ProtocolLib> for Library {
     fn from(value: ProtocolLib) -> Self {
-        value.0
+        Arc::unwrap_or_clone(Arc::unwrap_or_clone(value.0).mast)
+    }
+}
+
+impl From<ProtocolLib> for Package {
+    fn from(value: ProtocolLib) -> Self {
+        Arc::unwrap_or_clone(value.0)
     }
 }
 
 impl Default for ProtocolLib {
     fn default() -> Self {
-        static PROTOCOL_LIB: LazyLock<ProtocolLib> = LazyLock::new(|| {
-            let contents = Library::read_from_bytes(PROTOCOL_LIB_BYTES)
-                .expect("protocol lib masl should be well-formed");
-            ProtocolLib(contents)
-        });
-        PROTOCOL_LIB.clone()
+        ProtocolLib(PROTOCOL_PACKAGE.clone())
     }
 }
 
@@ -59,7 +69,7 @@ mod tests {
     fn test_compile() {
         let path = Path::new("::miden::protocol::active_account::get_id");
         let miden = ProtocolLib::default();
-        let exists = miden.0.module_infos().any(|module| {
+        let exists = miden.0.mast.module_infos().any(|module| {
             module
                 .procedures()
                 .any(|(_, proc)| module.path().join(&proc.name).as_path() == path)

@@ -74,14 +74,14 @@ use crate::utils::{create_public_p2any_note, create_spawn_note};
 use crate::{
     Auth,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     assert_execution_error,
     assert_transaction_executor_error,
 };
 
 #[tokio::test]
 async fn test_create_note() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let account_id = tx_context.account().id();
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -91,7 +91,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -153,7 +153,7 @@ async fn test_create_note() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_note_with_invalid_tag() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let invalid_tag = Felt::new_unchecked((NoteType::Public as u64) << 62);
     let valid_tag: Felt = NoteTag::default().into();
@@ -171,7 +171,7 @@ fn note_creation_script(tag: Felt) -> String {
     format!(
         "
             use miden::protocol::output_note
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -193,14 +193,14 @@ fn note_creation_script(tag: Felt) -> String {
 
 #[tokio::test]
 async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
         "
         use miden::protocol::output_note
-        use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::constants::MAX_OUTPUT_NOTES_PER_TX
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             push.MAX_OUTPUT_NOTES_PER_TX
@@ -266,7 +266,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         .join("\n            ");
     let num_attachment_words = attachment_words.len();
 
-    let tx_context = TransactionContextBuilder::new(account)
+    let tx_context = TestTransactionBuilder::new(account)
         .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(output_note_1.clone()),
@@ -288,7 +288,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         use miden::protocol::tx
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         #! Since we execute in the kernel context, we write to local memory rather than to global
         #! kernel memory to avoid accidental overwrites.
@@ -423,7 +423,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -434,7 +434,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -486,7 +486,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let faucet_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2)?;
@@ -504,7 +504,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -623,7 +623,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(999 << 16 | 777);
@@ -631,7 +631,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
 
         begin
@@ -686,7 +686,7 @@ async fn test_add_assets_around_max_per_note(
 ) -> anyhow::Result<()> {
     use miden_protocol::MAX_ASSETS_PER_NOTE;
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(999 << 16 | 777);
@@ -714,7 +714,7 @@ async fn test_add_assets_around_max_per_note(
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
 
         begin
@@ -777,7 +777,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note_1])
             .build()?
     };
@@ -793,7 +793,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
     let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
         use miden::protocol::note
         use miden::core::sys
@@ -886,23 +886,24 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note_0 = P2idNote::create(
-        account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
-        vec![fungible_asset_0],
-        NoteType::Public,
-        NoteAttachments::default(),
-        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
-    )?;
+    let output_note_0: Note = P2idNote::builder()
+        .sender(account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
+        .asset(fungible_asset_0)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .build()?
+        .into();
 
-    let output_note_1 = P2idNote::create(
-        account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
-        vec![fungible_asset_0, fungible_asset_1],
-        NoteType::Public,
-        NoteAttachments::default(),
-        &mut RandomCoin::new(Word::from([4, 3, 2, 1u32])),
-    )?;
+    let output_note_1: Note = P2idNote::builder()
+        .sender(account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
+        .asset(fungible_asset_0)
+        .asset(fungible_asset_1)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([4, 3, 2, 1u32])))
+        .build()?
+        .into();
 
     let tx_script_src = &format!(
         r#"
@@ -1016,14 +1017,14 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note = P2idNote::create(
-        account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
-        vec![FungibleAsset::mock(5)],
-        NoteType::Public,
-        NoteAttachments::default(),
-        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
-    )?;
+    let output_note: Note = P2idNote::builder()
+        .sender(account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
+        .asset(FungibleAsset::mock(5))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .build()?
+        .into();
 
     let tx_script_src = &format!(
         r#"
@@ -1083,7 +1084,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -1173,8 +1174,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         ",
-        create_note_0 = create_output_note(&p2id_note_0_assets),
-        check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
+        create_note_0 = create_output_note(&p2any_note_0_assets),
+        check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
         create_note_1 = create_output_note(&p2id_note_1_asset),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
         create_note_2 = create_output_note(&p2id_note_2_assets),
@@ -1186,7 +1187,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![
-            RawOutputNote::Full(p2id_note_0_assets),
+            RawOutputNote::Full(p2any_note_0_assets),
             RawOutputNote::Full(p2id_note_1_asset),
             RawOutputNote::Full(p2id_note_2_assets),
         ])
@@ -1212,7 +1213,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
 ) -> anyhow::Result<()> {
     let elements = elements.into_iter().map(Felt::from).collect();
     let commitment = Word::from([42, 43, 44, 45u32]);
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_advice_map(vec![(commitment, elements)])
         .build()?;
 
@@ -1220,7 +1221,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
         "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -1248,12 +1249,12 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
 
 #[tokio::test]
 async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -1318,7 +1319,7 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
-    let result = TransactionContextBuilder::with_existing_mock_account()
+    let result = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1369,7 +1370,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
         .tx_script(tx_script)
         .build()?
@@ -1443,7 +1444,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
         .tx_script(tx_script)
         .build()?
@@ -1474,7 +1475,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
         .build()?;
     let spawn_note = create_spawn_note([&output_note])?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .extend_input_notes([spawn_note].to_vec())
         .build()?
         .execute()
@@ -1654,7 +1655,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
         .tx_script(tx_script)
         .build()?
@@ -1783,7 +1784,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
         .tx_script(tx_script)
         .build()?
@@ -1914,7 +1915,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
         vec![Word::from([2, 3, 4, 5u32]); NoteAttachment::MAX_NUM_WORDS as usize],
     )?;
 
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_advice_map(vec![(attachment0.to_commitment(), attachment0.content().to_elements())])
         .extend_advice_map(vec![(attachment1.to_commitment(), attachment1.content().to_elements())])
         .build()?;
@@ -1923,7 +1924,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
         "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -1986,7 +1987,7 @@ async fn test_output_note_index_out_of_bounds(
     #[case] params_above: usize,
     #[case] procedure_name: &str,
 ) -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let push_above = if params_above > 0 {
         format!("repeat.{params_above} push.99 end")
@@ -2000,7 +2001,7 @@ async fn test_output_note_index_out_of_bounds(
         use miden::protocol::output_note
         use mock::util
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction

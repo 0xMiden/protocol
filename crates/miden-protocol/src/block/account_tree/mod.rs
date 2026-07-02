@@ -6,6 +6,7 @@ use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 
 use crate::Word;
 use crate::account::{AccountId, AccountIdPrefix};
+use crate::block::{SmtBackend, SmtBackendReader};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::AccountTreeError;
@@ -22,9 +23,6 @@ pub use partial::PartialAccountTree;
 
 mod witness;
 pub use witness::AccountWitness;
-
-mod backend;
-pub use backend::{AccountTreeBackend, AccountTreeBackendReader};
 
 mod account_id_key;
 pub use account_id_key::AccountIdKey;
@@ -56,7 +54,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackendReader<Error = MerkleError>,
+    S: SmtBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -189,7 +187,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackend<Error = MerkleError>,
+    S: SmtBackend<Error = MerkleError>,
 {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
@@ -344,19 +342,7 @@ impl AccountTree<Smt> {
                 .into_iter()
                 .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
         )
-        .map_err(|err| {
-            let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
-                unreachable!("the only error returned by Smt::with_entries is of this type");
-            };
-
-            // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that
-            // the leaf_idx is a valid Felt as well as a valid account ID prefix.
-            AccountTreeError::DuplicateStateCommitments {
-                prefix: AccountIdPrefix::new_unchecked(
-                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
-                ),
-            }
-        })?;
+        .map_err(duplicate_state_commitment_error)?;
 
         AccountTree::new(smt)
     }
@@ -374,14 +360,17 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the provided entries contain duplicate account ID prefixes.
-    /// - a storage error is encountered.
+    /// Returns an error if the provided entries contain duplicate account ID prefixes or duplicate
+    /// state commitments for the same account ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a storage error is encountered.
     pub fn with_storage_from_entries(
         storage: Backend,
         entries: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<Self, AccountTreeError> {
-        use crate::block::account_tree::backend::large_smt_error_to_merkle_error;
+        use crate::block::smt_backend::large_smt_error_to_merkle_error;
 
         let leaves = entries
             .into_iter()
@@ -389,7 +378,7 @@ where
 
         let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
             .map_err(large_smt_error_to_merkle_error)
-            .map_err(AccountTreeError::DuplicateEntries)?;
+            .map_err(duplicate_state_commitment_error)?;
 
         AccountTree::new(smt)
     }
@@ -397,6 +386,24 @@ where
     /// Returns a read-only account tree backed by a reader view of this tree's storage.
     pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
         Ok(AccountTree::new_unchecked(self.smt.reader()?))
+    }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Maps the duplicate-key error returned by the SMT constructors to an [`AccountTreeError`].
+fn duplicate_state_commitment_error(err: MerkleError) -> AccountTreeError {
+    let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
+        unreachable!("the only error returned by the SMT constructors is a duplicate-value error");
+    };
+
+    // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that the leaf_idx
+    // is a valid Felt as well as a valid account ID prefix.
+    AccountTreeError::DuplicateStateCommitments {
+        prefix: AccountIdPrefix::new_unchecked(
+            crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
+        ),
     }
 }
 
@@ -771,5 +778,28 @@ pub(super) mod tests {
             regular_tree.account_commitments().collect();
 
         assert_eq!(large_commitments, regular_commitments);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn with_storage_from_entries_rejects_duplicate_state_commitments() {
+        use miden_crypto::merkle::smt::MemoryStorage;
+
+        let id = AccountIdBuilder::new().build_with_seed([5; 32]);
+        let commitment0 = Word::from([0, 0, 0, 1u32]);
+        let commitment1 = Word::from([0, 0, 0, 2u32]);
+
+        // The same account ID appears twice, which must surface the same structured error as the
+        // `Smt`-backed `with_entries` path.
+        let err = AccountTree::with_storage_from_entries(
+            MemoryStorage::default(),
+            [(id, commitment0), (id, commitment1)],
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountTreeError::DuplicateStateCommitments { prefix } if prefix == id.prefix()
+        );
     }
 }

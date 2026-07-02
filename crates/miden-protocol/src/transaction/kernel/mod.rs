@@ -7,8 +7,7 @@ use crate::account::{AccountHeader, AccountId};
 #[cfg(any(feature = "testing", test))]
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
-use crate::assembly::{Assembler, DefaultSourceManager, KernelLibrary};
-use crate::asset::FungibleAsset;
+use crate::assembly::{Assembler, DefaultSourceManager};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
@@ -16,7 +15,7 @@ use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
+use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs, StackOutputs};
 use crate::{Felt, Hasher, Word};
 
 mod procedures {
@@ -34,28 +33,36 @@ pub use tx_event_id::TransactionEventId;
 // CONSTANTS
 // ================================================================================================
 
-// Initialize the kernel library only once
-static KERNEL_LIB: LazyLock<KernelLibrary> = LazyLock::new(|| {
-    let kernel_lib_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masl"));
-    KernelLibrary::read_from_bytes(kernel_lib_bytes)
-        .expect("failed to deserialize transaction kernel library")
+// Initialize the transaction kernel package only once
+static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    let kernel_package_bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
+    Arc::new(
+        Package::read_from_bytes(kernel_package_bytes)
+            .expect("failed to deserialize transaction kernel package"),
+    )
 });
 
 // Initialize the kernel main program only once
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let kernel_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masb"));
-    Program::read_from_bytes(kernel_main_bytes)
-        .expect("failed to deserialize transaction kernel runtime")
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
+    Package::read_from_bytes(kernel_main_bytes)
+        .expect("failed to deserialize transaction kernel main package")
+        .try_into_program()
+        .expect("transaction kernel main package should contain a program")
 });
 
 // Initialize the transaction script executor program only once
 static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let tx_script_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_script_main.masb"));
-    Program::read_from_bytes(tx_script_main_bytes)
-        .expect("failed to deserialize tx script executor runtime")
+    let tx_script_main_bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
+    ));
+    Package::read_from_bytes(tx_script_main_bytes)
+        .expect("failed to deserialize tx script executor package")
+        .try_into_program()
+        .expect("tx script executor package should contain a program")
 });
 
 // TRANSACTION KERNEL
@@ -73,12 +80,9 @@ impl TransactionKernel {
     // KERNEL SOURCE CODE
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a library with the transaction kernel system procedures.
-    ///
-    /// # Panics
-    /// Panics if the transaction kernel source is not well-formed.
-    pub fn kernel() -> KernelLibrary {
-        KERNEL_LIB.clone()
+    /// Returns the assembled transaction kernel as a [`Package`].
+    pub fn kernel() -> Arc<Package> {
+        KERNEL_PACKAGE.clone()
     }
 
     /// Returns an AST of the transaction kernel executable program.
@@ -104,7 +108,9 @@ impl TransactionKernel {
     pub fn program_info() -> ProgramInfo {
         // TODO: make static
         let program_hash = Self::main().hash();
-        let kernel = Self::kernel().kernel().clone();
+        let kernel = Self::kernel()
+            .to_kernel()
+            .expect("transaction kernel package should describe a valid kernel");
 
         ProgramInfo::new(program_hash, kernel)
     }
@@ -142,7 +148,10 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        Assembler::with_kernel(source_manager, Self::kernel())
+        let kernel_lib = Self::kernel()
+            .try_into_kernel_library()
+            .expect("transaction kernel package should contain a kernel library");
+        Assembler::with_kernel(source_manager, kernel_lib)
             .with_dynamic_library(CoreLibrary::default())
             .expect("failed to load std-lib")
             .with_dynamic_library(ProtocolLib::default())
@@ -199,7 +208,7 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, expiration_block_num
+    ///     expiration_block_num
     /// ]
     /// ```
     ///
@@ -207,24 +216,19 @@ impl TransactionKernel {
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
     /// - expiration_block_num is the block number at which the transaction will expire.
     pub fn build_output_stack(
         final_account_commitment: Word,
         account_delta_commitment: Word,
         output_notes_commitment: Word,
-        fee: FungibleAsset,
         expiration_block_num: BlockNumber,
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
-        let mut outputs: Vec<Felt> = Vec::with_capacity(12);
+        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
-        outputs.push(fee.faucet_id().suffix());
-        outputs.push(fee.faucet_id().prefix().as_felt());
-        outputs.push(Felt::from(fee.amount()));
         outputs.push(Felt::from(expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
@@ -238,7 +242,6 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
     ///     expiration_block_num,
     /// ]
     /// ```
@@ -247,7 +250,6 @@ impl TransactionKernel {
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
     /// - tx_expiration_block_num is the block height at which the transaction will become expired,
     ///   defined by the sum of the execution block ref and the transaction's block expiration delta
     ///   (if set during transaction execution).
@@ -255,11 +257,11 @@ impl TransactionKernel {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Indices 13..16 on the stack are not zeroes.
+    /// - Indices 9..16 on the stack are not zeroes.
     /// - Overflow addresses are not empty.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, FungibleAsset, BlockNumber), TransactionOutputError> {
+    ) -> Result<(Word, Word, BlockNumber), TransactionOutputError> {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -267,16 +269,6 @@ impl TransactionKernel {
         let account_update_commitment = stack
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
-
-        let fee_faucet_id_prefix = stack
-            .get_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX)
-            .expect("fee_faucet_id_prefix missing");
-        let fee_faucet_id_suffix = stack
-            .get_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX)
-            .expect("fee_faucet_id_suffix missing");
-        let fee_amount = stack
-            .get_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
-            .expect("fee_amount missing");
 
         let expiration_block_num = stack
             .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
@@ -290,23 +282,14 @@ impl TransactionKernel {
             })?
             .into();
 
-        // Make sure that indices 13, 14 and 15 are zeroes (i.e. the fourth word without the
-        // expiration block number).
-        if stack.get_word(12).expect("fourth word missing").as_elements()[..3]
-            != Word::empty().as_elements()[..3]
-        {
+        // Make sure that indices 9..16 are zeros.
+        if stack.as_slice()[9..].iter().any(|element| *element != Felt::ZERO) {
             return Err(TransactionOutputError::OutputStackInvalid(
-                "indices 13, 14 and 15 on the output stack should be ZERO".into(),
+                "indices 9..16 on the output stack should be ZERO".into(),
             ));
         }
 
-        let fee_faucet_id =
-            AccountId::try_from_elements(fee_faucet_id_suffix, fee_faucet_id_prefix)
-                .expect("fee faucet ID should be validated by the tx kernel");
-        let fee = FungibleAsset::new(fee_faucet_id, fee_amount.as_canonical_u64())
-            .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
-
-        Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))
+        Ok((output_notes_commitment, account_update_commitment, expiration_block_num))
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -320,7 +303,6 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
     ///     expiration_block_num,
     /// ]
     /// ```
@@ -329,7 +311,6 @@ impl TransactionKernel {
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
     ///   delta commitment of the account that the transaction is being executed against.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
     /// - tx_expiration_block_num is the block height at which the transaction will become expired,
     ///   defined by the sum of the execution block ref and the transaction's block expiration delta
     ///   (if set during transaction execution).
@@ -343,10 +324,10 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
-        let (output_notes_commitment, account_update_commitment, fee, expiration_block_num) =
+        let (output_notes_commitment, account_update_commitment, expiration_block_num) =
             Self::parse_output_stack(stack)?;
 
-        let (final_account_commitment, account_delta_commitment) =
+        let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
 
         // parse final account state
@@ -369,14 +350,13 @@ impl TransactionKernel {
 
         Ok(TransactionOutputs::new(
             account,
-            account_delta_commitment,
+            account_patch_commitment,
             output_notes,
-            fee,
             expiration_block_num,
         ))
     }
 
-    /// Returns the final account commitment and account delta commitment extracted from the account
+    /// Returns the final account commitment and account patch commitment extracted from the account
     /// update commitment.
     fn parse_account_update_commitment(
         account_update_commitment: Word,
@@ -402,13 +382,13 @@ impl TransactionKernel {
             <[Felt; 4]>::try_from(&account_update_data[0..4])
                 .expect("we should have sliced off exactly four elements"),
         );
-        let account_delta_commitment = Word::from(
+        let account_patch_commitment = Word::from(
             <[Felt; 4]>::try_from(&account_update_data[4..8])
                 .expect("we should have sliced off exactly four elements"),
         );
 
         let computed_account_update_commitment =
-            Hasher::merge(&[final_account_commitment, account_delta_commitment]);
+            Hasher::merge(&[final_account_commitment, account_patch_commitment]);
 
         if computed_account_update_commitment != account_update_commitment {
             let err_message = format!(
@@ -417,7 +397,7 @@ impl TransactionKernel {
             return Err(TransactionOutputError::AccountUpdateCommitment(err_message.into()));
         }
 
-        Ok((final_account_commitment, account_delta_commitment))
+        Ok((final_account_commitment, account_patch_commitment))
     }
 
     // UTILITY METHODS
@@ -431,13 +411,14 @@ impl TransactionKernel {
 
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
-    const KERNEL_TESTING_LIB_BYTES: &'static [u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masl"));
+    const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {
-        Library::read_from_bytes(Self::KERNEL_TESTING_LIB_BYTES)
-            .expect("failed to deserialize transaction kernel library")
+        let package = Package::read_from_bytes(Self::KERNEL_TESTING_PACKAGE_BYTES)
+            .expect("failed to deserialize transaction kernel library package");
+        Arc::unwrap_or_clone(package.mast)
     }
 }
 

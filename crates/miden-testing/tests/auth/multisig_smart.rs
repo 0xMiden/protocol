@@ -1,8 +1,8 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::vm::AdviceMap;
@@ -11,7 +11,12 @@ use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
 };
-use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig};
+use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -36,14 +41,12 @@ use super::multisig::{
 fn create_multisig_smart_account(
     threshold: u32,
     public_keys: &[PublicKey],
-    auth_scheme: AuthScheme,
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> =
-        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config =
-        AuthMultisigSmartConfig::new(approvers, threshold)?.with_proc_policies(proc_policy_map)?;
+    let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
+    let config = AuthMultisigSmartConfig::new(approver_set).with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
@@ -88,8 +91,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let proc_policy_map =
         vec![(BasicWallet::receive_asset_root().as_word(), receive_asset_one_signature_policy)];
 
-    let mut multisig_account =
-        create_multisig_smart_account(3, &public_keys, auth_scheme, 10, proc_policy_map)?;
+    let mut multisig_account = create_multisig_smart_account(3, &public_keys, 10, proc_policy_map)?;
 
     let mut mock_chain_builder =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -131,7 +133,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
     );
 
-    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
@@ -157,7 +159,6 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
             BasicWallet::receive_asset_root().as_word(),
@@ -217,9 +218,9 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 ) -> anyhow::Result<()> {
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-    use miden_protocol::transaction::RawOutputNote;
-    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_protocol::transaction::{RawOutputNote, TransactionScript};
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
 
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -227,7 +228,6 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
             BasicWallet::move_asset_to_note_root().as_word(),
@@ -235,17 +235,19 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         )],
     )?;
 
-    let output_note = P2idNote::create(
-        multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(5)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
-    )?;
+    let output_note: Note = P2idNote::builder()
+        .sender(multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(5))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])))
+        .build()?
+        .into();
 
-    let send_note_script = AccountInterface::from_account(&multisig_account)
-        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -290,8 +292,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 10, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
     let account_id = multisig_account.id();
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -356,7 +357,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Verify the new threshold/num_approvers config is persisted.
     let threshold_config = multisig_account
@@ -368,7 +369,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = Word::from([i as u32, 0, 0, 0]);
+        let storage_key = StorageMapKey::from_index(i as u32);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)
@@ -393,13 +394,12 @@ async fn test_multisig_smart_set_procedure_policy(
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     // Account starts with no procedure policies configured.
-    let mut multisig_account =
-        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+    let receive_asset_root = StorageMapKey::from_raw(BasicWallet::receive_asset_root().as_word());
     let immediate_threshold = 1u32;
     let delayed_threshold = 0u32;
     let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;
@@ -455,7 +455,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .execute()
         .await?;
 
-    multisig_account.apply_delta(executed_tx.account_delta())?;
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     // Policy word layout: [immediate, delayed, note_restrictions, 0]
     let stored_policy = multisig_account
@@ -491,13 +491,8 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     // set_procedure_policy intentionally left unpolicied.
     let receive_policy = ProcedurePolicy::with_immediate_threshold(1)?;
     let proc_policy_map = vec![(BasicWallet::receive_asset_root().as_word(), receive_policy)];
-    let multisig_account = create_multisig_smart_account(
-        default_threshold,
-        &public_keys,
-        auth_scheme,
-        10,
-        proc_policy_map,
-    )?;
+    let multisig_account =
+        create_multisig_smart_account(default_threshold, &public_keys, 10, proc_policy_map)?;
 
     // Tx-script calls the unpolicied `set_procedure_policy` proc. The tx also consumes a P2ID
     // note (which calls the policied receive_asset). With per-proc-contribute, set_procedure_policy

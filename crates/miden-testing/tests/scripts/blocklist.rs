@@ -16,14 +16,12 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BasicBlocklist,
     BlocklistOwnerControlled,
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
+    BurnPolicy,
+    MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -45,7 +43,7 @@ fn dummy_owner() -> AccountId {
     AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
-/// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// Builds a fungible faucet with the basic blocklist transfer policy on both send and receive,
 /// plus the [`BlocklistOwnerControlled`] component (gated by `Ownable2Step::new(owner_id)`)
 /// so that the owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
@@ -57,9 +55,10 @@ fn add_faucet_with_owner_blocklist_transfer(
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
-/// [`BasicBlocklist::with_blocked_accounts`]. The transfer policy is wired up through
-/// [`TransferPolicy::Custom`] so the manager does not also install an empty `BasicBlocklist`
-/// (which would conflict with the seeded one).
+/// [`TransferPolicy::with_basic_blocklist`]. The receive policy reuses the same root via
+/// [`TransferPolicy::empty_basic_blocklist`]; the manager dedups companion components by
+/// procedure root, so the seeded `BasicBlocklist` from the send policy is installed exactly
+/// once.
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -72,27 +71,20 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let basic_blocklist = BasicBlocklist::with_blocked_accounts(initial_blocked);
-
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_send_policy(
-                    TransferPolicy::Custom(BasicBlocklist::root()),
-                    PolicyRegistration::Active,
-                )?
-                .with_receive_policy(
-                    TransferPolicy::Custom(BasicBlocklist::root()),
-                    PolicyRegistration::Active,
-                )?,
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
+                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .build(),
         )
-        .with_component(basic_blocklist)
+        .with_component(Pausable::unpaused())
         .with_component(BlocklistOwnerControlled);
 
     builder.add_account_from_builder(
@@ -447,7 +439,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
-/// installs the asset-callback slots (here via [`TransferPolicy::Blocklist`]).
+/// installs the asset-callback slots (here via the basic blocklist transfer policy).
 #[tokio::test]
 async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();

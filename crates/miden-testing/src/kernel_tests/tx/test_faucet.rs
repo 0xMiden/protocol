@@ -37,7 +37,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 
 use crate::utils::create_public_p2any_note;
-use crate::{TransactionContextBuilder, assert_execution_error, assert_transaction_executor_error};
+use crate::{TestTransactionBuilder, assert_execution_error, assert_transaction_executor_error};
 
 // FUNGIBLE FAUCET MINT TESTS
 // ================================================================================================
@@ -51,9 +51,9 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -84,7 +84,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
     );
 
-    TransactionContextBuilder::with_fungible_faucet(faucet_id.into())
+    TestTransactionBuilder::with_fungible_faucet(faucet_id.into())
         .build()?
         .execute_code(&code)
         .await?;
@@ -113,7 +113,7 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::new(account)
+    let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -126,13 +126,13 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
 #[tokio::test]
 async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
             .build()?;
 
     let asset = FungibleAsset::mock(5);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -163,7 +163,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
 
     let code = format!(
         "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
       use mock::faucet
 
       begin
@@ -178,7 +178,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
         ASSET_VALUE = asset.to_value_word(),
     );
 
-    let result = TransactionContextBuilder::with_fungible_faucet(asset.faucet_id().into())
+    let result = TestTransactionBuilder::with_fungible_faucet(asset.faucet_id().into())
         .build()?
         .execute_code(&code)
         .await;
@@ -214,12 +214,11 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result =
-        TransactionContextBuilder::with_fungible_faucet(FungibleAsset::mock_issuer().into())
-            .tx_script(tx_script)
-            .build()?
-            .execute()
-            .await;
+    let result = TestTransactionBuilder::with_fungible_faucet(FungibleAsset::mock_issuer().into())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
 
     assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT);
     Ok(())
@@ -231,7 +230,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
 #[tokio::test]
 async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
+        TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
     let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
 
@@ -239,10 +238,10 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use miden::core::collections::smt
 
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -275,15 +274,14 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_non_fungible_faucet(
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-    )
-    .build()?;
+    let tx_context =
+        TestTransactionBuilder::with_non_fungible_faucet(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1)
+            .build()?;
     let non_fungible_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -324,7 +322,7 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::new(account)
+    let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -351,7 +349,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let code = format!(
         r#"
         use mock::faucet->mock_faucet
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -367,7 +365,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
     );
 
-    TransactionContextBuilder::with_fungible_faucet(faucet_id.into())
+    TestTransactionBuilder::with_fungible_faucet(faucet_id.into())
         .build()?
         .execute_code(&code)
         .await?;
@@ -383,16 +381,15 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
     let account = Account::mock_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1);
     let asset = FungibleAsset::new(account.id(), 100u64).unwrap().into();
     let note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), [asset]);
-    let tx_context =
-        TransactionContextBuilder::new(account).extend_input_notes(vec![note]).build()?;
+    let tx_context = TestTransactionBuilder::new(account).extend_input_notes(vec![note]).build()?;
 
     let code = format!(
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -450,7 +447,7 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::new(account)
+    let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -463,15 +460,14 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
 #[tokio::test]
 async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .build()?;
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -494,7 +490,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 #[tokio::test]
 async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
             .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
@@ -502,7 +498,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -531,16 +527,16 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 #[tokio::test]
 async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
+        TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
     let non_fungible_asset_burnt = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -550,7 +546,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::add_non_fungible_asset dropw
+            exec.asset_vault::add_non_fungible_asset dropw dropw
 
             # check that the non-fungible asset is presented in the input vault
             push.{INPUT_VAULT_ROOT_PTR}
@@ -586,14 +582,14 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<()> {
     let tx_context =
-        TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
+        TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
     let non_fungible_asset_burnt = NonFungibleAsset::mock(&[1, 2, 3]);
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -635,7 +631,7 @@ async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::new(account)
+    let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -650,14 +646,13 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
     let non_fungible_asset_burnt = NonFungibleAsset::mock(&[1, 2, 3]);
 
     // Run code from a different non-fungible asset issuer
-    let tx_context = TransactionContextBuilder::with_non_fungible_faucet(
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-    )
-    .build()?;
+    let tx_context =
+        TestTransactionBuilder::with_non_fungible_faucet(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1)
+            .build()?;
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -693,8 +688,17 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     ))
     .compile_component_code(
         "test::non_faucet_component",
-        "pub use ::miden::protocol::faucet::mint
-         pub use ::miden::protocol::faucet::burn",
+        "use miden::protocol::faucet
+
+         @account_procedure
+         pub proc mint
+             exec.faucet::mint
+         end
+
+         @account_procedure
+         pub proc burn
+             exec.faucet::burn
+         end",
     )?;
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;

@@ -2,9 +2,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
-use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
@@ -23,7 +21,6 @@ pub struct MockProvenTxBuilder {
     initial_account_commitment: Word,
     final_account_commitment: Word,
     reference_block: Option<(BlockNumber, Word)>,
-    fee: FungibleAsset,
     expiration_block_num: BlockNumber,
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
@@ -43,7 +40,6 @@ impl MockProvenTxBuilder {
             initial_account_commitment,
             final_account_commitment,
             reference_block: None,
-            fee: FungibleAsset::mock(50).unwrap_fungible(),
             expiration_block_num: BlockNumber::from(u32::MAX),
             output_notes: None,
             input_notes: None,
@@ -133,7 +129,6 @@ impl MockProvenTxBuilder {
             self.output_notes.unwrap_or_default(),
             ref_block_num,
             ref_block_commitment,
-            self.fee,
             self.expiration_block_num,
             ExecutionProof::new_dummy(),
         )

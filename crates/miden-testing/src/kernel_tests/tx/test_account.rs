@@ -9,7 +9,6 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -20,12 +19,14 @@ use miden_protocol::account::{
     AccountType,
     StorageMap,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
     StorageSlotContent,
     StorageSlotId,
     StorageSlotName,
     StorageSlotPatch,
     StorageSlotType,
+    StorageValuePatch,
 };
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
@@ -59,6 +60,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::account::access::Pausable;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -75,7 +77,7 @@ use crate::{
     Auth,
     ExecError,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_transaction_executor_error,
 };
@@ -154,7 +156,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         expected_commitment = &expected_commitment,
     );
 
-    let tx_context_builder = TransactionContextBuilder::new(account);
+    let tx_context_builder = TestTransactionBuilder::new(account);
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
     let tx_context = tx_context_builder.tx_script(tx_script).build()?;
 
@@ -205,7 +207,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
-            use $kernel::account_id
+            use miden::protocol::account_id
 
             begin
                 exec.account_id::validate
@@ -264,12 +266,12 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
 // TODO: update this test once the ability to change the account code will be implemented
 #[tokio::test]
 pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
     let account = tx_context.account();
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         begin
@@ -294,12 +296,12 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_item() -> anyhow::Result<()> {
     for storage_item in [AccountStorage::mock_value_slot0(), AccountStorage::mock_value_slot1()] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             r#"
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             const SLOT_NAME = word("{slot_name}")
 
@@ -335,7 +337,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     let StorageSlotContent::Map(map) = slot.content() else {
         panic!("expected map")
@@ -344,7 +346,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
     for (key, expected_value) in map.entries() {
         let code = format!(
             r#"
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
             use mock::account
 
             const SLOT_NAME = word("{slot_name}")
@@ -380,7 +382,7 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         AccountStorage::mock_value_slot1().name(),
         AccountStorage::mock_map_slot().name(),
     ] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
         let (slot_idx, slot) = tx_context
             .account()
             .storage()
@@ -392,8 +394,8 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -513,7 +515,7 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     for (prev_slot, curr_slot) in test_cases {
         let code = format!(
             r#"
-            use $kernel::account
+            use miden::tx_kernel_core::account
 
             begin
                 push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
@@ -542,7 +544,7 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     let slot_name = &*MOCK_VALUE_SLOT0;
     let new_value = Word::from([91, 92, 93, 94u32]);
@@ -550,8 +552,8 @@ async fn test_set_item() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
 
         const MOCK_VALUE_SLOT0 = word("{slot_name}")
 
@@ -599,13 +601,13 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     let code = format!(
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const SLOT_NAME=word("{slot_name}")
@@ -675,19 +677,19 @@ async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
         .build()
         .context("failed to build account")?;
 
-    TransactionContextBuilder::new(account).build()?.execute().await?;
+    TestTransactionBuilder::new(account).build()?.execute().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -716,7 +718,7 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
 /// - After updating the 2nd storage slot (map slot).
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
     let mut account_clone = tx_context.account().clone();
     let account_storage = account_clone.storage_mut();
 
@@ -737,7 +739,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_VALUE_SLOT0=word("{mock_value_slot0}")
@@ -819,44 +821,46 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         ]))
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx.account_patch().final_nonce(),
+        Some(Felt::ONE),
+        "new account should have nonce 1"
+    );
 
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name0).unwrap(),
-        StorageSlotPatch::Value(value) => {
+        tx.account_patch().storage().get(&slot_name0).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name1).unwrap(),
-        StorageSlotPatch::Value(value) => {
+        tx.account_patch().storage().get(&slot_name1).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name2).unwrap(),
-        StorageSlotPatch::Map(map_patch) => {
+        tx.account_patch().storage().get(&slot_name2).unwrap(),
+        StorageSlotPatch::Map(StorageMapPatch::Create { entries }) => {
             let expected = &BTreeMap::from_iter(map_entries);
-            assert_eq!(expected, map_patch.entries())
+            assert_eq!(expected, entries.as_map())
         }
     );
 
-    assert!(tx.account_delta().vault().is_empty());
+    assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
-    // The delta should be present on the proven tx.
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
-    assert_eq!(delta, tx.account_delta());
+    // The patch should be present on the proven tx.
+    let patch = proven_tx.account_update().details().unwrap_public();
+    assert_eq!(patch, tx.account_patch());
 
     Ok(())
 }
@@ -866,7 +870,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_vault_root() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let mut account = tx_context.account().clone();
 
@@ -882,7 +886,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -903,7 +907,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         begin
@@ -1276,12 +1280,12 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
         vec![(tc_0, true), (tc_1, true), (tc_2, true), (Word::from([1, 0, 1, 0u32]), false)];
 
     for (root, valid) in test_cases.into_iter() {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -1371,7 +1375,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
 
     // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
     tx_context
         .execute()
@@ -1407,6 +1411,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     const ACCOUNT_COMPONENT_CODE: &str = "
       use external_library::external_module
 
+      @account_procedure
       pub proc custom_setter
         exec.external_module::external_setter
       end";
@@ -1457,7 +1462,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         .with_dynamically_linked_library(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
-    let tx_context = TransactionContextBuilder::new(native_account.clone())
+    let tx_context = TestTransactionBuilder::new(native_account.clone())
         .tx_script(tx_script)
         .build()
         .unwrap();
@@ -1465,13 +1470,16 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let executed_tx = tx_context.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_tx.account_patch().final_nonce(),
+        Some(native_account.nonce() + Felt::ONE)
+    );
 
     // Make sure that account storage has been updated as per the tx script call.
-    assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
+    assert_eq!(executed_tx.account_patch().storage().values().count(), 1);
     assert_eq!(
-        executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotPatch::Value(slot_value),
+        executed_tx.account_patch().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
+        &StorageSlotPatch::Value(StorageValuePatch::Update { value: slot_value }),
     );
     Ok(())
 }
@@ -1502,7 +1510,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
         .build()
         .context("failed to build account")?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE);
 
@@ -1551,12 +1559,61 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
     tx_context
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_storage_slot() -> anyhow::Result<()> {
+    let existing_slot_name = format!("{}", AccountStorage::mock_value_slot0().name());
+
+    // (slot name, whether a slot with that name is expected to exist on the account)
+    let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
+
+    for (slot_name, expected_to_exist) in test_cases {
+        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+
+        let assertion = if expected_to_exist {
+            r#"assert.err="installed storage slot should be reported as present""#
+        } else {
+            r#"assertz.err="unknown storage slot should be reported as absent""#
+        };
+
+        let code = format!(
+            r#"
+            use miden::core::sys
+
+            use miden::tx_kernel_core::prologue
+            use mock::account->mock_account
+
+            const SLOT_NAME = word("{slot_name}")
+
+            begin
+                exec.prologue::prepare_transaction
+
+                # pad the stack for the call
+                push.SLOT_NAME[0..2]
+                repeat.14 push.0 movdn.2 end
+                # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+                call.mock_account::has_storage_slot
+                # => [has_slot, pad(15)]
+
+                {assertion}
+
+                exec.sys::truncate_stack
+            end
+            "#,
+        );
+
+        tx_context.execute_code(&code).await?;
+    }
 
     Ok(())
 }
@@ -1598,6 +1655,7 @@ async fn test_faucet_has_callbacks(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
+        .with_component(Pausable::unpaused())
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;
 
@@ -1615,7 +1673,7 @@ async fn test_faucet_has_callbacks(
     );
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
 
-    TransactionContextBuilder::new(account)
+    TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1629,13 +1687,13 @@ async fn test_faucet_has_callbacks(
 
 #[tokio::test]
 async fn test_get_initial_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     // Test that get_initial_item returns the initial value before any changes
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -1686,7 +1744,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     // Use the first key-value pair from the mock storage
     let StorageSlotContent::Map(map) = map_slot.content() else {
@@ -1700,7 +1758,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -1776,7 +1834,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
 
     // Build MASM code that, for each slot:
     // 1. Sets a new value [index, 0, 0, 0]
@@ -1818,8 +1876,8 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         {slot_constants}
@@ -1848,7 +1906,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     // modulus - 2.
     account.increment_nonce(Felt::new_unchecked(Felt::ORDER_U64 - 2))?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_AT_MAX);
 
@@ -1872,6 +1930,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
@@ -1897,12 +1956,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
                   swapw dropw
               end
 
+              @account_procedure
               pub proc set_slot_content
                   push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]
@@ -1983,7 +2044,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         .with_dynamically_linked_library(COMPONENT_2_LIBRARY.clone())?
         .compile_tx_script(tx_script)?;
 
-    TransactionContextBuilder::new(account)
+    TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
