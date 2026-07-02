@@ -16,6 +16,7 @@
 #!   send (note) callback. This policy does not inspect it; it passes through unchanged.
 #!
 #! Invocation: call
+@account_procedure
 pub proc check_policy
     dropw
     # => [ASSET_VALUE, pad(12)]

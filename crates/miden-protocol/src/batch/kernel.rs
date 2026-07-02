@@ -10,15 +10,21 @@ use crate::note::{NoteId, Nullifier};
 use crate::transaction::TransactionId;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs};
+use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
 use crate::{Felt, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 
 // CONSTANTS
 // ================================================================================================
 
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masb"));
-    Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/kernels/miden-batch-kernel:miden-batch-kernel.masp"
+    ));
+    Package::read_from_bytes(bytes)
+        .expect("failed to deserialize batch kernel package")
+        .try_into_program()
+        .expect("batch kernel package should contain a program")
 });
 
 // Advice-map keys under which the sorted (pre-erasure) note lists are provided to the kernel.

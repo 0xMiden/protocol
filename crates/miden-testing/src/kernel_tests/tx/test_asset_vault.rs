@@ -2,7 +2,6 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
-    AssetCallbackFlag,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -36,10 +35,10 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
@@ -71,13 +70,13 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::memory
-        use $kernel::asset_vault
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::asset_vault
         use miden::core::crypto::hashes::poseidon2
 
         begin
@@ -129,7 +128,7 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3]));
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
@@ -159,7 +158,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
@@ -191,7 +190,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -237,7 +236,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -271,7 +270,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -314,7 +313,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -348,7 +347,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -389,7 +388,7 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -424,7 +423,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -475,7 +474,7 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -512,7 +511,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
@@ -556,7 +555,7 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
     for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
         let code = format!(
             "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSETA}
@@ -598,7 +597,7 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
 
         let code = format!(
             "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSETA}
@@ -638,7 +637,7 @@ async fn test_split_fungible_asset_success(
 
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET0}
@@ -675,7 +674,7 @@ async fn test_split_fungible_asset_fails_when_amount_exceeds_balance() -> anyhow
 
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET0}

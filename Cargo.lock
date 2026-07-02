@@ -1978,6 +1978,7 @@ dependencies = [
  "miden-crypto",
  "miden-crypto-derive",
  "miden-mast-package",
+ "miden-package-registry",
  "miden-processor",
  "miden-protocol",
  "miden-utils-sync",

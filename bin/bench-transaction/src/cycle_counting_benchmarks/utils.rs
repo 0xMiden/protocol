@@ -211,14 +211,24 @@ mod tests {
             padded_chiplets: 32_768,
         },
         ScenarioExpectation {
-            name: "consume two P2ID notes",
+            name: "consume two P2ID notes with Falcon signing",
             padded_core_side: 131_072,
             padded_chiplets: 65_536,
         },
         ScenarioExpectation {
-            name: "create single P2ID note",
+            name: "consume two P2ID notes with ECDSA signing",
+            padded_core_side: 16_384,
+            padded_chiplets: 32_768,
+        },
+        ScenarioExpectation {
+            name: "create single P2ID note with Falcon signing",
             padded_core_side: 131_072,
             padded_chiplets: 65_536,
+        },
+        ScenarioExpectation {
+            name: "create single P2ID note with ECDSA signing",
+            padded_core_side: 16_384,
+            padded_chiplets: 32_768,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",

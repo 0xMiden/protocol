@@ -1,0 +1,10 @@
+# ACCOUNT ID
+# =================================================================================================
+
+# Re-exported from the `miden::protocol_utils` library, where the implementation lives. This keeps
+# the procedures available under the public `miden::protocol::account_id` path.
+
+pub use miden::protocol_utils::account_id::is_equal
+pub use miden::protocol_utils::account_id::eqz
+pub use miden::protocol_utils::account_id::validate
+pub use miden::protocol_utils::account_id::shape_suffix

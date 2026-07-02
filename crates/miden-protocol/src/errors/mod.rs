@@ -586,8 +586,6 @@ pub enum AssetError {
     AssetWitnessInvalid(#[source] Box<AssetError>),
     #[error("vault key {key} is not present in the provided asset witness SMT proof")]
     AssetWitnessMissingKey { key: AssetVaultKey },
-    #[error("unknown native asset callbacks encoding: {0}")]
-    UnknownAssetCallbackFlag(u8),
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
     #[error("unknown asset delta operation encoding: {0}")]

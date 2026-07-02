@@ -21,6 +21,7 @@ pub use account_id::{
     AccountIdV1,
     AccountIdVersion,
     AccountType,
+    AssetCallbackFlag,
 };
 
 pub(crate) mod name_validation;
@@ -599,6 +600,7 @@ mod tests {
         AccountType,
         AccountVaultDelta,
         AccountVaultPatch,
+        AssetCallbackFlag,
         PartialAccount,
         StorageMap,
         StorageMapKey,
@@ -867,6 +869,7 @@ mod tests {
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
             AccountType::Public,
+            AssetCallbackFlag::Disabled,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
