@@ -616,6 +616,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
+    ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
     ERR_TX_NOT_PROPOSED,
     ERR_TX_STILL_TIMELOCKED,
@@ -735,10 +736,11 @@ async fn execute_script_with_signers(
 // DELAYED-EXECUTION TESTS
 // ================================================================================================
 
-/// A procedure whose policy only declares a `delay_threshold` (no `immediate_threshold`) runs in
-/// the delayed mode regardless of whether a proposal exists (the mode is derived from policy). With
-/// no matching proposal, a fully-signed direct call must therefore fail the timelock check with
-/// `ERR_TX_NOT_PROPOSED` rather than execute immediately.
+/// A procedure whose policy only declares a `delay_threshold` (no `immediate_threshold`) cannot run
+/// on the immediate path. The execution mode is derived from proposal presence, so calling such a
+/// procedure directly (with no matching proposal) evaluates it in immediate mode, which its policy
+/// does not support — the transaction aborts at the procedure-policy layer with
+/// `ERR_PROC_POLICY_INVALID_MODE` before any signature check.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -746,7 +748,7 @@ async fn execute_script_with_signers(
 async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_proposal(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(
         2,
@@ -772,36 +774,31 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
         ",
     )?;
 
-    // Sign the actual transaction (delay-mode threshold is 1) and call it directly. The mode is
-    // delayed (policy-derived), so auth runs the timelock check and finds no proposal.
-    let result = execute_script_with_signers(
-        &mock_chain,
-        account_id,
-        update_timelock_script,
-        salt(901),
-        &[0, 1],
-        &public_keys,
-        &authenticators,
-        None,
-        None,
-    )
-    .await?;
+    // Called directly with no proposal, the execution mode is immediate, which a delay-only
+    // procedure does not support, so it aborts at the policy layer before verifying signatures.
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(update_timelock_script)
+        .auth_args(salt(901))
+        .build()?
+        .execute()
+        .await;
 
-    assert_transaction_executor_error!(result, ERR_TX_NOT_PROPOSED);
+    assert_transaction_executor_error!(result, ERR_PROC_POLICY_INVALID_MODE);
 
     Ok(())
 }
 
-/// An unauthorized dry-run of a delay-only procedure must still yield its `TX_SUMMARY_COMMITMENT`
-/// (so a caller can obtain the commitment to propose). Because the execution mode is derived from
-/// policy, a delay-only procedure is evaluated in delayed mode even without a proposal, reaching
-/// the signature/threshold check and aborting with `Unauthorized` (carrying the summary) rather
-/// than panicking at the policy layer.
+/// An unauthorized dry-run of a procedure must still yield its `TX_SUMMARY_COMMITMENT` (so a caller
+/// can obtain the commitment to propose). With no proposal present the execution mode is immediate;
+/// because the procedure's policy also permits the immediate path, execution reaches the
+/// signature/threshold check and aborts with `Unauthorized` (carrying the summary) rather than
+/// panicking at the policy layer.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_delayed_only_proc_returns_tx_summary_on_dry_run(
+async fn test_multisig_smart_unauthorized_dry_run_returns_tx_summary(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
@@ -812,7 +809,7 @@ async fn test_multisig_smart_delayed_only_proc_returns_tx_summary_on_dry_run(
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
-            ProcedurePolicy::with_delay_threshold(1)?,
+            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
     let account_id = multisig_account.id();
@@ -963,7 +960,7 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
-            ProcedurePolicy::with_delay_threshold(1)?,
+            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
     let account_id = multisig_account.id();
@@ -1046,7 +1043,7 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
-            ProcedurePolicy::with_delay_threshold(1)?,
+            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
     let account_id = multisig_account.id();

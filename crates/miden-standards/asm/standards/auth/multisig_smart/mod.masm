@@ -406,76 +406,6 @@ pub proc enforce_note_restrictions
     # => []
 end
 
-#! Returns 1 if any called (non-auth) procedure's policy requires delayed execution, otherwise 0.
-#!
-#! A procedure requires delayed execution when its policy is delay-only, i.e. its
-#! `immediate_threshold` is zero and its `delay_threshold` is non-zero. This is used to derive the
-#! transaction's execution mode from the per-procedure policies (rather than from whether a proposal
-#! already exists), so that a delay-only procedure is always evaluated in the delayed mode.
-#!
-#! Inputs:  []
-#! Outputs: [requires_delay]
-#!
-#! The auth procedure (procedure index 0) is excluded, consistent with `compute_called_proc_policy`.
-#!
-#! Invocation: exec
-proc compute_requires_delay
-    push.0 exec.active_account::get_num_procedures
-    # => [num_procedures, requires_delay_acc]
-
-    dup neq.0
-    # => [should_continue, num_procedures, requires_delay_acc]
-    while.true
-        sub.1
-        # => [proc_index, requires_delay_acc]
-
-        dup neq.0
-        # => [is_non_auth, proc_index, requires_delay_acc]
-
-        dup.1 exec.active_account::get_procedure_root
-        # => [PROC_ROOT, is_non_auth, proc_index, requires_delay_acc]
-
-        exec.native_account::was_procedure_called
-        # => [was_called, is_non_auth, proc_index, requires_delay_acc]
-
-        and
-        # => [should_process, proc_index, requires_delay_acc]
-
-        if.true
-            dup exec.active_account::get_procedure_root
-            # => [PROC_ROOT, proc_index, requires_delay_acc]
-
-            exec.get_procedure_policy
-            # => [immediate, delayed, note_restrictions, proc_index, requires_delay_acc]
-
-            movup.2 drop
-            # => [immediate, delayed, proc_index, requires_delay_acc]
-
-            eq.0
-            # => [is_immediate_zero, delayed, proc_index, requires_delay_acc]
-
-            swap neq.0
-            # => [is_delayed_nonzero, is_immediate_zero, proc_index, requires_delay_acc]
-
-            and
-            # => [proc_requires_delay, proc_index, requires_delay_acc]
-
-            movup.2 or
-            # => [new_requires_delay_acc, proc_index]
-
-            swap
-            # => [proc_index, new_requires_delay_acc]
-        end
-        # => [proc_index, requires_delay_acc]
-
-        dup neq.0
-        # => [should_continue, proc_index, requires_delay_acc]
-    end
-
-    drop
-    # => [requires_delay_acc]
-end
-
 #! Enforces the procedure-policy for the current transaction under the given execution mode:
 #! - asserts each called procedure supports `execution_mode`,
 #! - asserts the union of note restrictions against the transaction's input/output notes,
@@ -852,7 +782,12 @@ pub proc auth_tx(salt: word)
     # so only an execution transaction needs the checks below.
     if.true
         # ------ Execution path ------
-        exec.compute_requires_delay
+        # The execution mode is delayed iff this transaction's summary was proposed (and is
+        # therefore being executed through the timelock); otherwise it is immediate. Deriving the
+        # mode from proposal presence (rather than from the called procedures' policies) is what
+        # lets a procedure configured for both modes execute under its delayed threshold when it
+        # went through a proposal.
+        dupw exec.delayed_execution::is_tx_proposed
         # => [execution_mode, TX_SUMMARY_COMMITMENT]
 
         loc_store.0
