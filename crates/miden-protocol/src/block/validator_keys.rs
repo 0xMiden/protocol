@@ -20,6 +20,11 @@ use crate::{Felt, Hasher, WORD_SIZE, Word};
 pub enum ValidatorKeysError {
     #[error("validator set must contain at least one key")]
     EmptySet,
+    #[error(
+        "validator set contains {count} keys but must contain at most {max}",
+        max = ValidatorKeys::MAX,
+    )]
+    TooManyKeys { count: usize },
     #[error("validator set contains duplicate public keys")]
     DuplicateKey,
 }
@@ -35,10 +40,10 @@ pub enum ValidatorKeysError {
 ///
 /// The number of validators is not fixed by the protocol: a chain may run with a single validator
 /// and grow its validator set over time by rotating in a larger [`ValidatorKeys`] set (see
-/// [`ProposedBlock::with_next_validator_keys`](crate::block::ProposedBlock::with_next_validator_keys)).
-/// The set holds at least one key, kept in a canonical order (sorted by their serialized bytes) so
-/// that the [`ValidatorKeys::commitment`] is independent of the order in which the keys were
-/// provided.
+/// [`ProposedBlock::with_next_validator_keys`](crate::block::ProposedBlock::with_next_validator_keys)),
+/// up to [`ValidatorKeys::MAX`] keys. The set holds at least one key, kept in a canonical order
+/// (sorted by their serialized bytes) so that the [`ValidatorKeys::commitment`] is independent of
+/// the order in which the keys were provided.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatorKeys {
     /// Distinct validator public keys, sorted by their serialized bytes.
@@ -46,6 +51,12 @@ pub struct ValidatorKeys {
 }
 
 impl ValidatorKeys {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The maximum number of validator keys in a set.
+    pub const MAX: usize = 5;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -57,10 +68,14 @@ impl ValidatorKeys {
     ///
     /// Returns an error if:
     /// - `keys` is empty;
+    /// - `keys` contains more than [`ValidatorKeys::MAX`] keys;
     /// - the set contains duplicate keys.
     pub fn new(mut keys: Vec<PublicKey>) -> Result<Self, ValidatorKeysError> {
         if keys.is_empty() {
             return Err(ValidatorKeysError::EmptySet);
+        }
+        if keys.len() > Self::MAX {
+            return Err(ValidatorKeysError::TooManyKeys { count: keys.len() });
         }
 
         // Sort into a canonical order so the commitment is independent of input order.
@@ -144,6 +159,21 @@ mod tests {
     fn new_accepts_single_validator() {
         let keys = ValidatorKeys::new(random_keys(1)).unwrap();
         assert_eq!(keys.len(), 1);
+    }
+
+    #[test]
+    fn new_accepts_max_validators() {
+        let keys = ValidatorKeys::new(random_keys(ValidatorKeys::MAX)).unwrap();
+        assert_eq!(keys.len(), ValidatorKeys::MAX);
+    }
+
+    #[test]
+    fn new_rejects_too_many_keys() {
+        let result = ValidatorKeys::new(random_keys(ValidatorKeys::MAX + 1));
+        assert!(matches!(
+            result,
+            Err(ValidatorKeysError::TooManyKeys { count }) if count == ValidatorKeys::MAX + 1
+        ));
     }
 
     #[test]
