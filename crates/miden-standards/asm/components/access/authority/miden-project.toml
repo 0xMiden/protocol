@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-access-authority"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::access::authority"
+path      = "authority.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

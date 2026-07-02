@@ -19,7 +19,6 @@ use miden_protocol::account::{
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
     Asset,
-    AssetCallbackFlag,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -74,6 +73,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let foreign_account_code_source = "
         use miden::protocol::active_account
 
+        @account_procedure
         pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -84,6 +84,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             movup.6 movup.6 drop drop
         end
 
+        @account_procedure
         pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -332,6 +333,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     let foreign_account_code_source_1 = "
         use miden::protocol::active_account
 
+        @account_procedure
         pub proc get_item_foreign_1
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -345,6 +347,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     let foreign_account_code_source_2 = "
         use miden::protocol::active_account
 
+        @account_procedure
         pub proc get_item_foreign_2
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -552,6 +555,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         #!
         #! Inputs:  [slot_id_suffix, slot_id_prefix]
         #! Outputs: [VALUE]
+        @account_procedure
         pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -566,6 +570,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         #!
         #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
         #! Outputs: [VALUE]
+        @account_procedure
         pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -578,6 +583,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         #!
         #! Inputs:  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         #! Outputs: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+        @account_procedure
         pub proc assert_inputs_correctness
             push.[4, 3, 2, 1]     assert_eqw.err="foreign procedure: 0th input word is incorrect"
             push.[8, 7, 6, 5]     assert_eqw.err="foreign procedure: 1st input word is incorrect"
@@ -751,13 +757,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
         &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
     ));
-    let fungible_asset_key =
-        AssetVaultKey::new_fungible(fungible_faucet_id, AssetCallbackFlag::Disabled);
+    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
         use miden::protocol::active_account
 
+        @account_procedure
         pub proc get_asset_balance
             # get balance of first asset
             push.{FUNGIBLE_ASSET_KEY}
@@ -866,13 +872,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
     let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 10)?);
-    let fungible_asset_key =
-        AssetVaultKey::new_fungible(fungible_faucet_id, AssetCallbackFlag::Disabled);
+    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
         use miden::protocol::active_account
 
+        @account_procedure
         pub proc get_initial_balance
             # push the asset vault key on the stack
             push.{FUNGIBLE_ASSET_KEY}
@@ -994,6 +1000,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
+        @account_procedure
         pub proc second_account_foreign_proc
             # get the storage item at value1
             # pad the stack for the `execute_foreign_procedure` execution
@@ -1058,6 +1065,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
+        @account_procedure
         pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -1085,6 +1093,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
 
+        @account_procedure
         pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -1220,6 +1229,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     let second_foreign_account_code_source = r#"
         use miden::core::sys
 
+        @account_procedure
         pub proc second_account_foreign_proc
             # leave a constant result on the stack
             push.3
@@ -1249,6 +1259,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         use miden::protocol::tx
         use miden::core::sys
 
+        @account_procedure
         pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -1381,6 +1392,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
                 const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
+                @account_procedure
                 pub proc get_item_foreign
                     # make this foreign procedure unique to make sure that we invoke the procedure
                     # of the foreign account, not the native one
@@ -1427,6 +1439,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                 use miden::protocol::tx
                 use miden::core::sys
 
+                @account_procedure
                 pub proc read_first_foreign_storage_slot_{foreign_account_index}
                     # pad the stack for the `execute_foreign_procedure` execution
                     padw padw padw push.0.0.0
@@ -1552,6 +1565,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
 
         use miden::core::sys
 
+        @account_procedure
         pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -1664,6 +1678,7 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
         use miden::protocol::native_account
 
         # code is not used in this test
+        @account_procedure
         pub proc set_some_item_foreign
             push.34.1
             exec.native_account::set_item
@@ -1764,6 +1779,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
         use miden::protocol::active_account
         use miden::protocol::native_account
 
+        @account_procedure
         pub proc get_current_and_native_ids
             # get the ID of the current (foreign) account
             exec.active_account::get_id
@@ -1893,12 +1909,14 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
+        @account_procedure
         pub proc test_get_initial_item
             push.MOCK_VALUE_SLOT0[0..2]
             exec.active_account::get_initial_item
             exec.sys::truncate_stack
         end
 
+        @account_procedure
         pub proc test_get_initial_map_item
             exec.active_account::get_initial_map_item
             exec.sys::truncate_stack

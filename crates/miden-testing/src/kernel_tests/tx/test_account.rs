@@ -31,14 +31,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    AssetCallbackFlag,
-    AssetCallbacks,
-    AssetVaultKey,
-    FungibleAsset,
-};
+use miden_protocol::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -60,8 +53,6 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::access::Pausable;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -992,7 +983,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 1: existing asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
     let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let add_existing_source = format!(
@@ -1042,7 +1033,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 2: new asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset);
     let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let add_new_source = format!(
@@ -1117,7 +1108,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
     let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let expected_output_note =
@@ -1418,6 +1409,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     const ACCOUNT_COMPONENT_CODE: &str = "
       use external_library::external_module
 
+      @account_procedure
       pub proc custom_setter
         exec.external_module::external_setter
       end";
@@ -1622,71 +1614,6 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
 
         tx_context.execute_code(&code).await?;
     }
-
-    Ok(())
-}
-
-/// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
-/// callbacks.
-///
-/// - `with_callbacks`: callback slot has a non-empty value -> returns 1
-/// - `with_empty_callback`: callback slot exists but value is the empty word -> returns 0
-/// - `without_callbacks`: no callback slot at all -> returns 0
-#[rstest::rstest]
-#[case::with_callbacks(
-    vec![StorageSlot::with_value(
-        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
-        Word::from([1, 2, 3, 4u32]),
-    )],
-    true,
-)]
-#[case::with_empty_callback(
-    vec![StorageSlot::with_empty_value(
-        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
-    )],
-    false,
-)]
-#[case::without_callbacks(vec![], false)]
-#[tokio::test]
-async fn test_faucet_has_callbacks(
-    #[case] callback_slots: Vec<StorageSlot>,
-    #[case] expected_has_callbacks: bool,
-) -> anyhow::Result<()> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("").expect("empty string is a valid token name"))
-        .symbol("CBK".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::from(1_000_000u32))
-        .build()?;
-
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
-        .with_component(MockAccountComponent::with_slots(callback_slots))
-        .with_component(Pausable::unpaused())
-        .with_auth_component(Auth::IncrNonce)
-        .build_existing()?;
-
-    let tx_script_code = format!(
-        r#"
-        use miden::protocol::faucet
-
-        @transaction_script
-        pub proc main
-            exec.faucet::has_callbacks
-            push.{has_callbacks}
-            assert_eq.err="has_callbacks returned unexpected value"
-        end
-        "#,
-        has_callbacks = u8::from(expected_has_callbacks)
-    );
-    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
-
-    TestTransactionBuilder::new(account)
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
 
     Ok(())
 }
@@ -1939,6 +1866,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
@@ -1964,12 +1892,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
                   swapw dropw
               end
 
+              @account_procedure
               pub proc set_slot_content
                   push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]

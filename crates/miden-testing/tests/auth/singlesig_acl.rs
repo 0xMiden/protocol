@@ -10,7 +10,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountIdVersion,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
@@ -379,7 +378,7 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
         .with_component(PausableManager)
         .build_existing()?;
 
-    let sender = AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+    let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let asset = FungibleAsset::new(faucet_account.id(), 10)?;
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()

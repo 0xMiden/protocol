@@ -10,10 +10,12 @@ use crate::account::{AccountCode, AccountComponent};
 use crate::testing::noop_auth_component::NoopAuthComponent;
 
 pub const CODE: &str = "
+    @account_procedure
     pub proc foo
         push.1.2 mul
     end
 
+    @account_procedure
     pub proc bar
         push.1.2 add
     end

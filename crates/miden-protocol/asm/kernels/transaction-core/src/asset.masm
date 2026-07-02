@@ -27,7 +27,6 @@ pub use miden::protocol_utils::asset::key_to_faucet_id
 pub use miden::protocol_utils::asset::key_into_faucet_id
 pub use miden::protocol_utils::asset::key_to_asset_id
 pub use miden::protocol_utils::asset::key_into_asset_id
-pub use miden::protocol_utils::asset::key_to_callbacks_enabled
 pub use miden::protocol_utils::asset::key_to_composition
 pub use miden::protocol_utils::asset::store
 pub use miden::protocol_utils::asset::load
@@ -35,6 +34,21 @@ pub use miden::protocol_utils::asset::validate_metadata
 
 # PROCEDURES
 # =================================================================================================
+
+#! Returns the asset callbacks flag from an asset vault key.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [has_callbacks, ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key from which to extract the metadata.
+#! - has_callbacks is 1 if callbacks are enabled and 0 if disabled.
+pub proc key_to_has_callbacks
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    dup.3 exec.account_id::asset_callback_flag
+    # => [has_callbacks, ASSET_KEY]
+end
 
 #! Returns a boolean indicating whether the asset is fungible.
 #!

@@ -5,5 +5,6 @@
 # the procedures available under the public `miden::protocol::account_id` path.
 
 pub use miden::protocol_utils::account_id::is_equal
+pub use miden::protocol_utils::account_id::eqz
 pub use miden::protocol_utils::account_id::validate
 pub use miden::protocol_utils::account_id::shape_suffix

@@ -31,7 +31,7 @@ use super::ProcedurePolicy;
 use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
 
-account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
+account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
 
 // CONSTANTS
 // ================================================================================================

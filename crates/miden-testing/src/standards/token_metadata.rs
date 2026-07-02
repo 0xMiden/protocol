@@ -12,7 +12,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountIdVersion,
     AccountType,
     StorageSlotName,
 };
@@ -124,11 +123,11 @@ fn new_field_data() -> [Word; 7] {
 }
 
 fn owner_account_id() -> AccountId {
-    AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
 }
 
 fn non_owner_account_id() -> AccountId {
-    AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
 }
 
 /// Build a minimal faucet metadata (no optional fields).

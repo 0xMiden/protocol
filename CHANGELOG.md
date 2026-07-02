@@ -17,6 +17,7 @@
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
@@ -49,6 +50,7 @@
 - [BREAKING] Added GER removal mechanism with a dedicated `ger_remover` role, `remove_ger` MASM procedure, `REMOVE_GER` note script, `RemoveGerNote` Rust helper, and a running keccak256 removed-GER hash chain; `AggLayerBridge::new`, `create_bridge_account`, and `create_existing_bridge_account` now take a `ger_remover_id` argument ([#2837](https://github.com/0xMiden/protocol/pull/2837)).
 - [BREAKING] Unified the fungible and non-fungible asset vault deltas into a single asset delta, changing the on-chain account delta commitment layout ([#3038](https://github.com/0xMiden/protocol/pull/3038)).
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
+- [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
 - [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
@@ -71,6 +73,9 @@
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
 - [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
+- Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
+- [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
+- [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
 
 ### Fixes
@@ -79,6 +84,7 @@
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
+- Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
 
 ## v0.15.2 (2026-06-05)

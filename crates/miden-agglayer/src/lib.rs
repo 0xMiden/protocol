@@ -268,3 +268,31 @@ pub fn create_existing_agglayer_faucet(
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }
+
+/// Creates an existing agglayer faucet account with the specified configuration and the asset
+/// callback flag enabled.
+///
+/// This creates an existing account suitable for testing scenarios.
+#[cfg(any(feature = "testing", test))]
+pub fn create_existing_agglayer_faucet_with_callbacks(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    bridge_account_id: AccountId,
+) -> Account {
+    use miden_protocol::account::AssetCallbackFlag;
+
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+    )
+    .with_asset_callbacks(AssetCallbackFlag::Enabled)
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
+}

@@ -16,7 +16,7 @@ use crate::procedure_root;
 
 account_component_code!(
     BASIC_ALLOWLIST_TRANSFER_POLICY_CODE,
-    "faucets/policies/transfer/basic_allowlist.masl"
+    "miden-standards-faucets-policies-transfer-basic-allowlist.masp"
 );
 
 procedure_root!(

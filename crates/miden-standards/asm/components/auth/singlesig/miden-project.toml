@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-singlesig"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::singlesig"
+path      = "singlesig.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

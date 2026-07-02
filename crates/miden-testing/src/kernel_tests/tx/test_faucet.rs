@@ -4,7 +4,6 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    AssetCallbackFlag,
     AssetComposition,
     AssetId,
     AssetVaultKey,
@@ -342,12 +341,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(
-        AssetId::default(),
-        faucet_id,
-        AssetComposition::Fungible,
-        AssetCallbackFlag::Enabled,
-    )?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
         r#"
@@ -693,8 +687,17 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     ))
     .compile_component_code(
         "test::non_faucet_component",
-        "pub use ::miden::protocol::faucet::mint
-         pub use ::miden::protocol::faucet::burn",
+        "use miden::protocol::faucet
+
+         @account_procedure
+         pub proc mint
+             exec.faucet::mint
+         end
+
+         @account_procedure
+         pub proc burn
+             exec.faucet::burn
+         end",
     )?;
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
