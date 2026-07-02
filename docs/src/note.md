@@ -10,11 +10,10 @@ A `Note` is the medium through which [Accounts](account/index.md) communicate. A
 
 In Miden's hybrid UTXO and account-based model notes represent UTXO's which enable parallel transaction execution and privacy through asynchronous local `Note` production and consumption.
 
-Notes are not only a vehicle for asset transfers. They serve three distinct purposes:
+Notes are not only a vehicle for asset transfers. They serve two distinct purposes:
 
 - **Transferring assets** between accounts.
-- **Notifying an account**, through the mere presence of a note addressed to it.
-- **Changing an account's state**, through the data in the note's [storage](#storage), which the consuming account's code can act on.
+- **Invoking an account's public procedures**: when a note is consumed, its [script](#script) runs and calls into the target account's interface, acting on the data carried in the note's [storage](#storage). A note cannot change an account arbitrarily; it interacts only through the procedures the account exposes.
 
 ## Note core components
 
@@ -62,15 +61,10 @@ A `Note` can store up to 1024 items in its storage, which adds up to a maximum o
 A unique and immutable identifier for the `Note`.
 :::
 
-The serial number is a random 32-byte value chosen by the note's creator. To explain its purpose, two related concepts must first be introduced:
+The serial number is a random 32-byte value chosen by the note's creator. It serves two purposes:
 
-- **Commitment**: a commitment to the `Note`'s data (including the serial number) that can be stored publicly without revealing the note's details. It represents the note in the notes database, which is how private notes are recorded on-chain.
-- **Nullifier**: a value derived from the `Note`'s data (including the serial number) that uniquely marks the note as consumed, without allowing the note's data to be reconstructed.
-
-With that context, the serial number serves two purposes:
-
-- **Uniqueness**: the added randomness ensures each note's commitment is unique even when two notes hold identical assets, scripts, and inputs, preventing collisions in the notes database.
-- **Privacy**: the serial number is the secret link between a note's commitment and its nullifier. If an attacker learns the serial number of a private note, they can recompute its nullifier from the commitment and detect when the note is spent — linking its creation to its consumption. The serial number of a private note must therefore be kept secret; if leaked, privacy is compromised even when the rest of the note's data remains hidden.
+- **Uniqueness**: its randomness ensures each note is distinct even when two notes hold identical assets, scripts, and inputs, preventing collisions in the notes database.
+- **Privacy**: the serial number is one of the secret inputs to a private note's nullifier. Keeping it secret is necessary, though not by itself sufficient, to stop an observer from linking a note's creation to its consumption. See [Note nullifier ensuring private consumption](#note-nullifier-ensuring-private-consumption) for details.
 
 ### Metadata
 
@@ -193,13 +187,15 @@ Where:
 - **`METADATA`** — the note's public [metadata](#metadata) (sender, note type, and tag).
 - **`ATTACHMENTS_COMMITMENT`** — a commitment to the note's [attachments](#attachment).
 
+Like the note's ID, the nullifier is a commitment to the note's data, but it is computed differently so that neither can be derived from the other. The serial number is one of its inputs, and its randomness is what makes each note's nullifier unique.
+
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
 - One cannot derive a note's ID from its nullifier.
 - To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, assets_commitment, metadata, and attachments_commitment.
 
-That means if a `Note` is private and the operator stores only the note's commitment, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
+Because the nullifier depends on all of these components, a leaked serial number alone is not enough to compute it. That means if a `Note` is private and the operator stores only the note's ID, only those who know the full `Note` details can tell whether it has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/note/nullifier.png').default} style={{width: '70%'}} alt="Nullifier diagram"/>
