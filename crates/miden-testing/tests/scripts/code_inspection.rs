@@ -37,7 +37,7 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
     // `call`. No `procref` is used so the stack depth stays at 16 across the call boundary.
     let tx_script_code = format!(
         r#"
-        use miden::standards::components::metadata::code_inspection->code_inspection
+        use miden::standards::components::metadata::code_inspection as code_inspection
 
         begin
             # stack: [PROC_ROOT, pad(12)]

@@ -2,6 +2,7 @@ pub mod account;
 pub mod account_code;
 pub mod account_id;
 pub mod add_component;
+pub mod assembler;
 pub mod asset;
 pub mod block;
 pub mod block_note_tree;

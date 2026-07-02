@@ -1,4 +1,4 @@
-use rand_xoshiro::rand_core::SeedableRng;
+use rand::{RngExt, SeedableRng};
 
 use crate::account::{AccountId, AccountIdV1, AccountIdVersion, AccountType, AssetCallbackFlag};
 

@@ -1,8 +1,7 @@
-use alloc::sync::Arc;
-
 use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
-use crate::assembly::{Assembler, Library};
+use crate::assembly::Library;
+use crate::testing::assembler::assemble_test_library;
 use crate::utils::sync::LazyLock;
 
 // NOOP AUTH COMPONENT
@@ -16,11 +15,7 @@ const NOOP_AUTH_CODE: &str = "
 ";
 
 static NOOP_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Arc::unwrap_or_clone(
-        Assembler::default()
-            .assemble_library([NOOP_AUTH_CODE])
-            .expect("noop auth code should be valid"),
-    )
+    assemble_test_library("miden-testing-noop-auth", "miden::testing::noop_auth", NOOP_AUTH_CODE)
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.

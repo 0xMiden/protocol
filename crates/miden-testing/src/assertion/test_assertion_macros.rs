@@ -5,6 +5,8 @@
 //! - Async tests run small MASM programs on a [`CodeExecutor`] to cover real `ExecutionError`
 //!   variants end-to-end.
 
+use alloc::string::ToString;
+
 use miden_assembly::SourceSpan;
 use miden_processor::advice::AdviceError;
 use miden_processor::operation::OperationError;
@@ -206,7 +208,7 @@ async fn not_binary_value_if() {
     assert_execution_error!(
         r,
         matches ExecutionError::OperationError {
-            err: OperationError::NotBinaryValueIf { .. },
+            err: OperationError::NotBinaryValue { .. },
             ..
         }
     );
@@ -218,7 +220,7 @@ async fn not_binary_value_loop() {
     assert_execution_error!(
         r,
         matches ExecutionError::OperationError {
-            err: OperationError::NotBinaryValueLoop { .. },
+            err: OperationError::NotBinaryValue { .. },
             ..
         }
     );
@@ -238,14 +240,22 @@ async fn not_u32_values() {
 
 #[tokio::test]
 async fn vm_failed_assertion() {
-    let r = run_masm(r#"begin push.0 assert.err="custom failure" end"#).await;
-    assert_execution_error!(
-        r,
-        matches ExecutionError::OperationError {
+    let err = run_masm(r#"begin push.0 assert.err="custom failure" end"#)
+        .await
+        .expect_err("expected assertion failure");
+    let diagnostic = err.to_string();
+
+    assert!(
+        diagnostic.contains("custom failure"),
+        "expected package debug info to recover the assertion message:\n{diagnostic}"
+    );
+    assert!(matches!(
+        err.as_execution_error(),
+        ExecutionError::OperationError {
             err: OperationError::FailedAssertion { .. },
             ..
         }
-    );
+    ));
 }
 
 #[tokio::test]
@@ -260,8 +270,8 @@ async fn cycle_limit_exceeded() {
     // Set max_cycles to MIN_TRACE_LEN (64); 100×push body trips it.
     let body = "push.0 ".repeat(100);
     let src = format!("begin {body} end");
-    let options = ExecutionOptions::new(Some(64), 64, 4096, false, false)
-        .expect("max_cycles=64 satisfies MIN_TRACE_LEN");
+    let options =
+        ExecutionOptions::new(Some(64), 64, 4096).expect("max_cycles=64 satisfies MIN_TRACE_LEN");
     let r = run_masm_with_options(&src, options).await;
     assert_execution_error!(r, matches ExecutionError::CycleLimitExceeded(_));
 }

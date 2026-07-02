@@ -38,7 +38,7 @@ use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
-use rand::Rng;
+use rand::RngExt;
 
 use crate::{Auth, MockChain, TestTransactionBuilder};
 
@@ -1001,7 +1001,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let auth_code = format!(
         "
     use miden::protocol::native_account
-    use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+    use {{AUTH_UNAUTHORIZED_EVENT}} from miden::protocol::auth
 
     {TEST_ACCOUNT_CONVENIENCE_WRAPPERS}
 
@@ -1172,7 +1172,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 // existed when the kernel epilogue still produced the delta commitment.
 const DELTA_CHECK_AUTH_CODE: &str = r#"
     use miden::protocol::native_account
-    use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+    use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 
     #! Inputs:  [[should_emit, 0, 0, 0], pad(12)]
     #! Outputs: [pad(16)]

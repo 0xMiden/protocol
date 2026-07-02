@@ -6,18 +6,22 @@ use miden::core::word
 use miden::tx_kernel_core::account
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::asset_vault
-use miden::tx_kernel_core::asset::ASSET_SIZE
 use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::constants::EMPTY_SMT_ROOT
-use miden::tx_kernel_core::constants::MAX_ASSETS_PER_NOTE
-use miden::tx_kernel_core::constants::MAX_INPUT_NOTES_PER_TX
-use miden::tx_kernel_core::constants::MAX_NOTE_STORAGE_ITEMS
-use miden::tx_kernel_core::constants::NOTE_TREE_DEPTH
+use {ASSET_SIZE} from miden::tx_kernel_core::asset
+use {
+    EMPTY_SMT_ROOT,
+    MAX_ASSETS_PER_NOTE,
+    MAX_INPUT_NOTES_PER_TX,
+    MAX_NOTE_STORAGE_ITEMS,
+    NOTE_TREE_DEPTH,
+} from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use miden::tx_kernel_core::memory::BLOCK_DATA_SECTION_OFFSET
-use miden::tx_kernel_core::memory::INPUT_VAULT_ROOT_PTR
-use miden::tx_kernel_core::memory::KERNEL_PROCEDURES_PTR
-use miden::tx_kernel_core::memory::PARTIAL_BLOCKCHAIN_PTR
+use {
+    BLOCK_DATA_SECTION_OFFSET,
+    INPUT_VAULT_ROOT_PTR,
+    KERNEL_PROCEDURES_PTR,
+    PARTIAL_BLOCKCHAIN_PTR,
+} from miden::tx_kernel_core::memory
 
 # CONSTS
 # =================================================================================================

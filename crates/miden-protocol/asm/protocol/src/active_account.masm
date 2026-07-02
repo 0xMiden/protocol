@@ -1,25 +1,26 @@
 use miden::protocol::asset
-use miden::protocol::asset::COMPOSITION_FUNGIBLE
-use miden::protocol::asset::COMPOSITION_NONE
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_CODE_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_VAULT_ROOT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_STORAGE_SLOT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_MAP_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ASSET_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ASSET_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NUM_PROCEDURES_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_PROCEDURE_ROOT_OFFSET
-use miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_PROCEDURE_OFFSET
+use {COMPOSITION_FUNGIBLE, COMPOSITION_NONE} from miden::protocol::asset
+use {
+    ACCOUNT_GET_ID_OFFSET,
+    ACCOUNT_GET_NONCE_OFFSET,
+    ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET,
+    ACCOUNT_COMPUTE_COMMITMENT_OFFSET,
+    ACCOUNT_GET_CODE_COMMITMENT_OFFSET,
+    ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET,
+    ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET,
+    ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET,
+    ACCOUNT_GET_VAULT_ROOT_OFFSET,
+    ACCOUNT_GET_ITEM_OFFSET,
+    ACCOUNT_HAS_STORAGE_SLOT_OFFSET,
+    ACCOUNT_GET_INITIAL_ITEM_OFFSET,
+    ACCOUNT_GET_MAP_ITEM_OFFSET,
+    ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET,
+    ACCOUNT_GET_ASSET_OFFSET,
+    ACCOUNT_GET_INITIAL_ASSET_OFFSET,
+    ACCOUNT_GET_NUM_PROCEDURES_OFFSET,
+    ACCOUNT_GET_PROCEDURE_ROOT_OFFSET,
+    ACCOUNT_HAS_PROCEDURE_OFFSET,
+} from miden::protocol::kernel_proc_offsets
 use miden::core::word
 
 # ACTIVE ACCOUNT PROCEDURES
@@ -699,4 +700,3 @@ pub proc has_procedure
     swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
 end
-

@@ -40,7 +40,7 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, StandardNot
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::merkle_tree_frontier::MerkleTreeFrontier32;
 use super::test_utils::SOLIDITY_MTF_VECTORS;

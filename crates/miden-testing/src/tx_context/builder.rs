@@ -81,7 +81,6 @@ pub struct TransactionContextBuilder {
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     is_lazy_loading_enabled: bool,
-    is_debug_mode_enabled: bool,
 }
 
 impl TransactionContextBuilder {
@@ -102,7 +101,6 @@ impl TransactionContextBuilder {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
     }
 
@@ -173,15 +171,6 @@ impl TransactionContextBuilder {
     /// loading events.
     pub fn disable_lazy_loading(mut self) -> Self {
         self.is_lazy_loading_enabled = false;
-        self
-    }
-
-    /// Disables debug mode.
-    ///
-    /// For performance-sensitive applications, debug mode should be disabled because executing in
-    /// debug mode may be up to 100x slower.
-    pub fn disable_debug_mode(mut self) -> Self {
-        self.is_debug_mode_enabled = false;
         self
     }
 
@@ -280,7 +269,7 @@ impl TransactionContextBuilder {
             mast_forest_store.load_account_code(tx_inputs.account().code());
 
             for (account, _) in self.foreign_account_inputs.values() {
-                mast_forest_store.insert(account.code().mast());
+                mast_forest_store.load_account_code(account.code());
             }
 
             mast_forest_store
@@ -296,7 +285,6 @@ impl TransactionContextBuilder {
             source_manager: self.source_manager,
             note_scripts: self.note_scripts,
             is_lazy_loading_enabled: self.is_lazy_loading_enabled,
-            is_debug_mode_enabled: self.is_debug_mode_enabled,
         })
     }
 }
