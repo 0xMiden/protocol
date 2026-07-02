@@ -163,7 +163,9 @@ proc get_tx_proposal(tx_summary_commitment: word)
     push.TX_PROPOSALS_SLOT[0..2]
     # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
 
-    exec.active_account::get_map_item
+    # Read the proposal from the transaction's initial state, so proposal checks cannot be
+    # influenced by map mutations made earlier in the same transaction.
+    exec.active_account::get_initial_map_item
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     movup.3 drop
@@ -199,19 +201,11 @@ end
 #!
 #! Invocation: exec
 proc remove_tx_proposal(tx_summary_commitment: word)
-    push.EMPTY_WORD
-    # => [EMPTY_WORD, TX_SUMMARY_COMMITMENT]
+    push.0.0.0
+    # => [0, 0, 0, TX_SUMMARY_COMMITMENT]
 
-    swapw
-    # => [TX_SUMMARY_COMMITMENT, EMPTY_WORD]
-
-    push.TX_PROPOSALS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT, EMPTY_WORD]
-
-    exec.native_account::set_map_item
-    # => [OLD_PROPOSAL_WORD]
-
-    dropw
+    # Writing zero unlock/proposal/cancel fields stores EMPTY_WORD, i.e. clears the entry.
+    exec.write_tx_proposal
     # => []
 end
 
@@ -304,32 +298,31 @@ proc assert_unlock_reached
     # => []
 end
 
-#! Enforces that `TX_SUMMARY_COMMITMENT` is proposed and that its unlock timestamp has been reached.
+#! Asserts that `TX_SUMMARY_COMMITMENT` is proposed and that its unlock timestamp has been reached.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: [min_cancel_sigs]
+#! Outputs: []
 #!
 #! Where:
 #! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
-#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
 #!
 #! Panics if:
 #! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
 #! - `assert_unlock_reached` fails.
 #!
 #! Invocation: exec
-proc enforce_tx_timelock
+proc assert_tx_proposed_and_unlocked
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
-    dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
-
-    swap drop
+    swap neq.0 assert.err=ERR_TX_NOT_PROPOSED
     # => [unlock_timestamp, min_cancel_sigs]
 
     exec.assert_unlock_reached
     # => [min_cancel_sigs]
+
+    drop
+    # => []
 end
 
 # DISPATCH
@@ -449,14 +442,13 @@ end
 #!
 #! Invocation: call
 pub proc cancel_transaction_proposal
-    # => [TX_SUMMARY_COMMITMENT]
     dupw exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    drop neq.0 assert.err=ERR_TX_NOT_PROPOSED
+    # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    drop drop movdn.4
+    movdn.4
     # => [TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
     # ---- Verify cancellation signatures over the target commitment. ----
@@ -480,7 +472,7 @@ end
 #! Replay protection against re-execution is provided by the multisig executed-transactions set.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: [TX_SUMMARY_COMMITMENT]
+#! Outputs: []
 #!
 #! Where:
 #! - TX_SUMMARY_COMMITMENT is the current transaction summary commitment.
@@ -490,11 +482,11 @@ end
 #! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-pub proc handle_execute
+pub proc execute_proposed_tx
     # => [TX_SUMMARY_COMMITMENT]
-    dupw exec.enforce_tx_timelock drop
+    dupw exec.assert_tx_proposed_and_unlocked
     # => [TX_SUMMARY_COMMITMENT]
 
-    dupw exec.remove_tx_proposal
-    # => [TX_SUMMARY_COMMITMENT]
+    exec.remove_tx_proposal
+    # => []
 end
