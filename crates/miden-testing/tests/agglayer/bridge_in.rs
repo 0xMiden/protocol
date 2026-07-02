@@ -26,6 +26,7 @@ use miden_agglayer::{
     UpdateGerNote,
     agglayer_library,
     create_existing_agglayer_faucet,
+    create_existing_agglayer_faucet_with_callbacks,
     create_existing_bridge_account,
 };
 use miden_protocol::Felt;
@@ -178,7 +179,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = create_existing_agglayer_faucet(
+    let agglayer_faucet = create_existing_agglayer_faucet_with_callbacks(
         agglayer_faucet_seed,
         token_symbol,
         decimals,
@@ -1147,6 +1148,10 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         MintPolicy::owner_only(),
         [],
     )?;
+    assert!(
+        native_faucet.id().asset_callback_flag().is_enabled(),
+        "native faucet should be built with callbacks enabled"
+    );
 
     // Destination of the claim (derived from leaf data's destination_address). The mock account
     // is built directly from the destination ID encoded in the JSON test vector, since the claim

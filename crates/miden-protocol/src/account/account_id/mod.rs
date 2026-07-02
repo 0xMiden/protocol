@@ -83,15 +83,8 @@ use crate::utils::serde::{
 ///   of the ID depending on the version. Having only 4 bits for the version is a trade off between
 ///   future proofing to allow introducing more versions and the version requiring Proof of Work as
 ///   part of the ID generation.
-/// - The version and account type are part of the prefix which is included in the representation of
-///   a non-fungible asset. The prefix alone is enough to determine all of these properties about
-///   the ID.
-/// - The asset callback flag is placed in the account ID because it is carried in every asset's
-///   vault key, so the kernel can check a faucet's callback capability from any of its assets
-///   without reading the faucet's account state and it is immutable throughout the lifetime of the
-///   account, making every issued asset carry the same flag. The suffix could not be used as its
-///   lower 8 bits are deliberately kept zero to allow using those bits when embedded in other
-///   layouts. For example, in an asset's vault key, they are replaced by the asset metadata.
+/// - The asset callback flag is placed in the account ID so it is immutable throughout the lifetime
+///   of the account and every asset issued by an account has the same flag.
 /// - The most significant bit of the suffix must be zero to ensure the value of the suffix is
 ///   always a valid felt, even if the lower 8 bits are all set to `1`. The lower 8 bits of the
 ///   suffix may be overwritten when the ID is embedded in other layouts such as the
