@@ -38,8 +38,8 @@ impl TransactionMastStore {
         let store = Self { mast_forests };
 
         // load transaction kernel MAST forest
-        let kernel = TransactionKernel::kernel();
-        store.insert_package(&kernel);
+        let kernel = TransactionKernel::package();
+        store.insert_package(kernel.as_ref());
 
         // load miden-core-lib MAST forest
         let miden_core_lib = CoreLibrary::default();
@@ -154,7 +154,7 @@ mod tests {
         // Simulate loading account code by inserting the kernel forest again
         // (it adds no new entries since they already exist, but this exercises
         // the insert path without needing to construct a custom MastForest)
-        let kernel_forest = TransactionKernel::kernel().mast_forest().clone();
+        let kernel_forest = TransactionKernel::package().mast_forest().clone();
         store1.insert(kernel_forest);
 
         // A fresh store should be at exactly the same baseline

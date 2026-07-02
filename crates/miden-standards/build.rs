@@ -6,7 +6,7 @@ use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManag
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::{Assembler, ProjectTargetSelector};
 use miden_core_lib::CoreLibrary;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
@@ -82,10 +82,22 @@ fn main() -> Result<()> {
 fn build_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
 
+    let core_package = CoreLibrary::default().package();
+    let core_package = Package::create_with_modules(
+        PackageId::from("miden-core"),
+        Version::new(0, 24, 0),
+        TargetType::Library,
+        core_package.mast_forest().clone(),
+        core_package.manifest.exports().cloned(),
+        core_package.manifest.modules().cloned(),
+        core_package.manifest.dependencies().cloned(),
+    )
+    .into_diagnostic()?;
+
     // The protocol package declares dependencies on the kernel and core packages, so all three
     // must be available in the registry for project dependency resolution to succeed.
     for package in [
-        CoreLibrary::default().package(),
+        Arc::new(core_package),
         Arc::new(Package::from(ProtocolLib::default())),
         TransactionKernel::package(),
     ] {

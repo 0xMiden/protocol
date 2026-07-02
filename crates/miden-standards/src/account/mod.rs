@@ -77,15 +77,11 @@ macro_rules! account_component_code {
         static $name: miden_protocol::utils::sync::LazyLock<
             miden_protocol::account::component::AccountComponentCode,
         > = miden_protocol::utils::sync::LazyLock::new(|| {
-            let bytes = include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/assets/components/",
-                $relative_path
-            ));
-            let package = <miden_protocol::vm::Package as miden_protocol::utils::serde::Deserializable>::read_from_bytes(bytes)
+            let bytes =
+                include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/", $relative_path));
+            let package = miden_protocol::vm::Package::read_from_bytes_trusted(bytes)
                 .expect("shipped account-component package failed to deserialize");
-            let library = (*package.mast).clone();
-            miden_protocol::account::component::AccountComponentCode::from(library)
+            miden_protocol::account::component::AccountComponentCode::from(package)
         });
     };
 }

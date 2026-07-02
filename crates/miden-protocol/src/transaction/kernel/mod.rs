@@ -206,7 +206,7 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        let mut assembler = Assembler::with_kernel(source_manager, Self::kernel())
+        let mut assembler = Assembler::with_kernel(source_manager, Self::package())
             .expect("failed to load transaction kernel");
         assembler
             .link_package(CoreLibrary::default().package(), Linkage::Dynamic)

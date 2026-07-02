@@ -7,5 +7,5 @@ namespace = "miden::standards"
 path      = "mod.masm"
 
 [dependencies]
-miden-core     = { linkage = "dynamic", version = "0.23.4" }
+miden-core     = { linkage = "dynamic", version = "0.24" }
 miden-protocol = { linkage = "dynamic", version = "0.16.0" }
