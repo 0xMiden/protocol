@@ -13,6 +13,7 @@ pub mod batch;
 pub mod block;
 pub mod errors;
 pub mod note;
+pub mod package;
 mod protocol;
 pub mod transaction;
 

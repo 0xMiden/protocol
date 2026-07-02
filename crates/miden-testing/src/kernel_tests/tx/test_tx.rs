@@ -20,7 +20,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, Path};
+use miden_protocol::assembly::{DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
@@ -589,12 +589,12 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
-    let source = ModuleParser::new(Some(ModuleKind::Library))
-        .parse_str(Some(Path::new("test::module_1")), test_module_source, source_manager.clone())
-        .unwrap();
-
-    let library = assembler.assemble_library("test-tx-view-script", source, None::<&str>).unwrap();
+    let library = compile_test_library(
+        source_manager.clone(),
+        "test-tx-view-script",
+        "test::module_1",
+        test_module_source,
+    );
 
     let source = "
     use test::module_1
@@ -628,6 +628,20 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     assert_eq!(stack_outputs[..3], [Felt::new_unchecked(7), Felt::new_unchecked(2), ONE]);
 
     Ok(())
+}
+
+fn compile_test_library(
+    source_manager: Arc<DefaultSourceManager>,
+    name: &str,
+    path: &str,
+    source: &str,
+) -> Library {
+    let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
+    let source = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new(path)), source, source_manager)
+        .unwrap();
+
+    *assembler.assemble_library(name, source, None::<&str>).unwrap()
 }
 
 #[tokio::test]

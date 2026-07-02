@@ -7,14 +7,15 @@ use core::fmt::Display;
 use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto_derive::WordWrapper;
+use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_mast_package::{Package, PackageDebugInfoError};
 use miden_processor::LoadedMastForest;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
+use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -371,7 +372,7 @@ impl TransactionScript {
         Ok(Self {
             mast: program.mast_forest().clone(),
             entrypoint: program.entrypoint(),
-            package_debug_info: decode_package_debug_info(package),
+            package_debug_info: package_debug_info(package),
         })
     }
 
@@ -419,26 +420,6 @@ impl PartialEq for TransactionScript {
 }
 
 impl Eq for TransactionScript {}
-
-fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
-    match package.debug_info() {
-        Ok(debug_info) => debug_info.map(Arc::new),
-        Err(PackageDebugInfoError::UntrustedSections) => None,
-        Err(_) => None,
-    }
-}
-
-fn loaded_mast_forest(
-    mast: Arc<MastForest>,
-    package_debug_info: Option<Arc<PackageDebugInfo>>,
-) -> LoadedMastForest {
-    match package_debug_info {
-        Some(package_debug_info) => {
-            LoadedMastForest::with_package_debug_info(mast, Ok(Some((*package_debug_info).clone())))
-        },
-        None => LoadedMastForest::new(mast),
-    }
-}
 
 // SERIALIZATION
 // ================================================================================================

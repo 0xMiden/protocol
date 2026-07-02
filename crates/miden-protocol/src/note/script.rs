@@ -7,14 +7,15 @@ use core::num::TryFromIntError;
 use miden_core::mast::{MastNode, MastNodeExt};
 use miden_core::utils::IndexVec;
 use miden_crypto_derive::WordWrapper;
+use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_mast_package::{Package, PackageDebugInfoError};
 use miden_processor::LoadedMastForest;
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
+use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -147,7 +148,7 @@ impl NoteScript {
         Ok(Self {
             mast: library.mast_forest().clone(),
             entrypoint,
-            package_debug_info: decode_package_debug_info(library),
+            package_debug_info: package_debug_info(library),
         })
     }
 
@@ -194,7 +195,7 @@ impl NoteScript {
         Ok(Self {
             mast: Arc::new(mast),
             entrypoint,
-            package_debug_info: decode_package_debug_info(library),
+            package_debug_info: package_debug_info(library),
         })
     }
 
@@ -443,26 +444,6 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
     let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())
         .expect("single external node forest should be well-formed");
     (mast, node_id)
-}
-
-fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
-    match package.debug_info() {
-        Ok(debug_info) => debug_info.map(Arc::new),
-        Err(PackageDebugInfoError::UntrustedSections) => None,
-        Err(_) => None,
-    }
-}
-
-fn loaded_mast_forest(
-    mast: Arc<MastForest>,
-    package_debug_info: Option<Arc<PackageDebugInfo>>,
-) -> LoadedMastForest {
-    match package_debug_info {
-        Some(package_debug_info) => {
-            LoadedMastForest::with_package_debug_info(mast, Ok(Some((*package_debug_info).clone())))
-        },
-        None => LoadedMastForest::new(mast),
-    }
 }
 
 // TESTS

@@ -3,12 +3,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
-use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Assembler, ProjectTargetSelector};
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_project::Workspace;
+use miden_project::ast::MidenProject;
+use miden_project::{VersionRequirement, Workspace, semver};
 use miden_protocol::ProtocolLib;
 use miden_protocol::transaction::TransactionKernel;
 
@@ -83,9 +84,13 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
 
     let core_package = CoreLibrary::default().package();
+    let core_package_version = dependency_package_version(
+        Path::new(ASM_DIR).join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST),
+        "miden-core",
+    )?;
     let core_package = Package::create_with_modules(
         PackageId::from("miden-core"),
-        Version::new(0, 24, 0),
+        core_package_version,
         TargetType::Library,
         core_package.mast_forest().clone(),
         core_package.manifest.exports().cloned(),
@@ -105,6 +110,61 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     }
 
     Ok(registry)
+}
+
+fn dependency_package_version(
+    manifest_path: impl AsRef<Path>,
+    dependency_name: &str,
+) -> Result<Version> {
+    let source_manager = DefaultSourceManager::default();
+    let source_file = source_manager
+        .load_file(manifest_path.as_ref())
+        .map_err(|err| miette::miette!("{err}"))?;
+    let project = MidenProject::parse(source_file).map_err(|err| miette::miette!("{err}"))?;
+    let dependencies = match &project {
+        MidenProject::Workspace(workspace) => &workspace.workspace.config.dependencies,
+        MidenProject::Package(package) => &package.config.dependencies,
+    };
+    let dependency = dependencies
+        .iter()
+        .find(|(name, _)| name.inner().as_ref() == dependency_name)
+        .map(|(_, dependency)| dependency.inner())
+        .ok_or_else(|| miette::miette!("manifest does not depend on `{dependency_name}`"))?;
+
+    match dependency.version() {
+        Some(VersionRequirement::Semantic(version_req)) => {
+            semantic_requirement_lower_bound(dependency_name, version_req.inner())
+        },
+        Some(VersionRequirement::Exact(version)) => Ok(version.version.clone()),
+        Some(VersionRequirement::Digest(_)) | None => Err(miette::miette!(
+            "dependency `{dependency_name}` must use a semantic version requirement"
+        )),
+    }
+}
+
+fn semantic_requirement_lower_bound(
+    dependency_name: &str,
+    version_req: &semver::VersionReq,
+) -> Result<Version> {
+    let [comparator] = version_req.comparators.as_slice() else {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a single semantic version requirement"
+        ));
+    };
+
+    if !matches!(comparator.op, semver::Op::Caret | semver::Op::Exact)
+        || comparator.pre != semver::Prerelease::EMPTY
+    {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a simple semantic version requirement"
+        ));
+    }
+
+    Ok(Version::new(
+        comparator.major,
+        comparator.minor.unwrap_or_default(),
+        comparator.patch.unwrap_or_default(),
+    ))
 }
 
 // COMPILE STANDARDS LIB

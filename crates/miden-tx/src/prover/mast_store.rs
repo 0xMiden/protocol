@@ -4,9 +4,10 @@ use alloc::sync::Arc;
 use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::mast::MastForest;
+use miden_protocol::package::loaded_mast_forest_from_package;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::RwLock;
-use miden_protocol::vm::{Package, PackageDebugInfo, PackageDebugInfoError};
+use miden_protocol::vm::Package;
 use miden_protocol::{CoreLibrary, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 
@@ -94,25 +95,6 @@ impl TransactionMastStore {
 impl MastForestStore for TransactionMastStore {
     fn get(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         self.mast_forests.read().get(procedure_root).cloned()
-    }
-}
-
-/// Builds a loaded MAST forest from a package, including package-owned debug info when trusted.
-fn loaded_mast_forest_from_package(package: &Package) -> LoadedMastForest {
-    match decode_package_debug_info(package) {
-        Some(package_debug_info) => LoadedMastForest::with_package_debug_info(
-            package.mast_forest().clone(),
-            Ok(Some((*package_debug_info).clone())),
-        ),
-        None => LoadedMastForest::new(package.mast_forest().clone()),
-    }
-}
-
-fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
-    match package.debug_info() {
-        Ok(debug_info) => debug_info.map(Arc::new),
-        Err(PackageDebugInfoError::UntrustedSections) => None,
-        Err(_) => None,
     }
 }
 

@@ -168,17 +168,6 @@ where
         Ok(self)
     }
 
-    /// Enables tracing for the created instance of [TransactionExecutor] and returns the resulting
-    /// executor.
-    ///
-    /// When tracing is enabled, the executor will receive tracing events as various stages of the
-    /// transaction kernel complete. This enables collecting basic stats about how long different
-    /// stages of transaction execution take.
-    #[must_use]
-    pub fn with_tracing(self) -> Self {
-        self
-    }
-
     // TRANSACTION EXECUTION
     // --------------------------------------------------------------------------------------------
 

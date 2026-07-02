@@ -65,8 +65,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -103,8 +102,7 @@ async fn check_note_consumability_custom_notes_success(
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -181,8 +179,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -255,8 +252,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let tx_args = tx_context.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -330,8 +326,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -405,8 +400,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let tx_args = tx_context.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumability_info: NoteConsumptionStatus = notes_checker
@@ -489,8 +483,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -638,8 +631,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -728,8 +720,7 @@ async fn test_check_note_consumability_static_analysis_sender(
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs

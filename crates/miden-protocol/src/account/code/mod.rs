@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
 use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_mast_package::{Package, PackageDebugInfoError};
 use miden_processor::LoadedMastForest;
 
 use super::{
@@ -19,6 +18,7 @@ use super::{
 };
 use crate::Word;
 use crate::account::{AccountCodeInterface, AccountComponent, AccountId};
+use crate::package::{loaded_mast_forest, package_debug_info};
 
 pub mod procedure;
 use procedure::{AccountProcedureRoot, PrintableProcedure};
@@ -429,8 +429,7 @@ fn merge_component_debug_info(
         .iter()
         .enumerate()
         .filter_map(|(idx, component)| {
-            decode_package_debug_info(component.component_code().as_library())
-                .map(|debug| (idx, debug))
+            package_debug_info(component.component_code().as_library()).map(|debug| (idx, debug))
         })
         .collect::<Vec<_>>();
 
@@ -447,26 +446,6 @@ fn merge_component_debug_info(
     })?;
 
     Ok(Some(Arc::new(debug_info)))
-}
-
-fn decode_package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
-    match package.debug_info() {
-        Ok(debug_info) => debug_info.map(Arc::new),
-        Err(PackageDebugInfoError::UntrustedSections) => None,
-        Err(_) => None,
-    }
-}
-
-fn loaded_mast_forest(
-    mast: Arc<MastForest>,
-    package_debug_info: Option<Arc<PackageDebugInfo>>,
-) -> LoadedMastForest {
-    match package_debug_info {
-        Some(package_debug_info) => {
-            LoadedMastForest::with_package_debug_info(mast, Ok(Some((*package_debug_info).clone())))
-        },
-        None => LoadedMastForest::new(mast),
-    }
 }
 
 /// Converts given procedures into field elements
