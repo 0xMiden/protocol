@@ -46,6 +46,14 @@ procedure_root!(
     BasicWallet::code()
 );
 
+// Initialize the procedure root of the `create_note` procedure of the Basic Wallet only once.
+procedure_root!(
+    BASIC_WALLET_CREATE_NOTE,
+    BasicWallet::NAME,
+    BasicWallet::CREATE_NOTE_PROC_NAME,
+    BasicWallet::code()
+);
+
 /// An [`AccountComponent`] implementing a basic wallet.
 ///
 /// It reexports the procedures from `miden::standards::wallets::basic`. When linking against this
@@ -71,6 +79,7 @@ impl BasicWallet {
 
     const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
+    const CREATE_NOTE_PROC_NAME: &str = "create_note";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -93,6 +102,11 @@ impl BasicWallet {
     /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
     pub fn move_asset_to_note_root() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
+    }
+
+    /// Returns the procedure root of the `create_note` wallet procedure.
+    pub fn create_note_root() -> AccountProcedureRoot {
+        *BASIC_WALLET_CREATE_NOTE
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.

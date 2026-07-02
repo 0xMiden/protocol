@@ -24,6 +24,8 @@ use miden::core::crypto::hashes::poseidon2
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - the procedure is not invoked from the account context (e.g. it is called from a note or
+#!   transaction script instead of the account's code).
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.

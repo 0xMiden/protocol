@@ -4,3 +4,4 @@
 
 pub use ::miden::standards::wallets::basic::receive_asset
 pub use ::miden::standards::wallets::basic::move_asset_to_note
+pub use ::miden::standards::wallets::basic::create_note
