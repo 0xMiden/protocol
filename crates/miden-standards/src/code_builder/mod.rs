@@ -658,7 +658,16 @@ mod tests {
 
     #[test]
     fn test_multiple_chained_modules() -> anyhow::Result<()> {
-        let script_code = "use test::lib1 use test::lib2 @transaction_script pub proc main exec.lib1::test1 exec.lib2::test2 end";
+        let script_code = "
+            use test::lib1
+            use test::lib2
+
+            @transaction_script
+            pub proc main
+                exec.lib1::test1
+                exec.lib2::test2
+            end
+        ";
 
         // Test chaining multiple modules
         let builder = CodeBuilder::default()
