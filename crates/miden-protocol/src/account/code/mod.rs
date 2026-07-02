@@ -479,11 +479,7 @@ fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
-
     use assert_matches::assert_matches;
-    use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, Path, ast};
-    use miden_mast_package::Package as Library;
 
     use super::{AccountCode, Deserializable, Serializable};
     use crate::account::AccountComponent;
@@ -491,18 +487,8 @@ mod tests {
     use crate::account::component::AccountComponentMetadata;
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-
-    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
-            .parse_str(Some(Path::new(path)), source, source_manager.clone())
-            .unwrap();
-
-        *Assembler::new(source_manager)
-            .assemble_library(name, root, None::<&str>)
-            .unwrap()
-    }
 
     #[test]
     fn test_serde_account_code() {

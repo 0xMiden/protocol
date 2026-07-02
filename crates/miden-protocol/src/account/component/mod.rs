@@ -184,6 +184,8 @@ impl AccountComponent {
     /// `@account_procedure` or `@auth_script` attributes.
     pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
         self.code.exports().map(|proc_export| {
+            // When the export has a node id, use the forest node digest as the source of truth.
+            // This keeps procedure roots tied to the actual component MAST forest.
             let digest = if let Some(node) = proc_export.node {
                 self.code
                     .mast_forest()
@@ -223,26 +225,14 @@ impl From<AccountComponent> for AccountComponentCode {
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
-    use alloc::sync::Arc;
 
-    use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, Path, ast};
-    use miden_mast_package::{Package as Library, Section, SectionId};
+    use miden_mast_package::{Section, SectionId};
     use semver::Version;
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::testing::assembler::assemble_test_library;
     use crate::utils::serde::Serializable;
-
-    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
-            .parse_str(Some(Path::new(path)), source, source_manager.clone())
-            .unwrap();
-
-        *Assembler::new(source_manager)
-            .assemble_library(name, root, None::<&str>)
-            .unwrap()
-    }
 
     #[test]
     fn test_extract_metadata_from_package() {

@@ -18,80 +18,20 @@ const ERR_TX_INVALID_EXPIRATION_DELTA="transaction expiration block delta must b
 # PROCEDURES
 # =================================================================================================
 
-# Returns the block commitment of the transaction reference block.
-#
-# Inputs:  []
-# Outputs: [BLOCK_COMMITMENT]
-#
-# Where:
-# - BLOCK_COMMITMENT is the commitment of the transaction reference block.
 pub use {get_block_commitment} from miden::tx_kernel_core::memory
 
-# Returns the block number of the transaction reference block.
-#
-# Inputs:  []
-# Outputs: [num]
-#
-# Where:
-# - num is the transaction reference block number.
 pub use {get_blk_num as get_block_number} from miden::tx_kernel_core::memory
 
-# Returns the block timestamp of the reference block for this transaction.
-#
-# Inputs:  []
-# Outputs: [timestamp]
-#
-# Where:
-# - timestamp is the timestamp of the reference block for this transaction.
 pub use {get_blk_timestamp as get_block_timestamp} from miden::tx_kernel_core::memory
 
-# Returns the input notes commitment hash.
-#
-# See `transaction::api::get_input_notes_commitment` for details.
-#
-# Inputs:  []
-# Outputs: [INPUT_NOTES_COMMITMENT]
-#
-# Where:
-# - INPUT_NOTES_COMMITMENT is the input notes commitment hash.
 pub use {get_input_notes_commitment} from miden::tx_kernel_core::memory
 
-# Returns the output notes commitment hash. This is computed as a sequential hash of
-# (note_details_commitment, note_metadata_commitment) tuples over all output notes.
-#
-# Inputs:  []
-# Outputs: [OUTPUT_NOTES_COMMITMENT]
-#
-# Where:
-# - OUTPUT_NOTES_COMMITMENT is the output notes commitment.
 pub use {compute_output_notes_commitment as get_output_notes_commitment} from miden::tx_kernel_core::note
 
-# Returns the total number of input notes consumed by this transaction.
-#
-# Inputs:  []
-# Outputs: [num_input_notes]
-#
-# Where:
-# - num_input_notes is the total number of input notes consumed by this transaction.
 pub use {get_num_input_notes} from miden::tx_kernel_core::memory
 
-# Returns the current number of output notes created in this transaction.
-#
-# Inputs:  []
-# Outputs: [num_output_notes]
-#
-# Where:
-# - num_output_notes is the number of output notes created in this transaction so far.
 pub use {get_num_output_notes} from miden::tx_kernel_core::memory
 
-# Returns the transaction script root.
-#
-# Inputs:  []
-# Outputs: [TX_SCRIPT_ROOT]
-#
-# Where:
-# - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
-#   executed.
 pub use {get_tx_script_root} from miden::tx_kernel_core::memory
 
 #! Updates the transaction expiration block delta.

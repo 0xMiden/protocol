@@ -8,7 +8,7 @@ pub mod account
 pub mod account_update
 pub mod asset
 pub mod asset_vault
-pub mod callbacks
+mod callbacks
 pub mod constants
 pub mod epilogue
 pub mod faucet

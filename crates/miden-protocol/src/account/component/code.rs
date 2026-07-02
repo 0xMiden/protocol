@@ -69,10 +69,9 @@ impl AccountComponentCode {
             .exports()
             .filter_map(|export| export.as_procedure())
             .find(|export| {
-                export.path.as_ref() == proc_name
-                    || absolute_proc_name.as_ref().is_some_and(|absolute_proc_name| {
-                        export.path.as_ref() == absolute_proc_name.as_ref()
-                    })
+                absolute_proc_name.as_ref().is_some_and(|absolute_proc_name| {
+                    export.path.as_ref() == absolute_proc_name.as_ref()
+                })
             })
             .map(|export| AccountProcedureRoot::from_raw(export.digest))
     }
@@ -118,25 +117,11 @@ impl From<AccountComponentCode> for Library {
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
-    use alloc::sync::Arc;
 
-    use miden_assembly::{DefaultSourceManager, ModuleParser, Path, ast};
     use miden_core::{Felt, Word};
-    use miden_mast_package::Package as Library;
 
     use super::*;
-    use crate::assembly::Assembler;
-
-    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
-            .parse_str(Some(Path::new(path)), source, source_manager.clone())
-            .unwrap();
-
-        *Assembler::new(source_manager)
-            .assemble_library(name, root, None::<&str>)
-            .unwrap()
-    }
+    use crate::testing::assembler::assemble_test_library;
 
     #[test]
     fn test_account_component_code_with_advice_map() {
@@ -191,7 +176,7 @@ mod tests {
         let proc_path = alloc::format!("{library_namespace}::test_proc");
 
         let root = component_code
-            .get_procedure_root_by_path(proc_path.as_str())
+            .get_procedure_root_by_path(&*proc_path)
             .expect("test_proc should be present");
         assert_eq!(root, expected);
 

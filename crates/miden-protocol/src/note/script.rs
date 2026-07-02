@@ -5,6 +5,7 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::{MastNode, MastNodeExt};
+use miden_core::utils::IndexVec;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_mast_package::{Package, PackageDebugInfoError};
@@ -235,13 +236,20 @@ impl NoteScript {
 
     /// Compacts this script's [`MastForest`], removing duplicate and unreachable nodes while
     /// preserving the script root.
-    ///
-    /// Note script minification used to clear debug metadata from the forest. As of
-    /// `miden-core` v0.24, debug metadata is no longer stored in [`MastForest`], so minification
-    /// compacts the forest instead.
-    pub fn clear_debug_info(&mut self) {
+    pub fn compact(&mut self) {
         let root = self.root();
-        let (mast, root_map) = (*self.mast).clone().compact();
+        let mut roots = self.mast.procedure_roots().to_vec();
+        if !roots.contains(&self.entrypoint) {
+            roots.push(self.entrypoint);
+        }
+        let mast = MastForest::from_raw_parts(
+            IndexVec::try_from(self.mast.nodes().to_vec())
+                .expect("note script MAST forest should not exceed the maximum node count"),
+            roots,
+            self.mast.advice_map().clone(),
+        )
+        .expect("note script MAST forest should be valid after preserving the entrypoint");
+        let (mast, root_map) = mast.compact();
         self.entrypoint = root_map
             .map_root(0, &self.entrypoint)
             .expect("entrypoint should be preserved when compacting a note script MAST forest");
@@ -249,6 +257,11 @@ impl NoteScript {
         self.package_debug_info = None;
 
         debug_assert_eq!(self.root(), root);
+    }
+
+    #[deprecated(note = "use NoteScript::compact instead")]
+    pub fn clear_debug_info(&mut self) {
+        self.compact();
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
@@ -459,23 +472,17 @@ fn loaded_mast_forest(
 mod tests {
     use alloc::sync::Arc;
 
-    use miden_assembly::{DefaultSourceManager, ModuleParser, Path, ast};
-    use miden_mast_package::Package as Library;
+    use miden_core::mast::{
+        BasicBlockNodeBuilder,
+        CallNodeBuilder,
+        MastForest,
+        MastForestContributor,
+    };
+    use miden_core::operations::Operation;
 
     use super::{Felt, NoteScript, Vec};
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
-
-    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
-            .parse_str(Some(Path::new(path)), source, source_manager.clone())
-            .unwrap();
-
-        *Assembler::new(source_manager)
-            .assemble_library(name, root, None::<&str>)
-            .unwrap()
-    }
 
     #[test]
     fn test_note_script_to_from_felt() {
@@ -500,6 +507,38 @@ mod tests {
         let note_script = NoteScript::from_library(&library).unwrap();
 
         assert!(note_script.loaded_mast_forest().package_debug_info().unwrap().is_some());
+    }
+
+    #[test]
+    fn test_note_script_compact_preserves_non_root_entrypoint() {
+        let mut forest = MastForest::new();
+        let entrypoint = BasicBlockNodeBuilder::new(vec![Operation::Add])
+            .add_to_forest(&mut forest)
+            .unwrap();
+        let root = CallNodeBuilder::new(entrypoint).add_to_forest(&mut forest).unwrap();
+        forest.make_root(root);
+
+        let mut script = NoteScript::from_parts(Arc::new(forest), entrypoint);
+        let script_root = script.root();
+
+        script.compact();
+
+        assert_eq!(script.root(), script_root);
+    }
+
+    #[test]
+    fn test_note_script_compact_preserves_unrooted_entrypoint() {
+        let mut forest = MastForest::new();
+        let entrypoint = BasicBlockNodeBuilder::new(vec![Operation::Add])
+            .add_to_forest(&mut forest)
+            .unwrap();
+
+        let mut script = NoteScript::from_parts(Arc::new(forest), entrypoint);
+        let script_root = script.root();
+
+        script.compact();
+
+        assert_eq!(script.root(), script_root);
     }
 
     #[test]

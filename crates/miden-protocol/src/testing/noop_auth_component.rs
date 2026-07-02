@@ -1,8 +1,7 @@
-use alloc::sync::Arc;
-
 use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
-use crate::assembly::{Assembler, DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
+use crate::assembly::Library;
+use crate::testing::assembler::assemble_test_library;
 use crate::utils::sync::LazyLock;
 
 // NOOP AUTH COMPONENT
@@ -16,18 +15,7 @@ const NOOP_AUTH_CODE: &str = "
 ";
 
 static NOOP_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let root = ModuleParser::new(Some(ModuleKind::Library))
-        .parse_str(
-            Some(Path::new("miden::testing::noop_auth")),
-            NOOP_AUTH_CODE,
-            source_manager.clone(),
-        )
-        .expect("noop auth code should parse");
-
-    *Assembler::new(source_manager)
-        .assemble_library("miden-testing-noop-auth", root, None::<&str>)
-        .expect("noop auth code should be valid")
+    assemble_test_library("miden-testing-noop-auth", "miden::testing::noop_auth", NOOP_AUTH_CODE)
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.

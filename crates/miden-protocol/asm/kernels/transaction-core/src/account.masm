@@ -172,22 +172,8 @@ end
 # ID AND NONCE
 # -------------------------------------------------------------------------------------------------
 
-# Returns the id of the active account.
-#
-# Inputs:  []
-# Outputs: [act_acct_id_prefix, act_acct_id_suffix]
-#
-# Where:
-# - act_acct_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub use {get_account_id as get_id} from miden::tx_kernel_core::memory
 
-# Returns the nonce of the active account.
-#
-# Inputs:  []
-# Outputs: [nonce]
-#
-# Where:
-# - nonce is the account nonce.
 pub use {get_account_nonce as get_nonce} from miden::tx_kernel_core::memory
 
 #! Increments the native account's nonce by one and returns the new nonce.
@@ -292,13 +278,6 @@ end
 
 ### CODE COMMITMENT ######################################################
 
-# Gets the code commitment of the active account.
-#
-# Inputs:  []
-# Outputs: [CODE_COMMITMENT]
-#
-# Where:
-# - CODE_COMMITMENT is the commitment of the account code.
 pub use {get_account_code_commitment as get_code_commitment} from miden::tx_kernel_core::memory
 
 ### STORAGE COMMITMENT ###################################################

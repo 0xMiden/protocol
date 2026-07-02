@@ -309,17 +309,16 @@ impl AccountBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, LazyLock};
+    use std::sync::LazyLock;
 
     use assert_matches::assert_matches;
-    use miden_assembly::{DefaultSourceManager, ModuleParser, Path, ast};
     use miden_core::mast::MastNodeExt;
     use miden_mast_package::Package as Library;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
@@ -341,17 +340,6 @@ mod tests {
     static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
         assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
-
-    fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        let root = ModuleParser::new(Some(ast::ModuleKind::Library))
-            .parse_str(Some(Path::new(path)), source, source_manager.clone())
-            .expect("code should parse");
-
-        *Assembler::new(source_manager)
-            .assemble_library(name, root, None::<&str>)
-            .expect("code should be valid")
-    }
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         StorageSlotName::new("custom::component1::slot0")
