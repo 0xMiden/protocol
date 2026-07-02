@@ -70,6 +70,7 @@
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
 

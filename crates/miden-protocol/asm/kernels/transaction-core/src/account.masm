@@ -2,8 +2,6 @@ use miden::tx_kernel_core::account_update
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::callbacks
-use miden::tx_kernel_core::callbacks::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT
-use miden::tx_kernel_core::callbacks::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT
 use miden::tx_kernel_core::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use miden::tx_kernel_core::constants::EMPTY_SMT_ROOT
 use miden::tx_kernel_core::constants::STORAGE_SLOT_TYPE_MAP
@@ -2059,53 +2057,6 @@ pub proc has_procedure
     # clean the stack
     dropw drop drop
     # => [is_procedure_available']
-end
-
-# CALLBACKS
-# -------------------------------------------------------------------------------------------------
-
-#! Returns whether the active account defines callbacks.
-#!
-#! Inputs:  []
-#! Outputs: [has_callbacks]
-#!
-#! Where:
-#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
-pub proc has_callbacks
-    # check if the on_before_asset_added_to_account callback slot exists and is non-empty
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
-    exec.has_non_empty_slot
-    # => [has_account_callback]
-
-    # check if the on_before_asset_added_to_note callback slot exists and is non-empty
-    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
-    exec.has_non_empty_slot
-    # => [has_note_callback, has_account_callback]
-
-    or
-    # => [has_callbacks]
-end
-
-#! Checks whether a storage slot with the given slot ID exists in the active account's storage
-#! and has a non-empty value.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix]
-#! Outputs: [has_non_empty_value]
-#!
-#! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-#! - has_non_empty_value is 1 if the slot exists and its value is non-empty, 0 otherwise.
-proc has_non_empty_slot
-    exec.find_item
-    # => [is_found, VALUE]
-
-    # check if is_found && value is non-empty
-    movdn.4 exec.word::eqz not
-    # => [is_non_empty_value, is_found]
-
-    and
-    # => [has_non_empty_value]
 end
 
 #! Returns the key built from the provided account ID for use in the advice map or the account

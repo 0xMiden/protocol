@@ -4,7 +4,7 @@ use core::fmt;
 use super::v1;
 use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV1;
-use crate::account::{AccountIdVersion, AccountType};
+use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
     ByteReader,
@@ -99,6 +99,16 @@ impl AccountIdPrefix {
     pub fn account_type(&self) -> AccountType {
         match self {
             AccountIdPrefix::V1(id_prefix) => id_prefix.account_type(),
+        }
+    }
+
+    /// Returns the [`AssetCallbackFlag`] of this account ID prefix.
+    ///
+    /// See [`AccountId::asset_callback_flag`](crate::account::AccountId::asset_callback_flag) for
+    /// details.
+    pub fn asset_callback_flag(&self) -> AssetCallbackFlag {
+        match self {
+            AccountIdPrefix::V1(id_prefix) => id_prefix.asset_callback_flag(),
         }
     }
 

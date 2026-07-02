@@ -203,15 +203,16 @@ struct PolicyConfig {
 /// ([`TokenPolicyManagerBuilder::allowed_send_policy`] /
 /// [`TokenPolicyManagerBuilder::allowed_receive_policy`]) for runtime switching. The
 /// protocol-reserved asset-callback slots (see the storage layout below) are installed whenever at
-/// least one send or receive policy of either kind is registered - active or reserved - so every
-/// minted asset carries
-/// [`AssetCallbackFlag::Enabled`][miden_protocol::asset::AssetCallbackFlag::Enabled] from creation,
-/// even when only reserved policies exist and no active root is set yet. This keeps `has_callbacks`
-/// true for the faucet's entire lifetime, so promoting a reserved policy later via
+/// least one send or receive policy of either kind is registered - active or reserved - so the
+/// faucet's account ID must be created with
+/// [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled]
+/// (see [`Self::has_transfer_policy`]), even when only reserved policies exist and no active root
+/// is set yet. Because this flag is an immutable property of the account ID, it applies for the
+/// faucet's entire lifetime, so promoting a reserved policy later via
 /// `set_send_policy` / `set_receive_policy` enforces it against the whole circulating supply rather
 /// than only assets minted after the switch. The slots are omitted only when no send or receive
-/// policy of any kind is registered, in which case minted assets carry
-/// [`AssetCallbackFlag::Disabled`][miden_protocol::asset::AssetCallbackFlag::Disabled].
+/// policy of any kind is registered, in which case the faucet's account ID is created with
+/// [`AssetCallbackFlag::Disabled`][miden_protocol::account::AssetCallbackFlag::Disabled].
 ///
 /// ## Storage layout
 ///
@@ -226,10 +227,10 @@ struct PolicyConfig {
 /// - Asset-callback storage slots (registered via [`AssetCallbacks`]) hold the fixed
 ///   `invoke_send_policy` / `invoke_receive_policy` wrapper roots, so the kernel dispatches to the
 ///   wrapper (which then dispatches to the active policy in the slot above). They are installed
-///   only when at least one transfer policy is configured, so a manager with transfer policies
-///   mints assets carrying
-///   [`AssetCallbackFlag::Enabled`][miden_protocol::asset::AssetCallbackFlag::Enabled] uniformly,
-///   and future policy switches via `set_send_policy` / `set_receive_policy` apply to the entire
+///   only when at least one transfer policy is configured, so a faucet with this manager must be
+///   created with its account ID's
+///   [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled], and
+///   future policy switches via `set_send_policy` / `set_receive_policy` apply to the entire
 ///   circulating supply rather than only to assets minted after the switch.
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
@@ -580,6 +581,15 @@ impl TokenPolicyManager {
             .with_storage_schema(storage_schema)
     }
 
+    /// Returns `true` if at least one send or receive policy is configured, in which case the
+    /// faucet registers the protocol callback slots and its account ID must be created with
+    /// [`AssetCallbackFlag::Enabled`](miden_protocol::account::AssetCallbackFlag::Enabled).
+    pub fn has_transfer_policy(&self) -> bool {
+        self.policies.iter().any(|(_, cfg)| {
+            cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
+        })
+    }
+
     fn manager_storage_slots(&self) -> Vec<StorageSlot> {
         let mut slots = vec![
             StorageSlot::with_value(
@@ -622,10 +632,7 @@ impl TokenPolicyManager {
         // and then dispatches to whatever active root lives in the `active_*_policy` slot above.
         // This indirection lets `set_send_policy` / `set_receive_policy` switch the active policy
         // for the entire circulating supply without touching the callback slots.
-        let has_transfer_policy = self.policies.iter().any(|(_, cfg)| {
-            cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
-        });
-        if has_transfer_policy {
+        if self.has_transfer_policy() {
             let callback_slots = AssetCallbacks::new()
                 .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
                 .on_before_asset_added_to_note(Self::invoke_send_policy_root().as_word())
@@ -771,7 +778,7 @@ mod tests {
 
     /// Checks that a manager whose send / receive policies are registered only as reserved
     /// alternatives (no active transfer policy yet) still installs the protocol-reserved callback
-    /// slots with the fixed `invoke_*_policy` wrapper roots, so `has_callbacks` is true from
+    /// slots with the fixed `invoke_*_policy` wrapper roots, so `has_transfer_policy` is true from
     /// creation.
     #[test]
     fn reserved_only_transfer_policy_registers_protocol_callback_slots() {

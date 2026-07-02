@@ -22,10 +22,10 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT = word("miden::protocol::
 # ==================================================================================================
 
 #! Invokes the `on_before_asset_added_to_account` callback on the faucet that issued the asset,
-#! if the asset has callbacks enabled.
+#! if the asset's issuer has callbacks enabled.
 #!
 #! The callback invocation is skipped in these cases:
-#! - If the global callback flag in the asset key is `Disabled`.
+#! - If the issuing faucet's account ID has the asset callback flag disabled.
 #! - If the faucet does not have the callback storage slot.
 #! - If the callback storage slot contains the empty word.
 #!
@@ -38,8 +38,9 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT = word("miden::protocol::
 #! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
 #!   ASSET_VALUE if callbacks are disabled.
 pub proc on_before_asset_added_to_account
-    exec.asset::key_to_callbacks_enabled
-    # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE]
+    # derive the callback flag from the asset metadata, carried in the asset key
+    exec.asset::key_to_has_callbacks
+    # => [has_callbacks, ASSET_KEY, ASSET_VALUE]
 
     if.true
         # set custom_data = 0
@@ -58,10 +59,10 @@ pub proc on_before_asset_added_to_account
 end
 
 #! Invokes the `on_before_asset_added_to_note` callback on the faucet that issued the asset,
-#! if the asset has callbacks enabled.
+#! if the asset's issuer has callbacks enabled.
 #!
 #! The callback invocation is skipped in these cases:
-#! - If the global callback flag in the asset key is `Disabled`.
+#! - If the issuing faucet's account ID has the asset callback flag disabled.
 #! - If the faucet does not have the callback storage slot.
 #! - If the callback storage slot contains the empty word.
 #!
@@ -75,8 +76,9 @@ end
 #! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
 #!   ASSET_VALUE if callbacks are disabled.
 pub proc on_before_asset_added_to_note
-    exec.asset::key_to_callbacks_enabled
-    # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE, note_idx]
+    # derive the callback flag from the asset metadata, carried in the asset key
+    exec.asset::key_to_has_callbacks
+    # => [has_callbacks, ASSET_KEY, ASSET_VALUE, note_idx]
 
     if.true
         push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]

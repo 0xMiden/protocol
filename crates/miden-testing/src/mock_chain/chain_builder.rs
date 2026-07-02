@@ -22,6 +22,7 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
+    AssetCallbackFlag,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -329,6 +330,9 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
+            .with_asset_callbacks(AssetCallbackFlag::from(
+                token_policy_manager.has_transfer_policy(),
+            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -340,8 +344,11 @@ impl MockChainBuilder {
     /// using default decimals and `AllowAll` policies, then adds it as an existing account with
     /// [`Authority::AuthControlled`].
     ///
-    /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and use [`AccountBuilder`] directly.
+    /// The faucet installs only `AllowAll` mint and burn policies and no transfer policy, so its
+    /// account ID has asset callbacks disabled and its assets transfer freely without triggering a
+    /// faucet callback. For a faucet with transfer policies (and thus callbacks), construct a
+    /// [`FungibleFaucet`] with a [`TokenPolicyManager`] manually and use [`AccountBuilder`]
+    /// directly.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -367,14 +374,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -477,7 +483,8 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a new (uncreated) basic auth-controlled fungible faucet from a
-    /// token-symbol shorthand using default decimals and `AllowAll` policies.
+    /// token-symbol shorthand using default decimals and `AllowAll` mint/burn policies (no transfer
+    /// policy, so asset callbacks are disabled).
     pub fn create_new_faucet(
         &mut self,
         auth_method: Auth,
@@ -499,14 +506,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
