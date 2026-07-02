@@ -17,7 +17,7 @@ mod validator_keys;
 pub use validator_keys::{ValidatorKeys, ValidatorKeysError};
 
 mod block_signatures;
-pub use block_signatures::{BlockSignatures, BlockSignaturesError, SignatureVerificationError};
+pub use block_signatures::{BlockSignatures, SignatureVerificationError};
 
 mod signed_block;
 pub use signed_block::SignedBlock;

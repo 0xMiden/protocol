@@ -279,14 +279,18 @@ impl MockChainBuilder {
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
         let signatures = BlockSignatures::new(
-            header.commitment(),
-            &validator_keys,
-            validator_secret_keys
+            validator_keys
+                .as_keys()
                 .iter()
-                .map(|sk| (sk.public_key(), sk.sign(header.commitment())))
+                .map(|key| {
+                    let signer = validator_secret_keys
+                        .iter()
+                        .find(|sk| &sk.public_key() == key)
+                        .expect("a signer should exist for every validator key");
+                    signer.sign(header.commitment())
+                })
                 .collect(),
-        )
-        .expect("genesis is signed by its own validator keys");
+        );
         let block_proof = BlockProof::new_dummy();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 

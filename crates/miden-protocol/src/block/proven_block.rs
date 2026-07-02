@@ -306,15 +306,15 @@ mod tests {
     /// Signs `commitment` with `signers` and coalesces into a full, valid [`BlockSignatures`] set
     /// positioned against `keys`.
     fn sign_all(keys: &ValidatorKeys, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
-        let pairs = keys
+        let signatures = keys
             .as_keys()
             .iter()
             .map(|key| {
                 let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
-                (key.clone(), signer.sign(commitment))
+                signer.sign(commitment)
             })
             .collect();
-        BlockSignatures::new(commitment, keys, pairs).unwrap()
+        BlockSignatures::new(signatures)
     }
 
     fn empty_body() -> BlockBody {

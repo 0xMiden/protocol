@@ -527,7 +527,6 @@ mod tests {
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
-    use crate::block::BlockSignaturesError;
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::testing::random_secret_key::random_secret_key;
 
@@ -564,7 +563,7 @@ mod tests {
         signers: &[SigningKey],
         message: Word,
     ) -> BlockSignatures {
-        let pairs = validator_keys
+        let signatures = validator_keys
             .as_keys()
             .iter()
             .map(|key| {
@@ -572,10 +571,10 @@ mod tests {
                     .iter()
                     .find(|sk| &sk.public_key() == key)
                     .expect("a signer should exist for every committed validator key");
-                (key.clone(), signer.sign(message))
+                signer.sign(message)
             })
             .collect();
-        BlockSignatures::new(message, validator_keys, pairs).unwrap()
+        BlockSignatures::new(signatures)
     }
 
     /// Builds a child of `parent` committing a fresh validator set of `next_count` validators as
@@ -606,22 +605,21 @@ mod tests {
     }
 
     #[test]
-    fn validate_against_parent_rejects_missing_signatures() {
+    fn validate_against_parent_rejects_incomplete_signatures() {
         let (signers, keys) = validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
-        // Only one of three validators signs, so the other two have no corresponding signature.
-        let pairs = signers[..1]
-            .iter()
-            .map(|sk| (sk.public_key(), sk.sign(child.commitment())))
-            .collect();
-        let result = BlockSignatures::new(child.commitment(), &keys, pairs).unwrap_err();
-        match result {
-            BlockSignaturesError::MissingSignatures { positions } => {
-                assert_eq!(positions.len(), 2);
-            },
-            other => panic!("expected MissingSignatures, got {other:?}"),
-        }
+        // Only one of three validators signs, so the resulting set is too short to align
+        // positionally with the parent's validator keys. `BlockSignatures::new` does not check
+        // this -- only `verify_against` (called by `validate_against_parent`) does.
+        let signatures =
+            BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]);
+
+        let result = child.validate_against_parent(&parent, &signatures);
+        assert!(matches!(
+            result,
+            Err(ParentValidationError::SignatureCountMismatch { expected: 3, actual: 1 })
+        ));
     }
 
     #[test]
