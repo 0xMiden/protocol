@@ -64,7 +64,7 @@ A unique and immutable identifier for the `Note`.
 The serial number is a random 32-byte value chosen by the note's creator. It serves two purposes:
 
 - **Uniqueness**: its randomness ensures each note is distinct even when two notes hold identical assets, scripts, and inputs, preventing collisions in the notes database.
-- **Privacy**: the serial number is one of the secret inputs to a private note's nullifier. Keeping it secret is necessary, though not by itself sufficient, to stop an observer from linking a note's creation to its consumption. See [Note nullifier ensuring private consumption](#note-nullifier-ensuring-private-consumption) for details.
+- **Privacy**: for a private note the serial number is kept secret. It is one of the inputs to the note's [nullifier](#note-nullifier-ensuring-private-consumption), which is what keeps the note's creation unlinkable from its consumption.
 
 ### Metadata
 
@@ -195,7 +195,7 @@ This achieves the following properties:
 - One cannot derive a note's ID from its nullifier.
 - To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, assets_commitment, metadata, and attachments_commitment.
 
-Because the nullifier depends on all of these components, a leaked serial number alone is not enough to compute it. That means if a `Note` is private and the operator stores only the note's ID, only those who know the full `Note` details can tell whether it has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
+For a private note, the operator stores only its ID and never sees these components, so only the parties that hold the full `Note` details can tell whether it has been consumed. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/note/nullifier.png').default} style={{width: '70%'}} alt="Nullifier diagram"/>
