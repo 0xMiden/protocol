@@ -61,10 +61,10 @@ fn main() -> Result<()> {
 
     // compile account components
     compile_account_components(
-        &mut registry,
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
-        assembler,
+        &assembler,
+        &mut registry,
         source_manager,
     )?;
 
@@ -139,10 +139,10 @@ fn compile_standards_lib(
 /// `miden-standards-auth-singlesig.masp`), so the include path used by `account_component_code!`
 /// is the package name.
 fn compile_account_components(
-    registry: &mut InMemoryPackageRegistry,
     source_dir: &Path,
     target_dir: &Path,
-    assembler: Assembler,
+    assembler: &Assembler,
+    registry: &mut InMemoryPackageRegistry,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
     let manifest =
