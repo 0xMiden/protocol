@@ -3,9 +3,9 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, NonFungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
@@ -55,6 +55,7 @@ fn build_nft_faucet(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -109,7 +110,10 @@ async fn execute_nft_mint(
 #[tokio::test]
 async fn nft_mint_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .asset_callbacks(AssetCallbackFlag::Enabled)
+        .build_with_seed([1; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
@@ -126,9 +130,7 @@ async fn nft_mint_succeeds() -> anyhow::Result<()> {
     assert_eq!(executed.output_notes().num_notes(), 1);
     let note = executed.output_notes().get_note(0);
     assert_eq!(note.recipient_digest(), recipient);
-    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     assert_eq!(note.assets().num_assets(), 1);
     assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
@@ -140,7 +142,7 @@ async fn nft_mint_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
@@ -177,7 +179,7 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
 #[tokio::test]
 async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([5; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mut mock_chain = builder.build()?;
 
@@ -193,7 +195,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 
     // 2. consume a BURN note carrying the minted NFT against the faucet
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
-    let sender = AccountId::dummy([7; 15], AccountIdVersion::Version1, AccountType::Private);
+    let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([6; 32]);
     let mut rng = RandomCoin::new([Felt::from(11u32); 4].into());
     let burn_note: Note = NonFungibleBurnNote::builder()
         .sender(sender)
@@ -219,7 +221,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([8; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([8; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 
@@ -228,7 +230,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
         Word::from([1, 2, 3, 4u32]),
     );
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
-    let sender = AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private);
+    let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
     let storage =
         NonFungibleMintNoteStorage::new_private(recipient_digest, commitment, NoteTag::default());
@@ -252,9 +254,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     assert_eq!(executed.output_notes().num_notes(), 1);
     let note = executed.output_notes().get_note(0);
     assert_eq!(note.recipient_digest(), recipient_digest);
-    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     assert_eq!(note.assets().num_assets(), 1);
     assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
@@ -266,7 +266,9 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([10; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([10; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::owner_only())?;
     let mock_chain = builder.build()?;
 
@@ -276,7 +278,9 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     );
     let recipient_digest = Word::from([7, 7, 7, 7u32]);
     // sender is NOT the owner
-    let non_owner = AccountId::dummy([11; 15], AccountIdVersion::Version1, AccountType::Private);
+    let non_owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([11; 32]);
 
     let storage =
         NonFungibleMintNoteStorage::new_private(recipient_digest, commitment, NoteTag::default());
@@ -314,6 +318,7 @@ fn build_nft_faucet_with_blocklist(
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -336,7 +341,9 @@ fn build_nft_faucet_with_blocklist(
 /// consumes the P2ID note and fails with `ERR_ACCOUNT_IS_BLOCKED`.
 #[tokio::test]
 async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
-    let owner = AccountId::dummy([12; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([12; 32]);
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = build_nft_faucet_with_blocklist(&mut builder, owner, [target_account.id()])?;
@@ -346,9 +353,7 @@ async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
         b"blocked transfer",
         Word::from([1, 2, 3, 4u32]),
     );
-    let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment)
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+    let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     let p2id_note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
 
@@ -373,7 +378,9 @@ async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
 #[tokio::test]
 async fn nft_public_getters() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let owner = AccountId::dummy([13; 15], AccountIdVersion::Version1, AccountType::Private);
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([13; 32]);
     let faucet = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
     let mock_chain = builder.build()?;
 

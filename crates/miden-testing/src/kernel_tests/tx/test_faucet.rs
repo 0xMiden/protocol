@@ -4,7 +4,6 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    AssetCallbackFlag,
     AssetComposition,
     AssetId,
     AssetVaultKey,
@@ -51,9 +50,9 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -132,7 +131,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
     let asset = FungibleAsset::mock(5);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -163,7 +162,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
 
     let code = format!(
         "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
       use mock::faucet
 
       begin
@@ -238,10 +237,10 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use miden::core::collections::smt
 
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -281,7 +280,7 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -339,17 +338,12 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(
-        AssetId::default(),
-        faucet_id,
-        AssetComposition::Fungible,
-        AssetCallbackFlag::Enabled,
-    )?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
         r#"
         use mock::faucet->mock_faucet
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -387,9 +381,9 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use mock::faucet->mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -467,7 +461,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -498,7 +492,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -533,10 +527,10 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
         use mock::faucet->mock_faucet
 
         begin
@@ -589,7 +583,7 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -652,7 +646,7 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
@@ -688,8 +682,17 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     ))
     .compile_component_code(
         "test::non_faucet_component",
-        "pub use ::miden::protocol::faucet::mint
-         pub use ::miden::protocol::faucet::burn",
+        "use miden::protocol::faucet
+
+         @account_procedure
+         pub proc mint
+             exec.faucet::mint
+         end
+
+         @account_procedure
+         pub proc burn
+             exec.faucet::burn
+         end",
     )?;
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;

@@ -81,10 +81,12 @@ mod tests {
     use miden_core::ZERO;
 
     use super::{AccountId, *};
-    use crate::account::{AccountIdVersion, AccountType};
+    use crate::account::AccountType;
     #[test]
     fn test_as_word_layout() {
-        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let id = AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32]);
         let key = AccountIdKey::from(id);
         let word = key.as_word();
 
@@ -96,7 +98,9 @@ mod tests {
 
     #[test]
     fn test_roundtrip_word_conversion() {
-        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let id = AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32]);
 
         let key = AccountIdKey::from(id);
         let recovered =
@@ -107,7 +111,9 @@ mod tests {
 
     #[test]
     fn test_leaf_index_consistency() {
-        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let id = AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32]);
         let key = AccountIdKey::from(id);
 
         let idx1 = key.to_leaf_index();
@@ -118,7 +124,9 @@ mod tests {
 
     #[test]
     fn test_from_conversion() {
-        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let id = AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32]);
         let key: AccountIdKey = id.into();
 
         assert_eq!(key.account_id(), id);
@@ -127,7 +135,9 @@ mod tests {
     #[test]
     fn test_multiple_roundtrips() {
         for _ in 0..100 {
-            let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+            let id = AccountId::builder()
+                .account_type(AccountType::Private)
+                .build_with_seed([1u8; 32]);
             let key = AccountIdKey::from(id);
 
             let recovered =

@@ -11,8 +11,10 @@ use context_setups::{
     tx_consume_claim_note,
     tx_consume_single_p2id_note_ecdsa,
     tx_consume_single_p2id_note_falcon,
-    tx_consume_two_p2id_notes,
-    tx_create_single_p2id_note,
+    tx_consume_two_p2id_notes_ecdsa,
+    tx_consume_two_p2id_notes_falcon,
+    tx_create_single_p2id_note_ecdsa,
+    tx_create_single_p2id_note_falcon,
 };
 
 mod cycle_counting_benchmarks;
@@ -49,8 +51,20 @@ async fn main() -> Result<()> {
             tx_consume_single_p2id_note_ecdsa()?,
         )
         .await?,
-        run_scenario(ExecutionBenchmark::ConsumeTwoP2ID, tx_consume_two_p2id_notes()?).await?,
-        run_scenario(ExecutionBenchmark::CreateSingleP2ID, tx_create_single_p2id_note()?).await?,
+        run_scenario(ExecutionBenchmark::ConsumeTwoP2IDFalcon, tx_consume_two_p2id_notes_falcon()?)
+            .await?,
+        run_scenario(ExecutionBenchmark::ConsumeTwoP2IDEcdsa, tx_consume_two_p2id_notes_ecdsa()?)
+            .await?,
+        run_scenario(
+            ExecutionBenchmark::CreateSingleP2IDFalcon,
+            tx_create_single_p2id_note_falcon()?,
+        )
+        .await?,
+        run_scenario(
+            ExecutionBenchmark::CreateSingleP2IDEcdsa,
+            tx_create_single_p2id_note_ecdsa()?,
+        )
+        .await?,
         run_scenario(
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
             tx_consume_claim_note(ClaimDataSource::L1ToMiden).await?,

@@ -533,6 +533,7 @@ end
 #!
 #! Invocation: call
 @locals(3)
+@account_procedure
 pub proc set_procedure_policy
     loc_store.IMMEDIATE_THRESHOLD_LOC
     # => [delayed_threshold, note_restrictions, PROC_ROOT]
@@ -639,6 +640,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
+@account_procedure
 pub proc update_signers_and_threshold(multisig_config_commitment: word)
     adv.push_mapval
     # => [MULTISIG_CONFIG_COMMITMENT, pad(12)]

@@ -39,6 +39,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE, pad(12)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::get
@@ -49,6 +50,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::set that uses exec internally.
         #! Inputs:  [index, VALUE, pad(11)]
         #! Outputs: [OLD_VALUE, pad(12)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::set
@@ -154,6 +156,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE_0, VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::get
@@ -165,6 +168,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::set that uses exec internally.
         #! Inputs:  [index, VALUE_0, VALUE_1, pad(7)]
         #! Outputs: [OLD_VALUE_0, OLD_VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::set

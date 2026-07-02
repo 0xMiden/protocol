@@ -26,9 +26,6 @@ pub use token_symbol::TokenSymbol;
 mod asset_callbacks;
 pub use asset_callbacks::AssetCallbacks;
 
-mod asset_callbacks_flag;
-pub use asset_callbacks_flag::AssetCallbackFlag;
-
 mod asset_composition;
 pub use asset_composition::AssetComposition;
 
@@ -71,8 +68,8 @@ pub use vault::{
 /// - the remaining elements in the value word must be zero.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
-///   more details on the key's layout.
+///   asset metadata ([`AssetComposition`]). See [`AssetVaultKey`] for more details on the key's
+///   layout.
 /// - the asset ID limbs must be zero, which means two instances of the same fungible asset have the
 ///   same asset key and will be merged together when stored in the same account's vault.
 ///
@@ -91,8 +88,8 @@ pub use vault::{
 ///   compresses an asset of an arbitrary length to 4 field elements.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
-///   more details on the key's layout.
+///   asset metadata ([`AssetComposition`]). See [`AssetVaultKey`] for more details on the key's
+///   layout.
 /// - The asset ID limbs are set to hashes from the asset's value (`hash0` and `hash1`).
 ///
 /// It is impossible to find a collision between two non-fungible assets issued by different faucets
@@ -142,16 +139,6 @@ impl Asset {
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
         Self::from_key_value(vault_key, value)
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(self, callbacks: AssetCallbackFlag) -> Self {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.with_callbacks(callbacks).into(),
-            Asset::NonFungible(non_fungible_asset) => {
-                non_fungible_asset.with_callbacks(callbacks).into()
-            },
-        }
     }
 
     /// Returns true if this asset is the same as the specified asset.
@@ -283,7 +270,7 @@ mod tests {
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::Felt;
     use crate::account::AccountId;
-    use crate::asset::{AssetCallbackFlag, AssetComposition, AssetId, AssetVaultKey};
+    use crate::asset::{AssetComposition, AssetId, AssetVaultKey};
     use crate::errors::AssetError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -375,7 +362,6 @@ mod tests {
             AssetId::default(),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::Custom,
-            AssetCallbackFlag::Disabled,
         )
         .unwrap_err();
 

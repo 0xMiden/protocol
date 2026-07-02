@@ -164,7 +164,7 @@ async fn test_block_procedures() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -716,7 +716,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -744,7 +744,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
 async fn test_get_script_root_without_script() -> anyhow::Result<()> {
     let code = r#"
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -770,6 +770,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let account_component_masm = r#"
             adv_map A([6,7,8,9]) = [10,11,12,13]
 
+            @account_procedure
             pub proc assert_adv_map
                 # test tx script advice map
                 push.[1,2,3,4]
