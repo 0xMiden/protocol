@@ -320,7 +320,7 @@ impl Deserializable for TransactionScriptRoot {
 // ================================================================================================
 
 /// The attribute name used to mark the entrypoint procedure in a transaction script library.
-const TRANSACTION_SCRIPT_ATTRIBUTE: &str = "transaction_script";
+pub const TRANSACTION_SCRIPT_ATTRIBUTE: &str = "transaction_script";
 
 /// Transaction script.
 ///

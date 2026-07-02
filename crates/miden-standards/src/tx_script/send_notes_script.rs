@@ -4,7 +4,7 @@ use core::num::NonZeroU16;
 use miden_protocol::Felt;
 use miden_protocol::account::{AccountCodeInterface, AccountId};
 use miden_protocol::note::PartialNote;
-use miden_protocol::transaction::TransactionScript;
+use miden_protocol::transaction::{TRANSACTION_SCRIPT_ATTRIBUTE, TransactionScript};
 use thiserror::Error;
 
 use crate::account::access::Ownable2Step;
@@ -102,8 +102,9 @@ impl SendNotesTransactionScript {
             return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
         };
 
-        let script =
-            format!("@transaction_script\npub proc main\n{expiration_prelude}\n{body}\nend");
+        let script = format!(
+            "@{TRANSACTION_SCRIPT_ATTRIBUTE}\npub proc main\n{expiration_prelude}\n{body}\nend"
+        );
 
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
