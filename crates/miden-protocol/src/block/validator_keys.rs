@@ -9,7 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Felt, Hasher, WORD_SIZE, Word};
 
 // VALIDATOR KEYS ERROR
 // ================================================================================================
@@ -98,7 +98,7 @@ impl ValidatorKeys {
     /// committed to by the [`BlockHeader`](crate::block::BlockHeader) as a single word. Since the
     /// hash covers every key, the commitment also implicitly binds the number of validators.
     pub fn commitment(&self) -> Word {
-        let mut elements: Vec<Felt> = Vec::new();
+        let mut elements: Vec<Felt> = Vec::with_capacity(self.keys.len() * WORD_SIZE);
         for key in &self.keys {
             elements.extend_from_slice(key.to_commitment().as_elements());
         }
