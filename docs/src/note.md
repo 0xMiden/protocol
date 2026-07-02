@@ -185,7 +185,7 @@ Where:
 - **`STORAGE_COMMITMENT`** — a commitment to the note's [storage](#storage).
 - **`ASSET_COMMITMENT`** — a commitment to the note's [assets](#assets).
 - **`METADATA`** — the note's public [metadata](#metadata) (sender, note type, and tag).
-- **`ATTACHMENTS_COMMITMENT`** — a commitment to the note's [attachments](#attachment).
+- **`ATTACHMENTS_COMMITMENT`** — a commitment to the note's [attachments](#attachments).
 
 Like the note's ID, the nullifier is a commitment to the note's data, but it is computed differently so that neither can be derived from the other. The serial number is one of its inputs, and its randomness is what makes each note's nullifier unique.
 
