@@ -79,6 +79,7 @@ macro_rules! account_component_code {
         > = miden_protocol::utils::sync::LazyLock::new(|| {
             let bytes =
                 include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/", $relative_path));
+            // These bytes are produced by this crate's build script and embedded in the binary.
             let package = miden_protocol::vm::Package::read_from_bytes_trusted(bytes)
                 .expect("shipped account-component package failed to deserialize");
             miden_protocol::account::component::AccountComponentCode::from(package)

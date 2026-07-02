@@ -2,8 +2,8 @@
 #
 # See the `Ownable2Step` Rust type's documentation for more details.
 
-pub use {get_owner} from ::miden::standards::access::ownable2step
-pub use {get_nominated_owner} from ::miden::standards::access::ownable2step
-pub use {transfer_ownership} from ::miden::standards::access::ownable2step
-pub use {accept_ownership} from ::miden::standards::access::ownable2step
-pub use {renounce_ownership} from ::miden::standards::access::ownable2step
+pub use {get_owner} from miden::standards::access::ownable2step
+pub use {get_nominated_owner} from miden::standards::access::ownable2step
+pub use {transfer_ownership} from miden::standards::access::ownable2step
+pub use {accept_ownership} from miden::standards::access::ownable2step
+pub use {renounce_ownership} from miden::standards::access::ownable2step

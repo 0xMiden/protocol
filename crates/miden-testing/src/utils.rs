@@ -168,7 +168,7 @@ pub fn create_p2any_note(
         r#"
         use mock::account
         use miden::protocol::active_note
-        use {{ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET}} from ::miden::protocol::asset
+        use {{ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET}} from miden::protocol::asset
         use miden::standards::wallets::basic as wallet
 
         @note_script

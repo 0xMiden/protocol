@@ -667,7 +667,7 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use {mem_store_double_word} from ::agglayer::common::utils
+use {mem_store_double_word} from agglayer::common::utils
 
 
 #! Inputs:  [zeros_ptr]

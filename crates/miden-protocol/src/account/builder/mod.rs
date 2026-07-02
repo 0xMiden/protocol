@@ -313,7 +313,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_core::mast::MastNodeExt;
-    use miden_mast_package::Package as Library;
+    use miden_mast_package::Package;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
@@ -334,10 +334,10 @@ mod tests {
             end
           ";
 
-    static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
+    static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
         assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
     });
-    static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
+    static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
         assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
 

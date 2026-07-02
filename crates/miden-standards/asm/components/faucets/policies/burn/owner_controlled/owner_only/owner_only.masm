@@ -3,4 +3,4 @@
 # Exposes the `check_policy` procedure so its MAST root can be registered as the active
 # (or allowed) policy on a `BurnPolicyManager`. Storage-free.
 
-pub use {check_policy} from ::miden::standards::faucets::policies::burn::owner_controlled::owner_only
+pub use {check_policy} from miden::standards::faucets::policies::burn::owner_controlled::owner_only

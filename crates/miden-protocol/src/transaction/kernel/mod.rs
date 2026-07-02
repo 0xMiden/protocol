@@ -46,6 +46,7 @@ static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_package_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
     Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(kernel_package_bytes)
             .expect("failed to deserialize transaction kernel package"),
     )
@@ -56,6 +57,7 @@ static KERNEL_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_main_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
     Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(kernel_main_bytes)
             .expect("failed to deserialize transaction kernel main package"),
     )
@@ -75,6 +77,7 @@ static TX_SCRIPT_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
         "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
     ));
     Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(tx_script_main_bytes)
             .expect("failed to deserialize tx script executor package"),
     )
@@ -491,6 +494,7 @@ impl TransactionKernel {
 
     /// Returns the kernel library.
     pub fn library() -> Library {
+        // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(Self::KERNEL_TESTING_PACKAGE_BYTES)
             .expect("failed to deserialize transaction kernel library package")
     }

@@ -8,5 +8,5 @@
 # component that installs the `allowed_accounts` storage slot — typically the basic allowlist
 # transfer policy component.
 
-pub use {allow_account} from ::miden::standards::faucets::policies::transfer::allowlist::owner_controlled
-pub use {disallow_account} from ::miden::standards::faucets::policies::transfer::allowlist::owner_controlled
+pub use {allow_account} from miden::standards::faucets::policies::transfer::allowlist::owner_controlled
+pub use {disallow_account} from miden::standards::faucets::policies::transfer::allowlist::owner_controlled

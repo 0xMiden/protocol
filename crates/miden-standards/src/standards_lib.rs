@@ -13,6 +13,7 @@ const STANDARDS_PACKAGE_BYTES: &[u8] =
 
 static STANDARDS_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(STANDARDS_PACKAGE_BYTES)
             .expect("standards lib masp should be well-formed"),
     )

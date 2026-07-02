@@ -3,4 +3,4 @@
 # [`TokenPolicyManager`] and the metadata setter procedures themselves, both of which use the
 # `assert_not_paused` exec helper from `miden::standards::access::pausable` directly.
 
-pub use {is_paused} from ::miden::standards::access::pausable
+pub use {is_paused} from miden::standards::access::pausable

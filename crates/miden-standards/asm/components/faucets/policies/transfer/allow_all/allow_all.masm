@@ -3,4 +3,4 @@
 # Exposes the `check_policy` procedure so its MAST root can be registered as the active
 # (or allowed) transfer policy on a `TokenPolicyManager`. Storage-free.
 
-pub use {check_policy} from ::miden::standards::faucets::policies::transfer::allow_all
+pub use {check_policy} from miden::standards::faucets::policies::transfer::allow_all

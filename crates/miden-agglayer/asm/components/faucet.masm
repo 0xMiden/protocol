@@ -7,5 +7,5 @@
 #   gated by the active mint policy)
 # - `receive_and_burn` for bridge-out
 
-pub use {mint_and_send} from ::agglayer::faucet
-pub use {receive_and_burn} from ::agglayer::faucet
+pub use {mint_and_send} from agglayer::faucet
+pub use {receive_and_burn} from agglayer::faucet

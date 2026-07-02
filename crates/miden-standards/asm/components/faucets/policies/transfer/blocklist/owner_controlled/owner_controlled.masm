@@ -8,5 +8,5 @@
 # component that installs the `blocked_accounts` storage slot — typically the basic blocklist
 # transfer policy component.
 
-pub use {block_account} from ::miden::standards::faucets::policies::transfer::blocklist::owner_controlled
-pub use {unblock_account} from ::miden::standards::faucets::policies::transfer::blocklist::owner_controlled
+pub use {block_account} from miden::standards::faucets::policies::transfer::blocklist::owner_controlled
+pub use {unblock_account} from miden::standards::faucets::policies::transfer::blocklist::owner_controlled

@@ -10,8 +10,8 @@
 use miden::protocol::active_account
 use {AUTHORITY_SLOT} from miden::standards::access::authority
 
-pub use {freeze} from ::miden::standards::access::authority
-pub use {unfreeze} from ::miden::standards::access::authority
+pub use {freeze} from miden::standards::access::authority
+pub use {unfreeze} from miden::standards::access::authority
 
 #! Returns the authority discriminator stored on the account.
 #!

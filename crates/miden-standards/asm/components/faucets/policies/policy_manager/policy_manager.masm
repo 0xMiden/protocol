@@ -8,13 +8,13 @@
 # to the whole circulating supply. Pair with policy components whose procedure roots are
 # registered in the relevant allowed-policies map.
 
-pub use {set_mint_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {get_mint_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {set_burn_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {get_burn_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {set_send_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {get_send_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {set_receive_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {get_receive_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {invoke_send_policy} from ::miden::standards::faucets::policies::policy_manager
-pub use {invoke_receive_policy} from ::miden::standards::faucets::policies::policy_manager
+pub use {set_mint_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_mint_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_burn_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_burn_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_send_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_send_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_receive_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_receive_policy} from miden::standards::faucets::policies::policy_manager
+pub use {invoke_send_policy} from miden::standards::faucets::policies::policy_manager
+pub use {invoke_receive_policy} from miden::standards::faucets::policies::policy_manager

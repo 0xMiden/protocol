@@ -119,7 +119,7 @@ impl From<TraceLenSummary> for TraceMeasurements {
         );
         let ace_rows = chiplets.trace_len().saturating_sub(known + 1);
         Self {
-            core_rows: summary.trace_len(),
+            core_rows: summary.core_trace_len(),
             chiplets_rows: chiplets.trace_len(),
             range_rows: summary.range_trace_len(),
             chiplets_shape: ChipletsTraceShape {
@@ -162,7 +162,10 @@ pub fn write_bench_results_to_json(
 
 #[cfg(test)]
 mod tests {
+    use miden_processor::trace::{ChipletsLengths, TraceLenSummary};
     use serde::Deserialize;
+
+    use super::TraceMeasurements;
 
     /// Minimal mirror of the bench-tx.json `trace` section used to validate the committed file
     /// against the producer's contract.
@@ -301,5 +304,21 @@ mod tests {
         for expected in COMMITTED_SCENARIO_EXPECTATIONS {
             assert_scenario(&parsed, expected);
         }
+    }
+
+    #[test]
+    fn trace_measurements_keep_core_rows_separate_from_total_trace_len() {
+        let summary = TraceLenSummary::new(10, 20, ChipletsLengths::from_parts(30, 40, 50, 60, 70));
+        assert_ne!(
+            summary.core_trace_len(),
+            summary.trace_len(),
+            "test setup must distinguish core rows from total trace length",
+        );
+
+        let measurements = TraceMeasurements::from(summary);
+
+        assert_eq!(measurements.core_rows, summary.core_trace_len());
+        assert_eq!(measurements.chiplets_rows, summary.chiplets_trace_len().trace_len());
+        assert_eq!(measurements.range_rows, summary.range_trace_len());
     }
 }

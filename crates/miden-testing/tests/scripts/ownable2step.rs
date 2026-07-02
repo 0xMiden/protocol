@@ -37,7 +37,7 @@ fn create_ownable_account(
 ) -> anyhow::Result<Account> {
     let component_code = r#"
         use miden::standards::access::ownable2step
-        pub use {get_owner, get_nominated_owner, transfer_ownership, accept_ownership, renounce_ownership} from ::miden::standards::access::ownable2step
+        pub use {get_owner, get_nominated_owner, transfer_ownership, accept_ownership, renounce_ownership} from miden::standards::access::ownable2step
     "#;
     let component_code_obj =
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;

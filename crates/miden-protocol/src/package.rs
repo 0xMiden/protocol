@@ -6,6 +6,9 @@ use miden_processor::LoadedMastForest;
 
 use crate::MastForest;
 
+// Temporary bridge while package debug loading is split between protocol and VM APIs. These helpers
+// should move to miden-vm once the VM owns package-backed host libraries and debug info loading.
+
 /// Returns package-owned debug info when it can be decoded from trusted package sections.
 pub fn package_debug_info(package: &Package) -> Option<Arc<PackageDebugInfo>> {
     match package.debug_info() {

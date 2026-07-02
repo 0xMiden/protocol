@@ -37,6 +37,7 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/components/miden-standards-metadata-schema-commitment.masp"
     ));
+    // These bytes are produced by this crate's build script and embedded in the binary.
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped Storage Schema package failed to deserialize")
 });

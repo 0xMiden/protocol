@@ -9,13 +9,13 @@
 pub use {
     mint_and_send,
     receive_and_burn,
-} from ::miden::standards::faucets::non_fungible
+} from miden::standards::faucets::non_fungible
 
 # Non-fungible token symbol and asset status
 pub use {
     get_asset_status,
     get_symbol,
-} from ::miden::standards::faucets::non_fungible
+} from miden::standards::faucets::non_fungible
 
 # Token metadata: mandatory name + optional description, logo, contract URI.
 # The shared `external_link` field is surfaced under the NFT-specific name `contract_uri`
@@ -29,4 +29,4 @@ pub use {
     set_description,
     set_external_link as set_contract_uri,
     set_logo_uri,
-} from ::miden::standards::faucets
+} from miden::standards::faucets
