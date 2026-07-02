@@ -24,6 +24,7 @@ use miden::standards::faucets::policies::transfer::blocklist
 #! - the sender is not the account owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc block_account
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]
@@ -41,6 +42,7 @@ end
 #! - the sender is not the account owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc unblock_account
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]

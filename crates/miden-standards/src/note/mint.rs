@@ -279,17 +279,17 @@ impl From<MintNoteStorage> for NoteStorage {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountIdVersion, AccountType};
+    use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
 
     fn faucet() -> AccountId {
-        AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([1; 32])
     }
 
     fn owner() -> AccountId {
-        AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Private)
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
     }
 
     /// The builder produces a public, asset-less note tagged for the faucet.

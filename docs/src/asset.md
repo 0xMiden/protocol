@@ -39,7 +39,7 @@ Accounts that issue assets are referred to as faucets. They can issue either fun
 </p>
 
 :::tip
-An account can technically issue different types of assets simultaneously, for example, both a fungible asset with [callbacks](#callbacks) disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+An account can technically issue different types of assets simultaneously, for example, both a fungible and a non-fungible asset. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
 :::
 
 ### Encoding
@@ -52,20 +52,17 @@ While the asset value is unique to each type of asset, the vault key has a commo
 [
   asset_id_suffix (64 bits),
   asset_id_prefix (64 bits),
-  [faucet_id_suffix (56 bits) | reserved (5 bits) | callback_flag (1 bit) | composition (2 bits)],
+  [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
   faucet_id_prefix (64 bits)
 ]
 ```
 
 - `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
 - `asset_id_suffix` and `asset_id_prefix` is an ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
-- `callback_flag` is the flag that determines whether callbacks are enabled (see also [callbacks](#callbacks)).
 - `composition` describes how assets compose. Read on for more details.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
 
-:::note
-The `callback_flag` and `composition` are also referred to as "asset metadata".
-:::
+Whether the asset triggers [callbacks](#callbacks) is not part of the vault key: it is an immutable property of the issuing faucet's account ID.
 
 ### Composition
 
@@ -118,8 +115,7 @@ On the other hand, `Custom` would involve invoking `merge` and `split` implement
 
 The native fungible asset has the following vault key and value layout:
 
-- Vault key: `[0, 0, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
-  - Its `callback_flag` can be disabled or enabled.
+- Vault key: `[0, 0, faucet_id_suffix | composition, faucet_id_prefix]`.
   - Its `composition` must be set to `Fungible`.
 - Value: `[amount, 0, 0, 0]`.
   - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
@@ -132,8 +128,7 @@ Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USD
 
 The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
 
-- Vault key: `[hash0, hash1, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
-  - Its `callback_flag` can be disabled or enabled.
+- Vault key: `[hash0, hash1, faucet_id_suffix | composition, faucet_id_prefix]`.
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
 
@@ -161,15 +156,9 @@ Asset callbacks allow a faucet to execute custom logic whenever one of its asset
 
 #### How callbacks work
 
-Callbacks involve two parts: a **per-asset flag** and **faucet-level callback procedures**.
+Callbacks involve two parts: a **faucet-level capability flag** and **faucet-level callback procedures**.
 
-**Per-asset callback flag.** Every asset carries a single-bit callback flag in its vault key. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever the asset is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely. This flag is set at asset creation time and the protocol does not prevent issuing assets with different flags from the same faucet. Technically, this gives faucets the ability to issue a callback-enabled and a callback-disabled variant of their assets.
-
-:::warning
-Two assets issued by the same faucet with _different_ callback flags are considered completely different assets by the protocol.
-:::
-
-It is recommended that faucets issue all of their assets with the same flag to ensure all assets issued by a faucet are treated as one type of asset. This is ensured when using `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
+**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset's vault key) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
 
 **Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
 

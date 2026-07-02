@@ -1,6 +1,6 @@
 use super::slot_patch::MergeOutcome;
 use crate::Word;
-use crate::account::StorageSlotName;
+use crate::account::{StoragePatchOperation, StorageSlotName};
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
     ByteReader,
@@ -45,6 +45,15 @@ impl StorageValuePatch {
                 Some(*value)
             },
             StorageValuePatch::Remove => None,
+        }
+    }
+
+    /// Returns the [`StoragePatchOperation`] that this patch represents.
+    pub fn patch_op(&self) -> StoragePatchOperation {
+        match self {
+            StorageValuePatch::Create { .. } => StoragePatchOperation::Create,
+            StorageValuePatch::Update { .. } => StoragePatchOperation::Update,
+            StorageValuePatch::Remove => StoragePatchOperation::Remove,
         }
     }
 

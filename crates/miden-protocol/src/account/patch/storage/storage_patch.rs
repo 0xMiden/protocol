@@ -3,6 +3,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::slot_patch::MergeOutcome;
+use crate::Felt;
 use crate::account::{
     AccountStorage,
     StorageMapPatch,
@@ -18,7 +19,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word, ZERO};
 
 // ACCOUNT STORAGE PATCH
 // ================================================================================================
@@ -126,6 +126,13 @@ impl AccountStoragePatch {
         self.patches.is_empty()
     }
 
+    /// Returns `true` if any slot patch is not a
+    /// [`StoragePatchOperation::Create`](crate::account::StoragePatchOperation::Create), i.e. it
+    /// updates or removes an existing slot.
+    pub(in crate::account) fn contains_non_create_ops(&self) -> bool {
+        self.patches.values().any(|slot_patch| !slot_patch.patch_op().is_create())
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -201,11 +208,6 @@ impl AccountStoragePatch {
 
     /// Appends the storage slot patches to the given `elements` from which the delta or patch
     /// commitment is computed.
-    ///
-    /// TODO(storage_delta): Map [`StorageValuePatch::Create`] and [`StorageValuePatch::Update`]
-    /// (and likewise for maps) to the current structure to match the transaction kernel's
-    /// commitment. This will be refactored in a follow-up to include the delta ops in the
-    /// commitment.
     pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         for (slot_name, slot_patch) in self.patches.iter() {
             let slot_id = slot_name.id();
@@ -214,7 +216,7 @@ impl AccountStoragePatch {
                 StorageSlotPatch::Value(value_patch) => {
                     elements.extend_from_slice(&[
                         Self::DOMAIN_VALUE,
-                        ZERO,
+                        Felt::from(value_patch.patch_op().as_u8()),
                         slot_id.suffix(),
                         slot_id.prefix(),
                     ]);
@@ -237,13 +239,22 @@ impl AccountStoragePatch {
                         "number of changed entries should not exceed max representable felt",
                     );
 
-                    elements.extend_from_slice(&[
-                        Self::DOMAIN_MAP,
-                        num_changed_entries,
-                        slot_id.suffix(),
-                        slot_id.prefix(),
-                    ]);
-                    elements.extend_from_slice(Word::empty().as_elements());
+                    let omit_trailer =
+                        map_patch.patch_op().is_update() && num_changed_entries == Felt::ZERO;
+                    if !omit_trailer {
+                        elements.extend_from_slice(&[
+                            Self::DOMAIN_MAP,
+                            Felt::from(map_patch.patch_op().as_u8()),
+                            slot_id.suffix(),
+                            slot_id.prefix(),
+                        ]);
+                        elements.extend_from_slice(&[
+                            num_changed_entries,
+                            Felt::ZERO,
+                            Felt::ZERO,
+                            Felt::ZERO,
+                        ]);
+                    }
                 },
             }
         }

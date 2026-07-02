@@ -18,6 +18,12 @@ pub use file::{NoteFile, NoteSyncHint};
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
+mod non_fungible_burn;
+pub use non_fungible_burn::NonFungibleBurnNote;
+
+mod non_fungible_mint;
+pub use non_fungible_mint::{NonFungibleMintNote, NonFungibleMintNoteStorage};
+
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
 

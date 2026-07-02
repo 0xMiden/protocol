@@ -29,20 +29,27 @@ impl AccountComponentCode {
         self.0
     }
 
-    /// Returns an iterator over the [`AccountProcedureRoot`]s of this component's exported
+    /// Returns an iterator over the [`AccountProcedureRoot`]s of this component's interface
     /// procedures.
     pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> + '_ {
-        self.0.exports().filter_map(|export| {
-            export.as_procedure().map(|proc_export| {
-                let digest = self.0.mast_forest()[proc_export.node].digest();
-                AccountProcedureRoot::from_raw(digest)
-            })
+        self.exports().map(|proc_export| {
+            let digest = self.0.mast_forest()[proc_export.node].digest();
+            AccountProcedureRoot::from_raw(digest)
         })
     }
 
-    /// Returns the procedure exports of this component.
+    /// Returns the interface procedure exports of this component.
+    ///
+    /// A procedure is part of the interface if it has the `@account_procedure` or `@auth_script`
+    /// attributes.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
-        self.0.exports().filter_map(|export| export.as_procedure())
+        self.0
+            .exports()
+            .filter_map(|export| export.as_procedure())
+            .filter(|proc_export| {
+                proc_export.attributes.has(super::ACCOUNT_PROCEDURE_ATTRIBUTE)
+                    || proc_export.attributes.has(super::AUTH_SCRIPT_ATTRIBUTE)
+            })
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
@@ -107,7 +114,7 @@ mod tests {
         let assembler = Assembler::default();
         let library = Arc::unwrap_or_clone(
             assembler
-                .assemble_library(["pub proc test nop end"])
+                .assemble_library(["@account_procedure pub proc test nop end"])
                 .expect("failed to assemble library"),
         );
         let component_code = AccountComponentCode::from(library);
@@ -138,7 +145,7 @@ mod tests {
         let assembler = Assembler::default();
         let library = Arc::unwrap_or_clone(
             assembler
-                .assemble_library(["pub proc test_proc nop end"])
+                .assemble_library(["@account_procedure pub proc test_proc nop end"])
                 .expect("failed to assemble library"),
         );
         let component_code = AccountComponentCode::from(library);

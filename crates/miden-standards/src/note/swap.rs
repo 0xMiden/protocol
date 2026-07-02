@@ -406,7 +406,7 @@ pub fn payback_serial_from_swap(swap_serial: Word) -> Word {
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_protocol::account::{AccountIdVersion, AccountType};
+    use miden_protocol::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteType};
     use miden_protocol::testing::account_id::{
@@ -434,7 +434,7 @@ mod tests {
     }
 
     fn dummy_target_id() -> AccountId {
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
     }
 
     fn dummy_recipient_digest() -> Word {
@@ -553,6 +553,7 @@ mod tests {
                     fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
                     AccountType::Public,
+                    AssetCallbackFlag::Disabled,
                 ),
                 2500,
             )
@@ -565,6 +566,7 @@ mod tests {
                     non_fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
                     AccountType::Public,
+                    AssetCallbackFlag::Disabled,
                 ),
                 vec![0xaa, 0xbb, 0xcc, 0xdd],
             )));

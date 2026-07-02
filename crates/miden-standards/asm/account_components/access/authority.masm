@@ -22,6 +22,7 @@ pub use ::miden::standards::access::authority::unfreeze
 #! - authority is a single Felt: 0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_authority
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, role_symbol, 0, 0, pad(16)]

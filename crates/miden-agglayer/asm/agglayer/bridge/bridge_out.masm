@@ -112,6 +112,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #!
 #! Invocation: call
 @locals(15)
+@account_procedure
 pub proc bridge_out
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
     # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]

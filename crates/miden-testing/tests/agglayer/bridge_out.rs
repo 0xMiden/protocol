@@ -21,7 +21,7 @@ use miden_agglayer::{
 use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType, StorageMapKey};
+use miden_protocol::account::{Account, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
@@ -749,7 +749,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Create a network faucet owner account
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     // Create a network faucet to provide assets for the B2AGG note
     let faucet = builder.add_existing_network_faucet(
@@ -819,8 +819,12 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
+    // The reclaim returns the asset to the user's vault, dispatching the faucet's receive callback,
+    // so the faucet must be available as a foreign account.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let tx_context = mock_chain
         .build_tx_context(user_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
@@ -869,7 +873,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // Create a network faucet owner account
     let faucet_owner_account_id =
-        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
 
     // Create a network faucet to provide assets for the B2AGG note
     let faucet = builder.add_existing_network_faucet(
@@ -990,7 +994,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
 
     // Native faucet: network-faucet pattern (not bridge-owned).
     let faucet_owner_account_id =
-        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32]);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         1000,
@@ -1057,9 +1061,13 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: consume the B2AGG note against the bridge (triggers lock_asset).
+    // TX1: consume the B2AGG note against the bridge (triggers lock_asset). The native faucet
+    // configures a transfer policy, so its callback dispatches when the asset enters the bridge
+    // vault; supply the faucet as a foreign account so the kernel can load it.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let executed_tx = mock_chain
         .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;

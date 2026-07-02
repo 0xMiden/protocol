@@ -21,6 +21,7 @@ pub use account_id::{
     AccountIdV1,
     AccountIdVersion,
     AccountType,
+    AssetCallbackFlag,
 };
 
 pub(crate) mod name_validation;
@@ -51,6 +52,7 @@ pub use patch::{
     AccountVaultPatch,
     StorageMapPatch,
     StorageMapPatchEntries,
+    StoragePatchOperation,
     StorageSlotPatch,
     StorageValuePatch,
 };
@@ -439,10 +441,10 @@ impl TryFrom<Account> for AccountDelta {
         let nonce_delta = nonce;
 
         // SAFETY: As checked earlier, the nonce delta should be greater than 0 allowing for
-        // non-empty state changes.
-        let delta = AccountDelta::new(id, storage_patch, vault_delta, nonce_delta)
-            .expect("nonce_delta should be greater than 0")
-            .with_code(Some(code));
+        // non-empty state changes. The storage patch consists of `Create` slot patches only, so the
+        // full state delta validation passes.
+        let delta = AccountDelta::new(id, storage_patch, vault_delta, Some(code), nonce_delta)
+            .expect("full state delta from account contains only create patches");
 
         Ok(delta)
     }
@@ -598,6 +600,7 @@ mod tests {
         AccountType,
         AccountVaultDelta,
         AccountVaultPatch,
+        AssetCallbackFlag,
         PartialAccount,
         StorageMap,
         StorageMapKey,
@@ -818,7 +821,7 @@ mod tests {
     ) -> AccountDelta {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(id, storage_patch, vault_delta, nonce_delta).unwrap()
+        AccountDelta::new(id, storage_patch, vault_delta, None, nonce_delta).unwrap()
     }
 
     pub fn build_account_patch(
@@ -866,6 +869,7 @@ mod tests {
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
             AccountType::Public,
+            AssetCallbackFlag::Disabled,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),

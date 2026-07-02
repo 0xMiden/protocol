@@ -1,0 +1,11 @@
+[workspace]
+members = ["kernels/batch", "kernels/transaction", "kernels/transaction-core", "protocol", "protocol_utils"]
+
+[workspace.package]
+version = "0.16.0"
+
+[workspace.dependencies]
+miden-core           = { linkage = "dynamic", version = "0.23.4" }
+miden-protocol-utils = { linkage = "static", path = "protocol_utils" }
+miden-tx-kernel      = { linkage = "dynamic", path = "kernels/transaction" }
+miden-tx-kernel-core = { linkage = "static", path = "kernels/transaction-core" }
