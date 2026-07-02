@@ -321,11 +321,13 @@ mod tests {
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
+          @account_procedure
           pub proc foo
             push.2.2 add eq.4
           end
         ";
     const CUSTOM_CODE2: &str = "
+            @account_procedure
             pub proc bar
               push.4.4 add eq.8
             end

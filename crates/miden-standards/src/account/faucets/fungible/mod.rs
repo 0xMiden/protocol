@@ -293,8 +293,8 @@ impl FungibleFaucet {
 
     /// Returns the procedure root of the `set_max_supply` account procedure. This is an
     /// authority-gated setter; when paired with `Authority::AuthControlled` (via
-    /// [`create_singlesig_user_fungible_faucet`]) it must appear in the auth component's trigger
-    /// procedure list.
+    /// [`create_singlesig_user_fungible_faucet`]) it requires a signature by default and must
+    /// never be added to the auth component's exempt set.
     pub fn set_max_supply_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
     }
@@ -563,10 +563,11 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
 ///
-/// Caller passes a fully-configured [`AuthSingleSigAcl`] — its trigger procedure list must
-/// cover every authority-gated setter on the faucet (`mint_and_send`, the metadata setters,
-/// the policy setters, and `pause` / `unpause`), otherwise those procedures become
-/// permissionless under [`Authority::AuthControlled`].
+/// Caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list semantics,
+/// every authority-gated setter on the faucet (`mint_and_send`, the metadata setters, the policy
+/// setters, and `pause` / `unpause`) requires a signature by default. Adding any such setter to
+/// the exempt set makes it permissionless under [`Authority::AuthControlled`], so authority-gated
+/// setters must never be exempted.
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,

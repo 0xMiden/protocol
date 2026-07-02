@@ -28,6 +28,7 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! - the native account is not allowed on the issuing faucet.
 #!
 #! Invocation: call
+@account_procedure
 pub proc check_policy
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]

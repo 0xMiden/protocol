@@ -198,7 +198,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
-            use $kernel::account_id
+            use miden::protocol::account_id
 
             begin
                 exec.account_id::validate
@@ -262,7 +262,7 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         begin
@@ -291,8 +291,8 @@ async fn test_get_item() -> anyhow::Result<()> {
 
         let code = format!(
             r#"
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             const SLOT_NAME = word("{slot_name}")
 
@@ -337,7 +337,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
     for (key, expected_value) in map.entries() {
         let code = format!(
             r#"
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
             use mock::account
 
             const SLOT_NAME = word("{slot_name}")
@@ -385,8 +385,8 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -506,7 +506,7 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     for (prev_slot, curr_slot) in test_cases {
         let code = format!(
             r#"
-            use $kernel::account
+            use miden::tx_kernel_core::account
 
             begin
                 push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
@@ -543,8 +543,8 @@ async fn test_set_item() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
 
         const MOCK_VALUE_SLOT0 = word("{slot_name}")
 
@@ -598,7 +598,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const SLOT_NAME=word("{slot_name}")
@@ -680,7 +680,7 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -730,7 +730,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_VALUE_SLOT0=word("{mock_value_slot0}")
@@ -877,7 +877,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -898,7 +898,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         begin
@@ -1275,8 +1275,8 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -1402,6 +1402,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     const ACCOUNT_COMPONENT_CODE: &str = "
       use external_library::external_module
 
+      @account_procedure
       pub proc custom_setter
         exec.external_module::external_setter
       end";
@@ -1579,7 +1580,7 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
             r#"
             use miden::core::sys
 
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
             use mock::account->mock_account
 
             const SLOT_NAME = word("{slot_name}")
@@ -1618,8 +1619,8 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
     // Test that get_initial_item returns the initial value before any changes
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -1684,7 +1685,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -1802,8 +1803,8 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
         use mock::account->mock_account
 
         {slot_constants}
@@ -1856,6 +1857,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
@@ -1881,12 +1883,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
                   swapw dropw
               end
 
+              @account_procedure
               pub proc set_slot_content
                   push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]

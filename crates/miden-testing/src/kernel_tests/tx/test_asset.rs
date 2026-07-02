@@ -40,7 +40,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::faucet
 
         begin
@@ -79,7 +79,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::faucet
 
         begin
@@ -142,7 +142,7 @@ async fn test_validate_non_fungible_asset(
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::non_fungible_asset
+        use miden::tx_kernel_core::non_fungible_asset
 
         begin
             # a random asset value
@@ -220,7 +220,7 @@ async fn test_validate_fungible_asset(
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET_VALUE}
@@ -274,7 +274,7 @@ async fn test_validate_asset_metadata(
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::asset
+        use miden::tx_kernel_core::asset
 
         begin
             push.{asset_metadata}
@@ -307,7 +307,7 @@ async fn test_key_to_callbacks_and_composition(
 
     let code = format!(
         "
-        use $kernel::asset
+        use miden::tx_kernel_core::asset
 
         begin
             push.{ASSET_KEY}
