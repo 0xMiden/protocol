@@ -57,12 +57,18 @@ impl TransactionMastStore {
     }
 
     /// Registers all procedures of the provided [MastForest] with this store.
+    ///
+    /// This path only carries the MAST forest. If a [Package] is available, prefer
+    /// [`Self::insert_package`] so package-owned debug info is preserved.
     pub fn insert(&self, mast_forest: Arc<MastForest>) {
         self.insert_loaded(LoadedMastForest::new(mast_forest));
     }
 
     /// Registers all procedures of the provided [Package] with this store.
-    fn insert_package(&self, package: &Package) {
+    ///
+    /// This preserves package-owned debug info when the package was built or read from a trusted
+    /// local source.
+    pub fn insert_package(&self, package: &Package) {
         self.insert_loaded(loaded_mast_forest_from_package(package));
     }
 
@@ -91,6 +97,7 @@ impl MastForestStore for TransactionMastStore {
     }
 }
 
+/// Builds a loaded MAST forest from a package, including package-owned debug info when trusted.
 fn loaded_mast_forest_from_package(package: &Package) -> LoadedMastForest {
     match decode_package_debug_info(package) {
         Some(package_debug_info) => LoadedMastForest::with_package_debug_info(

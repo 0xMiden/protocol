@@ -2,7 +2,6 @@ use alloc::sync::Arc;
 
 use miden_protocol::assembly::Library;
 use miden_protocol::assembly::mast::MastForest;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::Package;
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, Library, ProjectTargetSelector};
+use miden_assembly::{Assembler, ProjectTargetSelector};
 use miden_core::events::EventId;
 use miden_mast_package::{Package, PackageExport, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
@@ -346,22 +346,20 @@ fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
 /// Builds an in-memory package registry loaded with the `miden-core` library, so the projects can
 /// just declare it by version in the manifest.
 fn core_package_registry() -> Result<InMemoryPackageRegistry> {
-    // TODO: once miden_core_lib gets updated to v0.24, `CoreLibrary` will be a `Package` so we
-    // won't need to add the metadata manually.
-    //
-    // This version must match the `miden-core` requirement declared in `asm/miden-project.toml`;
-    // it's the version of the `miden-core-lib` crate that provides `CoreLibrary`.
-    let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
-    let package = Package::from_library(
+    let core_package = miden_core_lib::CoreLibrary::default().package();
+    let package = Package::create_with_modules(
         PackageId::from("miden-core"),
-        Version::new(0, 23, 4),
+        Version::new(0, 24, 0),
         TargetType::Library,
-        library,
-        core::iter::empty(),
-    );
+        core_package.mast_forest().clone(),
+        core_package.manifest.exports().cloned(),
+        core_package.manifest.modules().cloned(),
+        core_package.manifest.dependencies().cloned(),
+    )
+    .into_diagnostic()?;
 
     let mut registry = InMemoryPackageRegistry::default();
-    registry.cache_package(Arc::from(package)).into_diagnostic()?;
+    registry.cache_package(Arc::new(package)).into_diagnostic()?;
     Ok(registry)
 }
 

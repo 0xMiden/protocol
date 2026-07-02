@@ -168,16 +168,6 @@ where
         Ok(self)
     }
 
-    /// Puts the [TransactionExecutor] into debug mode and returns the resulting executor.
-    ///
-    /// When transaction executor is in debug mode, all transaction-related code (note scripts,
-    /// account code) will be compiled and executed in debug mode. This will ensure that all debug
-    /// instructions present in the original source code are executed.
-    #[must_use]
-    pub fn with_debug_mode(self) -> Self {
-        self
-    }
-
     /// Enables tracing for the created instance of [TransactionExecutor] and returns the resulting
     /// executor.
     ///

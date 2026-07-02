@@ -62,7 +62,6 @@ pub struct TransactionContext {
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     pub(super) is_lazy_loading_enabled: bool,
-    pub(super) is_debug_mode_enabled: bool,
 }
 
 impl TransactionContext {
@@ -125,8 +124,8 @@ impl TransactionContext {
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
         // TransactionContextBuilder.
-        self.mast_store.insert(TransactionKernel::library().mast_forest().clone());
-        self.mast_store.insert(program.mast_forest().clone());
+        self.mast_store.insert_package(&TransactionKernel::library());
+        self.mast_store.insert_package(&program);
         let program = program.try_into_program().expect("program package should be executable");
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(
@@ -172,10 +171,6 @@ impl TransactionContext {
 
         let mut tx_executor =
             TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
-
-        if self.is_debug_mode_enabled {
-            tx_executor = tx_executor.with_debug_mode();
-        }
 
         if let Some(authenticator) = self.authenticator() {
             tx_executor = tx_executor.with_authenticator(authenticator);

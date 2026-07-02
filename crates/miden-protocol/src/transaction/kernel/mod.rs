@@ -13,7 +13,6 @@ use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
-use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs, StackOutputs};
 use crate::{Felt, Hasher, Word};
@@ -38,7 +37,7 @@ static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_package_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
     Arc::new(
-        Package::read_from_bytes(kernel_package_bytes)
+        Package::read_from_bytes_trusted(kernel_package_bytes)
             .expect("failed to deserialize transaction kernel package"),
     )
 });
@@ -47,7 +46,7 @@ static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let kernel_main_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
-    Package::read_from_bytes(kernel_main_bytes)
+    Package::read_from_bytes_trusted(kernel_main_bytes)
         .expect("failed to deserialize transaction kernel main package")
         .try_into_program()
         .expect("transaction kernel main package should contain a program")
@@ -59,7 +58,7 @@ static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
     ));
-    Package::read_from_bytes(tx_script_main_bytes)
+    Package::read_from_bytes_trusted(tx_script_main_bytes)
         .expect("failed to deserialize tx script executor package")
         .try_into_program()
         .expect("tx script executor package should contain a program")
@@ -417,9 +416,8 @@ impl TransactionKernel {
 
     /// Returns the kernel library.
     pub fn library() -> Library {
-        let package = Package::read_from_bytes(Self::KERNEL_TESTING_PACKAGE_BYTES)
-            .expect("failed to deserialize transaction kernel library package");
-        Arc::unwrap_or_clone(package.mast)
+        Package::read_from_bytes_trusted(Self::KERNEL_TESTING_PACKAGE_BYTES)
+            .expect("failed to deserialize transaction kernel library package")
     }
 }
 

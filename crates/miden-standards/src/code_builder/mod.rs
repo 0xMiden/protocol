@@ -612,7 +612,11 @@ impl CodeBuilder {
     /// separately, we can invoke procedures from the kernel library to test them individually.
     #[cfg(any(feature = "testing", test))]
     pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
-        Self::with_source_manager(source_manager)
+        let mut builder = Self::with_source_manager(source_manager);
+        builder
+            .link_dynamic_library(&TransactionKernel::library())
+            .expect("failed to link transaction kernel library");
+        builder
     }
 
     /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` libraries.
@@ -648,7 +652,7 @@ impl CodeBuilder {
 
         // Start with the builder linking against the transaction kernel, protocol library and
         // standards library.
-        let mut builder = Self::with_source_manager(source_manager);
+        let mut builder = Self::with_kernel_library(source_manager);
 
         // Add mock account/faucet libs (built in debug mode) and mock util.
         for library in Self::mock_libraries() {
