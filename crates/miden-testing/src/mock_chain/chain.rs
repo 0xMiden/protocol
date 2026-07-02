@@ -637,10 +637,9 @@ impl MockChain {
     /// Returns a [`MockTransactionBuilder`] for executing a transaction against this chain.
     ///
     /// This is the public entry point for creating and executing transactions against a concrete
-    /// [`MockChain`]. Contrary to [`Self::build_tx_context`], input notes are not passed up front
-    /// but added explicitly on the returned builder, and the transaction inputs are only resolved
-    /// against the chain once all input notes are known. See [`MockTransactionBuilder`] for
-    /// details.
+    /// [`MockChain`]. Input notes are added explicitly on the returned builder, and the transaction
+    /// inputs are only resolved against the chain once all input notes are known. See
+    /// [`MockTransactionBuilder`] for details.
     pub fn build_transaction(
         &self,
         input: impl Into<TxContextInput>,

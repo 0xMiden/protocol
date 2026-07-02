@@ -166,7 +166,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Set the authenticator for the transaction (if needed)
+    /// Set the authenticator for the transaction (if needed).
     pub fn authenticator(mut self, authenticator: Option<BasicAuthenticator>) -> Self {
         self.authenticator = authenticator;
         self
@@ -178,16 +178,15 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Extends the advice inputs map with the provided iterator.
-    pub fn extend_advice_map(
-        mut self,
-        map_entries: impl IntoIterator<Item = (Word, Vec<Felt>)>,
-    ) -> Self {
-        self.advice_inputs.map.extend(map_entries);
+    /// Inserts a single key-value pair into the advice inputs map.
+    ///
+    /// To add multiple entries, call this repeatedly or use [`Self::extend_advice_inputs`].
+    pub fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+        self.advice_inputs.map.insert(key, value);
         self
     }
 
-    /// Sets foreign account codes that are used by the transaction.
+    /// Sets foreign account inputs that are used by the transaction.
     pub fn foreign_accounts(
         mut self,
         inputs: impl IntoIterator<Item = (Account, AccountWitness)>,
@@ -222,7 +221,20 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Adds a single expected output note.
+    ///
+    /// A [`RawOutputNote::Partial`] note is ignored, since it does not carry the recipient details
+    /// required to reconstruct the note.
+    pub fn extend_expected_output_note(mut self, output_note: RawOutputNote) -> Self {
+        if let RawOutputNote::Full(note) = output_note {
+            self.expected_output_notes.push(note);
+        }
+        self
+    }
+
     /// Extends the expected output notes.
+    ///
+    /// This is the iterator equivalent of [`Self::extend_expected_output_note`].
     pub fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         let output_notes = output_notes.into_iter().filter_map(|note| match note {
             RawOutputNote::Full(note) => Some(note),
@@ -279,8 +291,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Builds the [`TransactionContext`].
     ///
     /// The configured account and input notes are resolved into [`TransactionInputs`] against the
-    /// chain's latest block through [`MockChain::get_transaction_inputs`], and the remaining
-    /// configuration is assembled into the [`TransactionContext`].
+    /// [`Self::reference_block`] (defaulting to the chain's latest block) through
+    /// [`MockChain::get_transaction_inputs`], and the remaining configuration is assembled into the
+    /// [`TransactionContext`].
     ///
     /// [`TransactionInputs`]: miden_protocol::transaction::TransactionInputs
     pub fn build(self) -> anyhow::Result<TransactionContext> {
