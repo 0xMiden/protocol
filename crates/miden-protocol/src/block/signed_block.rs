@@ -239,30 +239,8 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::block::ValidatorKeys;
-    use crate::testing::random_secret_key::random_secret_key;
+    use crate::testing::validator_keys::{random_validator_set as validator_set, sign_all};
     use crate::transaction::OrderedTransactionHeaders;
-
-    /// Generates `count` validator signing keys alongside the [`ValidatorKeys`] set committing to
-    /// their public keys.
-    fn validator_set(count: usize) -> (Vec<SigningKey>, ValidatorKeys) {
-        let signers: Vec<SigningKey> = (0..count).map(|_| random_secret_key()).collect();
-        let keys = ValidatorKeys::new(signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
-        (signers, keys)
-    }
-
-    /// Signs `commitment` with `signers` and coalesces into a full, valid [`BlockSignatures`] set
-    /// positioned against `keys`.
-    fn sign_all(keys: &ValidatorKeys, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
-        let signatures = keys
-            .as_keys()
-            .iter()
-            .map(|key| {
-                let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures)
-    }
 
     fn empty_body() -> BlockBody {
         BlockBody::new_unchecked(

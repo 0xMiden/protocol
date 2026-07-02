@@ -527,8 +527,7 @@ mod tests {
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
-    use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
-    use crate::testing::random_secret_key::random_secret_key;
+    use crate::testing::validator_keys::{random_validator_set, sign_all};
 
     #[test]
     fn test_serde() {
@@ -548,45 +547,16 @@ mod tests {
         assert_eq!(deserialized, header);
     }
 
-    /// Generates `count` validator signing keys alongside the [`ValidatorKeys`] set committing to
-    /// their public keys.
-    fn validator_set(count: usize) -> (Vec<SigningKey>, ValidatorKeys) {
-        let signers = (0..count).map(|_| random_secret_key()).collect::<Vec<_>>();
-        let keys = ValidatorKeys::new(signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
-        (signers, keys)
-    }
-
-    /// Builds full, positional [`BlockSignatures`] over `message` aligned to `validator_keys`, with
-    /// every validator signing.
-    fn sign_all(
-        validator_keys: &ValidatorKeys,
-        signers: &[SigningKey],
-        message: Word,
-    ) -> BlockSignatures {
-        let signatures = validator_keys
-            .as_keys()
-            .iter()
-            .map(|key| {
-                let signer = signers
-                    .iter()
-                    .find(|sk| &sk.public_key() == key)
-                    .expect("a signer should exist for every committed validator key");
-                signer.sign(message)
-            })
-            .collect();
-        BlockSignatures::new(signatures)
-    }
-
     /// Builds a child of `parent` committing a fresh validator set of `next_count` validators as
     /// the signer of the *next* block.
     fn child_of(parent: &BlockHeader, child_num: u32, next_count: usize) -> BlockHeader {
-        let (_, next_keys) = validator_set(next_count);
+        let (_, next_keys) = random_validator_set(next_count);
         BlockHeader::new_dummy(child_num, parent.commitment(), next_keys)
     }
 
     #[test]
     fn validate_against_parent_accepts_all_signatures() {
-        let (signers, keys) = validator_set(5);
+        let (signers, keys) = random_validator_set(5);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 5);
         let signatures = sign_all(&keys, &signers, child.commitment());
@@ -596,7 +566,7 @@ mod tests {
 
     #[test]
     fn validate_against_parent_accepts_single_validator() {
-        let (signers, keys) = validator_set(1);
+        let (signers, keys) = random_validator_set(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 1);
         let signatures = sign_all(&keys, &signers, child.commitment());
@@ -606,14 +576,13 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_incomplete_signatures() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
         // Only one of three validators signs, so the resulting set is too short to align
         // positionally with the parent's validator keys. `BlockSignatures::new` does not check
         // this -- only `verify_against` (called by `validate_against_parent`) does.
-        let signatures =
-            BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]);
+        let signatures = BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]);
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(
@@ -624,13 +593,13 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_signature_count_mismatch() {
-        let (_, keys) = validator_set(3);
+        let (_, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
 
         // A block signed by a validator set of a different size cannot align positionally with the
         // parent's committed set. Deserialization does not check this, so build it directly.
-        let (other_signers, other_keys) = validator_set(4);
+        let (other_signers, other_keys) = random_validator_set(4);
         let signatures = sign_all(&other_keys, &other_signers, child.commitment());
         let bytes = signatures.to_bytes();
         let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();
@@ -644,13 +613,13 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_uncommitted_signatures() {
-        let (_, keys) = validator_set(3);
+        let (_, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
 
         // The child is signed by a full, valid validator set of the same size the parent never
         // committed, so the signatures do not verify against the parent's validator keys.
-        let (impostor_signers, impostor_keys) = validator_set(3);
+        let (impostor_signers, impostor_keys) = random_validator_set(3);
         let signatures = sign_all(&impostor_keys, &impostor_signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
@@ -659,10 +628,10 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_genesis() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Block 0 has no parent to anchor against.
-        let child = BlockHeader::new_dummy(0, parent.commitment(), validator_set(3).1);
+        let child = BlockHeader::new_dummy(0, parent.commitment(), random_validator_set(3).1);
         let signatures = sign_all(&keys, &signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
@@ -671,7 +640,7 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_wrong_parent_number() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Child claims to be block 2, but the parent is block 0.
         let child = child_of(&parent, 2, 3);
@@ -683,10 +652,10 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_wrong_parent_commitment() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Child does not link to the parent's commitment.
-        let child = BlockHeader::new_dummy(1, Word::empty(), validator_set(3).1);
+        let child = BlockHeader::new_dummy(1, Word::empty(), random_validator_set(3).1);
         let signatures = sign_all(&keys, &signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);

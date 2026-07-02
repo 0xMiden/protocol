@@ -137,51 +137,13 @@ impl Deserializable for BlockSignatures {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
-    use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
-
     use super::*;
     use crate::testing::random_secret_key::random_secret_key;
-
-    /// Generates `count` validator signing keys alongside the [`ValidatorKeys`] set committing to
-    /// their public keys.
-    fn validator_set(count: usize) -> (Vec<SigningKey>, ValidatorKeys) {
-        let signers: Vec<SigningKey> = (0..count).map(|_| random_secret_key()).collect();
-        let keys = ValidatorKeys::new(signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
-        (signers, keys)
-    }
-
-    /// Signs `commitment` with `signers`, ordering the resulting signatures to align positionally
-    /// with `keys`.
-    fn sign_all(keys: &ValidatorKeys, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
-        let signatures = keys
-            .as_keys()
-            .iter()
-            .map(|key| {
-                let signer = signers.iter().find(|sk| &sk.public_key() == key).unwrap();
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures)
-    }
-
-    #[test]
-    fn new_is_unchecked() {
-        // `new` performs no validation: a mismatched length is accepted, and only surfaces as an
-        // error when checked with `verify_against`.
-        let (_, keys) = validator_set(3);
-        let signatures = BlockSignatures::new(Vec::new());
-        assert_eq!(signatures.len(), 0);
-        assert!(matches!(
-            signatures.verify_against(Word::empty(), &keys),
-            Err(SignatureVerificationError::SignatureCountMismatch { expected: 3, actual: 0 })
-        ));
-    }
+    use crate::testing::validator_keys::{random_validator_set, sign_all};
 
     #[test]
     fn verify_against_accepts_correctly_ordered_signatures() {
-        let (signers, keys) = validator_set(5);
+        let (signers, keys) = random_validator_set(5);
         let commitment = Word::empty();
 
         let signatures = sign_all(&keys, &signers, commitment);
@@ -192,7 +154,7 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_invalid_signature() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let commitment = Word::empty();
         let outsider = random_secret_key();
 
@@ -209,13 +171,13 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_mismatched_keys() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let commitment = Word::empty();
         let signatures = sign_all(&keys, &signers, commitment);
 
         // The same, fully valid set does not verify against a different validator set of the same
         // size.
-        let (_, other_keys) = validator_set(3);
+        let (_, other_keys) = random_validator_set(3);
         assert!(matches!(
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::InvalidSignatureAtPosition { .. })
@@ -224,12 +186,12 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_count_mismatch() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let commitment = Word::empty();
         let signatures = sign_all(&keys, &signers, commitment);
 
         // A validator set of a different size cannot align positionally.
-        let (_, other_keys) = validator_set(4);
+        let (_, other_keys) = random_validator_set(4);
         assert!(matches!(
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::SignatureCountMismatch { expected: 4, actual: 3 })
@@ -238,7 +200,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = random_validator_set(3);
         let commitment = Word::empty();
         let signatures = sign_all(&keys, &signers, commitment);
 
