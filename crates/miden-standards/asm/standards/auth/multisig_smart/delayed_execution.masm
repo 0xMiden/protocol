@@ -58,7 +58,8 @@ const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 #!   `tx::update_expiration_block_delta` only accepts a u16 delta
 #!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
 #!
-#! Invocation: exec
+#! Invocation: call
+@account_procedure
 pub proc update_delayed_execution_policy
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
@@ -394,6 +395,7 @@ end
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Invocation: call
+@account_procedure
 pub proc propose_transaction
     # => [TX_SUMMARY_COMMITMENT]
     dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
@@ -441,6 +443,7 @@ end
 #!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
 #!
 #! Invocation: call
+@account_procedure
 pub proc cancel_transaction_proposal
     dupw exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
