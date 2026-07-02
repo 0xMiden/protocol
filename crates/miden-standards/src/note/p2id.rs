@@ -280,7 +280,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+    use miden_protocol::account::{AccountId, AccountType};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::errors::NoteError;
@@ -293,7 +293,9 @@ mod tests {
 
     #[test]
     fn try_from_valid_storage_succeeds() {
-        let target = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let target = AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32]);
 
         let storage = vec![target.suffix(), target.prefix().as_felt()];
 
@@ -333,19 +335,27 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     fn sender() -> AccountId {
-        AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private)
+        AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([1u8; 32])
     }
 
     fn target() -> AccountId {
-        AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Private)
+        AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([2u8; 32])
     }
 
     fn faucet_a() -> AccountId {
-        AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder()
+            .account_type(AccountType::Public)
+            .build_with_seed([3u8; 32])
     }
 
     fn faucet_b() -> AccountId {
-        AccountId::dummy([4u8; 15], AccountIdVersion::Version1, AccountType::Public)
+        AccountId::builder()
+            .account_type(AccountType::Public)
+            .build_with_seed([4u8; 32])
     }
 
     /// The minimal builder uses defaults for everything but the required fields.

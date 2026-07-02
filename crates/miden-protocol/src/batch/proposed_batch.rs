@@ -532,7 +532,7 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::account::{AccountIdVersion, AccountType, AccountUpdateDetails};
+    use crate::account::{AccountType, AccountUpdateDetails};
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
@@ -559,7 +559,7 @@ mod tests {
         );
 
         let account_id =
-            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+            AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

@@ -12,6 +12,7 @@ use miden_protocol::transaction::{
     TransactionOutputs,
     TxAccountUpdate,
 };
+use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::ProvingOptions;
 use miden_prover::{ExecutionProof, Word, prove};
 
@@ -32,9 +33,16 @@ pub use mast_store::TransactionMastStore;
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
-#[derive(Default)]
 pub struct LocalTransactionProver {
     proof_options: ProvingOptions,
+}
+
+impl Default for LocalTransactionProver {
+    fn default() -> Self {
+        Self {
+            proof_options: ProvingOptions::new(Poseidon2),
+        }
+    }
 }
 
 impl LocalTransactionProver {

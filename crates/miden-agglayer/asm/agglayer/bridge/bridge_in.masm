@@ -172,6 +172,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Invocation: call
 @locals(2) # 0: dest_prefix, 1: dest_suffix
+@account_procedure
 pub proc claim
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT

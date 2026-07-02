@@ -84,9 +84,7 @@ impl AccountVaultDelta {
             .filter(|&(_, &value)| value >= 0)
             .map(|(vault_key, &diff)| {
                 Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs()).unwrap(),
                 )
             })
             .chain(
@@ -104,9 +102,7 @@ impl AccountVaultDelta {
             .filter(|&(_, &value)| value < 0)
             .map(|(vault_key, &diff)| {
                 Asset::Fungible(
-                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
-                        .unwrap()
-                        .with_callbacks(vault_key.callback_flag()),
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs()).unwrap(),
                 )
             })
             .chain(

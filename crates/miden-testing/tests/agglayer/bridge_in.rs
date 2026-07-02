@@ -26,12 +26,13 @@ use miden_agglayer::{
     UpdateGerNote,
     agglayer_library,
     create_existing_agglayer_faucet,
+    create_existing_agglayer_faucet_with_callbacks,
     create_existing_bridge_account,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteType};
@@ -178,7 +179,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = create_existing_agglayer_faucet(
+    let agglayer_faucet = create_existing_agglayer_faucet_with_callbacks(
         agglayer_faucet_seed,
         token_symbol,
         decimals,
@@ -374,7 +375,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let expected_asset: Asset =
         FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled)
             .into();
     let expected_output_p2id_note = Note::from(
         P2idNote::builder()
@@ -1138,7 +1138,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // Native faucet: use the network-faucet pattern (bridge is not the owner).
     let faucet_owner_account_id =
-        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),
@@ -1148,6 +1148,10 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         MintPolicy::owner_only(),
         [],
     )?;
+    assert!(
+        native_faucet.id().asset_callback_flag().is_enabled(),
+        "native faucet should be built with callbacks enabled"
+    );
 
     // Destination of the claim (derived from leaf data's destination_address). The mock account
     // is built directly from the destination ID encoded in the JSON test vector, since the claim
@@ -1231,9 +1235,13 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: LOCK — bridge consumes the B2AGG note, asset goes into bridge vault.
+    // TX1: LOCK — bridge consumes the B2AGG note, asset goes into bridge vault. The native faucet
+    // configures a transfer policy, so its callbacks dispatch when the asset enters the bridge
+    // vault; supply the faucet as a foreign account so the kernel can load it.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let lock_executed = mock_chain
         .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;
@@ -1262,8 +1270,12 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // TX3: CLAIM — bridge validates the proof, hits the is_native branch, unlocks and emits P2ID.
+    // The unlock sends the native asset out of the bridge vault, dispatching the faucet's send
+    // callback, so the faucet must be available as a foreign account.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let claim_executed = mock_chain
         .build_tx_context(bridge_account.clone(), &[], &[claim_note])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await
@@ -1337,9 +1349,13 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // TX4: destination consumes the P2ID note and receives the unlocked asset. Pass the account
-    // directly since the JSON-encoded destination decodes to a private account ID.
+    // directly since the JSON-encoded destination decodes to a private account ID. The faucet's
+    // receive callback dispatches when the asset enters the destination vault, so supply the
+    // faucet as a foreign account.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let consume_executed = mock_chain
         .build_tx_context(destination_account.clone(), &[], slice::from_ref(&expected_p2id_note))?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;
@@ -1403,7 +1419,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // nullifier check is ever weakened, the second claim would otherwise succeed and drain the
     // vault a second time.
     let faucet_owner_account_id =
-        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),
@@ -1508,9 +1524,13 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: LOCK — seed bridge vault with 2x miden_claim_amount.
+    // TX1: LOCK — seed bridge vault with 2x miden_claim_amount. The native faucet's receive
+    // callback dispatches when the asset enters the bridge vault, so supply it as a foreign
+    // account.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let lock_executed = mock_chain
         .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;
@@ -1532,9 +1552,13 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX3: FIRST CLAIM — should succeed and drain half the vault.
+    // TX3: FIRST CLAIM — should succeed and drain half the vault. The unlock sends the native
+    // asset out of the bridge vault, dispatching the faucet's send callback, so the faucet must be
+    // available as a foreign account.
+    let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let claim_executed_1 = mock_chain
         .build_tx_context(bridge_account.clone(), &[], &[claim_note_1])?
+        .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
         .await?;

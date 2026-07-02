@@ -42,6 +42,7 @@ const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 #! Outputs: [is_paused, pad(15)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc is_paused
     push.IS_PAUSED_SLOT[0..2]
     exec.active_account::get_item

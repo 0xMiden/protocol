@@ -14,12 +14,12 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
-    AccountIdVersion,
     AccountProcedureRoot,
     AccountType,
+    AssetCallbackFlag,
     RoleSymbol,
 };
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -51,7 +51,9 @@ pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_
 pub(crate) static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
 
 pub(crate) fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([seed; 32])
 }
 
 // FAUCET BUILDER
@@ -496,6 +498,7 @@ fn add_faucet_with_pause_and_policies(
 
     let account_builder = AccountBuilder::new([44u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
@@ -518,7 +521,7 @@ async fn pausable_transfer_succeeds_when_unpaused() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
@@ -547,7 +550,7 @@ async fn pausable_transfer_fails_when_paused() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
@@ -583,7 +586,7 @@ async fn pausable_transfer_resumes_after_unpause() -> anyhow::Result<()> {
     let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target.id(),
