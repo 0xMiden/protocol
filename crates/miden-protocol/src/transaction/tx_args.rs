@@ -1,5 +1,5 @@
 use alloc::collections::BTreeMap;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
@@ -11,9 +11,10 @@ use miden_mast_package::Package;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
-use crate::assembly::Library;
+use crate::assembly::{Library, Path};
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
+use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -401,6 +402,51 @@ impl TransactionScript {
         })
     }
 
+    /// Returns a new [TransactionScript] containing only a reference to a procedure in the
+    /// provided library.
+    ///
+    /// This method is useful when a library contains multiple transaction scripts and you need
+    /// to extract a specific one by its fully qualified path (e.g.,
+    /// `::miden::standards::tx_scripts::send_notes::main`).
+    ///
+    /// The procedure at the specified path must have the `@transaction_script` attribute.
+    ///
+    /// Note: This method creates a minimal [MastForest] containing only an external node
+    /// referencing the procedure's digest, rather than copying the entire library. The actual
+    /// procedure code will be resolved at runtime via the `MastForestStore`.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The library does not contain a procedure at the specified path.
+    /// - The procedure at the specified path does not have the `@transaction_script` attribute.
+    pub fn from_library_reference(
+        library: &Library,
+        path: &Path,
+    ) -> Result<Self, TransactionScriptError> {
+        // Find the export matching the path
+        let export = library
+            .exports()
+            .find(|e| e.path().as_ref() == path)
+            .ok_or_else(|| TransactionScriptError::ProcedureNotFound(path.to_string().into()))?;
+
+        // Get the procedure export and verify it has the @transaction_script attribute
+        let proc_export = export
+            .as_procedure()
+            .ok_or_else(|| TransactionScriptError::ProcedureNotFound(path.to_string().into()))?;
+
+        if !proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE) {
+            return Err(TransactionScriptError::ProcedureMissingAttribute(path.to_string().into()));
+        }
+
+        // Get the digest of the procedure from the library
+        let digest = library.mast_forest()[proc_export.node].digest();
+
+        // Create a minimal MastForest with just an external node referencing the digest
+        let (mast, entrypoint) = create_external_node_forest(digest);
+
+        Ok(Self { mast: Arc::new(mast), entrypoint })
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -540,6 +586,67 @@ mod tests {
         assert_matches!(
             TransactionScript::from_library(&multiple),
             Err(TransactionScriptError::MultipleProceduresWithAttribute)
+        );
+    }
+
+    #[test]
+    fn test_transaction_script_from_library_reference() {
+        use alloc::string::ToString;
+
+        use assert_matches::assert_matches;
+        use miden_core::mast::MastNodeExt;
+
+        use super::TransactionScript;
+        use crate::Word;
+        use crate::assembly::{Assembler, Path};
+        use crate::errors::TransactionScriptError;
+
+        let source = "
+            @transaction_script
+            pub proc main_a
+                push.1 drop
+            end
+
+            @transaction_script
+            pub proc main_b
+                push.2 drop
+            end
+
+            pub proc helper
+                push.3 drop
+            end
+        ";
+        let library = Assembler::default().assemble_library([source]).unwrap();
+
+        // each tagged procedure can be extracted selectively, and the resulting script's root
+        // matches the digest of the referenced procedure
+        for proc_name in ["main_a", "main_b"] {
+            let export = library
+                .exports()
+                .find(|e| e.path().as_ref().to_string().ends_with(proc_name))
+                .unwrap();
+            let digest = library.mast_forest()[export.as_procedure().unwrap().node].digest();
+
+            let script =
+                TransactionScript::from_library_reference(&library, export.path().as_ref())
+                    .unwrap();
+            assert_eq!(Word::from(script.root()), digest);
+        }
+
+        // an unknown path is rejected
+        assert_matches!(
+            TransactionScript::from_library_reference(&library, Path::new("::foo::bar::main")),
+            Err(TransactionScriptError::ProcedureNotFound(_))
+        );
+
+        // a procedure without the attribute is rejected
+        let helper = library
+            .exports()
+            .find(|e| e.path().as_ref().to_string().ends_with("helper"))
+            .unwrap();
+        assert_matches!(
+            TransactionScript::from_library_reference(&library, helper.path().as_ref()),
+            Err(TransactionScriptError::ProcedureMissingAttribute(_))
         );
     }
 }

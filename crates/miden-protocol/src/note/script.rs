@@ -9,9 +9,10 @@ use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 
 use super::Felt;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
+use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
+use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -374,23 +375,6 @@ impl Display for NoteScript {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.pretty_print(f)
     }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Creates a minimal [MastForest] containing only an external node referencing the given digest.
-///
-/// This is useful for creating lightweight references to procedures without copying entire
-/// libraries. The external reference will be resolved at runtime, assuming the source library
-/// is loaded into the VM's MastForestStore.
-fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
-    let mut mast = MastForest::new();
-    let node_id = ExternalNodeBuilder::new(digest)
-        .add_to_forest(&mut mast)
-        .expect("adding external node to empty forest should not fail");
-    mast.make_root(node_id);
-    (mast, node_id)
 }
 
 // TESTS

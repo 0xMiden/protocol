@@ -879,6 +879,10 @@ pub enum TransactionScriptError {
     NoProcedureWithAttribute,
     #[error("library contains multiple procedures with @transaction_script attribute")]
     MultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    ProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
+    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR
