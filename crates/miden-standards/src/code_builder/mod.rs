@@ -368,16 +368,14 @@ impl CodeBuilder {
             )
         })?;
 
-        TransactionScript::from_library(&Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(tx_script_lib),
-        ))
-        .map_err(|err| {
+        let tx_script = TransactionScript::from_library(&tx_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create transaction script from library",
                 err,
             )
-        })
+        })?;
+
+        Ok(tx_script.with_advice_map(advice_map))
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].
@@ -398,16 +396,14 @@ impl CodeBuilder {
             CodeBuilderError::build_error_with_report("failed to parse note script library", err)
         })?;
 
-        NoteScript::from_library(&Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(note_script_lib),
-        ))
-        .map_err(|err| {
+        let note_script = NoteScript::from_library(&note_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create note script from library",
                 err,
             )
-        })
+        })?;
+
+        Ok(note_script.with_advice_map(advice_map))
     }
 
     // ACCESSORS
