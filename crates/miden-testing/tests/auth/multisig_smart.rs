@@ -618,7 +618,6 @@ use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
-    ERR_TX_NOT_PROPOSED,
     ERR_TX_STILL_TIMELOCKED,
 };
 use miden_testing::MockChain;
