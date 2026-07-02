@@ -43,10 +43,10 @@ pub proc is_equal
     # => [is_id_equal]
 end
 
-#! Validates an account ID.
+#! Validates the structural requirements of an account ID, independent of its version.
 #!
 #! Note that this does not validate anything about the account type, since any 1-bit pattern is a
-#! valid account type.
+#! valid account type, nor does it constrain the account ID version.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
@@ -55,10 +55,9 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - account_id_prefix does not contain version one.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
-pub proc validate
+pub proc validate_structure
     # Validate lower 8 bits of suffix are zero.
     # ---------------------------------------------------------------------------------------------
 
@@ -77,14 +76,37 @@ pub proc validate
     assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
     # => [account_id_prefix]
 
+    drop
+    # => []
+end
+
+#! Validates an account ID, including that its version is supported.
+#!
+#! Note that this does not validate anything about the account type, since any 1-bit pattern is a
+#! valid account type.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
+#!
+#! Panics if:
+#! - account_id_prefix does not contain version one.
+#! - account_id_suffix does not have its most significant bit set to zero.
+#! - account_id_suffix does not have its lower 8 bits set to zero.
+pub proc validate
     # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
 
-    exec.id_version
-    # => [id_version]
+    dup.1 exec.id_version
+    # => [id_version, account_id_suffix, account_id_prefix]
     eq.VERSION_1
-    # => [is_supported_version]
+    # => [is_supported_version, account_id_suffix, account_id_prefix]
     assert.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
+    # => [account_id_suffix, account_id_prefix]
+
+    exec.validate_structure
     # => []
 end
 

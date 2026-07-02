@@ -449,7 +449,8 @@ end
 #!
 #! Invocation: exec
 proc grant_role_internal
-    dup.2 dup.2 exec.account_id::validate
+    # Validate the account ID structure.
+    dup.2 dup.2 exec.account_id::validate_structure
     # => [role_symbol, account_suffix, account_prefix]
 
     # Save a copy of role_symbol at the bottom of the stack so it survives the
@@ -512,7 +513,8 @@ end
 #!
 #! Invocation: exec
 proc revoke_role_internal
-    dup.2 dup.2 exec.account_id::validate
+    # Validate the account ID structure.
+    dup.2 dup.2 exec.account_id::validate_structure
     # => [role_symbol, account_suffix, account_prefix]
 
     # Save a copy of role_symbol at the bottom of the stack so it survives the

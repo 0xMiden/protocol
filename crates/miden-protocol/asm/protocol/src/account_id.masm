@@ -6,4 +6,5 @@
 
 pub use miden::protocol_utils::account_id::is_equal
 pub use miden::protocol_utils::account_id::validate
+pub use miden::protocol_utils::account_id::validate_structure
 pub use miden::protocol_utils::account_id::shape_suffix

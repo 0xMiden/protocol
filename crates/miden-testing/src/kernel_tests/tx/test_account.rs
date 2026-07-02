@@ -251,6 +251,92 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `account_id::validate_structure` enforces the version-independent structural requirements of an
+/// account ID without constraining the version, so IDs carrying a future (currently unsupported)
+/// version pass as long as their suffix is well-formed.
+#[tokio::test]
+async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()> {
+    let test_cases = [
+        // A regular version-one ID is structurally valid.
+        (ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, None),
+        (
+            // An unsupported version (10) is still accepted: the structure is validated, not the
+            // version.
+            (ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE & !(0x0f << 64)) | (0x0a << 64),
+            None,
+        ),
+        (
+            // Set most significant bit of the suffix to `1`.
+            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET | (0x80 << 56),
+            Some(ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO),
+        ),
+        (
+            // Set lower 8 bits of the suffix to a non-zero value (1).
+            ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET | 1,
+            Some(ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO),
+        ),
+    ];
+
+    for (account_id, expected_error) in test_cases.iter() {
+        // Manually split the account ID into prefix and suffix since we can't use AccountId methods
+        // on invalid ids.
+        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+
+        let code = "
+            use miden::protocol::account_id
+
+            begin
+                exec.account_id::validate_structure
+            end
+            ";
+
+        let result = CodeExecutor::with_default_host()
+            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
+            .run(code)
+            .await;
+
+        match (result.map_err(ExecError::into_execution_error), expected_error) {
+            (Ok(_), None) => (),
+            (Ok(_), Some(err)) => {
+                anyhow::bail!("expected error {err} but validation was successful")
+            },
+            (
+                Err(ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion {
+                            err_code,
+                            err_msg,
+                        },
+                    ..
+                }),
+                Some(err),
+            ) => {
+                if err_code != err.code() {
+                    anyhow::bail!(
+                        "actual error \"{}\" (code: {err_code}) did not match expected error {err}",
+                        err_msg.as_ref().map(AsRef::as_ref).unwrap_or("<no message>")
+                    );
+                }
+            },
+            (Err(err), None) => {
+                return Err(anyhow::anyhow!(
+                    "validation is supposed to succeed but error occurred: {}",
+                    PrintDiagnostic::new(&err)
+                ));
+            },
+            (Err(err), Some(_)) => {
+                return Err(anyhow::anyhow!(
+                    "unexpected different error than expected: {}",
+                    PrintDiagnostic::new(&err)
+                ));
+            },
+        }
+    }
+
+    Ok(())
+}
+
 // ACCOUNT CODE TESTS
 // ================================================================================================
 
