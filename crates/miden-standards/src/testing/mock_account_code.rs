@@ -25,12 +25,17 @@ const MOCK_FAUCET_CODE: &str = "
 ";
 
 const MOCK_ACCOUNT_CODE: &str = "
+    use miden::core::sys
     use miden::protocol::active_account
     use miden::protocol::native_account
+    use miden::protocol::output_note
+    use miden::protocol::note::NOTE_TYPE_PRIVATE
     use miden::protocol::tx
+    use miden::standards::wallets::basic->wallet
 
     pub use ::miden::standards::wallets::basic::receive_asset
     pub use ::miden::standards::wallets::basic::move_asset_to_note
+    pub use ::miden::standards::wallets::basic::create_note
 
     # Note: all account's export procedures below should be only called or dyncall'ed, so it
     # is assumed that the operand stack at the beginning of their execution is pad'ed and
@@ -112,6 +117,108 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [CODE_COMMITMENT, pad(12)]
     end
 
+    # READ-ONLY GETTERS
+    # ---------------------------------------------------------------------------------------------
+    # These wrap the account-context-only read procedures so tests can invoke them through the
+    # account (via `call`). Each truncates the stack so the account procedure returns at most 16
+    # elements as required by the `call` convention.
+
+    #! Inputs:  [pad(16)]  Outputs: [INIT_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc get_initial_commitment
+        exec.active_account::get_initial_commitment exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [ACCOUNT_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc compute_commitment
+        exec.active_account::compute_commitment exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [nonce, pad(15)]
+    @account_procedure
+    pub proc get_nonce
+        exec.active_account::get_nonce exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc get_initial_storage_commitment
+        exec.active_account::get_initial_storage_commitment exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [INIT_VAULT_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_initial_vault_root
+        exec.active_account::get_initial_vault_root exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [VAULT_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_vault_root
+        exec.active_account::get_vault_root exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc get_asset
+        exec.active_account::get_asset exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc get_initial_asset
+        exec.active_account::get_initial_asset exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [balance, pad(15)]
+    @account_procedure
+    pub proc get_balance
+        exec.active_account::get_balance exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [init_balance, pad(15)]
+    @account_procedure
+    pub proc get_initial_balance
+        exec.active_account::get_initial_balance exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [has_asset, pad(15)]
+    @account_procedure
+    pub proc has_non_fungible_asset
+        exec.active_account::has_non_fungible_asset exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [num_procedures, pad(15)]
+    @account_procedure
+    pub proc get_num_procedures
+        exec.active_account::get_num_procedures exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [index, pad(15)]  Outputs: [PROC_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_procedure_root
+        exec.active_account::get_procedure_root exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [PROC_ROOT, pad(12)]  Outputs: [is_available, pad(15)]
+    @account_procedure
+    pub proc has_procedure
+        exec.active_account::has_procedure exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [pad(16)]  Outputs: [DELTA_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc compute_delta_commitment
+        exec.native_account::compute_delta_commitment exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [PROC_ROOT, pad(12)]  Outputs: [was_called, pad(15)]
+    @account_procedure
+    pub proc was_procedure_called
+        exec.native_account::was_procedure_called exec.sys::truncate_stack
+    end
+
     #! Inputs:  [pad(16)]
     #! Outputs: [CODE_COMMITMENT, pad(12)]
     @account_procedure
@@ -137,6 +244,58 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc remove_asset
         exec.native_account::remove_asset
         # => [FINAL_ASSET_VALUE, pad(12)]
+    end
+
+    #! Creates a note with hardcoded default recipient/type/tag from the account context.
+    #!
+    #! Inputs:  [pad(16)]
+    #! Outputs: [note_idx, pad(15)]
+    @account_procedure
+    pub proc create_default_note
+        push.1.2.3.4           # = RECIPIENT
+        push.NOTE_TYPE_PRIVATE # = NoteType::Private
+        push.0                 # = NoteTag
+        # => [tag, note_type, RECIPIENT, pad(16)]
+
+        exec.output_note::create
+        # => [note_idx, pad(16)]
+
+        # the pushes above overflow the 16-element window; truncate so the account procedure
+        # returns at most 16 elements as required by the `call` convention
+        exec.sys::truncate_stack
+        # => [note_idx, pad(15)]
+    end
+
+    #! Creates a default note and adds the provided asset to it from the account context.
+    #!
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc create_default_note_with_asset
+        exec.create_default_note
+        # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+
+        movdn.8
+        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+        exec.output_note::add_asset
+        # => [pad(16)]
+    end
+
+    #! Creates a default note and moves the provided asset to it from the account context.
+    #!
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc create_default_note_with_moved_asset
+        exec.create_default_note
+        # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+
+        movdn.8
+        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+        call.wallet::move_asset_to_note
+        # => [pad(16)]
     end
 
     #! Inputs:  [pad(16)]

@@ -1,52 +1,45 @@
 use alloc::sync::Arc;
 
+use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::Library;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::StandardsLib;
+use crate::testing::mock_account_code::MockAccountCodeExt;
 
+// Note: note creation must originate from the account context (the `output_note::create` kernel
+// procedure authenticates the caller). These helpers therefore delegate to the account procedures
+// exposed by the mock account (`mock::account`), which perform the actual creation. Each helper
+// then normalizes the stack to preserve the historical `exec`-based output shape.
 const MOCK_UTIL_LIBRARY_CODE: &str = "
-    use miden::protocol::output_note
-    use miden::protocol::note::NOTE_TYPE_PRIVATE
     use miden::standards::wallets::basic->wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
     pub proc create_default_note
-        push.1.2.3.4           # = RECIPIENT
-        push.NOTE_TYPE_PRIVATE # = NoteType::Private
-        push.0                 # = NoteTag
-        # => [tag, note_type, RECIPIENT]
-
-        exec.output_note::create
+        call.::mock::account::create_default_note
+        # drop the 15 pad elements the account-procedure call convention leaves
+        movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx]
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_asset
-        exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE]
-
-        movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx]
-
-        exec.output_note::add_asset
+        call.::mock::account::create_default_note_with_asset
+        # drop the pad elements the account-procedure call convention leaves
+        dropw dropw dropw dropw
         # => []
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_moved_asset
-        exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE]
-
-        movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx]
-
-        exec.move_asset_to_note
+        call.::mock::account::create_default_note_with_moved_asset
+        # drop the pad elements the account-procedure call convention leaves
+        dropw dropw dropw dropw
         # => []
     end
 
@@ -67,6 +60,8 @@ static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         TransactionKernel::assembler()
             .with_dynamic_library(StandardsLib::default())
             .expect("dynamically linking standards library should work")
+            .with_dynamic_library(AccountCode::mock_account_library())
+            .expect("dynamically linking mock account library should work")
             .assemble_library([NamedSource::new("mock::util", MOCK_UTIL_LIBRARY_CODE)])
             .expect("mock util library should be valid"),
     )

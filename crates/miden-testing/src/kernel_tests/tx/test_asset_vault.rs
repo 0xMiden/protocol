@@ -38,18 +38,19 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let asset_key = AssetVaultKey::new_fungible(faucet_id);
     let code = format!(
         r#"
+        use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use miden::protocol::active_account
+        use mock::account->mock_account
 
         begin
             exec.prologue::prepare_transaction
 
             push.{ASSET_KEY}
-            exec.active_account::get_balance
-            # => [balance]
+            call.mock_account::get_balance
+            # => [balance, pad(15)]
 
             # truncate the stack
-            swap drop
+            exec.sys::truncate_stack
         end
             "#,
         ASSET_KEY = asset_key.to_word(),
@@ -158,16 +159,17 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
     let code = format!(
         "
+        use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use miden::protocol::active_account
+        use mock::account->mock_account
 
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.active_account::has_non_fungible_asset
+            call.mock_account::has_non_fungible_asset
 
             # truncate the stack
-            swap drop
+            exec.sys::truncate_stack
         end
         ",
         NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),

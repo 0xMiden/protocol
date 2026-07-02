@@ -53,13 +53,16 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries()
         .compile_tx_script(
             r#"
-      use miden::protocol::native_account
+      use miden::core::sys
+      use mock::account->mock_account
 
       begin
-          exec.native_account::compute_delta_commitment
-          # => [DELTA_COMMITMENT]
+          call.mock_account::compute_delta_commitment
+          # => [DELTA_COMMITMENT, pad(12)]
 
           padw assert_eqw.err="empty account delta should commit to the empty word"
+
+          exec.sys::truncate_stack
       end
       "#,
         )
@@ -598,7 +601,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             push.{tag}             # tag
 
             # create the note
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx, pad(15)]
 
             # move the asset into the new note
