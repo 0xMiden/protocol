@@ -5,6 +5,8 @@
 //! - Async tests run small MASM programs on a [`CodeExecutor`] to cover real `ExecutionError`
 //!   variants end-to-end.
 
+use alloc::string::ToString;
+
 use miden_assembly::SourceSpan;
 use miden_processor::advice::AdviceError;
 use miden_processor::operation::OperationError;
@@ -238,14 +240,22 @@ async fn not_u32_values() {
 
 #[tokio::test]
 async fn vm_failed_assertion() {
-    let r = run_masm(r#"begin push.0 assert.err="custom failure" end"#).await;
-    assert_execution_error!(
-        r,
-        matches ExecutionError::OperationError {
+    let err = run_masm(r#"begin push.0 assert.err="custom failure" end"#)
+        .await
+        .expect_err("expected assertion failure");
+    let diagnostic = err.to_string();
+
+    assert!(
+        diagnostic.contains("custom failure"),
+        "expected package debug info to recover the assertion message:\n{diagnostic}"
+    );
+    assert!(matches!(
+        err.as_execution_error(),
+        ExecutionError::OperationError {
             err: OperationError::FailedAssertion { .. },
             ..
         }
-    );
+    ));
 }
 
 #[tokio::test]

@@ -126,7 +126,6 @@ impl TransactionContext {
         // TransactionContextBuilder.
         self.mast_store.insert_package(&TransactionKernel::library());
         self.mast_store.insert_package(&program);
-        let program = program.try_into_program().expect("program package should be executable");
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(
             [tx_inputs.account().code()]
@@ -158,7 +157,7 @@ impl TransactionContext {
         CodeExecutor::new(mock_host)
             .stack_inputs(stack_inputs)
             .extend_advice_inputs(advice_inputs)
-            .execute_program(program)
+            .execute_package(program)
             .await
     }
 

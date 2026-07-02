@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::StackOutputs;
+use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -210,12 +210,20 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        // instantiate the processor in debug mode only when debug mode is specified via execution
-        // options; this is important because in debug mode execution is almost 100x slower
+        // Use the package-debug execution API even when the embedded release kernel has no debug
+        // sections. This enables package-owned debug info for dynamically loaded scripts.
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
 
+        let program = TransactionKernel::main();
+        let kernel_debug_info = TransactionKernel::main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(map_execution_error)?;
         let stack_outputs = output.stack;
@@ -259,8 +267,16 @@ where
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
+        let program = TransactionKernel::tx_script_main();
+        let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::tx_script_main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::tx_script_main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?;
         let stack_outputs = output.stack;

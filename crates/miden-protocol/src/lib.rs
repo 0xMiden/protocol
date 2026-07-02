@@ -71,7 +71,7 @@ pub mod vm {
     pub use miden_core::advice::{AdviceInputs, AdviceMap};
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
-    pub use miden_mast_package::debug_info::PackageDebugInfo;
+    pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};
     pub use miden_mast_package::{
         Package,
         PackageDebugInfoError,

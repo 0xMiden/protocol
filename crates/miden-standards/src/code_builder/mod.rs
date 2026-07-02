@@ -453,20 +453,6 @@ impl CodeBuilder {
     // PRIVATE HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the advice map to a program if it's non-empty.
-    ///
-    /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map(
-        advice_map: AdviceMap,
-        program: miden_protocol::vm::Program,
-    ) -> miden_protocol::vm::Program {
-        if advice_map.is_empty() {
-            program
-        } else {
-            program.with_advice_map(advice_map)
-        }
-    }
-
     /// Applies the advice map to a library if it's non-empty.
     ///
     /// This avoids cloning the MAST forest when there are no advice map entries.
@@ -532,20 +518,19 @@ impl CodeBuilder {
     ) -> Result<TransactionScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler
-            .assemble_program("transaction-script", tx_script)
-            .map_err(|err| {
+        let package =
+            assembler.assemble_program("transaction-script", tx_script).map_err(|err| {
                 CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
-            })?
-            .try_into_program()
-            .map_err(|err| {
-                CodeBuilderError::build_error_with_report(
-                    "failed to convert transaction script package",
-                    err,
-                )
             })?;
 
-        Ok(TransactionScript::new(Self::apply_advice_map(advice_map, program)))
+        TransactionScript::from_package(&package)
+            .map(|script| script.with_advice_map(advice_map))
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_source(
+                    "failed to create transaction script from package",
+                    err,
+                )
+            })
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].

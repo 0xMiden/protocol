@@ -14,7 +14,16 @@ use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs, StackOutputs};
+use crate::vm::{
+    AdviceInputs,
+    DebugSourceNodeId,
+    Package,
+    PackageDebugInfo,
+    Program,
+    ProgramInfo,
+    StackInputs,
+    StackOutputs,
+};
 use crate::{Felt, Hasher, Word};
 
 mod procedures {
@@ -42,27 +51,47 @@ static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     )
 });
 
-// Initialize the kernel main program only once
-static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
+// Initialize the kernel main package only once
+static KERNEL_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_main_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
-    Package::read_from_bytes_trusted(kernel_main_bytes)
-        .expect("failed to deserialize transaction kernel main package")
+    Arc::new(
+        Package::read_from_bytes_trusted(kernel_main_bytes)
+            .expect("failed to deserialize transaction kernel main package"),
+    )
+});
+
+// Initialize the kernel main program only once
+static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
+    KERNEL_MAIN_PACKAGE
         .try_into_program()
         .expect("transaction kernel main package should contain a program")
 });
 
-// Initialize the transaction script executor program only once
-static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
+// Initialize the transaction script executor package only once
+static TX_SCRIPT_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let tx_script_main_bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
         "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
     ));
-    Package::read_from_bytes_trusted(tx_script_main_bytes)
-        .expect("failed to deserialize tx script executor package")
+    Arc::new(
+        Package::read_from_bytes_trusted(tx_script_main_bytes)
+            .expect("failed to deserialize tx script executor package"),
+    )
+});
+
+// Initialize the transaction script executor program only once
+static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
+    TX_SCRIPT_MAIN_PACKAGE
         .try_into_program()
         .expect("tx script executor package should contain a program")
 });
+
+static KERNEL_MAIN_DEBUG_INFO: LazyLock<Option<Arc<PackageDebugInfo>>> =
+    LazyLock::new(|| package_debug_info(&KERNEL_MAIN_PACKAGE, "transaction kernel main"));
+
+static TX_SCRIPT_MAIN_DEBUG_INFO: LazyLock<Option<Arc<PackageDebugInfo>>> =
+    LazyLock::new(|| package_debug_info(&TX_SCRIPT_MAIN_PACKAGE, "tx script executor"));
 
 // TRANSACTION KERNEL
 // ================================================================================================
@@ -92,12 +121,42 @@ impl TransactionKernel {
         KERNEL_MAIN.clone()
     }
 
+    /// Returns package-owned debug information for the transaction kernel executable program.
+    ///
+    /// # Panics
+    /// Panics if the embedded transaction kernel package contains malformed debug information.
+    pub fn main_debug_info() -> Option<Arc<PackageDebugInfo>> {
+        KERNEL_MAIN_DEBUG_INFO.clone()
+    }
+
+    /// Returns the source/debug occurrence for the transaction kernel executable entrypoint.
+    pub fn main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
+        package_entrypoint_source_node(&KERNEL_MAIN_PACKAGE, KERNEL_MAIN_DEBUG_INFO.as_deref())
+    }
+
     /// Returns an AST of the transaction script executor program.
     ///
     /// # Panics
     /// Panics if the transaction kernel source is not well-formed.
     pub fn tx_script_main() -> Program {
         TX_SCRIPT_MAIN.clone()
+    }
+
+    /// Returns package-owned debug information for the transaction script executor program.
+    ///
+    /// # Panics
+    /// Panics if the embedded transaction script executor package contains malformed debug
+    /// information.
+    pub fn tx_script_main_debug_info() -> Option<Arc<PackageDebugInfo>> {
+        TX_SCRIPT_MAIN_DEBUG_INFO.clone()
+    }
+
+    /// Returns the source/debug occurrence for the transaction script executor entrypoint.
+    pub fn tx_script_main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
+        package_entrypoint_source_node(
+            &TX_SCRIPT_MAIN_PACKAGE,
+            TX_SCRIPT_MAIN_DEBUG_INFO.as_deref(),
+        )
     }
 
     /// Returns [ProgramInfo] for the transaction kernel executable program.
@@ -407,6 +466,22 @@ impl TransactionKernel {
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }
+}
+
+fn package_debug_info(package: &Package, package_name: &str) -> Option<Arc<PackageDebugInfo>> {
+    package
+        .debug_info()
+        .unwrap_or_else(|err| panic!("failed to read {package_name} debug info: {err}"))
+        .map(Arc::new)
+}
+
+fn package_entrypoint_source_node(
+    package: &Package,
+    debug_info: Option<&PackageDebugInfo>,
+) -> Option<DebugSourceNodeId> {
+    let source_node_id = package.entrypoint_source_node()?;
+    debug_info?.source_node(source_node_id)?;
+    Some(source_node_id)
 }
 
 #[cfg(any(feature = "testing", test))]

@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use core::slice;
 
@@ -627,6 +628,68 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     assert_eq!(stack_outputs[..3], [Felt::new_unchecked(7), Felt::new_unchecked(2), ONE]);
 
     Ok(())
+}
+
+#[tokio::test]
+async fn failed_tx_script_reports_package_debug_message() -> anyhow::Result<()> {
+    const ERROR_MESSAGE: &str = "transaction script debug message should survive execution";
+
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        begin
+            push.0 assert.err="{ERROR_MESSAGE}"
+        end
+        "#
+    ))?;
+
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+    let error = tx_context.execute().await.expect_err("transaction script should fail");
+
+    assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_tx_view_script_reports_package_debug_message() -> anyhow::Result<()> {
+    const ERROR_MESSAGE: &str = "view script debug message should survive execution";
+
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        begin
+            push.0 assert.err="{ERROR_MESSAGE}"
+        end
+        "#
+    ))?;
+
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let account_id = tx_context.account().id();
+    let block_ref = tx_context.tx_inputs().block_header().block_num();
+    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let error = executor
+        .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
+        .await
+        .expect_err("transaction view script should fail");
+
+    assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
+
+    Ok(())
+}
+
+fn assert_transaction_error_contains_debug_message(
+    error: &TransactionExecutorError,
+    expected_message: &str,
+) {
+    let diagnostic = error.to_string();
+
+    assert!(
+        diagnostic.contains(expected_message),
+        "expected package debug info to recover the assertion message:\n{diagnostic}"
+    );
 }
 
 // TEST TRANSACTION SCRIPT
