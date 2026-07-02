@@ -1,6 +1,7 @@
 use crate::account::{
     StorageMapPatch,
     StorageMapPatchEntries,
+    StoragePatchOperation,
     StorageSlotContent,
     StorageSlotName,
     StorageSlotType,
@@ -46,6 +47,14 @@ impl StorageSlotPatch {
         match self {
             StorageSlotPatch::Value(_) => StorageSlotType::Value,
             StorageSlotPatch::Map(_) => StorageSlotType::Map,
+        }
+    }
+
+    /// Returns the [`StoragePatchOperation`] that this slot patch represents.
+    pub fn patch_op(&self) -> StoragePatchOperation {
+        match self {
+            StorageSlotPatch::Value(value_patch) => value_patch.patch_op(),
+            StorageSlotPatch::Map(map_patch) => map_patch.patch_op(),
         }
     }
 

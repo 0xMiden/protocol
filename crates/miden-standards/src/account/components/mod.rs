@@ -15,6 +15,7 @@ use crate::account::auth::{
 };
 use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::AccountComponentInterface;
+use crate::account::metadata::CodeInspection;
 use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
@@ -25,6 +26,7 @@ use crate::account::wallets::BasicWallet;
 pub enum StandardAccountComponent {
     BasicWallet,
     FungibleFaucet,
+    CodeInspection,
     Authority,
     Ownable2Step,
     RoleBasedAccessControl,
@@ -44,6 +46,7 @@ impl StandardAccountComponent {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
+            Self::CodeInspection => CodeInspection::code(),
             Self::Authority => Authority::code(),
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
@@ -81,6 +84,9 @@ impl StandardAccountComponent {
                 },
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
+                },
+                Self::CodeInspection => {
+                    component_interface_vec.push(AccountComponentInterface::CodeInspection)
                 },
                 Self::Authority => {
                     component_interface_vec.push(AccountComponentInterface::Authority)
@@ -124,6 +130,7 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::CodeInspection.extract_component(procedures_set, component_interface_vec);
         Self::Authority.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);

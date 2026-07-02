@@ -52,16 +52,16 @@ fn account_storage_patch_accessors() {
         [(map_slot.clone(), StorageMapPatch::from_iters([], [(map_key, map_value)]))],
     );
 
-    assert_eq!(patch.get_value(&value_slot), Some(value));
-    assert_eq!(patch.get_value(&absent_slot), None);
+    // `from_iters` records value and map slots as `Update` operations.
+    assert_eq!(patch.updated_value(&value_slot), Some(value));
+    assert_eq!(patch.updated_value(&absent_slot), None);
 
-    let map_patch = patch.get_map(&map_slot).unwrap();
-    assert_eq!(map_patch.entries().unwrap().as_map().get(&map_key), Some(&map_value));
-    assert_eq!(patch.get_map(&absent_slot), None);
+    assert_eq!(patch.updated_map_item(&map_slot, &map_key), Some(map_value));
+    assert_eq!(patch.updated_map(&absent_slot), None);
 
-    assert_eq!(patch.get_map_value(&map_slot, &map_key), Some(map_value));
-    assert_eq!(patch.get_map_value(&map_slot, &absent_key), None);
-    assert_eq!(patch.get_map_value(&absent_slot, &map_key), None);
+    assert_eq!(patch.updated_map_item(&map_slot, &map_key), Some(map_value));
+    assert_eq!(patch.updated_map_item(&map_slot, &absent_key), None);
+    assert_eq!(patch.updated_map_item(&absent_slot, &map_key), None);
 }
 
 #[test]
