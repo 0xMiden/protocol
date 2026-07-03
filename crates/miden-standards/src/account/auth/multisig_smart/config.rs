@@ -2,13 +2,11 @@ use miden_protocol::errors::AccountError;
 
 /// Configures the proposal delay rules used by smart multisig timelock flows.
 ///
-/// `min_delay` defines how long a proposal must wait before execution, while
-/// `propose_expiration_delta` controls the transaction expiration delta applied to proposal
-/// transactions.
+/// `min_delay` (in seconds) defines how long a proposal must wait before execution, while
+/// `propose_expiration_delta` (in blocks) controls the transaction expiration delta applied to
+/// proposal transactions.
 ///
-/// Both fields must be non-zero. The MASM `update_delayed_execution_policy` procedure enforces
-/// the same constraint at runtime via `ERR_MIN_DELAY_ZERO` / `ERR_PROPOSE_EXPIRATION_DELTA_ZERO`;
-/// Rust-side validation here is the primary check, with the MASM kept as a safety net.
+/// Both fields must be non-zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayedExecutionPolicy {
     min_delay: u32,

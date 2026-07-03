@@ -2,13 +2,12 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
-use miden::standards::auth::tx_policy
 
 # CONSTANTS
 # =================================================================================================
 
 # [min_delay, propose_expiration_delta, 0, 0]
-const DELAYED_EXECUTION_SLOT = word("miden::standards::auth::multisig_smart::delayed_execution")
+const DELAY_MODE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_mode_config")
 
 # Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
@@ -80,7 +79,7 @@ pub proc update_delayed_execution_policy
     push.0 push.0 movdn.3 movdn.3
     # => [min_delay, propose_expiration_delta, 0, 0]
 
-    push.DELAYED_EXECUTION_SLOT[0..2]
+    push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, 0, 0]
 
     exec.native_account::set_item
@@ -90,7 +89,7 @@ pub proc update_delayed_execution_policy
     # => []
 end
 
-#! Loads the delayed execution policy configuration from `DELAYED_EXECUTION_SLOT`.
+#! Loads the delayed execution policy configuration from `DELAY_MODE_CONFIG_SLOT`.
 #!
 #! Inputs:  []
 #! Outputs: [min_delay, propose_expiration_delta]
@@ -103,7 +102,7 @@ end
 #!
 #! Invocation: exec
 proc get_delayed_execution_config
-    push.DELAYED_EXECUTION_SLOT[0..2]
+    push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.active_account::get_initial_item
@@ -113,7 +112,7 @@ proc get_delayed_execution_config
     # => [min_delay, propose_expiration_delta]
 end
 
-#! Returns `min_delay` from [`DELAYED_EXECUTION_SLOT`]
+#! Returns `min_delay` from [`DELAY_MODE_CONFIG_SLOT`]
 #!
 #! Inputs:  []
 #! Outputs: [min_delay]
@@ -127,7 +126,7 @@ proc get_min_delay
     # => [min_delay]
 end
 
-#! Returns `propose_expiration_delta` from [`DELAYED_EXECUTION_SLOT`].
+#! Returns `propose_expiration_delta` from [`DELAY_MODE_CONFIG_SLOT`].
 #!
 #! Callers stage a proposal by piping the returned delta through
 #! `tx::update_expiration_block_delta` so that proposal-bearing transactions expire within the
@@ -336,19 +335,19 @@ end
 #! procedure has no additional work to do for such transactions. Any other transaction is treated
 #! as an execution and runs the full signature/threshold/timelock checks in the auth procedure.
 #!
+#! The caller is responsible for asserting that a delay action was the only non-auth procedure
+#! called (via `assert_only_one_non_auth_procedure_called`), so it cannot be bundled with a
+#! state-mutating procedure to bypass the timelock.
+#!
 #! Inputs:  []
-#! Outputs: [is_delay_action_only]
+#! Outputs: [was_propose_or_cancel_called]
 #!
 #! Where:
-#! - is_delay_action_only is 1 if `propose_transaction` or `cancel_transaction_proposal` was the
-#!   single non-auth procedure called, otherwise 0.
-#!
-#! Panics if:
-#! - a delay-action procedure was called together with another non-auth account procedure
-#!   (`assert_only_one_non_auth_procedure_called`).
+#! - was_propose_or_cancel_called is 1 if `propose_transaction` or `cancel_transaction_proposal`
+#!   was called, otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_delay_action_only
+pub proc was_propose_or_cancel_called
     procref.propose_transaction
     exec.native_account::was_procedure_called
     # => [propose_called]
@@ -358,17 +357,7 @@ pub proc is_delay_action_only
     # => [cancel_called, propose_called]
 
     or
-    # => [is_delay_action_only]
-
-    dup
-    # => [is_delay_action_only, is_delay_action_only]
-
-    if.true
-        # A delay action must be the only non-auth procedure called, otherwise it could be bundled
-        # with a state-mutating procedure to bypass the timelock.
-        exec.tx_policy::assert_only_one_non_auth_procedure_called
-    end
-    # => [is_delay_action_only]
+    # => [was_propose_or_cancel_called]
 end
 
 # TX ACTIONS API
@@ -398,6 +387,9 @@ end
 @account_procedure
 pub proc propose_transaction
     # => [TX_SUMMARY_COMMITMENT]
+    # Note: a transaction that was already executed can still be proposed here; it is not worth an
+    # extra `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing
+    # it later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
     dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
     # => [TX_SUMMARY_COMMITMENT]
 
@@ -485,7 +477,7 @@ end
 #! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-pub proc execute_proposed_tx
+pub proc assert_and_consume_proposal
     # => [TX_SUMMARY_COMMITMENT]
     dupw exec.assert_tx_proposed_and_unlocked
     # => [TX_SUMMARY_COMMITMENT]

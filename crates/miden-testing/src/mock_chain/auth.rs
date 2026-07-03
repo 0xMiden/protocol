@@ -58,7 +58,7 @@ pub enum Auth {
     MultisigSmart {
         approver_set: ApproverSet,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-        delayed_execution: DelayedExecutionPolicy,
+        delayed_execution_policy: DelayedExecutionPolicy,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -144,11 +144,12 @@ impl Auth {
             Auth::MultisigSmart {
                 approver_set,
                 proc_policy_map,
-                delayed_execution,
+                delayed_execution_policy,
             } => {
-                let config = AuthMultisigSmartConfig::new(approver_set.clone(), *delayed_execution)
-                    .with_proc_policies(proc_policy_map.clone())
-                    .expect("invalid multisig smart config");
+                let config =
+                    AuthMultisigSmartConfig::new(approver_set.clone(), *delayed_execution_policy)
+                        .with_proc_policies(proc_policy_map.clone())
+                        .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")

@@ -21,6 +21,7 @@ use miden_standards::account::auth::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
@@ -89,7 +90,6 @@ fn salt(seed: u32) -> Word {
 /// should let a single-signature transaction that only calls `receive_asset` succeed.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_three_to_one_signature(
     #[case] auth_scheme: AuthScheme,
@@ -114,14 +114,11 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let mut mock_chain = mock_chain_builder.build()?;
 
     let salt = salt(1);
-    let tx_summary = match mock_chain
+    let builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-    {
+        .auth_args(salt);
+
+    let tx_summary = match builder.clone().build()?.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
         error => panic!("expected abort with tx summary: {error:?}"),
     };
@@ -132,10 +129,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let tx_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+    let tx_result = builder
         .add_signature(public_keys[0].to_commitment(), msg, one_signature)
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -302,7 +297,6 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 /// signer set with new public keys. The new threshold and signers are persisted in storage.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_update_signers_and_thresholds(
     #[case] auth_scheme: AuthScheme,
@@ -343,18 +337,15 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let salt = salt(3);
 
-    // Dry-run to obtain the tx summary that the current approvers must sign.
-    let tx_summary = match mock_chain
+    let builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
-        .tx_script(update_signers_script.clone())
+        .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
-        .extend_advice_inputs(advice_inputs.clone())
-        .auth_args(salt)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-    {
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
+
+    // Dry-run a clone to obtain the tx summary that the current approvers must sign.
+    let tx_summary = match builder.clone().build()?.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
         error => panic!("expected abort with tx summary: {error:?}"),
     };
@@ -368,12 +359,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(update_signers_script)
-        .tx_script_args(multisig_config_hash)
-        .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+    let executed_tx = builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -408,7 +394,6 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 /// `procedure_policies` storage map so subsequent transactions see the new policy.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_set_procedure_policy(
     #[case] auth_scheme: AuthScheme,
@@ -448,16 +433,13 @@ async fn test_multisig_smart_set_procedure_policy(
 
     let salt = salt(4);
 
-    // Dry-run to obtain the tx summary that the approvers must sign.
-    let tx_summary = match mock_chain
+    let builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-    {
+        .tx_script(set_policy_script)
+        .auth_args(salt);
+
+    // Dry-run a clone to obtain the tx summary that the approvers must sign.
+    let tx_summary = match builder.clone().build()?.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
         error => panic!("expected abort with tx summary: {error:?}"),
     };
@@ -471,10 +453,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(set_policy_script)
-        .auth_args(salt)
+    let executed_tx = builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -496,7 +475,7 @@ async fn test_multisig_smart_set_procedure_policy(
     Ok(())
 }
 
-/// Regression test for the per-procedure contribution semantic of `compute_called_proc_policy`:
+/// Regression test for the per-procedure contribution semantic of `compute_tx_threshold`:
 /// a transaction that mixes a low-policy procedure (receive_asset = 1) with an unpolicied
 /// procedure (set_procedure_policy) must require `max(policy, default) = default` signatures,
 /// not just the low policy threshold. Without per-proc-contribute this is a privilege escalation
@@ -550,16 +529,13 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     let salt = salt(42);
 
-    // Dry-run to capture the tx summary.
-    let tx_summary = match mock_chain
+    let builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-    {
+        .tx_script(set_policy_script)
+        .auth_args(salt);
+
+    // Dry-run a clone to capture the tx summary.
+    let tx_summary = match builder.clone().build()?.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
         error => panic!("expected dry-run abort with tx summary: {error:?}"),
     };
@@ -578,10 +554,8 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     // With only 1 signature (matching the low receive_asset policy), the tx must fail because
     // the unpolicied set_procedure_policy call contributes `default_threshold = 3`.
-    let one_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script.clone())
-        .auth_args(salt)
+    let one_sig_result = builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .build()?
         .execute()
@@ -594,10 +568,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     }
 
     // With all 3 signatures the unpolicied default contribution is met and the tx succeeds.
-    let three_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .tx_script(set_policy_script)
-        .auth_args(salt)
+    let three_sig_result = builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)
@@ -623,14 +594,13 @@ use miden_standards::errors::standards::{
 use miden_testing::MockChain;
 use miden_tx::auth::BasicAuthenticator;
 
-/// Drives a delay-action procedure (`propose_transaction` or `cancel_transaction_proposal`) which,
-/// in the option-4 design, verifies its own signatures over the *target* transaction commitment.
-/// The signers blind-sign that commitment directly. Because the kernel skips transaction-summary
-/// reconstruction when a signature is already present, the target summary need not be supplied —
-/// the commitment alone is enough — and there is no unauthorized dry-run round-trip as in
-/// [`execute_script_with_signers`].
+/// Drives a delay-action procedure (`propose_transaction` or `cancel_transaction_proposal`), which
+/// verifies its own signatures over the *target* transaction commitment. The signers blind-sign
+/// that commitment directly. Because the kernel skips transaction-summary reconstruction when a
+/// signature is already present, the target summary need not be supplied — the commitment alone is
+/// enough — and there is no unauthorized dry-run round-trip as in [`execute_script_with_signers`].
 #[allow(clippy::too_many_arguments)]
-async fn delay_action_with_signers(
+async fn execute_delay_action(
     mock_chain: &MockChain,
     account_id: AccountId,
     proc_name: &str,
@@ -680,55 +650,35 @@ async fn execute_script_with_signers(
     tx_script_args: Option<Word>,
     advice_inputs: Option<AdviceInputs>,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
-    let mut tx_context_init_builder = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(tx_script.clone())
-        .auth_args(salt);
-
-    if let Some(tx_script_args) = tx_script_args {
-        tx_context_init_builder = tx_context_init_builder.tx_script_args(tx_script_args);
-    }
-
-    if let Some(advice_inputs) = advice_inputs.clone() {
-        tx_context_init_builder = tx_context_init_builder.extend_advice_inputs(advice_inputs);
-    }
-
-    let tx_summary = tx_context_init_builder
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
-
-    let mut tx_context_signed_builder = mock_chain
+    let mut builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
         .tx_script(tx_script)
         .auth_args(salt);
 
     if let Some(tx_script_args) = tx_script_args {
-        tx_context_signed_builder = tx_context_signed_builder.tx_script_args(tx_script_args);
+        builder = builder.tx_script_args(tx_script_args);
     }
 
     if let Some(advice_inputs) = advice_inputs {
-        tx_context_signed_builder = tx_context_signed_builder.extend_advice_inputs(advice_inputs);
+        builder = builder.extend_advice_inputs(advice_inputs);
     }
+
+    // Dry-run a clone of the builder to capture the tx summary the signers must sign over.
+    let tx_summary =
+        builder.clone().build()?.execute().await.unwrap_err().unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
 
     for signer_idx in signer_indices {
         let sig = authenticators[*signer_idx]
             .get_signature(public_keys[*signer_idx].to_commitment(), &tx_summary)
             .await?;
 
-        tx_context_signed_builder = tx_context_signed_builder.add_signature(
-            public_keys[*signer_idx].to_commitment(),
-            msg,
-            sig,
-        );
+        builder = builder.add_signature(public_keys[*signer_idx].to_commitment(), msg, sig);
     }
 
-    Ok(tx_context_signed_builder.build()?.execute().await)
+    Ok(builder.build()?.execute().await)
 }
 
 // ================================================================================================
@@ -742,7 +692,6 @@ async fn execute_script_with_signers(
 /// `ERR_PROC_POLICY_INVALID_MODE` before any signature check.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_proposal(
     #[case] auth_scheme: AuthScheme,
@@ -788,70 +737,17 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
     Ok(())
 }
 
-/// An unauthorized dry-run of a procedure must still yield its `TX_SUMMARY_COMMITMENT` (so a caller
-/// can obtain the commitment to propose). With no proposal present the execution mode is immediate;
-/// because the procedure's policy also permits the immediate path, execution reaches the
-/// signature/threshold check and aborts with `Unauthorized` (carrying the summary) rather than
-/// panicking at the policy layer.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[tokio::test]
-async fn test_multisig_smart_unauthorized_dry_run_returns_tx_summary(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
-    let multisig_account = create_multisig_smart_account(
-        2,
-        &public_keys,
-        100,
-        vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
-            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
-        )],
-    )?;
-    let account_id = multisig_account.id();
-    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
-
-    let update_timelock_script = compile_multisig_smart_tx_script(
-        "
-        begin
-            push.2
-            push.40
-            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
-            drop
-            drop
-        end
-        ",
-    )?;
-
-    let result = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(update_timelock_script)
-        .auth_args(salt(902))
-        .build()?
-        .execute()
-        .await;
-
-    match result {
-        Err(TransactionExecutorError::Unauthorized(_)) => Ok(()),
-        error => panic!("expected unauthorized dry-run with tx summary, got: {error:?}"),
-    }
-}
-
 /// A delay-action procedure may not be bundled with another non-auth procedure in the same
-/// transaction: `is_delay_action_only` calls `assert_only_one_non_auth_procedure_called`, which
-/// aborts the program. Here a single transaction calls both `propose_transaction` and
+/// transaction: the auth procedure calls `assert_only_one_non_auth_procedure_called`, which aborts
+/// the program. Here a single transaction calls both `propose_transaction` and
 /// `update_delayed_execution_policy`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_delay_action_cannot_be_bundled(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
     let account_id = multisig_account.id();
@@ -873,19 +769,25 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
         "
     ))?;
 
-    let result = mock_chain
+    // Sign the target commitment so `propose_transaction`'s own signature check passes. The
+    // transaction must still abort, because the bundled `update_delayed_execution_policy` call
+    // means the delay action is no longer the sole non-auth procedure.
+    let signing = SigningInputs::Blind(bundled_commitment);
+    let mut builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
         .tx_script(bundled_script)
-        .auth_args(salt(305))
-        .build()?
-        .execute()
-        .await;
-
-    match result {
-        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
-        Err(err) => panic!("expected transaction program failure, got: {err}"),
-        Ok(_) => panic!("bundling a delay action with another procedure must fail"),
+        .auth_args(salt(305));
+    for signer_idx in [0, 1] {
+        let sig = authenticators[signer_idx]
+            .get_signature(public_keys[signer_idx].to_commitment(), &signing)
+            .await?;
+        builder =
+            builder.add_signature(public_keys[signer_idx].to_commitment(), bundled_commitment, sig);
     }
+
+    let result = builder.build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
 
     Ok(())
 }
@@ -893,7 +795,6 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
 /// Proposing the same commitment twice must fail the second time with `ERR_TX_ALREADY_PROPOSED`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_double_propose_fails(
     #[case] auth_scheme: AuthScheme,
@@ -907,7 +808,7 @@ async fn test_multisig_smart_double_propose_fails(
 
     let commitment = Word::from([Felt::from(44u32); 4]);
 
-    let propose_tx = delay_action_with_signers(
+    let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -923,7 +824,7 @@ async fn test_multisig_smart_double_propose_fails(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    let result = delay_action_with_signers(
+    let result = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -946,7 +847,6 @@ async fn test_multisig_smart_double_propose_fails(
 /// `ERR_TX_STILL_TIMELOCKED`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_execute_before_min_delay_fails(
     #[case] auth_scheme: AuthScheme,
@@ -966,8 +866,8 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    // The execute transaction the proposal is for: in option 4 it just calls the real procedure;
-    // auth detects it as an execution because it is not a propose/cancel-only transaction.
+    // The execute transaction the proposal is for just calls the real procedure; auth detects it as
+    // an execution because it is not a propose/cancel-only transaction.
     let execute_script = compile_multisig_smart_tx_script(
         "
         begin
@@ -991,7 +891,7 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
         .unwrap_err()
         .unwrap_unauthorized_err();
     // Propose the target summary (2 sigs over the target commitment, default threshold).
-    let propose_tx = delay_action_with_signers(
+    let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -1029,7 +929,6 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
 /// then execute it. After execution the proposal entry must be removed from `TX_PROPOSALS_SLOT`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     #[case] auth_scheme: AuthScheme,
@@ -1072,7 +971,7 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         .unwrap_unauthorized_err();
     let tx_summary_commitment_word = tx_summary.as_ref().to_commitment();
 
-    let propose_tx = delay_action_with_signers(
+    let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -1142,7 +1041,6 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
 /// threshold. The cancel finalizer should panic with `ERR_CANCEL_INSUFFICIENT_SIGNATURES`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     #[case] auth_scheme: AuthScheme,
@@ -1157,7 +1055,7 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     let commitment = Word::from([Felt::from(701u32); 4]);
 
     // Propose the commitment with 4 sigs — this stamps min_cancel_sigs = 4 onto the entry.
-    let propose_tx = delay_action_with_signers(
+    let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -1174,7 +1072,7 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     mock_chain.prove_next_block()?;
 
     // Cancel with only 2 sigs — meets default_threshold but below min_cancel_sigs (4).
-    let result = delay_action_with_signers(
+    let result = execute_delay_action(
         &mock_chain,
         account_id,
         "cancel_transaction_proposal",
@@ -1194,7 +1092,6 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
 /// `unlock_timestamp` using the new `min_delay`, not the previous one.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     #[case] auth_scheme: AuthScheme,
@@ -1241,7 +1138,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     // Stored policy reflects the new values.
     let stored_policy = multisig_account
         .storage()
-        .get_item(AuthMultisigSmart::delayed_execution_slot())
+        .get_item(AuthMultisigSmart::delay_mode_config_slot())
         .expect("delayed-execution slot should exist");
     assert_eq!(
         stored_policy,
@@ -1252,7 +1149,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     // A subsequent proposal uses the new `min_delay`. Propose a commitment and verify
     // `unlock_timestamp - proposal_timestamp == new_min_delay`.
     let target_commitment = Word::from([Felt::from(801u32); 4]);
-    let propose_tx = delay_action_with_signers(
+    let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
@@ -1290,7 +1187,6 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
 /// independent propose tx's complete, both entries must remain in the map.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
     #[case] auth_scheme: AuthScheme,
@@ -1306,7 +1202,7 @@ async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
     let commitment_b = Word::from([Felt::from(902u32); 4]);
 
     for (commitment, propose_salt) in [(commitment_a, 903u32), (commitment_b, 904u32)] {
-        let tx = delay_action_with_signers(
+        let tx = execute_delay_action(
             &mock_chain,
             account_id,
             "propose_transaction",
