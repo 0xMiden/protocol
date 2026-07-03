@@ -1,14 +1,15 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::standards::auth
 use miden::standards::auth::multisig
-use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
-use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
-use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
-use miden::standards::auth::multisig_smart::delayed_execution
+use {APPROVER_PUBLIC_KEYS_SLOT} from miden::standards::auth::multisig
+use {APPROVER_SCHEME_ID_SLOT} from miden::standards::auth::multisig
+use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
+
+pub mod delayed_execution
 
 # STORAGE SLOTS
 # =================================================================================================

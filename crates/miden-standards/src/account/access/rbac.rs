@@ -18,7 +18,7 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::account_component_code;
 
-account_component_code!(RBAC_CODE, "access/rbac.masl");
+account_component_code!(RBAC_CODE, "miden-standards-access-rbac.masp");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")

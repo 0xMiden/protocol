@@ -2,7 +2,7 @@ use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::tx
-use miden::standards::wallets::basic->basic_wallet
+use miden::standards::wallets::basic as basic_wallet
 
 # ERRORS
 # =================================================================================================

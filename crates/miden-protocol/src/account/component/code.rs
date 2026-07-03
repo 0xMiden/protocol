@@ -1,5 +1,4 @@
-use miden_assembly::Library;
-use miden_assembly::library::ProcedureExport;
+use miden_mast_package::{Package as Library, ProcedureExport};
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
@@ -33,7 +32,11 @@ impl AccountComponentCode {
     /// procedures.
     pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> + '_ {
         self.exports().map(|proc_export| {
-            let digest = self.0.mast_forest()[proc_export.node].digest();
+            let digest = if let Some(node) = proc_export.node {
+                self.0.mast_forest()[node].digest()
+            } else {
+                proc_export.digest
+            };
             AccountProcedureRoot::from_raw(digest)
         })
     }
@@ -44,6 +47,7 @@ impl AccountComponentCode {
     /// attributes.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
         self.0
+            .manifest
             .exports()
             .filter_map(|export| export.as_procedure())
             .filter(|proc_export| {
@@ -58,7 +62,18 @@ impl AccountComponentCode {
         &self,
         proc_name: impl AsRef<Path>,
     ) -> Option<AccountProcedureRoot> {
-        self.0.get_procedure_root_by_path(proc_name).map(AccountProcedureRoot::from_raw)
+        let proc_name = proc_name.as_ref();
+        let absolute_proc_name = proc_name.to_absolute().ok();
+        self.0
+            .manifest
+            .exports()
+            .filter_map(|export| export.as_procedure())
+            .find(|export| {
+                absolute_proc_name.as_ref().is_some_and(|absolute_proc_name| {
+                    export.path.as_ref() == absolute_proc_name.as_ref()
+                })
+            })
+            .map(|export| AccountProcedureRoot::from_raw(export.digest))
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the
@@ -102,20 +117,18 @@ impl From<AccountComponentCode> for Library {
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
-    use alloc::sync::Arc;
 
     use miden_core::{Felt, Word};
 
     use super::*;
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_library;
 
     #[test]
     fn test_account_component_code_with_advice_map() {
-        let assembler = Assembler::default();
-        let library = Arc::unwrap_or_clone(
-            assembler
-                .assemble_library(["@account_procedure pub proc test nop end"])
-                .expect("failed to assemble library"),
+        let library = assemble_test_library(
+            "test-component-code-advice-map",
+            "test::component_code_advice_map",
+            "@account_procedure pub proc test nop end",
         );
         let component_code = AccountComponentCode::from(library);
 
@@ -142,11 +155,10 @@ mod tests {
 
     #[test]
     fn test_get_procedure_root_by_path() {
-        let assembler = Assembler::default();
-        let library = Arc::unwrap_or_clone(
-            assembler
-                .assemble_library(["@account_procedure pub proc test_proc nop end"])
-                .expect("failed to assemble library"),
+        let library = assemble_test_library(
+            "test-component-code-procedure-root",
+            "test::component_code_procedure_root",
+            "@account_procedure pub proc test_proc nop end",
         );
         let component_code = AccountComponentCode::from(library);
 
@@ -164,8 +176,15 @@ mod tests {
         let proc_path = alloc::format!("{library_namespace}::test_proc");
 
         let root = component_code
-            .get_procedure_root_by_path(proc_path.as_str())
+            .get_procedure_root_by_path(&*proc_path)
             .expect("test_proc should be present");
+        assert_eq!(root, expected);
+
+        let relative_proc_path =
+            proc_path.strip_prefix("::").expect("test procedure path should be absolute");
+        let root = component_code
+            .get_procedure_root_by_path(relative_proc_path)
+            .expect("relative test_proc path should be present");
         assert_eq!(root, expected);
 
         assert!(component_code.get_procedure_root_by_path("bogus::missing").is_none());

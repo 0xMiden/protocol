@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-fungible-faucet"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::fungible_faucet"
+path      = "fungible_faucet.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

@@ -1,8 +1,7 @@
-use alloc::sync::Arc;
-
 use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
-use crate::assembly::{Assembler, Library};
+use crate::assembly::Library;
+use crate::testing::assembler::assemble_test_library;
 use crate::utils::sync::LazyLock;
 
 // ADD COMPONENT
@@ -15,13 +14,8 @@ const ADD_CODE: &str = "
     end
 ";
 
-static ADD_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Arc::unwrap_or_clone(
-        Assembler::default()
-            .assemble_library([ADD_CODE])
-            .expect("add code should be valid"),
-    )
-});
+static ADD_LIBRARY: LazyLock<Library> =
+    LazyLock::new(|| assemble_test_library("miden-testing-add", "miden::testing::add", ADD_CODE));
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.
 ///

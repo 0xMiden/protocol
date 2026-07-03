@@ -2,23 +2,31 @@ use alloc::sync::Arc;
 
 use miden_protocol::assembly::Library;
 use miden_protocol::assembly::mast::MastForest;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
 
-const STANDARDS_LIB_BYTES: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/assets/standards.masl"));
+const STANDARDS_PACKAGE_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-standards.masp"));
+
+static STANDARDS_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(STANDARDS_PACKAGE_BYTES)
+            .expect("standards lib masp should be well-formed"),
+    )
+});
 
 // MIDEN STANDARDS LIBRARY
 // ================================================================================================
 
 #[derive(Clone)]
-pub struct StandardsLib(Library);
+pub struct StandardsLib(Arc<Package>);
 
 impl StandardsLib {
-    /// Returns a reference to the [`MastForest`] of the inner [`Library`].
+    /// Returns a reference to the [`MastForest`] of the inner [`Package`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
     }
@@ -26,24 +34,19 @@ impl StandardsLib {
 
 impl AsRef<Library> for StandardsLib {
     fn as_ref(&self) -> &Library {
-        &self.0
+        self.0.as_ref()
     }
 }
 
-impl From<StandardsLib> for Library {
+impl From<StandardsLib> for Package {
     fn from(value: StandardsLib) -> Self {
-        value.0
+        Arc::unwrap_or_clone(value.0)
     }
 }
 
 impl Default for StandardsLib {
     fn default() -> Self {
-        static STANDARDS_LIB: LazyLock<StandardsLib> = LazyLock::new(|| {
-            let contents = Library::read_from_bytes(STANDARDS_LIB_BYTES)
-                .expect("standards lib masl should be well-formed");
-            StandardsLib(contents)
-        });
-        STANDARDS_LIB.clone()
+        StandardsLib(STANDARDS_PACKAGE.clone())
     }
 }
 

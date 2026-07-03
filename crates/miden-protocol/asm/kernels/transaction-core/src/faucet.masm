@@ -3,7 +3,7 @@ use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::non_fungible_asset
-use miden::tx_kernel_core::memory::INPUT_VAULT_ROOT_PTR
+use {INPUT_VAULT_ROOT_PTR} from miden::tx_kernel_core::memory
 
 # FUNGIBLE ASSETS
 # ==================================================================================================

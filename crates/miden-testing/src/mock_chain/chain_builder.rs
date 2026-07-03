@@ -58,7 +58,7 @@ use miden_standards::account::policies::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
-use rand::Rng;
+use rand::RngExt;
 
 use crate::mock_chain::chain::AccountAuthenticator;
 use crate::utils::{create_p2any_note, create_spawn_note};

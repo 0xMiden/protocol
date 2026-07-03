@@ -1,16 +1,17 @@
 use miden::protocol::account_id
-use miden::protocol::constants::WORD_NUM_ELEMENTS
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
-# Re-export the max inputs per note constant.
-pub use miden::protocol_utils::note::MAX_NOTE_STORAGE_ITEMS
-pub use miden::protocol_utils::note::NOTE_TYPE_PUBLIC
-pub use miden::protocol_utils::note::NOTE_TYPE_PRIVATE
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_SCHEME
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_WORDS
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_TOTAL_WORDS
-pub use miden::protocol_utils::note::ATTACHMENT_SCHEME_NONE
+pub use {
+    ATTACHMENT_SCHEME_NONE,
+    MAX_ATTACHMENT_SCHEME,
+    MAX_ATTACHMENT_TOTAL_WORDS,
+    MAX_ATTACHMENT_WORDS,
+    MAX_NOTE_STORAGE_ITEMS,
+    NOTE_TYPE_PRIVATE,
+    NOTE_TYPE_PUBLIC,
+} from miden::protocol_utils::note
 
 # ERRORS
 # =================================================================================================

@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+
 #[cfg(test)]
 use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
@@ -12,6 +14,7 @@ use miden_processor::{
 };
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;
+use miden_protocol::vm::{DebugSourceNodeId, Package, PackageDebugInfo};
 
 use crate::ExecError;
 
@@ -71,16 +74,37 @@ impl<H: Host> CodeExecutor<H> {
         // Virtual file name should be unique.
         let virtual_source_file =
             source_manager.load(SourceLanguage::Masm, Uri::new("_user_code"), code.to_owned());
-        let program = assembler.assemble_program(virtual_source_file).unwrap();
+        let package = assembler.assemble_program("tx-context-code", virtual_source_file).unwrap();
 
-        self.execute_program(program).await
+        self.execute_package(package).await
     }
 
-    /// Executes the provided [`Program`] and returns the [`Process`] state.
+    /// Executes the provided executable [`Package`] and returns the [`Process`] state.
     ///
-    /// To improve the error message quality, convert the returned [`ExecutionError`] into a
-    /// [`Report`](miden_protocol::assembly::diagnostics::Report).
-    pub async fn execute_program(mut self, program: Program) -> Result<ExecutionOutput, ExecError> {
+    /// Package-owned debug information is used when present.
+    pub async fn execute_package(
+        self,
+        package: impl Into<Box<Package>>,
+    ) -> Result<ExecutionOutput, ExecError> {
+        let package = package.into();
+        let package_debug_info = package.debug_info().ok().flatten();
+        let entrypoint_source_node = package.entrypoint_source_node();
+        let program = package.try_into_program().expect("package should be executable");
+
+        self.execute_program_with_package_debug_info(
+            program,
+            package_debug_info,
+            entrypoint_source_node,
+        )
+        .await
+    }
+
+    async fn execute_program_with_package_debug_info(
+        mut self,
+        program: Program,
+        package_debug_info: Option<PackageDebugInfo>,
+        entrypoint_source_node: Option<DebugSourceNodeId>,
+    ) -> Result<ExecutionOutput, ExecError> {
         let stack_inputs = self.stack_inputs.unwrap_or_default();
 
         let processor = FastProcessor::new(stack_inputs)
@@ -89,11 +113,33 @@ impl<H: Host> CodeExecutor<H> {
             .map_err(ExecError::new)?
             .with_options(self.execution_options.unwrap_or_default())
             .map_err(ExecutionError::advice_error_no_context)
-            .map_err(ExecError::new)?
-            .with_debugging(true);
+            .map_err(ExecError::new)?;
 
-        let execution_output =
-            processor.execute(&program, &mut self.host).await.map_err(ExecError::new)?;
+        let execution_output = match package_debug_info {
+            Some(package_debug_info) => match entrypoint_source_node {
+                Some(entrypoint_source_node) => {
+                    processor
+                        .execute_with_package_debug_info_at_source_node(
+                            &program,
+                            &package_debug_info,
+                            entrypoint_source_node,
+                            &mut self.host,
+                        )
+                        .await
+                },
+                None => {
+                    processor
+                        .execute_with_package_debug_info(
+                            &program,
+                            &package_debug_info,
+                            &mut self.host,
+                        )
+                        .await
+                },
+            },
+            None => processor.execute(&program, &mut self.host).await,
+        }
+        .map_err(ExecError::new)?;
 
         Ok(execution_output)
     }

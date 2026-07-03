@@ -34,7 +34,7 @@ use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
 use crate::procedure_root;
 
-account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
+account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
 
 // Procedure-root statics for the delayed-execution control-plane procedures. Tests and callers
 // can use these to look up the on-chain procedure roots without re-deriving them from the
