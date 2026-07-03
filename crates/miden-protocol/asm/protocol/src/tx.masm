@@ -226,6 +226,12 @@ end
 #! Panics if:
 #! - the provided foreign account ID is invalid.
 #!
+#! Note: the foreign account state read here reflects the transaction reference block, which is
+#! chosen by the executor (prover). The foreign account commitment is not a transaction public input
+#! and is not revalidated against the foreign account's current on-chain state at inclusion, so the
+#! returned values may be stale. Callers must not rely on them for decisions that require the foreign
+#! account's present value.
+#!
 #! Invocation: exec
 @locals(6) # foreign proc root (4) + foreign account ID (2)
 pub proc execute_foreign_procedure
