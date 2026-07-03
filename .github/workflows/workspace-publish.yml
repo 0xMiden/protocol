@@ -6,13 +6,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # Required for OIDC token exchange
 
 jobs:
   publish:
     if: ${{ github.repository_owner == '0xMiden' }}
     runs-on: ubuntu-latest
     environment: release  # Optional: for enhanced security
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC token exchange
 
     steps:
       - name: Checkout repository

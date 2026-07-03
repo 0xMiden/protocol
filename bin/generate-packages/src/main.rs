@@ -5,6 +5,7 @@ use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 
 fn main() -> std::io::Result<()> {
+    // Must be run from the workspace root (CARGO_TARGET_DIR is not set for cargo scripts).
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
