@@ -4,7 +4,7 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::standards::attachments::network_account_target
-use miden::standards::wallets::basic->basic_wallet
+use miden::standards::wallets::basic as basic_wallet
 
 # CONSTANTS
 # =================================================================================================

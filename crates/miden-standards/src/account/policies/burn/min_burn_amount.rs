@@ -24,7 +24,7 @@ use crate::procedure_root;
 
 account_component_code!(
     MIN_BURN_AMOUNT_BURN_POLICY_CODE,
-    "faucets/policies/burn/min_burn_amount.masl"
+    "miden-standards-faucets-policies-burn-min-burn-amount.masp"
 );
 
 procedure_root!(

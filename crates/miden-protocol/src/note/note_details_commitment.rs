@@ -2,7 +2,7 @@ use alloc::string::String;
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Felt, Hasher, Word};
+use super::{Hasher, Word};
 use crate::note::{NoteAssets, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,

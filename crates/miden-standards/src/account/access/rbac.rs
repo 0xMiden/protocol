@@ -24,7 +24,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
-account_component_code!(RBAC_CODE, "access/rbac.masl");
+account_component_code!(RBAC_CODE, "miden-standards-access-rbac.masp");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
@@ -42,6 +42,15 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against the caller's role
 /// membership. It allows role assignment with domain isolation to minimize the scope of
 /// damage from a compromised role.
+///
+/// ## Security considerations
+///
+/// Access control is based on the note sender (the account ID that created the note), which
+/// authenticates *which account* created a note but not the *code* that executed when it was
+/// created. It is meaningful only when every account registered as owner or role member enforces
+/// strong authentication. Registering a permissionless account (for example one using `no_auth`)
+/// as owner or role member provides no access restriction: anyone can make such an account emit a
+/// note with an arbitrary script root and that account's ID as sender, defeating the sender check.
 ///
 /// ## Relation to [`Ownable2Step`]
 ///

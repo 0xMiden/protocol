@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-non-fungible-faucet"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::non_fungible_faucet"
+path      = "non_fungible_faucet.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

@@ -2,7 +2,7 @@ use miden::core::crypto::dsa::falcon512_poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 use miden::protocol::active_account
-use miden::protocol::auth::AUTH_REQUEST_EVENT
+use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth

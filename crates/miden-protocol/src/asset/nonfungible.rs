@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{Asset, AssetCallbackFlag, AssetComposition, AssetError, Word};
+use super::{Asset, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
@@ -24,13 +24,12 @@ use crate::utils::serde::{
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].
 ///
-/// The non-fungible asset can have callbacks to the faucet enabled or disabled, depending on
-/// [`AssetCallbackFlag`]. See [`AssetCallbacks`](crate::asset::AssetCallbacks) for more details.
+/// Whether the asset triggers callbacks to the faucet is an immutable property of the faucet's
+/// [`AccountId`], see [`AccountId::asset_callback_flag`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NonFungibleAsset {
     faucet_id: AccountId,
     value: Word,
-    callbacks: AssetCallbackFlag,
 }
 
 impl NonFungibleAsset {
@@ -39,12 +38,9 @@ impl NonFungibleAsset {
 
     /// The serialized size of a [`NonFungibleAsset`] in bytes.
     ///
-    /// A composition byte (u8) plus an account ID (15 bytes) plus a word (32 bytes) plus a
-    /// callbacks flag (1 byte).
-    pub const SERIALIZED_SIZE: usize = AssetComposition::SERIALIZED_SIZE
-        + AccountId::SERIALIZED_SIZE
-        + Word::SERIALIZED_SIZE
-        + AssetCallbackFlag::SERIALIZED_SIZE;
+    /// A composition byte (u8) plus an account ID (15 bytes) plus a word (32 bytes).
+    pub const SERIALIZED_SIZE: usize =
+        AssetComposition::SERIALIZED_SIZE + AccountId::SERIALIZED_SIZE + Word::SERIALIZED_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -61,11 +57,7 @@ impl NonFungibleAsset {
     /// Hash of the asset's data is expected to be computed from the binary representation of the
     /// asset's data.
     pub fn from_parts(faucet_id: AccountId, value: Word) -> Self {
-        Self {
-            faucet_id,
-            value,
-            callbacks: AssetCallbackFlag::default(),
-        }
+        Self { faucet_id, value }
     }
 
     /// Creates a non-fungible asset from the provided key and value.
@@ -93,10 +85,7 @@ impl NonFungibleAsset {
             });
         }
 
-        let mut asset = Self::from_parts(key.faucet_id(), value);
-        asset.callbacks = key.callback_flag();
-
-        Ok(asset)
+        Ok(Self::from_parts(key.faucet_id(), value))
     }
 
     /// Creates a non-fungible asset from the provided key and value.
@@ -112,12 +101,6 @@ impl NonFungibleAsset {
         Self::from_key_value(vault_key, value)
     }
 
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
-        self.callbacks = callbacks;
-        self
-    }
-
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -129,18 +112,13 @@ impl NonFungibleAsset {
         let asset_id_prefix = self.value[1];
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
-        AssetVaultKey::new(asset_id, self.faucet_id, AssetComposition::None, self.callbacks)
+        AssetVaultKey::new(asset_id, self.faucet_id, AssetComposition::None)
             .expect("non-fungible composition is always valid")
     }
 
     /// Returns the ID of the faucet which issued this asset.
     pub fn faucet_id(&self) -> AccountId {
         self.faucet_id
-    }
-
-    /// Returns the [`AssetCallbackFlag`] of this asset.
-    pub fn callbacks(&self) -> AssetCallbackFlag {
-        self.callbacks
     }
 
     /// Returns the asset's key encoded to a [`Word`].
@@ -176,14 +154,12 @@ impl Serializable for NonFungibleAsset {
         target.write(AssetComposition::None);
         target.write(self.faucet_id());
         target.write(self.value);
-        target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
         AssetComposition::SERIALIZED_SIZE
             + self.faucet_id.get_size_hint()
             + self.value.get_size_hint()
-            + self.callbacks.get_size_hint()
     }
 }
 
@@ -207,9 +183,8 @@ impl NonFungibleAsset {
     ) -> Result<Self, DeserializationError> {
         let faucet_id: AccountId = source.read()?;
         let value: Word = source.read()?;
-        let callbacks: AssetCallbackFlag = source.read()?;
 
-        Ok(NonFungibleAsset::from_parts(faucet_id, value).with_callbacks(callbacks))
+        Ok(NonFungibleAsset::from_parts(faucet_id, value))
     }
 }
 
@@ -284,7 +259,6 @@ mod tests {
             AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::None,
-            AssetCallbackFlag::Disabled,
         )?;
         let err =
             NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();

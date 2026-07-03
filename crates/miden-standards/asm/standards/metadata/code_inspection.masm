@@ -20,6 +20,7 @@ use miden::protocol::active_account
 #!   available on the active account.
 #!
 #! Invocation: call
+@account_procedure
 pub proc has_procedure
     exec.active_account::has_procedure
 end
@@ -33,6 +34,7 @@ end
 #! - CODE_COMMITMENT is the commitment of the active account's code.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_code_commitment
     exec.active_account::get_code_commitment
 end
@@ -46,6 +48,7 @@ end
 #! - num_procedures is the number of procedures in the active account.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_num_procedures
     exec.active_account::get_num_procedures
 end
@@ -63,6 +66,7 @@ end
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_procedure_root
     exec.active_account::get_procedure_root
 end

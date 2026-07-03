@@ -1,4 +1,4 @@
-use miden::standards::faucets::non_fungible->faucet
+use miden::standards::faucets::non_fungible as faucet
 
 #! BURN script (non-fungible): burns the NFT carried by the note by calling the faucet's
 #! `receive_and_burn` procedure. Intended to be executed against a non-fungible faucet account.

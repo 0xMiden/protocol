@@ -9,6 +9,7 @@ const MOCK_FAUCET_CODE: &str = "
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
+    @account_procedure
     pub proc mint
         exec.faucet::mint
         # => [pad(16)]
@@ -16,6 +17,7 @@ const MOCK_FAUCET_CODE: &str = "
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
+    @account_procedure
     pub proc burn
         exec.faucet::burn
         # => [pad(16)]
@@ -27,8 +29,8 @@ const MOCK_ACCOUNT_CODE: &str = "
     use miden::protocol::native_account
     use miden::protocol::tx
 
-    pub use ::miden::standards::wallets::basic::receive_asset
-    pub use ::miden::standards::wallets::basic::move_asset_to_note
+    pub use {receive_asset} from miden::standards::wallets::basic
+    pub use {move_asset_to_note} from miden::standards::wallets::basic
 
     # Note: all account's export procedures below should be only called or dyncall'ed, so it
     # is assumed that the operand stack at the beginning of their execution is pad'ed and
@@ -36,6 +38,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
     #! Outputs: [OLD_VALUE, pad(12)]
+    @account_procedure
     pub proc set_item
         exec.native_account::set_item
         # => [OLD_VALUE, pad(12)]
@@ -43,6 +46,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
     #! Outputs: [VALUE, pad(12)]
+    @account_procedure
     pub proc get_item
         exec.active_account::get_item
         # => [VALUE, pad(14)]
@@ -54,6 +58,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
     #! Outputs: [has_slot, pad(15)]
+    @account_procedure
     pub proc has_storage_slot
         exec.active_account::has_storage_slot
         # => [has_slot, pad(15)]
@@ -61,6 +66,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
     #! Outputs: [VALUE, pad(12)]
+    @account_procedure
     pub proc get_initial_item
         exec.active_account::get_initial_item
         # => [VALUE, pad(14)]
@@ -72,6 +78,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
     #! Outputs: [OLD_VALUE, pad(12)]
+    @account_procedure
     pub proc set_map_item
         exec.native_account::set_map_item
         # => [OLD_VALUE, pad(12)]
@@ -79,6 +86,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
     #! Outputs: [VALUE, pad(12)]
+    @account_procedure
     pub proc get_map_item
         exec.active_account::get_map_item
         # => [VALUE, pad(12)]
@@ -86,6 +94,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
     #! Outputs: [INIT_VALUE, pad(12)]
+    @account_procedure
     pub proc get_initial_map_item
         exec.active_account::get_initial_map_item
         # => [INIT_VALUE, pad(12)]
@@ -93,6 +102,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [pad(16)]
     #! Outputs: [CODE_COMMITMENT, pad(12)]
+    @account_procedure
     pub proc get_code_commitment
         exec.active_account::get_code_commitment
         # => [CODE_COMMITMENT, pad(16)]
@@ -104,6 +114,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [pad(16)]
     #! Outputs: [CODE_COMMITMENT, pad(12)]
+    @account_procedure
     pub proc compute_storage_commitment
         exec.active_account::compute_storage_commitment
         # => [STORAGE_COMMITMENT, pad(16)]
@@ -114,6 +125,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc add_asset
         exec.native_account::add_asset
         # => [FINAL_ASSET_VALUE, pad(12)]
@@ -121,6 +133,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc remove_asset
         exec.native_account::remove_asset
         # => [FINAL_ASSET_VALUE, pad(12)]
@@ -128,6 +141,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [pad(16)]
     #! Outputs: [3, pad(12)]
+    @account_procedure
     pub proc account_procedure_1
         push.1.2 add
 
@@ -137,6 +151,7 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Inputs:  [pad(16)]
     #! Outputs: [1, pad(12)]
+    @account_procedure
     pub proc account_procedure_2
         push.2.1 sub
 

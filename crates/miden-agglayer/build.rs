@@ -5,11 +5,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::{Assembler, Library, Report};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::{
+    Assembler,
+    Linkage,
+    ModuleParser,
+    Path as MasmPath,
+    Report,
+    SourceManager,
+    ast,
+};
+use miden_assembly_syntax::Parse;
 use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
+use miden_protocol::assembly::Library;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::access::{AccessControl, Authority};
@@ -36,6 +46,40 @@ const ASM_COMPONENTS_DIR: &str = "components";
 const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
+
+enum ModuleSource {
+    File {
+        file_path: std::path::PathBuf,
+        module_path: miden_assembly::PathBuf,
+        kind: ast::ModuleKind,
+    },
+    Inline {
+        source: String,
+        module_path: miden_assembly::PathBuf,
+        kind: ast::ModuleKind,
+    },
+}
+
+impl Parse for ModuleSource {
+    fn parse(
+        self,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> std::result::Result<Box<ast::Module>, Report> {
+        match self {
+            ModuleSource::File { file_path, module_path, kind } => {
+                let mut parser = ModuleParser::new(Some(kind));
+                parser.set_warnings_as_errors(warnings_as_errors);
+                parser.parse_file(Some(module_path.as_path()), file_path, source_manager)
+            },
+            ModuleSource::Inline { source, module_path, kind } => {
+                let mut parser = ModuleParser::new(Some(kind));
+                parser.set_warnings_as_errors(warnings_as_errors);
+                parser.parse_str(Some(module_path.as_path()), source, source_manager)
+            },
+        }
+    }
+}
 
 // PRE-PROCESSING
 // ================================================================================================
@@ -67,7 +111,7 @@ fn main() -> Result<()> {
         compile_agglayer_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
 
     let mut assembler = TransactionKernel::assembler();
-    assembler.link_static_library(agglayer_lib)?;
+    assembler.link_package(Arc::new(agglayer_lib), Linkage::Static)?;
 
     // compile account components (thin wrappers per component) and return their libraries
     let component_libraries = compile_account_components(
@@ -112,14 +156,15 @@ fn compile_agglayer_lib(
 
     // Add the miden-standards library to the assembler so agglayer components can use it
     let standards_lib = miden_standards::StandardsLib::default();
-    assembler.link_static_library(standards_lib)?;
+    assembler.link_package(Arc::new(standards_lib.into()), Linkage::Static)?;
 
-    let agglayer_lib = assembler.assemble_library_from_dir(source_dir, "agglayer")?;
+    let agglayer_lib =
+        assemble_library_from_dir(assembler, "agglayer", source_dir, MasmPath::new("agglayer"))?;
 
-    let output_file = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
+    let output_file = target_dir.join("agglayer").with_extension(Library::EXTENSION);
     agglayer_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(Arc::unwrap_or_clone(agglayer_lib))
+    Ok(agglayer_lib)
 }
 
 // COMPILE EXECUTABLE MODULES
@@ -139,11 +184,26 @@ fn compile_note_scripts(
 
     // Add the miden-standards library to the assembler so note scripts can use it
     let standards_lib = miden_standards::StandardsLib::default();
-    assembler.link_static_library(standards_lib)?;
+    assembler.link_package(Arc::new(standards_lib.into()), Linkage::Static)?;
 
     for note_file_path in shared::get_masm_files(source_dir).unwrap() {
+        let note_file_stem = note_file_path
+            .file_stem()
+            .expect("file stem should exist")
+            .to_str()
+            .ok_or_else(|| Report::msg("failed to convert file stem to &str"))?;
+        let note_module_path =
+            miden_assembly::PathBuf::new(&format!("agglayer::note_scripts::{note_file_stem}"))
+                .into_diagnostic()?;
+        let root = ModuleSource::File {
+            file_path: note_file_path.clone(),
+            module_path: note_module_path,
+            kind: ast::ModuleKind::Library,
+        };
+
         // compile the note script library from the provided MASM file
-        let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
+        let note_library =
+            assembler.clone().assemble_library("note-script", root, None::<ModuleSource>)?;
 
         let note_file_name = note_file_path
             .file_name()
@@ -151,7 +211,7 @@ fn compile_note_scripts(
             .to_str()
             .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
         let mut masl_file_path = note_scripts_target_dir.join(note_file_name);
-        masl_file_path.set_extension(Library::LIBRARY_EXTENSION);
+        masl_file_path.set_extension(Library::EXTENSION);
 
         // write the note script library to the output dir
         note_library
@@ -193,24 +253,162 @@ fn compile_account_components(
             .expect("file stem should be valid UTF-8")
             .to_owned();
 
-        let component_source_code = fs::read_to_string(&masm_file_path)
-            .expect("reading the component's MASM source code should succeed");
-
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+        let component_path = miden_assembly::PathBuf::new(&component_name).into_diagnostic()?;
+        let root = ModuleSource::File {
+            file_path: masm_file_path.clone(),
+            module_path: component_path,
+            kind: ast::ModuleKind::Library,
+        };
 
         let component_library = assembler
             .clone()
-            .assemble_library([named_source])
+            .assemble_library(component_name.as_str(), root, None::<&str>)
             .expect("library assembly should succeed");
 
         let component_file_path =
-            target_dir.join(&component_name).with_extension(Library::LIBRARY_EXTENSION);
+            target_dir.join(&component_name).with_extension(Library::EXTENSION);
         component_library.write_to_file(&component_file_path).into_diagnostic()?;
 
-        component_libraries.push((component_name, Arc::unwrap_or_clone(component_library)));
+        component_libraries.push((component_name, *component_library));
     }
 
     Ok(component_libraries)
+}
+
+// HELPERS
+// ================================================================================================
+
+fn assemble_library_from_dir(
+    assembler: Assembler,
+    name: impl Into<String>,
+    dir: impl AsRef<Path>,
+    namespace: &MasmPath,
+) -> Result<Library> {
+    let mut modules = read_modules_from_dir(dir, namespace, ast::ModuleKind::Library)?;
+    let root = modules.remove(0);
+    assembler.assemble_library(name.into(), root, modules).map(|package| *package)
+}
+
+fn read_modules_from_dir(
+    dir: impl AsRef<Path>,
+    namespace: &MasmPath,
+    kind: ast::ModuleKind,
+) -> Result<Vec<ModuleSource>> {
+    let dir = dir.as_ref();
+    let real_files = shared::get_masm_files(dir)?.into_iter().collect::<Vec<_>>();
+    let mut modules = synthetic_parent_modules(dir, namespace, &real_files, kind)?;
+
+    let mut real_files = real_files;
+    real_files.sort();
+    for file_path in real_files {
+        let module_path = module_path_from_file(dir, namespace, &file_path)?;
+        modules.push(ModuleSource::File { file_path, module_path, kind });
+    }
+
+    Ok(modules)
+}
+
+fn synthetic_parent_modules(
+    root: &Path,
+    namespace: &MasmPath,
+    real_files: &[std::path::PathBuf],
+    kind: ast::ModuleKind,
+) -> Result<Vec<ModuleSource>> {
+    let mut children_by_dir = BTreeMap::<std::path::PathBuf, BTreeSet<String>>::new();
+    let mut dirs_with_real_mod = BTreeSet::<std::path::PathBuf>::new();
+
+    for file_path in real_files {
+        let relative = file_path.strip_prefix(root).into_diagnostic()?;
+        let parent = relative.parent().unwrap_or(Path::new("")).to_path_buf();
+        let stem = file_path
+            .file_stem()
+            .expect("masm file should have a stem")
+            .to_string_lossy()
+            .to_string();
+
+        if stem == "mod" {
+            dirs_with_real_mod.insert(parent.clone());
+        } else {
+            children_by_dir.entry(parent).or_default().insert(stem);
+        }
+
+        let mut ancestor = std::path::PathBuf::new();
+        for component in relative.parent().unwrap_or(Path::new("")).components() {
+            let child = component.as_os_str().to_string_lossy().to_string();
+            children_by_dir.entry(ancestor.clone()).or_default().insert(child.clone());
+            ancestor.push(child);
+        }
+    }
+
+    let mut modules = Vec::new();
+    if let Some(children) = children_by_dir.remove(Path::new(""))
+        && !dirs_with_real_mod.contains(Path::new(""))
+    {
+        modules.push(ModuleSource::Inline {
+            source: synthetic_parent_source(children),
+            module_path: miden_assembly::PathBuf::new(&namespace.to_string()).into_diagnostic()?,
+            kind,
+        });
+    }
+
+    for (relative_dir, children) in children_by_dir {
+        if dirs_with_real_mod.contains(&relative_dir) {
+            continue;
+        }
+        let module_path = module_path_from_relative_dir(namespace, &relative_dir)?;
+        modules.push(ModuleSource::Inline {
+            source: synthetic_parent_source(children),
+            module_path,
+            kind,
+        });
+    }
+
+    Ok(modules)
+}
+
+fn synthetic_parent_source(children: BTreeSet<String>) -> String {
+    let mut contents = String::new();
+    for child in children {
+        contents.push_str("pub mod ");
+        contents.push_str(&child);
+        contents.push('\n');
+    }
+    contents
+}
+
+fn module_path_from_relative_dir(
+    namespace: &MasmPath,
+    relative_dir: &Path,
+) -> Result<miden_assembly::PathBuf> {
+    let mut parts = namespace.to_string();
+
+    for component in relative_dir {
+        parts.push_str("::");
+        parts.push_str(component.to_string_lossy().as_ref());
+    }
+
+    miden_assembly::PathBuf::new(&parts).into_diagnostic()
+}
+
+fn module_path_from_file(
+    root: &Path,
+    namespace: &MasmPath,
+    file_path: &Path,
+) -> Result<miden_assembly::PathBuf> {
+    let relative = file_path.strip_prefix(root).into_diagnostic()?;
+    let mut parts = namespace.to_string();
+
+    for component in relative {
+        let component = component.to_string_lossy();
+        let component = component.strip_suffix(".masm").unwrap_or(&component);
+        if component == "mod" {
+            continue;
+        }
+        parts.push_str("::");
+        parts.push_str(component);
+    }
+
+    miden_assembly::PathBuf::new(&parts).into_diagnostic()
 }
 
 // GENERATE AGGLAYER CONSTANTS
@@ -480,7 +678,7 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use ::agglayer::common::utils::mem_store_double_word
+use {mem_store_double_word} from agglayer::common::utils
 
 
 #! Inputs:  [zeros_ptr]
@@ -525,7 +723,7 @@ mod shared {
 
     use fs_err as fs;
     use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+    use miden_assembly::diagnostics::{IntoDiagnostic, Result};
     use regex::Regex;
     use walkdir::WalkDir;
 
@@ -537,12 +735,9 @@ mod shared {
 
         let path = dir_path.as_ref();
         if path.is_dir() {
-            let entries = fs::read_dir(path)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("failed to read directory {}", path.display()))?;
-            for entry in entries {
-                let file = entry.into_diagnostic().wrap_err("failed to read directory entry")?;
-                let file_path = file.path();
+            for entry in WalkDir::new(path) {
+                let entry = entry.into_diagnostic()?;
+                let file_path = entry.path().to_path_buf();
                 if is_masm_file(&file_path).into_diagnostic()? {
                     files.push(file_path);
                 }

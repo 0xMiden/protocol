@@ -9,7 +9,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
-    AccountIdVersion,
     AccountType,
     RoleSymbol,
     StorageMapKey,
@@ -66,7 +65,9 @@ fn create_rbac_chain(owner: AccountId) -> anyhow::Result<(Account, MockChain)> {
 }
 
 fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([seed; 32])
 }
 
 fn role(name: &str) -> RoleSymbol {

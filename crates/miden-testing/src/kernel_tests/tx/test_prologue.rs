@@ -82,8 +82,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -113,7 +111,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     };
 
     let code = "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -121,7 +119,8 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         ";
 
     let mock_tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             nop
         end
         ";
@@ -567,7 +566,7 @@ pub async fn create_account_test(
 pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .account_type(account_type)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
@@ -602,7 +601,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     let mut mock_chain = MockChain::new();
     mock_chain.prove_next_block()?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;
@@ -617,7 +616,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .build()?;
 
     let code = "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
 
       begin
           exec.prologue::prepare_transaction
@@ -635,8 +634,8 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
 async fn test_get_blk_version() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction
@@ -661,8 +660,8 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 async fn test_get_blk_timestamp() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction

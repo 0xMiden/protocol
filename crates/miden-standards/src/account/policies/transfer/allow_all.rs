@@ -7,7 +7,10 @@ use crate::procedure_root;
 // ALLOW-ALL TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(ALLOW_ALL_TRANSFER_POLICY_CODE, "faucets/policies/transfer/allow_all.masl");
+account_component_code!(
+    ALLOW_ALL_TRANSFER_POLICY_CODE,
+    "miden-standards-faucets-policies-transfer-allow-all.masp"
+);
 
 procedure_root!(
     ALLOW_ALL_TRANSFER_POLICY_ROOT,

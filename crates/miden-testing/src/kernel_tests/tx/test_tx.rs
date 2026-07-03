@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use core::slice;
 
@@ -19,8 +20,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::assembly::diagnostics::NamedSource;
+use miden_protocol::assembly::{DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
@@ -164,7 +164,7 @@ async fn test_block_procedures() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -275,13 +275,14 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         "\
-        use miden::standards::wallets::basic->wallet
+        use miden::standards::wallets::basic as wallet
         use miden::protocol::output_note
         use mock::util
 
         ## TRANSACTION SCRIPT
         ## ========================================================================================
-        begin
+        @transaction_script
+        pub proc main
             ## Send some assets from the account vault
             ## ------------------------------------------------------------------------------------
             # partially deplete fungible asset balance
@@ -588,17 +589,20 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
         end
     ";
 
-    let source = NamedSource::new("test::module_1", test_module_source);
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
-
-    let library = assembler.assemble_library([source]).unwrap();
+    let library = compile_test_library(
+        source_manager.clone(),
+        "test-tx-view-script",
+        "test::module_1",
+        test_module_source,
+    );
 
     let source = "
     use test::module_1
     use miden::core::sys
 
-    begin
+    @transaction_script
+    pub proc main
         push.1.2
         call.module_1::foo
         exec.sys::truncate_stack
@@ -628,6 +632,84 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn compile_test_library(
+    source_manager: Arc<DefaultSourceManager>,
+    name: &str,
+    path: &str,
+    source: &str,
+) -> Library {
+    let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
+    let source = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new(path)), source, source_manager)
+        .unwrap();
+
+    *assembler.assemble_library(name, source, None::<&str>).unwrap()
+}
+
+#[tokio::test]
+async fn failed_tx_script_reports_package_debug_message() -> anyhow::Result<()> {
+    const ERROR_MESSAGE: &str = "transaction script debug message should survive execution";
+
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        @transaction_script
+        pub proc main
+            push.0 assert.err="{ERROR_MESSAGE}"
+        end
+        "#
+    ))?;
+
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+    let error = tx_context.execute().await.expect_err("transaction script should fail");
+
+    assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_tx_view_script_reports_package_debug_message() -> anyhow::Result<()> {
+    const ERROR_MESSAGE: &str = "view script debug message should survive execution";
+
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        @transaction_script
+        pub proc main
+            push.0 assert.err="{ERROR_MESSAGE}"
+        end
+        "#
+    ))?;
+
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let account_id = tx_context.account().id();
+    let block_ref = tx_context.tx_inputs().block_header().block_num();
+    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let error = executor
+        .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
+        .await
+        .expect_err("transaction view script should fail");
+
+    assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
+
+    Ok(())
+}
+
+fn assert_transaction_error_contains_debug_message(
+    error: &TransactionExecutorError,
+    expected_message: &str,
+) {
+    let diagnostic = error.to_string();
+
+    assert!(
+        diagnostic.contains(expected_message),
+        "expected package debug info to recover the assertion message:\n{diagnostic}"
+    );
+}
+
 // TEST TRANSACTION SCRIPT
 // ================================================================================================
 
@@ -638,7 +720,8 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
     let tx_script_input_value = Word::from([9, 8, 7, 6u32]);
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # push the tx script input key onto the stack
             push.{tx_script_input_key}
 
@@ -671,7 +754,8 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # => [TX_SCRIPT_ARGS]
             # `TX_SCRIPT_ARGS` value is a user provided word, which could be used during the
             # transaction execution. In this example it is a `[1, 2, 3, 4]` word.
@@ -710,13 +794,14 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 /// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
 #[tokio::test]
 async fn test_get_script_root_with_script() -> anyhow::Result<()> {
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
     let expected_root = tx_script.root();
 
     let code = format!(
         r#"
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -744,7 +829,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
 async fn test_get_script_root_without_script() -> anyhow::Result<()> {
     let code = r#"
         use miden::protocol::tx
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -770,6 +855,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let account_component_masm = r#"
             adv_map A([6,7,8,9]) = [10,11,12,13]
 
+            @account_procedure
             pub proc assert_adv_map
                 # test tx script advice map
                 push.[1,2,3,4]
@@ -793,7 +879,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let script = r#"
             adv_map A([1,2,3,4]) = [5,6,7,8]
 
-            begin
+            @transaction_script
+            pub proc main
                 call.::test::adv_map_component::assert_adv_map
 
                 # test account code advice map
@@ -805,7 +892,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         "#;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(component_code.as_library())?
+        .with_dynamically_linked_library(component_code)?
         .compile_tx_script(script)?;
 
     assert!(tx_script.mast().advice_map().get(&Word::try_from([1u64, 2, 3, 4])?).is_some());

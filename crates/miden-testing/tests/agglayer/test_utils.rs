@@ -13,7 +13,7 @@ pub use miden_agglayer::testing::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
 use miden_agglayer::{BridgeRoleMember, agglayer_library, create_existing_bridge_account};
-use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -25,7 +25,14 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountType,
+    AssetCallbackFlag,
+};
+use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -51,7 +58,12 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
 /// A fixed dummy governance owner used for bridge accounts in tests that don't exercise the
 /// owner's role-management powers (granting/revoking roles, transferring ownership).
 pub fn bridge_test_owner() -> AccountId {
-    AccountId::dummy([0xee; 15], AccountIdVersion::Version1, AccountType::Public)
+    AccountId::dummy(
+        [0xee; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    )
 }
 
 /// Creates an existing bridge account seeded with the three operational roles held by the given
@@ -105,8 +117,7 @@ pub async fn execute_program_with_default_host(
 
     let processor = FastProcessor::new(stack_inputs)
         .with_advice(advice_inputs)
-        .map_err(ExecutionError::advice_error_no_context)?
-        .with_debugging(true);
+        .map_err(ExecutionError::advice_error_no_context)?;
     processor.execute(&program, &mut host).await
 }
 
@@ -115,25 +126,28 @@ pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, E
     let agglayer_lib = agglayer_library();
 
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
+        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_dynamic_library(agglayer_lib)
+        .with_package(Arc::new(agglayer_lib), Linkage::Dynamic)
         .unwrap()
-        .assemble_program(script_code)
+        .assemble_program("agglayer-test-script", script_code)
+        .unwrap()
+        .try_into_program()
         .unwrap();
 
     execute_program_with_default_host(program, None).await
 }
 
-/// Helper to assert execution fails with a specific error message
-pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str) {
+/// Helper to assert execution fails with a specific MASM assertion error.
+pub async fn assert_execution_fails_with(script_code: &str, expected_error: &MasmError) {
     let result = execute_masm_script(script_code).await;
     assert!(result.is_err(), "Expected execution to fail but it succeeded");
-    let error_msg = result.unwrap_err().to_string();
+
+    let error = result.unwrap_err();
     assert!(
-        error_msg.contains(expected_error),
-        "Expected error containing '{}', got: {}",
+        expected_error.matches_execution_error(&error),
+        "Expected error {}, got: {}",
         expected_error,
-        error_msg
+        error
     );
 }

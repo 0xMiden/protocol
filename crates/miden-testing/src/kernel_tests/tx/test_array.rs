@@ -11,8 +11,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_standards::code_builder::CodeBuilder;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use crate::{Auth, TestTransactionBuilder};
 
@@ -39,6 +37,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE, pad(12)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::get
@@ -49,6 +48,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::set that uses exec internally.
         #! Inputs:  [index, VALUE, pad(11)]
         #! Outputs: [OLD_VALUE, pad(12)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::set
@@ -73,7 +73,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     )?;
 
     // Build an account with the wrapper component that uses the array utility
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
@@ -89,9 +89,10 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     // 2. Sets index 0 to [43, 43, 43, 43]
     // 3. Gets the updated value at index 0 (should be [43, 43, 43, 43])
     let tx_script_code = r#"
-        use wrapper::component->wrapper
+        use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index 0 (should return [42, 42, 42, 42])
             push.0
             # => [index, pad(16)]
@@ -154,6 +155,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE_0, VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::get
@@ -165,6 +167,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::set that uses exec internally.
         #! Inputs:  [index, VALUE_0, VALUE_1, pad(7)]
         #! Outputs: [OLD_VALUE_0, OLD_VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::set
@@ -190,7 +193,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("wrapper::component"),
     )?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
@@ -204,9 +207,10 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     let updated_value_1 = Word::from([10u32, 10, 10, 10]);
     let tx_script_code = format!(
         r#"
-        use wrapper::component->wrapper
+        use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index {index} (should return the initial double-word)
             push.{index}
             call.wrapper::test_get

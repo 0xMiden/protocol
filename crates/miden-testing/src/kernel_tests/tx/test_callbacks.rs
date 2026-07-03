@@ -13,6 +13,7 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
+    AssetCallbackFlag,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -21,7 +22,6 @@ use miden_protocol::account::{
 use miden_protocol::asset::{
     Asset,
     AssetAmount,
-    AssetCallbackFlag,
     AssetCallbacks,
     AssetComposition,
     FungibleAsset,
@@ -93,6 +93,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, pad(8)]
@@ -110,6 +111,7 @@ end
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
@@ -242,9 +244,10 @@ async fn test_faucet_without_callback_slot_skips_callback(
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    // Create a faucet WITHOUT any AssetCallbacks component.
+    // Create a faucet whose ID enables callbacks, but WITHOUT a populated AssetCallbacks slot.
     let mut account_builder = AccountBuilder::new([45u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(MockFaucetComponent);
 
     // If callback proc roots should be empty, add the empty storage slots.
@@ -267,16 +270,15 @@ async fn test_faucet_without_callback_slot_skips_callback(
         AccountState::Exists,
     )?;
 
-    // Create a P2ID note with a callbacks-enabled asset from this faucet.
-    // The faucet does not have the callback slot, but the asset has callbacks enabled.
+    // Create a P2ID note with an asset from this callbacks-enabled faucet.
+    // The faucet's ID enables callbacks, but it does not have a populated callback slot.
     let asset = match asset_composition {
         AssetComposition::Fungible => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
         AssetComposition::None => {
             Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1])))
         },
         _ => unreachable!("test does not use custom composition"),
-    }
-    .with_callbacks(AssetCallbackFlag::Enabled);
+    };
 
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
@@ -319,6 +321,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -334,8 +337,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        push.1
-        # => [enable_callbacks, active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
         exec.::miden::protocol::asset::create_fungible_asset
         # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
@@ -352,8 +354,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let faucet = add_faucet_with_callbacks(&mut builder, Some(&account_callback_masm), None)?;
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -381,13 +382,13 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 #[rstest::rstest]
 #[case::fungible(
     |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(FungibleAsset::new(faucet_id, 100)?.into())
     }
 )]
 #[case::non_fungible(
     |faucet_id| {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
-        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(NonFungibleAsset::new(&details).into())
     }
 )]
 #[tokio::test]
@@ -430,13 +431,13 @@ async fn test_blocked_account_cannot_receive_asset(
 #[rstest::rstest]
 #[case::fungible(
     |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(FungibleAsset::new(faucet_id, 100)?.into())
     }
 )]
 #[case::non_fungible(
     |faucet_id| {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
-        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
+        Ok(NonFungibleAsset::new(&details).into())
     }
 )]
 #[tokio::test]
@@ -459,7 +460,8 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
@@ -517,6 +519,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
@@ -536,8 +539,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        push.1
-        # => [enable_callbacks, active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
         exec.::miden::protocol::asset::create_fungible_asset
         # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
@@ -555,8 +557,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
     // Consuming this note adds the asset to the wallet's vault.
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let asset = Asset::Fungible(fungible_asset);
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
@@ -571,7 +572,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         r#"
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # Create note 0 (just to consume index 0)
             exec.util::create_default_note drop
             # => []
@@ -618,6 +620,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_account
         dropw
         # => [ASSET_VALUE, pad(12)]
@@ -627,6 +630,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let note_callback_masm = r#"
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
     pub proc on_before_asset_added_to_note
         dropw movup.4 drop
         # => [ASSET_VALUE, pad(12)]
@@ -646,15 +650,15 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
             push.{amount}
             push.{faucet_id_prefix}
             push.{faucet_id_suffix}
-            push.1
-            # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
+            # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
 
             exec.::miden::protocol::asset::create_fungible_asset
             # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
@@ -700,6 +704,7 @@ fn add_faucet_with_block_list(
 
     let account_builder = AccountBuilder::new([42u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(MockFaucetComponent)
         .with_component(block_list);
 
@@ -765,6 +770,7 @@ fn add_faucet_with_callbacks(
 
     let account_builder = AccountBuilder::new([42; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(

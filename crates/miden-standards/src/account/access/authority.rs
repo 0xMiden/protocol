@@ -31,7 +31,7 @@ use crate::procedure_root;
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(AUTHORITY_CODE, "access/authority.masl");
+account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
 
 procedure_root!(
     AUTHORITY_FREEZE,
