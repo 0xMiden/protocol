@@ -172,7 +172,7 @@ Transaction procedures manage transaction-level operations including note creati
 | `get_expiration_block_delta`    | Returns the transaction expiration delta, or 0 if not set.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[block_height_delta]`                                                                                   | Any     |
 | `update_expiration_block_delta` | Updates the transaction expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                    | Any     |
 
-Note on `execute_foreign_procedure`: the values it reads reflect the foreign account's state at the transaction reference block, which is chosen by the executor (prover). The foreign account commitment is not a transaction public input and is not revalidated against the foreign account's current on-chain state at inclusion, so a foreign read may be stale. Do not rely on it for decisions that require the foreign account's present value.
+Note on `execute_foreign_procedure`: the values it reads reflect the foreign account's state at the transaction reference block, which is chosen by the executor (prover). The foreign account commitment is not a transaction public input and is not revalidated against the foreign account's current on-chain state at inclusion, so a foreign read may be outdated. Do not rely on it for decisions that require the foreign account's present value. Authors of foreign account procedures that must not be read when outdated should set a transaction expiration delta to bound how old the reference block can be relative to the block the transaction is included in.
 
 ## Faucet Procedures (`miden::protocol::faucet`)
 
