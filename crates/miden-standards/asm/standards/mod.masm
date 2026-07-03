@@ -1,5 +1,10 @@
-#! Root module of the `miden::standards` library.
-#!
-#! The standards library provides the reusable account components, note scripts, and supporting
-#! modules built on top of the Miden protocol. The library API is defined by the modules in this
-#! directory.
+pub mod access
+pub mod attachments
+pub mod auth
+pub mod data_structures
+pub mod faucets
+pub mod metadata
+pub mod note
+pub mod note_tag
+pub mod notes
+pub mod wallets

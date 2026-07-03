@@ -1,4 +1,4 @@
-use miden::standards::faucets::fungible->faucet
+use miden::standards::faucets::fungible as faucet
 
 #! BURN script: burns the asset from the note by calling the faucet's `receive_and_burn`
 #! procedure. This note is intended to be executed against a fungible faucet account.

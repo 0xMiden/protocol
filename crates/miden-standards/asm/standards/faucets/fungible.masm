@@ -13,7 +13,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets

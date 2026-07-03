@@ -26,7 +26,7 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 // ACCOUNT COMPONENT
 // ================================================================================================
 
-/// An [`AccountComponent`] defines a [`Library`](miden_assembly::Library) of code and the initial
+/// An [`AccountComponent`] defines a [`Library`](crate::assembly::Library) of code and the initial
 /// value and types of the [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
@@ -84,7 +84,7 @@ impl AccountComponent {
     ///
     /// # Arguments
     ///
-    /// * `package` - The package containing the [`Library`](miden_assembly::Library) and account
+    /// * `package` - The package containing the [`Library`](crate::assembly::Library) and account
     ///   component metadata
     /// * `init_storage_data` - The initialization data for storage slots
     ///
@@ -101,7 +101,7 @@ impl AccountComponent {
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
         let metadata = AccountComponentMetadata::try_from(package)?;
-        let library = package.mast.as_ref().clone();
+        let library = package.clone();
 
         let component_code = AccountComponentCode::from(library);
         Self::from_library(&component_code, &metadata, init_storage_data)
@@ -184,7 +184,17 @@ impl AccountComponent {
     /// `@account_procedure` or `@auth_script` attributes.
     pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
         self.code.exports().map(|proc_export| {
-            let digest = self.code.mast_forest()[proc_export.node].digest();
+            // When the export has a node id, use the forest node digest as the source of truth.
+            // This keeps procedure roots tied to the actual component MAST forest.
+            let digest = if let Some(node) = proc_export.node {
+                self.code
+                    .mast_forest()
+                    .get_node_by_id(node)
+                    .expect("export node not in the forest")
+                    .digest()
+            } else {
+                proc_export.digest
+            };
             let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
             (AccountProcedureRoot::from_raw(digest), is_auth)
         })
@@ -215,20 +225,20 @@ impl From<AccountComponent> for AccountComponentCode {
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
-    use alloc::sync::Arc;
 
-    use miden_assembly::Assembler;
-    use miden_mast_package::{Package, PackageManifest, Section, SectionId, TargetType};
+    use miden_mast_package::{Section, SectionId};
     use semver::Version;
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::testing::assembler::assemble_test_library;
     use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {
         // Create a simple library for testing
-        let library = Assembler::default().assemble_library([CODE]).unwrap();
+        let library =
+            assemble_test_library("test-extract-metadata", "test::extract_metadata", CODE);
 
         // Test with metadata
         let metadata = AccountComponentMetadata::new("test_component")
@@ -236,33 +246,17 @@ mod tests {
             .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
-        let package_with_metadata = Package {
-            name: "test_package".into(),
-            mast: library.clone(),
-            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
-            kind: TargetType::AccountComponent,
-            sections: vec![Section::new(
-                SectionId::ACCOUNT_COMPONENT_METADATA,
-                metadata_bytes.clone(),
-            )],
-            version: Version::new(0, 0, 0),
-            description: None,
-        };
+        let mut package_with_metadata = library.clone();
+        package_with_metadata
+            .sections
+            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, metadata_bytes.clone()));
 
         let extracted_metadata =
             AccountComponentMetadata::try_from(&package_with_metadata).unwrap();
         assert_eq!(extracted_metadata.name(), "test_component");
 
         // Test without metadata - should fail
-        let package_without_metadata = Package {
-            name: "test_package_no_metadata".into(),
-            mast: library,
-            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
-            kind: TargetType::AccountComponent,
-            sections: vec![], // No metadata section
-            version: Version::new(0, 0, 0),
-            description: None,
-        };
+        let package_without_metadata = library;
 
         let result = AccountComponentMetadata::try_from(&package_without_metadata);
         assert!(result.is_err());
@@ -273,8 +267,9 @@ mod tests {
     #[test]
     fn test_from_library_with_init_data() {
         // Create a simple library for testing
-        let library = Assembler::default().assemble_library([CODE]).unwrap();
-        let component_code = AccountComponentCode::from(Arc::unwrap_or_clone(library.clone()));
+        let library =
+            assemble_test_library("test-from-library-init-data", "test::from_library", CODE);
+        let component_code = AccountComponentCode::from(library.clone());
 
         // Create metadata for the component
         let metadata = AccountComponentMetadata::new("test_component")
@@ -291,15 +286,7 @@ mod tests {
         assert_eq!(component.storage_size(), 0);
 
         // Test without metadata - should fail
-        let package_without_metadata = Package {
-            name: "test_package_no_metadata".into(),
-            mast: library,
-            kind: TargetType::AccountComponent,
-            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
-            sections: vec![], // No metadata section
-            version: Version::new(0, 0, 0),
-            description: None,
-        };
+        let package_without_metadata = library;
 
         let result = AccountComponent::from_package(&package_without_metadata, &init_data);
         assert!(result.is_err());

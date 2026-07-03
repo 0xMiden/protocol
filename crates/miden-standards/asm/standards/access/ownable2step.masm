@@ -16,6 +16,15 @@
 # Storage layout (single slot):
 #   Word:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
 #           word[0]       word[1]        word[2]                  word[3]
+#
+# Security model:
+# Access control is based on the note sender, i.e. the account ID that created the note
+# (`active_note::get_sender`). This authenticates which account created the note, not the code
+# that ran when it was created. It is therefore meaningful only when every account registered as
+# owner enforces strong authentication. Registering a permissionless account (for example one
+# using the `no_auth` component) as owner provides no protection: anyone can make such an account
+# emit a note carrying an arbitrary script root with that account's ID as sender, defeating the
+# owner check.
 
 use miden::protocol::active_account
 use miden::protocol::account_id
@@ -40,103 +49,8 @@ const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
 const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
 const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
 
-# INTERNAL PROCEDURES
+# PUBLIC INTERFACE
 # ================================================================================================
-
-#! Returns the full ownership word from storage.
-#!
-#! Inputs:  []
-#! Outputs: [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-#!
-#! Where:
-#! - owner_{suffix, prefix} are the suffix and prefix felts of the current owner account ID.
-#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
-#!   owner account ID.
-proc load_ownership_info
-    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-end
-
-#! Writes the ownership word to storage and drops the old value.
-#!
-#! Inputs:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-#! Outputs: []
-proc save_ownership_info
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, owner_suffix, owner_prefix,
-    #     nominated_owner_suffix, nominated_owner_prefix]
-
-    exec.native_account::set_item
-    # => [OLD_OWNERSHIP_WORD]
-
-    dropw
-    # => []
-end
-
-#! Returns the owner account ID from storage.
-#!
-#! Inputs:  []
-#! Outputs: [owner_suffix, owner_prefix]
-#!
-#! Where:
-#! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
-proc get_owner_internal
-    exec.load_ownership_info
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-
-    movup.2 drop
-    # => [owner_suffix, owner_prefix, nominated_owner_prefix]
-
-    movup.2 drop
-    # => [owner_suffix, owner_prefix]
-end
-
-#! Returns the nominated owner account ID from storage.
-#!
-#! Inputs:  []
-#! Outputs: [nominated_owner_suffix, nominated_owner_prefix]
-#!
-#! Where:
-#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
-#!   owner account ID.
-proc get_nominated_owner_internal
-    exec.load_ownership_info
-    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-
-    drop drop
-    # => [nominated_owner_suffix, nominated_owner_prefix]
-end
-
-#! Checks if the given account ID is the owner of this component.
-#!
-#! Inputs:  [account_id_suffix, account_id_prefix]
-#! Outputs: [is_owner]
-#!
-#! Where:
-#! - is_owner is 1 if the account is the owner, 0 otherwise.
-proc is_owner_internal
-    exec.get_owner_internal
-    # => [owner_suffix, owner_prefix, account_id_suffix, account_id_prefix]
-
-    exec.account_id::is_equal
-    # => [is_owner]
-end
-
-#! Checks if the given account ID is the nominated owner of this component.
-#!
-#! Inputs:  [account_id_suffix, account_id_prefix]
-#! Outputs: [is_nominated_owner]
-#!
-#! Where:
-#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
-#! - is_nominated_owner is 1 if the account is the nominated owner, 0 otherwise.
-proc is_nominated_owner_internal
-    exec.get_nominated_owner_internal
-    # => [nominated_owner_suffix, nominated_owner_prefix, account_id_suffix, account_id_prefix]
-
-    exec.account_id::is_equal
-    # => [is_nominated_owner]
-end
 
 #! Returns 1 if the note sender is the current owner, otherwise 0.
 #!
@@ -171,9 +85,6 @@ pub proc assert_sender_is_owner
     assert.err=ERR_SENDER_NOT_OWNER
     # => []
 end
-
-# PUBLIC INTERFACE
-# ================================================================================================
 
 #! Returns the owner account ID.
 #!
@@ -333,4 +244,102 @@ pub proc renounce_ownership
 
     exec.save_ownership_info
     # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Returns the full ownership word from storage.
+#!
+#! Inputs:  []
+#! Outputs: [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#!
+#! Where:
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the current owner account ID.
+#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
+#!   owner account ID.
+proc load_ownership_info
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+end
+
+#! Writes the ownership word to storage and drops the old value.
+#!
+#! Inputs:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#! Outputs: []
+proc save_ownership_info
+    push.OWNER_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, owner_suffix, owner_prefix,
+    #     nominated_owner_suffix, nominated_owner_prefix]
+
+    exec.native_account::set_item
+    # => [OLD_OWNERSHIP_WORD]
+
+    dropw
+    # => []
+end
+
+#! Returns the owner account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [owner_suffix, owner_prefix]
+#!
+#! Where:
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
+proc get_owner_internal
+    exec.load_ownership_info
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+
+    movup.2 drop
+    # => [owner_suffix, owner_prefix, nominated_owner_prefix]
+
+    movup.2 drop
+    # => [owner_suffix, owner_prefix]
+end
+
+#! Returns the nominated owner account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [nominated_owner_suffix, nominated_owner_prefix]
+#!
+#! Where:
+#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
+#!   owner account ID.
+proc get_nominated_owner_internal
+    exec.load_ownership_info
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+
+    drop drop
+    # => [nominated_owner_suffix, nominated_owner_prefix]
+end
+
+#! Checks if the given account ID is the owner of this component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_owner]
+#!
+#! Where:
+#! - is_owner is 1 if the account is the owner, 0 otherwise.
+proc is_owner_internal
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_owner]
+end
+
+#! Checks if the given account ID is the nominated owner of this component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_nominated_owner]
+#!
+#! Where:
+#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
+#! - is_nominated_owner is 1 if the account is the nominated owner, 0 otherwise.
+proc is_nominated_owner_internal
+    exec.get_nominated_owner_internal
+    # => [nominated_owner_suffix, nominated_owner_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_nominated_owner]
 end

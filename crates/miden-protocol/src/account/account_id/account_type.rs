@@ -2,6 +2,9 @@ use alloc::string::String;
 use core::fmt;
 use core::str::FromStr;
 
+#[cfg(any(feature = "testing", test))]
+use rand::RngExt;
+
 use crate::errors::AccountIdError;
 
 // ACCOUNT TYPE

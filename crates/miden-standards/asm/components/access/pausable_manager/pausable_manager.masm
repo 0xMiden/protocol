@@ -8,5 +8,5 @@
 #   `Authority::AuthControlled` directly by `create_user_fungible_faucet`).
 # - `Pausable` — provides the `is_paused` storage slot.
 
-pub use ::miden::standards::access::pausable::manager::pause
-pub use ::miden::standards::access::pausable::manager::unpause
+pub use {pause} from miden::standards::access::pausable::manager
+pub use {unpause} from miden::standards::access::pausable::manager

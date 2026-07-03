@@ -1,7 +1,7 @@
 use miden::core::word
 
-use miden::tx_kernel_core::memory::TX_SCRIPT_ROOT_PTR
 use miden::tx_kernel_core::prologue
+use {TX_SCRIPT_ROOT_PTR} from miden::tx_kernel_core::memory
 
 # ERRORS
 # =================================================================================================

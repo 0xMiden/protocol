@@ -1,11 +1,13 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-use miden_processor::MastForestStore;
+use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::mast::MastForest;
+use miden_protocol::package::loaded_mast_forest_from_package;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::RwLock;
+use miden_protocol::vm::Package;
 use miden_protocol::{CoreLibrary, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 
@@ -20,7 +22,7 @@ use miden_standards::StandardsLib;
 /// references to external procedures, the store must be loaded with [MastForest]s containing these
 /// procedures.
 pub struct TransactionMastStore {
-    mast_forests: RwLock<BTreeMap<Word, Arc<MastForest>>>,
+    mast_forests: RwLock<BTreeMap<Word, LoadedMastForest>>,
 }
 
 #[allow(clippy::new_without_default)]
@@ -37,37 +39,53 @@ impl TransactionMastStore {
         let store = Self { mast_forests };
 
         // load transaction kernel MAST forest
-        let kernels_forest = TransactionKernel::package().mast.mast_forest().clone();
-        store.insert(kernels_forest);
+        let kernel = TransactionKernel::package();
+        store.insert_package(kernel.as_ref());
 
         // load miden-core-lib MAST forest
-        let miden_core_lib_forest = CoreLibrary::default().mast_forest().clone();
-        store.insert(miden_core_lib_forest);
+        let miden_core_lib = CoreLibrary::default();
+        store.insert_package(miden_core_lib.as_ref());
 
         // load protocol lib MAST forest
-        let protocol_lib_forest = ProtocolLib::default().mast_forest().clone();
-        store.insert(protocol_lib_forest);
+        let protocol_lib = ProtocolLib::default();
+        store.insert_package(protocol_lib.as_ref());
 
         // load standards lib MAST forest
-        let standards_lib_forest = StandardsLib::default().mast_forest().clone();
-        store.insert(standards_lib_forest);
+        let standards_lib = StandardsLib::default();
+        store.insert_package(standards_lib.as_ref());
 
         store
     }
 
     /// Registers all procedures of the provided [MastForest] with this store.
+    ///
+    /// This path only carries the MAST forest. If a [Package] is available, prefer
+    /// [`Self::insert_package`] so package-owned debug info is preserved.
     pub fn insert(&self, mast_forest: Arc<MastForest>) {
+        self.insert_loaded(LoadedMastForest::new(mast_forest));
+    }
+
+    /// Registers all procedures of the provided [Package] with this store.
+    ///
+    /// This preserves package-owned debug info when the package was built or read from a trusted
+    /// local source.
+    pub fn insert_package(&self, package: &Package) {
+        self.insert_loaded(loaded_mast_forest_from_package(package));
+    }
+
+    /// Registers all procedures of the provided loaded MAST forest with this store.
+    pub fn insert_loaded(&self, loaded_mast_forest: LoadedMastForest) {
         let mut mast_forests = self.mast_forests.write();
 
         // only register procedures that are local to this forest
-        for proc_digest in mast_forest.local_procedure_digests() {
-            mast_forests.insert(proc_digest, mast_forest.clone());
+        for proc_digest in loaded_mast_forest.mast_forest().local_procedure_digests() {
+            mast_forests.insert(proc_digest, loaded_mast_forest.clone());
         }
     }
 
     /// Loads the provided account code into this store.
     pub fn load_account_code(&self, code: &AccountCode) {
-        self.insert(code.mast().clone());
+        self.insert_loaded(code.loaded_mast_forest());
     }
 }
 
@@ -75,7 +93,7 @@ impl TransactionMastStore {
 // ================================================================================================
 
 impl MastForestStore for TransactionMastStore {
-    fn get(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         self.mast_forests.read().get(procedure_root).cloned()
     }
 }
@@ -118,7 +136,7 @@ mod tests {
         // Simulate loading account code by inserting the kernel forest again
         // (it adds no new entries since they already exist, but this exercises
         // the insert path without needing to construct a custom MastForest)
-        let kernel_forest = TransactionKernel::package().mast.mast_forest().clone();
+        let kernel_forest = TransactionKernel::package().mast_forest().clone();
         store1.insert(kernel_forest);
 
         // A fresh store should be at exactly the same baseline

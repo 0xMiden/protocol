@@ -8,11 +8,14 @@ use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_processor::LoadedMastForest;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
+use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -325,10 +328,11 @@ impl Deserializable for TransactionScriptRoot {
 ///
 /// The [TransactionScript] object is composed of an executable program defined by a [MastForest]
 /// and an associated entrypoint.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct TransactionScript {
     mast: Arc<MastForest>,
     entrypoint: MastNodeId,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl TransactionScript {
@@ -347,7 +351,11 @@ impl TransactionScript {
     pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
         assert!(mast.get_node_by_id(entrypoint).is_some());
 
-        Self { mast, entrypoint }
+        Self {
+            mast,
+            entrypoint,
+            package_debug_info: None,
+        }
     }
 
     /// Creates a [TransactionScript] from a [`Package`].
@@ -361,7 +369,11 @@ impl TransactionScript {
         let program =
             package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
-        Ok(TransactionScript::new(program))
+        Ok(Self {
+            mast: program.mast_forest().clone(),
+            entrypoint: program.entrypoint(),
+            package_debug_info: package_debug_info(package),
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -370,6 +382,11 @@ impl TransactionScript {
     /// Returns a reference to the [MastForest] backing this transaction script.
     pub fn mast(&self) -> Arc<MastForest> {
         self.mast.clone()
+    }
+
+    /// Returns the MAST forest and package-owned debug information backing this transaction script.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
     }
 
     /// Returns the commitment of this transaction script (i.e., the script's MAST root).
@@ -387,14 +404,22 @@ impl TransactionScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
+            package_debug_info: self.package_debug_info,
         }
     }
 }
+
+impl PartialEq for TransactionScript {
+    fn eq(&self, other: &Self) -> bool {
+        self.mast == other.mast && self.entrypoint == other.entrypoint
+    }
+}
+
+impl Eq for TransactionScript {}
 
 // SERIALIZATION
 // ================================================================================================
@@ -432,6 +457,19 @@ mod tests {
     }
 
     #[test]
+    fn test_transaction_script_preserves_package_debug_info() {
+        use super::TransactionScript;
+        use crate::assembly::Assembler;
+
+        let assembler = Assembler::default();
+        let package =
+            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
+        let script = TransactionScript::from_package(&package).unwrap();
+
+        assert!(script.loaded_mast_forest().package_debug_info().unwrap().is_some());
+    }
+
+    #[test]
     fn test_transaction_script_with_advice_map() {
         use miden_core::{Felt, Word};
 
@@ -439,7 +477,11 @@ mod tests {
         use crate::assembly::Assembler;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
+        let program = assembler
+            .assemble_program("test-transaction-script", "begin nop end")
+            .unwrap()
+            .try_into_program()
+            .unwrap();
         let script = TransactionScript::new(program);
 
         assert!(script.mast().advice_map().is_empty());

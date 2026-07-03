@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::StackOutputs;
+use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -97,8 +97,6 @@ where
                 Some(MAX_TX_EXECUTION_CYCLES),
                 MIN_TX_EXECUTION_CYCLES,
                 ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
-                false,
-                false,
             )
             .expect("Must not fail while max cycles is more than min trace length"),
             _executor: PhantomData,
@@ -170,29 +168,6 @@ where
         Ok(self)
     }
 
-    /// Puts the [TransactionExecutor] into debug mode and returns the resulting executor.
-    ///
-    /// When transaction executor is in debug mode, all transaction-related code (note scripts,
-    /// account code) will be compiled and executed in debug mode. This will ensure that all debug
-    /// instructions present in the original source code are executed.
-    #[must_use]
-    pub fn with_debug_mode(mut self) -> Self {
-        self.exec_options = self.exec_options.with_debugging(true);
-        self
-    }
-
-    /// Enables tracing for the created instance of [TransactionExecutor] and returns the resulting
-    /// executor.
-    ///
-    /// When tracing is enabled, the executor will receive tracing events as various stages of the
-    /// transaction kernel complete. This enables collecting basic stats about how long different
-    /// stages of transaction execution take.
-    #[must_use]
-    pub fn with_tracing(mut self) -> Self {
-        self.exec_options = self.exec_options.with_tracing(true);
-        self
-    }
-
     // TRANSACTION EXECUTION
     // --------------------------------------------------------------------------------------------
 
@@ -224,12 +199,20 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        // instantiate the processor in debug mode only when debug mode is specified via execution
-        // options; this is important because in debug mode execution is almost 100x slower
+        // Use the package-debug execution API even when the embedded release kernel has no debug
+        // sections. This enables package-owned debug info for dynamically loaded scripts.
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
 
+        let program = TransactionKernel::main();
+        let kernel_debug_info = TransactionKernel::main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(map_execution_error)?;
         let stack_outputs = output.stack;
@@ -273,8 +256,16 @@ where
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
+        let program = TransactionKernel::tx_script_main();
+        let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::tx_script_main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::tx_script_main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?;
         let stack_outputs = output.stack;
