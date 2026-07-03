@@ -87,7 +87,8 @@ fn main() -> Result<()> {
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
     // The miden-core library is provided through an in-memory registry
-    let mut store = core_package_registry()?;
+    let mut store = InMemoryPackageRegistry::default();
+    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
 
     // compile transaction kernel
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
@@ -346,14 +347,6 @@ fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
 
 fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
     path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
-}
-
-/// Builds an in-memory package registry loaded with the `miden-core` library, so the projects can
-/// just declare it by version in the manifest.
-fn core_package_registry() -> Result<InMemoryPackageRegistry> {
-    let mut registry = InMemoryPackageRegistry::default();
-    registry.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
-    Ok(registry)
 }
 
 // ERROR CONSTANTS FILE GENERATION
