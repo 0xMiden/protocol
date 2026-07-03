@@ -63,8 +63,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -329,7 +327,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_map_item() -> anyhow::Result<()> {
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
@@ -594,7 +592,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     );
 
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
@@ -1328,7 +1326,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
@@ -1475,7 +1473,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     )?;
 
     // Build an existing account with nonce 1.
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(account_component)
         .build_existing()?;
@@ -1543,7 +1541,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
 async fn test_has_procedure() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
@@ -1697,7 +1695,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_initial_map_item() -> anyhow::Result<()> {
     let map_slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![map_slot.clone()]))
         .build_existing()
@@ -1787,7 +1785,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         })
         .collect();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(slots.clone()))
         .build_existing()

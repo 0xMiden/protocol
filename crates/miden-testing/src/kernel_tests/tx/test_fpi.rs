@@ -53,8 +53,6 @@ use miden_protocol::{Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::{Auth, MockChainBuilder, assert_execution_error, assert_transaction_executor_error};
@@ -101,12 +99,12 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::foreign_account"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component)
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
         .account_type(AccountType::Public)
@@ -373,17 +371,17 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::foreign_account_2"),
     )?;
 
-    let foreign_account_1 = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account_1 = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component_1)
         .build_existing()?;
 
-    let foreign_account_2 = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account_2 = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component_2)
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -608,12 +606,12 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -796,13 +794,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         AccountComponentMetadata::mock("foreign_account_code"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .with_assets(vec![fungible_asset, non_fungible_asset])
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -903,13 +901,13 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("foreign_account_code"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .with_assets(vec![fungible_asset])
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1050,11 +1048,10 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::second_foreign_account"),
     )?;
 
-    let second_foreign_account =
-        AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(second_foreign_account_component)
-            .build_existing()?;
+    let second_foreign_account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(second_foreign_account_component)
+        .build_existing()?;
 
     // ------ FIRST FOREIGN ACCOUNT ---------------------------------------------------------------
     let first_foreign_account_code_source = format!(
@@ -1115,14 +1112,13 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("first_foreign_account"),
     )?;
 
-    let first_foreign_account =
-        AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(first_foreign_account_component.clone())
-            .build_existing()?;
+    let first_foreign_account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(first_foreign_account_component.clone())
+        .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1249,11 +1245,10 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
-    let second_foreign_account =
-        AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(second_foreign_account_component.clone())
-            .build_existing()?;
+    let second_foreign_account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(second_foreign_account_component.clone())
+        .build_existing()?;
 
     // ------ FIRST FOREIGN ACCOUNT ---------------------------------------------------------------
     // unique procedure which calls the second foreign account via FPI and then returns
@@ -1297,14 +1292,13 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("first_foreign_account"),
     )?;
 
-    let first_foreign_account =
-        AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(first_foreign_account_component.clone())
-            .build_existing()?;
+    let first_foreign_account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(first_foreign_account_component.clone())
+        .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1427,12 +1421,11 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     )
     .unwrap();
 
-    let last_foreign_account =
-        AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(last_foreign_account_component)
-            .build_existing()
-            .unwrap();
+    let last_foreign_account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(last_foreign_account_component)
+        .build_existing()
+        .unwrap();
 
     foreign_accounts.push(last_foreign_account);
 
@@ -1481,7 +1474,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
         )
         .unwrap();
 
-        let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+        let foreign_account = AccountBuilder::new(rand::random())
             .with_auth_component(Auth::IncrNonce)
             .with_component(foreign_account_component)
             .build_existing()
@@ -1491,7 +1484,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     }
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1597,13 +1590,13 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1807,12 +1800,12 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1896,7 +1889,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
 async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -> anyhow::Result<()>
 {
     // Create a native account
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
@@ -1937,7 +1930,7 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
-    let foreign_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let foreign_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;

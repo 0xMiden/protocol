@@ -82,8 +82,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -568,7 +566,7 @@ pub async fn create_account_test(
 pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .account_type(account_type)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
@@ -603,7 +601,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     let mut mock_chain = MockChain::new();
     mock_chain.prove_next_block()?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;
