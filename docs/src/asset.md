@@ -50,15 +50,15 @@ While the asset value is unique to each type of asset, the vault key has a commo
 
 ```text
 [
-  asset_id_suffix (64 bits),
-  asset_id_prefix (64 bits),
+  asset_class_suffix (64 bits),
+  asset_class_prefix (64 bits),
   [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
   faucet_id_prefix (64 bits)
 ]
 ```
 
 - `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
-- `asset_id_suffix` and `asset_id_prefix` is an ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
+- `asset_class_suffix` and `asset_class_prefix` is a class that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
 - `composition` describes how assets compose. Read on for more details.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
 
@@ -91,9 +91,9 @@ The transaction kernel relies on this rule and so creators of assets need to ens
 - Instances of assets that should compose, should have identical vault keys.
 - Instances of assets that should _not_ compose, should have different vault keys.
 
-The asset ID can be used by asset creators to ensure this. Let's look at the native fungible and non-fungible assets:
-- Fungible assets should _always_ compose and so by construction, their asset ID limbs are set to zero. This ensures two instances of a fungible asset have the same vault key.
-- Non-fungible assets should _never_ compose and so by construction, their asset ID limbs are set to parts of their hash value. In practice, this ensures that two instances of non-fungible assets have unique vault keys. The transaction kernel never attempts to compose these.
+The asset class can be used by asset creators to ensure this. Let's look at the native fungible and non-fungible assets:
+- Fungible assets should _always_ compose and so by construction, their asset class limbs are set to zero. This ensures two instances of a fungible asset have the same vault key.
+- Non-fungible assets should _never_ compose and so by construction, their asset class limbs are set to parts of their hash value. In practice, this ensures that two instances of non-fungible assets have unique vault keys. The transaction kernel never attempts to compose these.
 
 #### Composition
 
@@ -120,7 +120,7 @@ The native fungible asset has the following vault key and value layout:
 - Value: `[amount, 0, 0, 0]`.
   - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
 
-Note how the `Fungible` composition variant together with the asset ID limbs set to zero, ensure that instances of fungible assets can always be merged and split.
+Note how the `Fungible` composition variant together with the asset class limbs set to zero, ensure that instances of fungible assets can always be merged and split.
 
 Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USDC).
 
@@ -132,7 +132,7 @@ The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
 
-Note how the `None` composition variant together with the asset ID limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
+Note how the `None` composition variant together with the asset class limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
 
 Examples of such assets include NFTs like a DevCon ticket.
 

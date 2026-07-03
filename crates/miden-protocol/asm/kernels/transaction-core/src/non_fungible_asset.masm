@@ -8,9 +8,9 @@ const ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE = "non-fungibl
 
 const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungible asset is not this faucet"
 
-const ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0="the asset ID suffix in a non-fungible asset's vault key must match hash0 of the asset value"
+const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0="the asset class suffix in a non-fungible asset's vault key must match hash0 of the asset value"
 
-const ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1="the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value"
+const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1="the asset class prefix in a non-fungible asset's vault key must match hash1 of the asset value"
 
 # PROCEDURES
 # =================================================================================================
@@ -29,16 +29,16 @@ const ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1="the asset ID prefix in 
 #! Panics if:
 #! - the asset key's account ID is not valid.
 #! - the asset key's faucet ID is not a non-fungible one.
-#! - the asset ID suffix of the key does not match hash0 of the value.
-#! - the asset ID prefix of the key does not match hash1 of the value.
+#! - the asset class suffix of the key does not match hash0 of the value.
+#! - the asset class prefix of the key does not match hash1 of the value.
 pub proc validate
     exec.validate_key
-    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix, hash0, hash1, hash2, hash3]
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix, hash0, hash1, hash2, hash3]
 
-    # assert that hash0 matches asset_id_suffix and hash1 matches asset_id_prefix
-    dup.4 dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
-    dup.5 dup.2 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
-    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+    # assert that hash0 matches asset_class_suffix and hash1 matches asset_class_prefix
+    dup.4 dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0
+    dup.5 dup.2 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
 end
 
 #! Validates that a non fungible asset's key is well formed.

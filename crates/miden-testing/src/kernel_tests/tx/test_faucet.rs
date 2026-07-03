@@ -4,8 +4,8 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
+    AssetClass,
     AssetComposition,
-    AssetId,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -338,7 +338,8 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?;
+    let vault_key =
+        AssetVaultKey::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
         r#"

@@ -1,13 +1,13 @@
 # miden::standards::faucets::non_fungible
 #
 # Non-fungible (NFT) faucet logic: the token symbol slot and accessor, an asset-status registry
-# keyed by the asset id, and the `mint_and_send` / `receive_and_burn` procedures wrapping the
+# keyed by the asset class, and the `mint_and_send` / `receive_and_burn` procedures wrapping the
 # active mint/burn policies from the `TokenPolicyManager`.
 #
 # Identity model: the asset value is the off-chain commitment `hash(user_data, salt)`; the
-# protocol derives the vault key's asset id from the value's first two elements
-# (asset_id_suffix, asset_id_prefix). Uniqueness is enforced on-chain by the status registry
-# keyed by `[asset_id_suffix, asset_id_prefix, 0, 0]`: a commitment can be issued at most once
+# protocol derives the vault key's asset class from the value's first two elements
+# (asset_class_suffix, asset_class_prefix). Uniqueness is enforced on-chain by the status registry
+# keyed by `[asset_class_suffix, asset_class_prefix, 0, 0]`: a commitment can be issued at most once
 # and, once burned, is permanently consumed.
 #
 # Shared token metadata (name, description, logo_uri, external_link) lives in the parent
@@ -51,22 +51,22 @@ const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify th
 # PRIVATE HELPERS
 # =================================================================================================
 
-#! Builds the asset-status registry key from an asset id.
+#! Builds the asset-status registry key from an asset class.
 #!
-#! Inputs:  [asset_id_suffix, asset_id_prefix]
+#! Inputs:  [asset_class_suffix, asset_class_prefix]
 #! Outputs: [STATUS_KEY]
 #!
 #! Where:
-#! - STATUS_KEY is `[asset_id_suffix, asset_id_prefix, 0, 0]`. The trailing zeros ensure two asset
+#! - STATUS_KEY is `[asset_class_suffix, asset_class_prefix, 0, 0]`. The trailing zeros ensure two asset
 #!   values that collide in their first two elements cannot produce two distinct status keys.
 #!
 #! Invocation: exec
 proc create_status_key
     push.0 push.0
-    # => [0, 0, asset_id_suffix, asset_id_prefix]
+    # => [0, 0, asset_class_suffix, asset_class_prefix]
 
     movdn.3 movdn.3
-    # => [asset_id_suffix, asset_id_prefix, 0, 0]
+    # => [asset_class_suffix, asset_class_prefix, 0, 0]
 end
 
 #! Builds a status registry value word from a status code.
@@ -127,13 +127,13 @@ end
 # PUBLIC API — ASSET STATUS
 # =================================================================================================
 
-#! Returns the status registered for an asset id.
+#! Returns the status registered for an asset class.
 #!
-#! Inputs:  [asset_id_suffix, asset_id_prefix, pad(14)]
+#! Inputs:  [asset_class_suffix, asset_class_prefix, pad(14)]
 #! Outputs: [status, pad(15)]
 #!
 #! Where:
-#! - asset_id_suffix, asset_id_prefix are the first two elements of the asset commitment.
+#! - asset_class_suffix, asset_class_prefix are the first two elements of the asset commitment.
 #! - status is 0 if not issued, 1 if issued, 2 if burned.
 #!
 #! Invocation: call
@@ -190,12 +190,12 @@ pub proc mint_and_send
     assert_eqw.err=ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    # build the status key from the asset id (commitment elements 0 and 1)
+    # build the status key from the asset class (commitment elements 0 and 1)
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
-    exec.asset::non_fungible_value_into_asset_id
-    # => [asset_id_suffix, asset_id_prefix, tag, note_type, RECIPIENT, pad(10)]
+    exec.asset::non_fungible_value_into_asset_class
+    # => [asset_class_suffix, asset_class_prefix, tag, note_type, RECIPIENT, pad(10)]
 
     exec.create_status_key
     # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
@@ -271,12 +271,12 @@ pub proc receive_and_burn
     dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
-    # build the status key from the asset id without disturbing [ASSET_KEY, ASSET_VALUE]
+    # build the status key from the asset class without disturbing [ASSET_KEY, ASSET_VALUE]
     dupw.1
     # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
 
-    exec.asset::non_fungible_value_into_asset_id
-    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY, ASSET_VALUE, pad(16)]
+    exec.asset::non_fungible_value_into_asset_class
+    # => [asset_class_suffix, asset_class_prefix, ASSET_KEY, ASSET_VALUE, pad(16)]
 
     exec.create_status_key
     # => [STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(16)]

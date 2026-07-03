@@ -27,7 +27,7 @@ const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT="fungible asset amount exceed
 
 const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO="fungible asset value elements 1, 2 and 3 must be zeros"
 
-const ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO="fungible asset key asset ID prefix and suffix must be zero"
+const ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO="fungible asset key asset class prefix and suffix must be zero"
 
 const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
 
@@ -179,11 +179,11 @@ pub proc validate_key
     assert.err=ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
     # => [ASSET_KEY]
 
-    exec.asset::key_to_asset_id
-    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
+    exec.asset::key_to_asset_class
+    # => [asset_class_suffix, asset_class_prefix, ASSET_KEY]
 
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
     # => [ASSET_KEY]
 end
 

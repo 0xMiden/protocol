@@ -5,7 +5,7 @@ use super::vault::AssetVaultKey;
 use super::{Asset, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
-use crate::asset::vault::AssetId;
+use crate::asset::vault::AssetClass;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -66,8 +66,8 @@ impl NonFungibleAsset {
     ///
     /// Returns an error if:
     /// - The provided key does not have [`AssetComposition::None`] set.
-    /// - The provided key's asset ID limbs are not equal to the provided value's first and second
-    ///   element.
+    /// - The provided key's asset class limbs are not equal to the provided value's first and
+    ///   second element.
     /// - The faucet ID is not a non-fungible faucet ID.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
         if !key.composition().is_none() {
@@ -78,9 +78,9 @@ impl NonFungibleAsset {
             });
         }
 
-        if key.asset_id().suffix() != value[0] || key.asset_id().prefix() != value[1] {
-            return Err(AssetError::NonFungibleAssetIdMustMatchValue {
-                asset_id: key.asset_id(),
+        if key.asset_class().suffix() != value[0] || key.asset_class().prefix() != value[1] {
+            return Err(AssetError::NonFungibleAssetClassMustMatchValue {
+                asset_class: key.asset_class(),
                 value,
             });
         }
@@ -108,11 +108,11 @@ impl NonFungibleAsset {
     ///
     /// See [`Asset`] docs for details on the key.
     pub fn vault_key(&self) -> AssetVaultKey {
-        let asset_id_suffix = self.value[0];
-        let asset_id_prefix = self.value[1];
-        let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
+        let asset_class_suffix = self.value[0];
+        let asset_class_prefix = self.value[1];
+        let asset_class = AssetClass::new(asset_class_suffix, asset_class_prefix);
 
-        AssetVaultKey::new(asset_id, self.faucet_id, AssetComposition::None)
+        AssetVaultKey::new(asset_class, self.faucet_id, AssetComposition::None)
             .expect("non-fungible composition is always valid")
     }
 
@@ -254,16 +254,16 @@ mod tests {
     }
 
     #[test]
-    fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
+    fn fungible_asset_from_key_value_fails_on_invalid_asset_class() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new(
-            AssetId::new(Felt::from(1u32), Felt::from(2u32)),
+            AssetClass::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::None,
         )?;
         let err =
             NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();
 
-        assert_matches!(err, AssetError::NonFungibleAssetIdMustMatchValue { .. });
+        assert_matches!(err, AssetError::NonFungibleAssetClassMustMatchValue { .. });
 
         Ok(())
     }
@@ -307,7 +307,7 @@ mod tests {
         let asset = NonFungibleAsset::mock(&[42]);
 
         assert_eq!(asset.vault_key().faucet_id(), NonFungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_id().suffix(), asset.to_value_word()[0]);
-        assert_eq!(asset.vault_key().asset_id().prefix(), asset.to_value_word()[1]);
+        assert_eq!(asset.vault_key().asset_class().suffix(), asset.to_value_word()[0]);
+        assert_eq!(asset.vault_key().asset_class().prefix(), asset.to_value_word()[1]);
     }
 }

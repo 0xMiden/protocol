@@ -24,9 +24,9 @@ pub use {
     COMPOSITION_FUNGIBLE,
     COMPOSITION_NONE,
     FUNGIBLE_ASSET_MAX_AMOUNT,
-    key_into_asset_id,
     key_into_faucet_id,
-    key_to_asset_id,
+    key_into_asset_class,
+    key_to_asset_class
     key_to_composition,
     key_to_faucet_id,
     load,
@@ -46,7 +46,7 @@ pub use {
 #! - ASSET_KEY is the vault key from which to extract the metadata.
 #! - has_callbacks is 1 if callbacks are enabled and 0 if disabled.
 pub proc key_to_has_callbacks
-    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     dup.3 exec.account_id::asset_callback_flag
     # => [has_callbacks, ASSET_KEY]
@@ -107,7 +107,7 @@ end
 #! - the asset metadata is invalid (not 0 or 1).
 #! - the faucet ID in the key is not a valid account ID.
 pub proc validate_issuer
-    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     dup.3 dup.3 exec.asset_utils::split_suffix_and_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_KEY]

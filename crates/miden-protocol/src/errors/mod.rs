@@ -28,7 +28,7 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
@@ -567,11 +567,13 @@ pub enum AssetError {
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+        "asset class prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset class was {asset_class} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
-    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
-    FungibleAssetIdMustBeZero(AssetId),
+    NonFungibleAssetClassMustMatchValue { asset_class: AssetClass, value: Word },
+    #[error(
+        "asset class prefix and suffix in a fungible asset's vault key must be zero but was {0}"
+    )]
+    FungibleAssetClassMustBeZero(AssetClass),
     #[error(
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]

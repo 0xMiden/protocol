@@ -5,7 +5,7 @@ use super::vault::AssetVaultKey;
 use super::{Asset, AssetAmount, AssetComposition, AssetError, Word};
 use crate::Felt;
 use crate::account::{AccountId, AssetCallbackFlag};
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -68,7 +68,7 @@ impl FungibleAsset {
     /// Returns an error if:
     /// - The provided key does not contain a valid faucet ID.
     /// - The provided key's does not have [`AssetComposition::Fungible`] set.
-    /// - The provided key's asset ID limbs are not zero.
+    /// - The provided key's asset class limbs are not zero.
     /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
     ///   most significant elements are not zero.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
@@ -80,8 +80,8 @@ impl FungibleAsset {
             });
         }
 
-        if !key.asset_id().is_empty() {
-            return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
+        if !key.asset_class().is_empty() {
+            return Err(AssetError::FungibleAssetClassMustBeZero(key.asset_class()));
         }
 
         if value[1] != Felt::ZERO || value[2] != Felt::ZERO || value[3] != Felt::ZERO {
@@ -129,8 +129,8 @@ impl FungibleAsset {
 
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::new(AssetId::default(), self.faucet_id, AssetComposition::Fungible)
-            .expect("default asset id should be valid for fungible composition")
+        AssetVaultKey::new(AssetClass::default(), self.faucet_id, AssetComposition::Fungible)
+            .expect("default asset class should be valid for fungible composition")
     }
 
     /// Returns the asset's key encoded to a [`Word`].
@@ -281,10 +281,10 @@ mod tests {
     }
 
     #[test]
-    fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
+    fn fungible_asset_from_key_value_words_fails_on_invalid_asset_class() -> anyhow::Result<()> {
         let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
         let mut asset_key =
-            AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?
+            AssetVaultKey::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?
                 .to_word();
         asset_key[0] = Felt::from(1u32);
         asset_key[1] = Felt::from(2u32);
@@ -292,7 +292,7 @@ mod tests {
         let err =
             FungibleAsset::from_key_value_words(asset_key, FungibleAsset::mock(5).to_value_word())
                 .unwrap_err();
-        assert_matches!(err, AssetError::FungibleAssetIdMustBeZero(_));
+        assert_matches!(err, AssetError::FungibleAssetClassMustBeZero(_));
 
         Ok(())
     }
@@ -349,7 +349,7 @@ mod tests {
         let asset = FungibleAsset::mock(34);
 
         assert_eq!(asset.vault_key().faucet_id(), FungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_id().prefix().as_canonical_u64(), 0);
-        assert_eq!(asset.vault_key().asset_id().suffix().as_canonical_u64(), 0);
+        assert_eq!(asset.vault_key().asset_class().prefix().as_canonical_u64(), 0);
+        assert_eq!(asset.vault_key().asset_class().suffix().as_canonical_u64(), 0);
     }
 }

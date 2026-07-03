@@ -31,7 +31,7 @@ pub use asset_composition::AssetComposition;
 
 mod vault;
 pub use vault::{
-    AssetId,
+    AssetClass,
     AssetVault,
     AssetVaultKey,
     AssetVaultKeyHash,
@@ -70,8 +70,8 @@ pub use vault::{
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
 ///   asset metadata ([`AssetComposition`]). See [`AssetVaultKey`] for more details on the key's
 ///   layout.
-/// - the asset ID limbs must be zero, which means two instances of the same fungible asset have the
-///   same asset key and will be merged together when stored in the same account's vault.
+/// - the asset class limbs must be zero, which means two instances of the same fungible asset have
+///   the same asset key and will be merged together when stored in the same account's vault.
 ///
 /// It is impossible to find a collision between two fungible assets issued by different faucets as
 /// the faucet ID is part of the asset's vault key and this is guaranteed to be different for each
@@ -90,16 +90,16 @@ pub use vault::{
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
 ///   asset metadata ([`AssetComposition`]). See [`AssetVaultKey`] for more details on the key's
 ///   layout.
-/// - The asset ID limbs are set to hashes from the asset's value (`hash0` and `hash1`).
+/// - The asset class limbs are set to hashes from the asset's value (`hash0` and `hash1`).
 ///
 /// It is impossible to find a collision between two non-fungible assets issued by different faucets
 /// as the faucet ID is part of the asset's vault key and this is guaranteed to be different as per
 /// the faucet creation logic.
 ///
 /// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
-/// 128-bit asset ID that is unique per non-fungible asset. In other words, two non-fungible assets
-/// issued by the same faucet are very unlikely to have the same asset key and thus should not
-/// collide when stored in the same account's vault.
+/// 128-bit asset clas that is unique per non-fungible asset. In other words, two non-fungible
+/// assets issued by the same faucet are very unlikely to have the same asset key and thus should
+/// not collide when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Asset {
     Fungible(FungibleAsset),
@@ -270,7 +270,7 @@ mod tests {
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::Felt;
     use crate::account::AccountId;
-    use crate::asset::{AssetComposition, AssetId, AssetVaultKey};
+    use crate::asset::{AssetClass, AssetComposition, AssetVaultKey};
     use crate::errors::AssetError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn test_from_key_value_rejects_custom_composition() -> anyhow::Result<()> {
         let err = AssetVaultKey::new(
-            AssetId::default(),
+            AssetClass::default(),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::Custom,
         )

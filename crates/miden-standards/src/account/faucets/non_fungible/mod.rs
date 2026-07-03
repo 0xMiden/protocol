@@ -54,8 +54,8 @@ pub(crate) static SYMBOL_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-/// Storage slot holding the asset-status registry map (`[asset_id_suffix, asset_id_prefix, 0, 0]`
-/// -> `[status, 0, 0, 0]`) for a [`NonFungibleFaucet`].
+/// Storage slot holding the asset-status registry map (`[asset_class_suffix, asset_class_prefix, 0,
+/// 0]` -> `[status, 0, 0, 0]`) for a [`NonFungibleFaucet`].
 pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
         .expect("storage slot name should be valid")
@@ -288,8 +288,8 @@ impl NonFungibleFaucet {
         (
             Self::asset_status_slot().clone(),
             StorageSlotSchema::map(
-                "Asset status registry. Key is the asset id padded to a word \
-                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status (0 = not issued, \
+                "Asset status registry. Key is the asset class padded to a word \
+                 `[asset_class_suffix, asset_class_prefix, 0, 0]`; value is the status (0 = not issued, \
                  1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
                 SchemaType::native_word(),
                 SchemaType::native_felt(),

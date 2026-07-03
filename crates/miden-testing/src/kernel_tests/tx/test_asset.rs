@@ -1,7 +1,7 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
+    AssetClass,
     AssetComposition,
-    AssetId,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -11,11 +11,11 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO,
+    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO,
     ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
-    ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1,
-    ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
+    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1,
+    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0,
     ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE,
     ERR_VAULT_ASSET_METADATA_NOT_U32,
     ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
@@ -117,26 +117,26 @@ fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
 #[rstest::rstest]
 #[case::account_is_not_non_fungible_faucet(
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     METADATA_BYTE_FUNGIBLE,
     ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE
 )]
-#[case::asset_id_suffix_mismatch(
+#[case::asset_class_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(0u32), Felt::from(3u32)),
+    AssetClass::new(Felt::from(0u32), Felt::from(3u32)),
     METADATA_BYTE_NONE,
-    ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
+    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0
 )]
-#[case::asset_id_prefix_mismatch(
+#[case::asset_class_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(2u32), Felt::from(0u32)),
+    AssetClass::new(Felt::from(2u32), Felt::from(0u32)),
     METADATA_BYTE_NONE,
-    ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
+    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
 async fn test_validate_non_fungible_asset(
     #[case] account_id: AccountId,
-    #[case] asset_id: AssetId,
+    #[case] asset_class: AssetClass,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
 ) -> anyhow::Result<()> {
@@ -151,8 +151,8 @@ async fn test_validate_non_fungible_asset(
 
             push.{account_id_prefix}
             push.{account_id_suffix}
-            push.{asset_id_prefix}
-            push.{asset_id_suffix}
+            push.{asset_class_prefix}
+            push.{asset_class_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.non_fungible_asset::validate
@@ -161,8 +161,8 @@ async fn test_validate_non_fungible_asset(
             swapdw dropw dropw
         end
         ",
-        asset_id_suffix = asset_id.suffix(),
-        asset_id_prefix = asset_id.prefix(),
+        asset_class_suffix = asset_class.suffix(),
+        asset_class_prefix = asset_class.prefix(),
         account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
     );
@@ -177,35 +177,35 @@ async fn test_validate_non_fungible_asset(
 #[rstest::rstest]
 #[case::account_is_not_fungible_faucet(
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::empty(),
     METADATA_BYTE_NONE,
     ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
 )]
-#[case::asset_id_suffix_is_non_zero(
+#[case::asset_class_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(1u32), Felt::from(0u32)),
+    AssetClass::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
 )]
-#[case::asset_id_prefix_is_non_zero(
+#[case::asset_class_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(0u32), Felt::from(1u32)),
+    AssetClass::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
 )]
 #[case::non_amount_value_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::from([0, 1, 0, 0u32]),
     METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
 )]
 #[case::amount_exceeds_max(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::try_from([FungibleAsset::MAX_AMOUNT.as_u64() + 1, 0, 0, 0])?,
     METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
@@ -213,7 +213,7 @@ async fn test_validate_non_fungible_asset(
 #[tokio::test]
 async fn test_validate_fungible_asset(
     #[case] account_id: AccountId,
-    #[case] asset_id: AssetId,
+    #[case] asset_class: AssetClass,
     #[case] asset_value: Word,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
@@ -226,8 +226,8 @@ async fn test_validate_fungible_asset(
             push.{ASSET_VALUE}
             push.{account_id_prefix}
             push.{account_id_suffix}
-            push.{asset_id_prefix}
-            push.{asset_id_suffix}
+            push.{asset_class_prefix}
+            push.{asset_class_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.fungible_asset::validate
@@ -236,8 +236,8 @@ async fn test_validate_fungible_asset(
             swapdw dropw dropw
         end
         ",
-        asset_id_suffix = asset_id.suffix(),
-        asset_id_prefix = asset_id.prefix(),
+        asset_class_suffix = asset_class.suffix(),
+        asset_class_prefix = asset_class.prefix(),
         account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
         ASSET_VALUE = asset_value,
@@ -303,7 +303,7 @@ async fn test_key_to_callbacks_and_composition(
     #[case] composition: AssetComposition,
 ) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition)?;
+    let vault_key = AssetVaultKey::new(AssetClass::default(), faucet_id, composition)?;
 
     let code = format!(
         "

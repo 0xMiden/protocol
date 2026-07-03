@@ -1156,8 +1156,6 @@ end
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
-#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.

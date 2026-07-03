@@ -30,8 +30,8 @@ pub use asset_witness::AssetWitness;
 mod vault_key;
 pub use vault_key::{AssetVaultKey, AssetVaultKeyHash};
 
-mod asset_id;
-pub use asset_id::AssetId;
+mod asset_class;
+pub use asset_class::AssetClass;
 
 // ASSET VAULT
 // ================================================================================================
@@ -442,7 +442,7 @@ mod tests {
         let asset1 = NonFungibleAsset::mock(&[4, 5, 6]);
 
         // Sanity check: the assets share their faucet but have distinct raw vault keys (different
-        // asset IDs).
+        // asset class).
         assert_eq!(asset0.vault_key().faucet_id(), asset1.vault_key().faucet_id());
         assert_ne!(asset0.vault_key(), asset1.vault_key());
 

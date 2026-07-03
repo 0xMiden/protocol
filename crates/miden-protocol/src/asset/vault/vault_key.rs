@@ -6,7 +6,7 @@ use miden_crypto::merkle::smt::LeafIndex;
 use miden_crypto_derive::WordWrapper;
 
 use crate::account::{AccountId, AssetCallbackFlag};
-use crate::asset::vault::AssetId;
+use crate::asset::vault::AssetClass;
 use crate::asset::{Asset, AssetComposition, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
@@ -24,8 +24,8 @@ use crate::{Felt, Hasher, Word};
 /// Its [`Word`] layout is:
 /// ```text
 /// [
-///   asset_id_suffix (64 bits),
-///   asset_id_prefix (64 bits),
+///   asset_class_suffix (64 bits),
+///   asset_class_prefix (64 bits),
 ///   [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
 ///   faucet_id_prefix (64 bits)
 /// ]
@@ -37,11 +37,11 @@ use crate::{Felt, Hasher, Word};
 ///
 /// Use [`AssetVaultKey::hash`] to produce the corresponding [`AssetVaultKeyHash`] that is used as
 /// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
-/// leaves regardless of how faucet IDs or asset IDs are chosen.
+/// leaves regardless of how faucet IDs or asset classes are chosen.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AssetVaultKey {
-    /// The asset ID of the vault key.
-    asset_id: AssetId,
+    /// The asset class of the vault key.
+    asset_class: AssetClass,
 
     /// The ID of the faucet that issued the asset.
     faucet_id: AccountId,
@@ -78,11 +78,11 @@ impl AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the asset ID limbs are not zero when `composition` is [`AssetComposition::Fungible`].
+    /// - the asset class limbs are not zero when `composition` is [`AssetComposition::Fungible`].
     /// - the composition is [`AssetComposition::Custom`], which is disallowed until its support is
     ///   enabled in the tx kernel.
     pub fn new(
-        asset_id: AssetId,
+        asset_class: AssetClass,
         faucet_id: AccountId,
         composition: AssetComposition,
     ) -> Result<Self, AssetError> {
@@ -91,17 +91,17 @@ impl AssetVaultKey {
             return Err(AssetError::UnsupportedAssetComposition(AssetComposition::Custom));
         }
 
-        if composition.is_fungible() && !asset_id.is_empty() {
-            return Err(AssetError::FungibleAssetIdMustBeZero(asset_id));
+        if composition.is_fungible() && !asset_class.is_empty() {
+            return Err(AssetError::FungibleAssetClassMustBeZero(asset_class));
         }
 
-        Ok(Self { asset_id, faucet_id, composition })
+        Ok(Self { asset_class, faucet_id, composition })
     }
 
     /// Constructs a fungible asset's key from a faucet ID.
     pub fn new_fungible(faucet_id: AccountId) -> Self {
-        Self::new(AssetId::default(), faucet_id, AssetComposition::Fungible).expect(
-            "passing AssetComposition::Fungible together with AssetId::default should be valid",
+        Self::new(AssetClass::default(), faucet_id, AssetComposition::Fungible).expect(
+            "passing AssetComposition::Fungible together with AssetClass::default should be valid",
         )
     }
 
@@ -125,17 +125,17 @@ impl AssetVaultKey {
             .expect("highest bit should still be zero resulting in a valid felt");
 
         Word::new([
-            self.asset_id.suffix(),
-            self.asset_id.prefix(),
+            self.asset_class.suffix(),
+            self.asset_class.prefix(),
             faucet_id_suffix_and_metadata,
             self.faucet_id.prefix().as_felt(),
         ])
     }
 
-    /// Returns the [`AssetId`] of the vault key that distinguishes different assets issued by the
-    /// same faucet.
-    pub fn asset_id(&self) -> AssetId {
-        self.asset_id
+    /// Returns the [`AssetClass`] of the vault key that distinguishes different assets issued by
+    /// the same faucet.
+    pub fn asset_class(&self) -> AssetClass {
+        self.asset_class
     }
 
     /// Returns the [`AccountId`] of the faucet that issued the asset.
@@ -219,12 +219,13 @@ impl TryFrom<Word> for AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the asset ID limbs are not zero when asset composition is [`AssetComposition::Fungible`].
+    /// - the asset class limbs are not zero when asset composition is
+    ///   [`AssetComposition::Fungible`].
     /// - the metadata byte has reserved bits set.
     /// - the composition encoded in the metadata byte is invalid.
     fn try_from(key: Word) -> Result<Self, Self::Error> {
-        let asset_id_suffix = key[0];
-        let asset_id_prefix = key[1];
+        let asset_class_suffix = key[0];
+        let asset_class_prefix = key[1];
         let faucet_id_suffix_and_metadata = key[2];
         let faucet_id_prefix = key[3];
 
@@ -241,11 +242,11 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id_suffix = Felt::try_from(raw & !(Self::METADATA_BYTE_MASK as u64))
             .expect("clearing lower bits should not produce an invalid felt");
 
-        let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
+        let asset_class = AssetClass::new(asset_class_suffix, asset_class_prefix);
         let faucet_id = AccountId::try_from_elements(faucet_id_suffix, faucet_id_prefix)
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
-        Self::new(asset_id, faucet_id, composition)
+        Self::new(asset_class, faucet_id, composition)
     }
 }
 
@@ -313,17 +314,17 @@ mod tests {
         let fungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
         let nonfungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
-        // Fungible: asset_id must be zero.
+        // Fungible: asset_class must be zero.
         let key =
-            AssetVaultKey::new(AssetId::default(), fungible_faucet, AssetComposition::Fungible)?;
+            AssetVaultKey::new(AssetClass::default(), fungible_faucet, AssetComposition::Fungible)?;
         assert_eq!(key.composition(), AssetComposition::Fungible);
         let roundtripped = AssetVaultKey::try_from(key.to_word())?;
         assert_eq!(key, roundtripped);
         assert_eq!(key, AssetVaultKey::read_from_bytes(&key.to_bytes())?);
 
-        // Non-fungible: asset_id can be non-zero.
+        // Non-fungible: asset_class can be non-zero.
         let key = AssetVaultKey::new(
-            AssetId::new(Felt::from(42u32), Felt::from(99u32)),
+            AssetClass::new(Felt::from(42u32), Felt::from(99u32)),
             nonfungible_faucet,
             AssetComposition::None,
         )?;
