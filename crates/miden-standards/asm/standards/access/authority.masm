@@ -16,7 +16,7 @@ use miden::standards::access::rbac
 # authority is the discriminator (0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled).
 # is_frozen is the global emergency switch (0 = not frozen, 1 = frozen). While frozen,
 # `assert_authorized` panics for every gated procedure regardless of role or owner membership.
-pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
+pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_config")
 
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].

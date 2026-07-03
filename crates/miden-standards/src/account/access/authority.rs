@@ -48,7 +48,7 @@ procedure_root!(
 );
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::authority")
+    StorageSlotName::new("miden::standards::access::authority::authority_config")
         .expect("storage slot name should be valid")
 });
 
