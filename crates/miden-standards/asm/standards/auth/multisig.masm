@@ -208,11 +208,13 @@ end
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
 #!   Advice map: {
-#!     MULTISIG_CONFIG_HASH => 
-#!     [ 
-#!       CONFIG, 
-#!       PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0, 
-#!       SCHEME_ID_N, SCHEME_ID_N-1, ..., SCHEME_ID_0 
+#!     MULTISIG_CONFIG_HASH =>
+#!     [
+#!       CONFIG,
+#!       PUB_KEY_N, SCHEME_ID_N,
+#!       PUB_KEY_N-1, SCHEME_ID_N-1,
+#!       ...,
+#!       PUB_KEY_0, SCHEME_ID_0
 #!     ]
 #!   }
 #! Outputs:
@@ -579,7 +581,7 @@ pub proc get_signer_at
     # => [APPROVER_MAP_KEY, index]
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [APPROVER_PUBLIC_KEYS_SLOT, APPROVER_MAP_KEY, index]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
 
     exec.active_account::get_initial_map_item
     # => [PUB_KEY, index]
@@ -591,7 +593,7 @@ pub proc get_signer_at
     # => [APPROVER_MAP_KEY, PUB_KEY]
 
     push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [APPROVER_SCHEME_ID_SLOT, APPROVER_MAP_KEY, PUB_KEY]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
 
     exec.active_account::get_initial_map_item
     # => [SCHEME_ID_WORD, PUB_KEY]
@@ -692,7 +694,7 @@ end
 #! Invocation: exec
 pub proc assert_new_tx(msg: word)
     push.IS_EXECUTED_FLAG
-    # => [[0, 0, 0, is_executed], MSG]
+    # => [[is_executed, 0, 0, 0], MSG]
 
     swapw
     # => [TX_SUMMARY_COMMITMENT, IS_EXECUTED_FLAG]
@@ -702,7 +704,7 @@ pub proc assert_new_tx(msg: word)
 
     # Set the key value pair in the map to mark transaction as executed
     exec.native_account::set_map_item
-    # => [[0, 0, 0, is_executed]]
+    # => [[is_executed, 0, 0, 0]]
 
     movdn.3 drop drop drop
     # => [is_executed]
