@@ -24,11 +24,11 @@ pub use {
     COMPOSITION_FUNGIBLE,
     COMPOSITION_NONE,
     FUNGIBLE_ASSET_MAX_AMOUNT,
-    key_into_faucet_id,
-    key_into_asset_class,
-    key_to_asset_class
-    key_to_composition,
-    key_to_faucet_id,
+    id_to_faucet_id,
+    id_into_faucet_id,
+    id_to_asset_class,
+    id_into_asset_class,
+    id_to_composition,
     load,
     store,
     validate_metadata,
@@ -37,71 +37,71 @@ pub use {
 # PROCEDURES
 # =================================================================================================
 
-#! Returns the asset callbacks flag from an asset vault key.
+#! Returns the asset callbacks flag from an asset ID.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [has_callbacks, ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [has_callbacks, ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key from which to extract the metadata.
+#! - ASSET_ID is the asset ID from which to extract the metadata.
 #! - has_callbacks is 1 if callbacks are enabled and 0 if disabled.
-pub proc key_to_has_callbacks
+pub proc id_to_has_callbacks
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     dup.3 exec.account_id::asset_callback_flag
-    # => [has_callbacks, ASSET_KEY]
+    # => [has_callbacks, ASSET_ID]
 end
 
 #! Returns a boolean indicating whether the asset is fungible.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [is_fungible_asset, ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [is_fungible_asset, ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to check.
+#! - ASSET_ID is the asset ID of the asset to check.
 #! - is_fungible_asset is a boolean indicating whether the asset is fungible.
-pub proc is_fungible_asset_key
-    # => [ASSET_KEY]
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY]
+pub proc is_fungible_asset_id
+    # => [ASSET_ID]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_KEY]
+    # => [is_fungible_asset, ASSET_ID]
 end
 
-#! Validates that an asset's vault key is well formed.
+#! Validates that an asset ID is well formed.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_ID is the asset ID of the asset to validate.
 #!
 #! Panics if:
-#! - the asset key is not a valid fungible or non-fungible asset key (see
-#!   fungible_asset::validate_key and non_fungible_asset::validate_key).
-pub proc validate_key
-    # check if the asset key is fungible
-    exec.is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY]
+#! - the asset ID is not a valid fungible or non-fungible asset ID (see
+#!   fungible_asset::validate_id and non_fungible_asset::validate_id).
+pub proc validate_id
+    # check if the asset ID is fungible
+    exec.is_fungible_asset_id
+    # => [is_fungible_asset, ASSET_ID]
 
     if.true
-        exec.fungible_asset::validate_key
-        # => [ASSET_KEY]
+        exec.fungible_asset::validate_id
+        # => [ASSET_ID]
     else
-        exec.non_fungible_asset::validate_key
-        # => [ASSET_KEY]
+        exec.non_fungible_asset::validate_id
+        # => [ASSET_ID]
     end
-    # => [ASSET_KEY]
+    # => [ASSET_ID]
 end
 
-#! Validates the issuer (faucet ID) and metadata in an asset vault key.
+#! Validates the issuer (faucet ID) and metadata in an asset ID.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_ID is the asset ID of the asset to validate.
 #!
 #! Panics if:
 #! - the asset metadata is invalid (not 0 or 1).
@@ -110,90 +110,90 @@ pub proc validate_issuer
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     dup.3 dup.3 exec.asset_utils::split_suffix_and_metadata
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
 
     exec.asset_utils::validate_metadata
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
 
     exec.account_id::validate
-    # => [ASSET_KEY]
+    # => [ASSET_ID]
 end
 
 #! Returns a boolean indicating whether the asset is non-fungible.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [is_non_fungible_asset, ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [is_non_fungible_asset, ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to check.
+#! - ASSET_ID is the asset ID of the asset to check.
 #! - is_non_fungible_asset is a boolean indicating whether the asset is non-fungible.
-pub proc is_non_fungible_asset_key
-    # => [ASSET_KEY]
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY]
+pub proc is_non_fungible_asset_id
+    # => [ASSET_ID]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID]
 
     eq.COMPOSITION_NONE
-    # => [is_non_fungible_asset, ASSET_KEY]
+    # => [is_non_fungible_asset, ASSET_ID]
 end
 
 #! Asserts that the asset's composition is supported by the kernel today (i.e. not Custom).
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET_KEY]
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to check.
+#! - ASSET_ID is the asset ID of the asset to check.
 #!
 #! Panics if:
 #! - the asset's composition is Custom.
 pub proc assert_supported_composition
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID]
 
     neq.COMPOSITION_CUSTOM
     assert.err=ERR_VAULT_UNSUPPORTED_ASSET_COMPOSITION
-    # => [ASSET_KEY]
+    # => [ASSET_ID]
 end
 
 #! Validates that an asset is well formed.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_ID is the asset ID of the asset to validate.
 #! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
 #! - the asset is not a valid fungible or non-fungible asset (see fungible_asset::validate and
-#!   non_fungible_asset::validate_key).
+#!   non_fungible_asset::validate_id).
 pub proc validate
     # check if the asset is fungible
-    exec.is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
+    exec.is_fungible_asset_id
+    # => [is_fungible_asset, ASSET_ID, ASSET_VALUE]
 
     # if the asset is fungible, validate the fungible asset
     if.true
         exec.fungible_asset::validate
-        # => [ASSET_KEY, ASSET_VALUE]
+        # => [ASSET_ID, ASSET_VALUE]
     else
         # if the asset is non fungible, validate the non fungible asset
         exec.non_fungible_asset::validate
-        # => [ASSET_KEY, ASSET_VALUE]
+        # => [ASSET_ID, ASSET_VALUE]
     end
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 end
 
 #! Merges two values for the same asset and returns the combined value.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
 #! and have already been validated.
 #!
-#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Inputs:  [ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [MERGED_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset whose values are being merged.
+#! - ASSET_ID is the asset ID of the asset whose values are being merged.
 #! - CURRENT_ASSET_VALUE and OTHER_ASSET_VALUE are the two asset values to merge.
 #! - MERGED_ASSET_VALUE is the combined value.
 #!
@@ -202,14 +202,14 @@ end
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying merge operation panics (see fungible_asset::merge).
 pub proc merge
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_MERGE_COMPOSITION_NONE
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [is_fungible_asset, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     if.true
         dropw
@@ -223,16 +223,16 @@ pub proc merge
     # => [MERGED_ASSET_VALUE]
 end
 
-#! Computes OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE for the asset identified by ASSET_KEY.
+#! Computes OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE for the asset identified by ASSET_ID.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
 #! and have already been validated.
 #!
-#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Inputs:  [ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [SPLIT_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset whose values are being split.
+#! - ASSET_ID is the asset ID of the asset whose values are being split.
 #! - CURRENT_ASSET_VALUE is the value subtracted from OTHER_ASSET_VALUE.
 #! - OTHER_ASSET_VALUE is the value being subtracted from.
 #! - SPLIT_ASSET_VALUE is OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE.
@@ -242,14 +242,14 @@ end
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying split operation panics (see fungible_asset::split).
 pub proc split
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_SPLIT_COMPOSITION_NONE
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [is_fungible_asset, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     if.true
         dropw
@@ -265,14 +265,14 @@ end
 
 #! Returns 1 if OTHER_ASSET_VALUE is less than CURRENT_ASSET_VALUE, 0 otherwise.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
+#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
 #! and have already been validated.
 #!
-#! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Inputs:  [ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [is_lt]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset whose values are being compared.
+#! - ASSET_ID is the asset ID of the asset whose values are being compared.
 #! - CURRENT_ASSET_VALUE and OTHER_ASSET_VALUE are the two asset values to compare.
 #! - is_lt is 1 if OTHER_ASSET_VALUE < CURRENT_ASSET_VALUE.
 #!
@@ -280,14 +280,14 @@ end
 #! - the asset's composition is None.
 #! - the asset's composition is Custom (not yet supported).
 pub proc lt
-    exec.key_to_composition
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    exec.id_to_composition
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_LT_COMPOSITION_NONE
-    # => [asset_composition, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [is_fungible_asset, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     if.true
         dropw

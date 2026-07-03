@@ -2,7 +2,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     AssetClass,
     AssetComposition,
-    AssetVaultKey,
+    AssetId,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -11,12 +11,12 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO,
-    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE,
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO,
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
     ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1,
     ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0,
-    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE,
+    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE,
     ERR_VAULT_ASSET_METADATA_NOT_U32,
     ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
 };
@@ -49,7 +49,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
             # create fungible asset
             push.{FUNGIBLE_ASSET_AMOUNT}
             exec.faucet::create_fungible_asset
-            # => [ASSET_KEY, ASSET_VALUE]
+            # => [ASSET_ID, ASSET_VALUE]
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
@@ -59,7 +59,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
 
     Ok(())
@@ -98,7 +98,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
 
     Ok(())
@@ -107,7 +107,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 const METADATA_BYTE_NONE: u64 = 0;
 const METADATA_BYTE_FUNGIBLE: u64 = AssetComposition::Fungible as u64;
 
-/// Returns the third element of a synthesised asset key, packing the faucet ID suffix with the
+/// Returns the third element of a synthesised asset ID, packing the faucet ID suffix with the
 /// given metadata byte (lower 8 bits).
 fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
     Felt::try_from(account_id.suffix().as_canonical_u64() | metadata_byte)
@@ -119,7 +119,7 @@ fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
     AssetClass::default(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE
+    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE
 )]
 #[case::asset_class_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
@@ -153,7 +153,7 @@ async fn test_validate_non_fungible_asset(
             push.{account_id_suffix}
             push.{asset_class_prefix}
             push.{asset_class_suffix}
-            # => [ASSET_KEY, ASSET_VALUE]
+            # => [ASSET_ID, ASSET_VALUE]
 
             exec.non_fungible_asset::validate
 
@@ -180,21 +180,21 @@ async fn test_validate_non_fungible_asset(
     AssetClass::default(),
     Word::empty(),
     METADATA_BYTE_NONE,
-    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE
 )]
 #[case::asset_class_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetClass::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
 )]
 #[case::asset_class_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetClass::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_CLASS_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
 )]
 #[case::non_amount_value_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
@@ -228,7 +228,7 @@ async fn test_validate_fungible_asset(
             push.{account_id_suffix}
             push.{asset_class_prefix}
             push.{asset_class_suffix}
-            # => [ASSET_KEY, ASSET_VALUE]
+            # => [ASSET_ID, ASSET_VALUE]
 
             exec.fungible_asset::validate
 
@@ -299,32 +299,32 @@ async fn test_validate_asset_metadata(
 #[case::fungible(AssetComposition::Fungible)]
 #[case::non_fungible(AssetComposition::None)]
 #[tokio::test]
-async fn test_key_to_callbacks_and_composition(
+async fn test_id_to_callbacks_and_composition(
     #[case] composition: AssetComposition,
 ) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key = AssetVaultKey::new(AssetClass::default(), faucet_id, composition)?;
+    let asset_id = AssetId::new(AssetClass::default(), faucet_id, composition)?;
 
     let code = format!(
         "
         use miden::tx_kernel_core::asset
 
         begin
-            push.{ASSET_KEY}
-            exec.asset::key_to_has_callbacks
-            # => [has_callbacks, ASSET_KEY]
+            push.{ASSET_ID}
+            exec.asset::id_to_has_callbacks
+            # => [has_callbacks, ASSET_ID]
             movdn.4
-            # => [ASSET_KEY, has_callbacks]
+            # => [ASSET_ID, has_callbacks]
 
-            exec.asset::key_to_composition
-            # => [asset_composition, ASSET_KEY, has_callbacks]
+            exec.asset::id_to_composition
+            # => [asset_composition, ASSET_ID, has_callbacks]
 
-            # drop the ASSET_KEY and one padding element to keep the stack within 16 elements
+            # drop the ASSET_ID and one padding element to keep the stack within 16 elements
             movdn.4 dropw swap drop swap drop
             # => [asset_composition, has_callbacks]
         end
         ",
-        ASSET_KEY = vault_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&code).await?;
@@ -332,13 +332,13 @@ async fn test_key_to_callbacks_and_composition(
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
         composition.as_u8() as u64,
-        "MASM asset::key_to_composition returned wrong value for {composition:?}"
+        "MASM asset::id_to_composition returned wrong value for {composition:?}"
     );
     assert_eq!(
         exec_output.get_stack_element(1).as_canonical_u64(),
-        vault_key.faucet_id().asset_callback_flag().as_u8() as u64,
-        "MASM asset::key_to_has_callbacks returned wrong value for {:?}",
-        vault_key.faucet_id().asset_callback_flag()
+        asset_id.faucet_id().asset_callback_flag().as_u8() as u64,
+        "MASM asset::id_to_has_callbacks returned wrong value for {:?}",
+        asset_id.faucet_id().asset_callback_flag()
     );
 
     Ok(())

@@ -293,14 +293,14 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             dup
             push.{REMOVED_ASSET_VALUE_1}
-            push.{REMOVED_ASSET_KEY_1}
-            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+            push.{REMOVED_ASSET_ID_1}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
             exec.util::move_asset_to_note
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE_2}
-            push.{REMOVED_ASSET_KEY_2}
+            push.{REMOVED_ASSET_ID_2}
             exec.util::move_asset_to_note
             # => []
 
@@ -313,13 +313,13 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             dup
             push.{REMOVED_ASSET_VALUE_3}
-            push.{REMOVED_ASSET_KEY_3}
+            push.{REMOVED_ASSET_ID_3}
             exec.util::move_asset_to_note
             # => [note_idx]
 
             dup
             push.{REMOVED_ASSET_VALUE_4}
-            push.{REMOVED_ASSET_KEY_4}
+            push.{REMOVED_ASSET_ID_4}
             exec.util::move_asset_to_note
             # => [note_idx]
 
@@ -348,13 +348,13 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => []
         end
     ",
-        REMOVED_ASSET_KEY_1 = removed_asset_1.to_key_word(),
+        REMOVED_ASSET_ID_1 = removed_asset_1.to_id_word(),
         REMOVED_ASSET_VALUE_1 = removed_asset_1.to_value_word(),
-        REMOVED_ASSET_KEY_2 = removed_asset_2.to_key_word(),
+        REMOVED_ASSET_ID_2 = removed_asset_2.to_id_word(),
         REMOVED_ASSET_VALUE_2 = removed_asset_2.to_value_word(),
-        REMOVED_ASSET_KEY_3 = removed_asset_3.to_key_word(),
+        REMOVED_ASSET_ID_3 = removed_asset_3.to_id_word(),
         REMOVED_ASSET_VALUE_3 = removed_asset_3.to_value_word(),
-        REMOVED_ASSET_KEY_4 = removed_asset_4.to_key_word(),
+        REMOVED_ASSET_ID_4 = removed_asset_4.to_id_word(),
         REMOVED_ASSET_VALUE_4 = removed_asset_4.to_value_word(),
         RECIPIENT2 = expected_output_note_2.recipient().digest(),
         RECIPIENT3 = expected_output_note_3.recipient().digest(),

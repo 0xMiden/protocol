@@ -19,7 +19,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
     Asset,
-    AssetVaultKey,
+    AssetId,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -756,7 +756,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
         &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
     ));
-    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
+    let fungible_asset_id = AssetId::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
@@ -765,12 +765,12 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         @account_procedure
         pub proc get_asset_balance
             # get balance of first asset
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             exec.active_account::get_balance
             # => [balance]
 
             # check presence of non fungible asset
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.active_account::has_non_fungible_asset
             # => [has_asset, balance]
 
@@ -783,8 +783,8 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
             # => [has_asset_balance]
         end
         ",
-        FUNGIBLE_ASSET_KEY = fungible_asset_key.to_word(),
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset_id.to_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -870,7 +870,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
     let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 10)?);
-    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
+    let fungible_asset_id = AssetId::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
@@ -878,10 +878,10 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
         @account_procedure
         pub proc get_initial_balance
-            # push the asset vault key on the stack
-            push.{FUNGIBLE_ASSET_KEY}
+            # push the asset ID on the stack
+            push.{FUNGIBLE_ASSET_ID}
 
-            # get the initial balance of the asset associated with the provided vault key
+            # get the initial balance of the asset associated with the provided asset ID
             exec.active_account::get_balance
             # => [initial_balance]
 
@@ -890,7 +890,7 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
             # => [initial_balance]
         end
         ",
-        FUNGIBLE_ASSET_KEY = fungible_asset_key.to_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset_id.to_word(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());

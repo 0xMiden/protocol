@@ -14,7 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{Asset, AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -82,11 +82,11 @@ impl TransactionContext {
     /// - If the provided `code` is not a valid program.
     pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
         // Fetch all witnesses for note assets.
-        let asset_vault_keys = self
+        let asset_ids = self
             .tx_inputs
             .input_notes()
             .iter()
-            .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
+            .flat_map(|note| note.note().assets().iter().map(Asset::id))
             .collect::<BTreeSet<_>>();
 
         let (account, _block_header, _blockchain) = self
@@ -97,9 +97,9 @@ impl TransactionContext {
             .await
             .expect("failed to fetch transaction inputs");
 
-        // Fetch the witnesses for all asset vault keys.
+        // Fetch the witnesses for all asset IDs.
         let asset_witnesses = self
-            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_vault_keys)
+            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_ids)
             .await
             .expect("failed to fetch asset witnesses");
 
@@ -264,7 +264,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        asset_ids: BTreeSet<AssetId>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             let asset_vault = if account_id == self.account().id() {
@@ -299,7 +299,7 @@ impl DataStore for TransactionContext {
                 foreign_account.vault()
             };
 
-            Ok(vault_keys.into_iter().map(|vault_key| asset_vault.open(vault_key)).collect())
+            Ok(asset_ids.into_iter().map(|asset_id| asset_vault.open(asset_id)).collect())
         }
     }
 

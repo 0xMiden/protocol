@@ -89,16 +89,16 @@ end
 #!
 #! Checks whether the receiving account is in the block list. If so, panics.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # drop unused asset key
+    # drop unused asset ID
     dropw
     # => [ASSET_VALUE, pad(12)]
 end
@@ -107,16 +107,16 @@ end
 #!
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-    # drop unused asset key
+    # drop unused asset ID
     dropw
     # => [ASSET_VALUE, note_idx, pad(7)]
 end
@@ -319,30 +319,30 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     // MASM callback that asserts the inputs match expected values.
     let account_callback_masm = format!(
         r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
-        # => [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+        # => [native_account_suffix, native_account_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+        # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
         # duplicate the asset value for returning
         dupw.1 swapw
-        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
         exec.::miden::protocol::asset::create_fungible_asset
-        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         movupw.2
-        assert_eqw.err="callback received unexpected asset key"
+        assert_eqw.err="callback received unexpected asset ID"
         # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         assert_eqw.err="callback received unexpected asset value"
@@ -467,7 +467,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             exec.output_note::create
 
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
             exec.output_note::add_asset
         end
         "#,
@@ -475,7 +475,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
         asset_value = asset.to_value_word(),
-        asset_key = asset.to_key_word(),
+        asset_id = asset.to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
@@ -516,34 +516,34 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         r#"
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
-        # => [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [native_account_suffix, native_account_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         # Assert note_idx == 1 (we create two notes, adding the asset to the second one)
         dup.8 push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         # duplicate the asset value for returning
         dupw.1 swapw
-        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
         exec.::miden::protocol::asset::create_fungible_asset
-        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
-        assert_eqw.err="callback received unexpected asset key"
+        assert_eqw.err="callback received unexpected asset ID"
         # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         assert_eqw.err="callback received unexpected asset value"
@@ -578,8 +578,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
             # Create note 1
             push.{asset_value}
-            push.{asset_key}
-            # => [ASSET_KEY, ASSET_VALUE]
+            push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE]
             exec.util::create_default_note_with_moved_asset
             # => []
 
@@ -587,7 +587,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         end
         "#,
         asset_value = asset.to_value_word(),
-        asset_key = asset.to_key_word(),
+        asset_id = asset.to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
@@ -616,7 +616,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account_callback_masm = r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_account
@@ -626,7 +626,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     "#;
 
     let note_callback_masm = r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_note
@@ -658,7 +658,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
 
             exec.::miden::protocol::asset::create_fungible_asset
-            # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
+            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
 
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]

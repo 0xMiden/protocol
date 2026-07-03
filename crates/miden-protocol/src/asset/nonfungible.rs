@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use super::vault::AssetVaultKey;
+use super::vault::AssetId;
 use super::{Asset, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
@@ -60,59 +60,59 @@ impl NonFungibleAsset {
         Self { faucet_id, value }
     }
 
-    /// Creates a non-fungible asset from the provided key and value.
+    /// Creates a non-fungible asset from the provided ID and value.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not have [`AssetComposition::None`] set.
-    /// - The provided key's asset class limbs are not equal to the provided value's first and
-    ///   second element.
+    /// - The provided ID does not have [`AssetComposition::None`] set.
+    /// - The provided ID's asset class limbs are not equal to the provided value's first and second
+    ///   element.
     /// - The faucet ID is not a non-fungible faucet ID.
-    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
-        if !key.composition().is_none() {
+    pub fn from_id_and_value(id: AssetId, value: Word) -> Result<Self, AssetError> {
+        if !id.composition().is_none() {
             return Err(AssetError::AssetCompositionMismatch {
-                faucet_id: key.faucet_id(),
+                faucet_id: id.faucet_id(),
                 expected: AssetComposition::None,
-                actual: key.composition(),
+                actual: id.composition(),
             });
         }
 
-        if key.asset_class().suffix() != value[0] || key.asset_class().prefix() != value[1] {
+        if id.asset_class().suffix() != value[0] || id.asset_class().prefix() != value[1] {
             return Err(AssetError::NonFungibleAssetClassMustMatchValue {
-                asset_class: key.asset_class(),
+                asset_class: id.asset_class(),
                 value,
             });
         }
 
-        Ok(Self::from_parts(key.faucet_id(), value))
+        Ok(Self::from_parts(id.faucet_id(), value))
     }
 
-    /// Creates a non-fungible asset from the provided key and value.
+    /// Creates a non-fungible asset from the provided ID and value.
     ///
-    /// Prefer [`Self::from_key_value`] for more type safety.
+    /// Prefer [`Self::from_id_and_value`] for more type safety.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - [`Self::from_key_value`] fails.
-    pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
-        let vault_key = AssetVaultKey::try_from(key)?;
-        Self::from_key_value(vault_key, value)
+    /// - [`Self::from_id_and_value`] fails.
+    pub fn from_id_and_value_words(id: Word, value: Word) -> Result<Self, AssetError> {
+        let asset_id = AssetId::try_from(id)?;
+        Self::from_id_and_value(asset_id, value)
     }
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the vault key of the [`NonFungibleAsset`].
+    /// Returns the [`AssetId`] which uniquely identifies this [`NonFungibleAsset`].
     ///
-    /// See [`Asset`] docs for details on the key.
-    pub fn vault_key(&self) -> AssetVaultKey {
+    /// See [`Asset`] docs for details on the asset ID.
+    pub fn id(&self) -> AssetId {
         let asset_class_suffix = self.value[0];
         let asset_class_prefix = self.value[1];
         let asset_class = AssetClass::new(asset_class_suffix, asset_class_prefix);
 
-        AssetVaultKey::new(asset_class, self.faucet_id, AssetComposition::None)
+        AssetId::new(asset_class, self.faucet_id, AssetComposition::None)
             .expect("non-fungible composition is always valid")
     }
 
@@ -121,9 +121,9 @@ impl NonFungibleAsset {
         self.faucet_id
     }
 
-    /// Returns the asset's key encoded to a [`Word`].
-    pub fn to_key_word(&self) -> Word {
-        self.vault_key().to_word()
+    /// Returns the asset's [`AssetId`] encoded to a [`Word`].
+    pub fn to_id_word(&self) -> Word {
+        self.id().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
@@ -235,13 +235,13 @@ mod tests {
     };
 
     #[test]
-    fn non_fungible_asset_from_key_value_words_fails_on_invalid_composition() -> anyhow::Result<()>
-    {
-        // Use a fungible asset's key-value words where the the composition is set to `Fungible`.
+    fn non_fungible_asset_from_id_and_value_words_fails_on_invalid_composition()
+    -> anyhow::Result<()> {
+        // Use a fungible asset's ID-value words where the the composition is set to `Fungible`.
         let asset = FungibleAsset::mock(20);
 
         let err =
-            NonFungibleAsset::from_key_value_words(asset.to_key_word(), asset.to_value_word())
+            NonFungibleAsset::from_id_and_value_words(asset.to_id_word(), asset.to_value_word())
                 .unwrap_err();
         assert_matches!(err, AssetError::AssetCompositionMismatch {
                 faucet_id: _, expected, actual,
@@ -254,14 +254,14 @@ mod tests {
     }
 
     #[test]
-    fn fungible_asset_from_key_value_fails_on_invalid_asset_class() -> anyhow::Result<()> {
-        let invalid_key = AssetVaultKey::new(
+    fn non_fungible_asset_from_id_and_value_fails_on_invalid_asset_class() -> anyhow::Result<()> {
+        let invalid_id = AssetId::new(
             AssetClass::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::None,
         )?;
-        let err =
-            NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();
+        let err = NonFungibleAsset::from_id_and_value(invalid_id, Word::from([4, 5, 6, 7u32]))
+            .unwrap_err();
 
         assert_matches!(err, AssetError::NonFungibleAssetClassMustMatchValue { .. });
 
@@ -286,8 +286,8 @@ mod tests {
 
             assert_eq!(
                 non_fungible_asset,
-                NonFungibleAsset::from_key_value_words(
-                    non_fungible_asset.to_key_word(),
+                NonFungibleAsset::from_id_and_value_words(
+                    non_fungible_asset.to_id_word(),
                     non_fungible_asset.to_value_word()
                 )?
             )
@@ -303,11 +303,11 @@ mod tests {
     }
 
     #[test]
-    fn test_vault_key_for_non_fungible_asset() {
+    fn test_asset_id_for_non_fungible_asset() {
         let asset = NonFungibleAsset::mock(&[42]);
 
-        assert_eq!(asset.vault_key().faucet_id(), NonFungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_class().suffix(), asset.to_value_word()[0]);
-        assert_eq!(asset.vault_key().asset_class().prefix(), asset.to_value_word()[1]);
+        assert_eq!(asset.id().faucet_id(), NonFungibleAsset::mock_issuer());
+        assert_eq!(asset.id().asset_class().suffix(), asset.to_value_word()[0]);
+        assert_eq!(asset.id().asset_class().prefix(), asset.to_value_word()[1]);
     }
 }

@@ -35,12 +35,12 @@ use crate::{Felt, Hasher, Word};
 /// like the version in an account ID. This makes it slightly easier to change the asset metadata in
 /// the future without affecting identification of previous assets.
 ///
-/// Use [`AssetVaultKey::hash`] to produce the corresponding [`AssetVaultKeyHash`] that is used as
+/// Use [`AssetId::hash`] to produce the corresponding [`AssetIdHash`] that is used as
 /// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
 /// leaves regardless of how faucet IDs or asset classes are chosen.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct AssetVaultKey {
-    /// The asset class of the vault key.
+pub struct AssetId {
+    /// The asset class of the asset ID.
     asset_class: AssetClass,
 
     /// The ID of the faucet that issued the asset.
@@ -50,8 +50,8 @@ pub struct AssetVaultKey {
     composition: AssetComposition,
 }
 
-impl AssetVaultKey {
-    /// The serialized size of an [`AssetVaultKey`] in bytes.
+impl AssetId {
+    /// The serialized size of an [`AssetId`] in bytes.
     ///
     /// Serialized as its [`Word`] representation (4 field elements).
     pub const SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
@@ -59,7 +59,7 @@ impl AssetVaultKey {
     // BIT LAYOUT CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The metadata byte occupies the lower 8 bits of the third element of the key word.
+    /// The metadata byte occupies the lower 8 bits of the third element of the asset ID word.
     pub(in crate::asset) const METADATA_BYTE_MASK: u8 = 0xff;
 
     /// Bits 0-1 of the metadata byte encode the [`AssetComposition`]. The composition occupies
@@ -73,7 +73,7 @@ impl AssetVaultKey {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetComposition`].
+    /// Creates an [`AssetId`] from its parts with the given [`AssetComposition`].
     ///
     /// # Errors
     ///
@@ -98,7 +98,7 @@ impl AssetVaultKey {
         Ok(Self { asset_class, faucet_id, composition })
     }
 
-    /// Constructs a fungible asset's key from a faucet ID.
+    /// Constructs a fungible asset's ID from a faucet ID.
     pub fn new_fungible(faucet_id: AccountId) -> Self {
         Self::new(AssetClass::default(), faucet_id, AssetComposition::Fungible).expect(
             "passing AssetComposition::Fungible together with AssetClass::default should be valid",
@@ -108,7 +108,7 @@ impl AssetVaultKey {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the word representation of the vault key.
+    /// Returns the word representation of the asset ID.
     ///
     /// See the type-level documentation for details.
     pub fn to_word(&self) -> Word {
@@ -132,7 +132,7 @@ impl AssetVaultKey {
         ])
     }
 
-    /// Returns the [`AssetClass`] of the vault key that distinguishes different assets issued by
+    /// Returns the [`AssetClass`] of the asset ID that distinguishes different assets issued by
     /// the same faucet.
     pub fn asset_class(&self) -> AssetClass {
         self.asset_class
@@ -148,73 +148,73 @@ impl AssetVaultKey {
         self.faucet_id.asset_callback_flag()
     }
 
-    /// Returns the [`AssetComposition`] of the vault key.
+    /// Returns the [`AssetComposition`] of the asset ID.
     pub fn composition(&self) -> AssetComposition {
         self.composition
     }
 
-    /// Hashes this raw vault key to produce the [`AssetVaultKeyHash`] used as the key in the asset
+    /// Hashes this raw asset ID to produce the [`AssetIdHash`] used as the key in the asset
     /// vault's underlying SMT.
-    pub fn hash(&self) -> AssetVaultKeyHash {
-        AssetVaultKeyHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
+    pub fn hash(&self) -> AssetIdHash {
+        AssetIdHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
     }
 }
 
-// ASSET VAULT KEY HASH
+// ASSET ID HASH
 // ================================================================================================
 
-/// A hashed [`AssetVaultKey`].
+/// A hashed [`AssetId`].
 ///
-/// This is produced by hashing an [`AssetVaultKey`] and is used as the actual key in the
+/// This is produced by hashing an [`AssetId`] and is used as the actual key in the
 /// underlying SMT.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
-pub struct AssetVaultKeyHash(Word);
+pub struct AssetIdHash(Word);
 
-impl AssetVaultKeyHash {
+impl AssetIdHash {
     /// Returns the leaf index in the SMT for this hashed key.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
         self.0.into()
     }
 }
 
-impl From<AssetVaultKeyHash> for Word {
-    fn from(key: AssetVaultKeyHash) -> Self {
-        key.0
+impl From<AssetIdHash> for Word {
+    fn from(id_hash: AssetIdHash) -> Self {
+        id_hash.0
     }
 }
 
-impl From<AssetVaultKey> for AssetVaultKeyHash {
-    fn from(key: AssetVaultKey) -> Self {
-        key.hash()
+impl From<AssetId> for AssetIdHash {
+    fn from(id: AssetId) -> Self {
+        id.hash()
     }
 }
 
 // CONVERSIONS
 // ================================================================================================
 
-impl From<AssetVaultKey> for Word {
-    fn from(vault_key: AssetVaultKey) -> Self {
-        vault_key.to_word()
+impl From<AssetId> for Word {
+    fn from(asset_id: AssetId) -> Self {
+        asset_id.to_word()
     }
 }
 
-impl Ord for AssetVaultKey {
+impl Ord for AssetId {
     /// Implements comparison based on the [`Word`] representation.
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.to_word().cmp(&other.to_word())
     }
 }
 
-impl PartialOrd for AssetVaultKey {
+impl PartialOrd for AssetId {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl TryFrom<Word> for AssetVaultKey {
+impl TryFrom<Word> for AssetId {
     type Error = AssetError;
 
-    /// Attempts to convert the provided [`Word`] into an [`AssetVaultKey`].
+    /// Attempts to convert the provided [`Word`] into an [`AssetId`].
     ///
     /// # Errors
     ///
@@ -223,11 +223,11 @@ impl TryFrom<Word> for AssetVaultKey {
     ///   [`AssetComposition::Fungible`].
     /// - the metadata byte has reserved bits set.
     /// - the composition encoded in the metadata byte is invalid.
-    fn try_from(key: Word) -> Result<Self, Self::Error> {
-        let asset_class_suffix = key[0];
-        let asset_class_prefix = key[1];
-        let faucet_id_suffix_and_metadata = key[2];
-        let faucet_id_prefix = key[3];
+    fn try_from(id: Word) -> Result<Self, Self::Error> {
+        let asset_class_suffix = id[0];
+        let asset_class_prefix = id[1];
+        let faucet_id_suffix_and_metadata = id[2];
+        let faucet_id_prefix = id[3];
 
         let raw = faucet_id_suffix_and_metadata.as_canonical_u64();
         let metadata_byte = (raw & Self::METADATA_BYTE_MASK as u64) as u8;
@@ -250,34 +250,34 @@ impl TryFrom<Word> for AssetVaultKey {
     }
 }
 
-impl fmt::Display for AssetVaultKey {
+impl fmt::Display for AssetId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.to_word().to_hex())
     }
 }
 
-impl From<Asset> for AssetVaultKey {
+impl From<Asset> for AssetId {
     fn from(asset: Asset) -> Self {
-        asset.vault_key()
+        asset.id()
     }
 }
 
-impl From<FungibleAsset> for AssetVaultKey {
+impl From<FungibleAsset> for AssetId {
     fn from(fungible_asset: FungibleAsset) -> Self {
-        fungible_asset.vault_key()
+        fungible_asset.id()
     }
 }
 
-impl From<NonFungibleAsset> for AssetVaultKey {
+impl From<NonFungibleAsset> for AssetId {
     fn from(non_fungible_asset: NonFungibleAsset) -> Self {
-        non_fungible_asset.vault_key()
+        non_fungible_asset.id()
     }
 }
 
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for AssetVaultKey {
+impl Serializable for AssetId {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.to_word().write_into(target);
     }
@@ -287,7 +287,7 @@ impl Serializable for AssetVaultKey {
     }
 }
 
-impl Deserializable for AssetVaultKey {
+impl Deserializable for AssetId {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let word: Word = source.read()?;
         Self::try_from(word).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
@@ -310,40 +310,39 @@ mod tests {
     };
 
     #[test]
-    fn asset_vault_key_word_roundtrip() -> anyhow::Result<()> {
+    fn asset_id_word_roundtrip() -> anyhow::Result<()> {
         let fungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
         let nonfungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
         // Fungible: asset_class must be zero.
-        let key =
-            AssetVaultKey::new(AssetClass::default(), fungible_faucet, AssetComposition::Fungible)?;
-        assert_eq!(key.composition(), AssetComposition::Fungible);
-        let roundtripped = AssetVaultKey::try_from(key.to_word())?;
-        assert_eq!(key, roundtripped);
-        assert_eq!(key, AssetVaultKey::read_from_bytes(&key.to_bytes())?);
+        let id = AssetId::new(AssetClass::default(), fungible_faucet, AssetComposition::Fungible)?;
+        assert_eq!(id.composition(), AssetComposition::Fungible);
+        let roundtripped = AssetId::try_from(id.to_word())?;
+        assert_eq!(id, roundtripped);
+        assert_eq!(id, AssetId::read_from_bytes(&id.to_bytes())?);
 
         // Non-fungible: asset_class can be non-zero.
-        let key = AssetVaultKey::new(
+        let id = AssetId::new(
             AssetClass::new(Felt::from(42u32), Felt::from(99u32)),
             nonfungible_faucet,
             AssetComposition::None,
         )?;
-        assert_eq!(key.composition(), AssetComposition::None);
-        let roundtripped = AssetVaultKey::try_from(key.to_word())?;
-        assert_eq!(key, roundtripped);
-        assert_eq!(key, AssetVaultKey::read_from_bytes(&key.to_bytes())?);
+        assert_eq!(id.composition(), AssetComposition::None);
+        let roundtripped = AssetId::try_from(id.to_word())?;
+        assert_eq!(id, roundtripped);
+        assert_eq!(id, AssetId::read_from_bytes(&id.to_bytes())?);
 
         Ok(())
     }
 
     #[test]
     fn decoding_word_with_reserved_bits_set_fails() -> anyhow::Result<()> {
-        let key = FungibleAsset::mock(42).vault_key();
-        let valid_metadata = asset_metadata(key);
+        let id = FungibleAsset::mock(42).id();
+        let valid_metadata = asset_metadata(id);
         // Set the reserved bits so the reserved-bits check fires.
-        let word = set_asset_metadata(key, valid_metadata | AssetVaultKey::METADATA_RESERVED_MASK);
+        let word = set_asset_metadata(id, valid_metadata | AssetId::METADATA_RESERVED_MASK);
 
-        let err = AssetVaultKey::try_from(word).unwrap_err();
+        let err = AssetId::try_from(word).unwrap_err();
         assert_matches!(err, AssetError::ReservedAssetMetadata(_));
 
         Ok(())
@@ -351,12 +350,12 @@ mod tests {
 
     #[test]
     fn decoding_word_with_invalid_composition_value_fails() -> anyhow::Result<()> {
-        let key = FungibleAsset::mock(42).vault_key();
+        let id = FungibleAsset::mock(42).id();
         // Set all composition bits — value 3 is the invalid bit pattern within the 2-bit field.
-        let invalid_metadata = AssetVaultKey::COMPOSITION_MASK;
-        let word = set_asset_metadata(key, invalid_metadata);
+        let invalid_metadata = AssetId::COMPOSITION_MASK;
+        let word = set_asset_metadata(id, invalid_metadata);
 
-        let err = AssetVaultKey::try_from(word).unwrap_err();
+        let err = AssetId::try_from(word).unwrap_err();
         assert_matches!(err, AssetError::UnknownAssetComposition(_));
 
         Ok(())

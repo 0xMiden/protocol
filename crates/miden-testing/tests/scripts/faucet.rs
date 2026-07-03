@@ -93,7 +93,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
 
                 exec.::miden::protocol::asset::create_fungible_asset
-                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
+                # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -491,7 +491,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
 
                 exec.::miden::protocol::asset::create_fungible_asset
-                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
+                # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -760,7 +760,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
 
                 exec.::miden::protocol::asset::create_fungible_asset
-                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
+                # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -965,7 +965,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     target_account.apply_patch(consume_executed_transaction.account_patch())?;
 
     // Verify the account's vault now contains the expected fungible asset
-    let actual_asset = target_account.vault().get(expected_asset.vault_key()).unwrap();
+    let actual_asset = target_account.vault().get(expected_asset.id()).unwrap();
     assert_eq!(actual_asset, Asset::from(expected_asset));
 
     Ok(())
@@ -2212,7 +2212,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     target_account_mut.apply_patch(consume_executed_transaction.account_patch())?;
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let balance = target_account_mut.vault().get_balance(expected_asset.vault_key())?;
+    let balance = target_account_mut.vault().get_balance(expected_asset.id())?;
     assert_eq!(balance, expected_asset.amount());
 
     Ok(())
@@ -2253,7 +2253,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 # => [faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
 
                 exec.::miden::protocol::asset::create_fungible_asset
-                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_1]
+                # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT_1]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -2271,7 +2271,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 # => [faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
 
                 exec.::miden::protocol::asset::create_fungible_asset
-                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_2]
+                # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT_2]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -2402,7 +2402,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let amount = Felt::new_unchecked(75);
     // The blocklist faucet has asset callbacks enabled, so the asset embedded in the MINT
     // note must carry the matching callback flag: `mint_and_send` binds the mint to the
-    // full ASSET_KEY derived for the faucet, which encodes that flag.
+    // full ASSET_ID derived for the faucet, which encodes that flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::default();
 

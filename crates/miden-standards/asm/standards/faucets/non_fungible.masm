@@ -5,7 +5,7 @@
 # active mint/burn policies from the `TokenPolicyManager`.
 #
 # Identity model: the asset value is the off-chain commitment `hash(user_data, salt)`; the
-# protocol derives the vault key's asset class from the value's first two elements
+# protocol derives the asset ID's asset class from the value's first two elements
 # (asset_class_suffix, asset_class_prefix). Uniqueness is enforced on-chain by the status registry
 # keyed by `[asset_class_suffix, asset_class_prefix, 0, 0]`: a commitment can be issued at most once
 # and, once burned, is permanently consumed.
@@ -222,13 +222,13 @@ pub proc mint_and_send
     # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.faucet::create_non_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.faucet::mint
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(15)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     exec.output_note::add_asset
     # => [note_idx, pad(15)]
@@ -265,39 +265,39 @@ pub proc receive_and_burn
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     # run the active burn policy on a copy of the asset
     dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
-    # build the status key from the asset class without disturbing [ASSET_KEY, ASSET_VALUE]
+    # build the status key from the asset class without disturbing [ASSET_ID, ASSET_VALUE]
     dupw.1
-    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.asset::non_fungible_value_into_asset_class
-    # => [asset_class_suffix, asset_class_prefix, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [asset_class_suffix, asset_class_prefix, ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.create_status_key
-    # => [STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
 
     # write BURNED and assert the commitment was ISSUED (old status element)
     push.STATUS_BURNED exec.build_status_value
-    # => [STATUS_VALUE, STATUS_KEY, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [STATUS_VALUE, STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
 
     swapw
-    # => [STATUS_KEY, STATUS_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [STATUS_KEY, STATUS_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 
     push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_STATUS_WORD, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [OLD_STATUS_WORD, ASSET_ID, ASSET_VALUE, pad(16)]
 
     movdn.3 drop drop drop
-    # => [old_status, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [old_status, ASSET_ID, ASSET_VALUE, pad(16)]
 
     eq.STATUS_ISSUED assert.err=ERR_NFT_NOT_ISSUED
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
-    # burn the asset (validates faucet origin), consuming [ASSET_KEY, ASSET_VALUE]
+    # burn the asset (validates faucet origin), consuming [ASSET_ID, ASSET_VALUE]
     exec.faucet::burn
     # => [pad(16)]
 end

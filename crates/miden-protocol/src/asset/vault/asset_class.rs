@@ -2,7 +2,7 @@ use core::fmt::Display;
 
 use crate::Felt;
 
-/// The [`AssetClass`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
+/// The [`AssetClass`] in an [`AssetId`](crate::asset::AssetId) distinguishes different
 /// assets issued by the same faucet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AssetClass {

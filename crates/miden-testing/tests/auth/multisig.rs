@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountType,
     StorageMapKey,
 };
-use miden_protocol::asset::{AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -229,7 +229,7 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AssetVaultKey::new_fungible(AccountId::try_from(
+            .get_balance(AssetId::new_fungible(AccountId::try_from(
                 ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
             )?))?
             .as_u64(),
@@ -1225,7 +1225,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(asset.vault_key())?.as_u64(), 6);
+    assert_eq!(multisig_account.vault().get_balance(asset.id())?.as_u64(), 6);
 
     Ok(())
 }

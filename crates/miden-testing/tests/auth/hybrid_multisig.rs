@@ -186,7 +186,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
