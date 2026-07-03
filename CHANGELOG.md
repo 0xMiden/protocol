@@ -73,11 +73,13 @@
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
 - Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
 - Optimized the multisig auth component MASM (unconditional loop entry where the counter is guaranteed non-zero, single-step `scheme_id` extraction in `get_signer_at`, and a stack read instead of a local reload in `update_signers_and_threshold`), and documented that growing the signer set does not re-scale existing per-procedure threshold overrides ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
+- Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
 
 ### Fixes
 

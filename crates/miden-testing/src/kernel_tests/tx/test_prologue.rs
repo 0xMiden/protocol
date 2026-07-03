@@ -121,7 +121,8 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         ";
 
     let mock_tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             nop
         end
         ";
