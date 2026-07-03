@@ -9,6 +9,17 @@ use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
 
+# TYPE ALIASES
+# =================================================================================================
+
+# Authority kind stored in the first element of `AUTHORITY_SLOT`, dispatched on by
+# `assert_authorized`. Mirrors the Rust `Authority` enum.
+enum Authority : u8 {
+    AUTH_CONTROLLED = 0,
+    OWNER_CONTROLLED = 1,
+    RBAC_CONTROLLED = 2,
+}
+
 # CONSTANTS
 # =================================================================================================
 
@@ -21,10 +32,6 @@ pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
-
-const AUTH_CONTROLLED = 0
-const OWNER_CONTROLLED = 1
-const RBAC_CONTROLLED = 2
 
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
 const UNFROZEN = 0
