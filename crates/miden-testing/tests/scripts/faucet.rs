@@ -64,7 +64,7 @@ use miden_testing::{
     assert_note_created,
     assert_transaction_executor_error,
 };
-use rand::Rng;
+use rand::RngExt;
 
 use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
 

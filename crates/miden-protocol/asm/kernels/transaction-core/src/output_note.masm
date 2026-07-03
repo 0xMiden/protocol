@@ -1,18 +1,18 @@
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::tx_kernel_core::asset
 use miden::tx_kernel_core::callbacks
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
-use miden::tx_kernel_core::note::NOTE_TYPE_PUBLIC
-use miden::tx_kernel_core::note::MAX_ATTACHMENT_SCHEME
-use miden::tx_kernel_core::note::MAX_ATTACHMENT_WORDS
-use miden::tx_kernel_core::note::MAX_ATTACHMENT_TOTAL_WORDS
-use miden::tx_kernel_core::constants::MAX_OUTPUT_NOTES_PER_TX
-use miden::tx_kernel_core::constants::WORD_NUM_ELEMENTS
-use miden::tx_kernel_core::note::NOTE_METADATA_VERSION_1
-use miden::tx_kernel_core::asset::ASSET_SIZE
-use miden::tx_kernel_core::asset::ASSET_VALUE_MEMORY_OFFSET
+use {MAX_OUTPUT_NOTES_PER_TX, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+use {
+    MAX_ATTACHMENT_SCHEME,
+    MAX_ATTACHMENT_TOTAL_WORDS,
+    MAX_ATTACHMENT_WORDS,
+    NOTE_METADATA_VERSION_1,
+    NOTE_TYPE_PUBLIC,
+} from miden::tx_kernel_core::note
 use miden::core::word
 use miden::core::mem
 

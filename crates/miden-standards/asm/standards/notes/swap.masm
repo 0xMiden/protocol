@@ -1,9 +1,9 @@
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::output_note
-use miden::protocol::note::NOTE_TYPE_PRIVATE
+use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 use miden::standards::notes::p2id
-use miden::standards::wallets::basic->wallet
+use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
 # =================================================================================================

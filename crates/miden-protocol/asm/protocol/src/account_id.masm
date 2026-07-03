@@ -4,7 +4,9 @@
 # Re-exported from the `miden::protocol_utils` library, where the implementation lives. This keeps
 # the procedures available under the public `miden::protocol::account_id` path.
 
-pub use miden::protocol_utils::account_id::is_equal
-pub use miden::protocol_utils::account_id::eqz
-pub use miden::protocol_utils::account_id::validate
-pub use miden::protocol_utils::account_id::shape_suffix
+pub use {
+    eqz,
+    is_equal,
+    shape_suffix,
+    validate,
+} from miden::protocol_utils::account_id

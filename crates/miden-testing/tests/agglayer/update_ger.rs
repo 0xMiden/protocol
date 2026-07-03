@@ -12,7 +12,7 @@ use miden_agglayer::{
     agglayer_library,
     create_existing_bridge_account,
 };
-use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
@@ -178,11 +178,13 @@ async fn compute_ger() -> anyhow::Result<()> {
         );
 
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-            .with_dynamic_library(CoreLibrary::default())
+            .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .unwrap()
-            .with_dynamic_library(agglayer_lib.clone())
+            .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
             .unwrap()
-            .assemble_program(&source)
+            .assemble_program("agglayer-test-script", &source)
+            .unwrap()
+            .try_into_program()
             .unwrap();
 
         let exec_output = execute_program_with_default_host(program, None).await?;
@@ -261,11 +263,13 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     );
 
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
+        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_dynamic_library(agglayer_lib.clone())
+        .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
         .unwrap()
-        .assemble_program(&source)
+        .assemble_program("agglayer-test-script", &source)
+        .unwrap()
+        .try_into_program()
         .unwrap();
 
     let exec_output = execute_program_with_default_host(program, None).await?;

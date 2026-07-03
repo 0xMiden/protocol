@@ -1,13 +1,15 @@
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::asset::COMPOSITION_NONE
-use miden::tx_kernel_core::constants::STORAGE_SLOT_TYPE_VALUE
-use miden::tx_kernel_core::asset::ASSET_SIZE
 use miden::tx_kernel_core::link_map
 use miden::tx_kernel_core::memory
-use miden::tx_kernel_core::memory::ACCOUNT_UPDATE_ASSET_PTR
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
+use {
+    ASSET_SIZE,
+    COMPOSITION_NONE,
+} from miden::tx_kernel_core::asset
+use {STORAGE_SLOT_TYPE_VALUE} from miden::tx_kernel_core::constants
+use {ACCOUNT_UPDATE_ASSET_PTR} from miden::tx_kernel_core::memory
 
 # ERRORS
 # =================================================================================================

@@ -31,7 +31,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
-use rand::Rng;
+use rand::RngExt;
 
 /// Builds an existing non-fungible faucet with allow-all policies (so a tx-script mint is gated
 /// only by the test auth) and an owner-controlled authority.

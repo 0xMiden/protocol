@@ -37,11 +37,7 @@ fn create_ownable_account(
 ) -> anyhow::Result<Account> {
     let component_code = r#"
         use miden::standards::access::ownable2step
-        pub use ownable2step::get_owner
-        pub use ownable2step::get_nominated_owner
-        pub use ownable2step::transfer_ownership
-        pub use ownable2step::accept_ownership
-        pub use ownable2step::renounce_ownership
+        pub use {get_owner, get_nominated_owner, transfer_ownership, accept_ownership, renounce_ownership} from miden::standards::access::ownable2step
     "#;
     let component_code_obj =
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
@@ -78,7 +74,7 @@ fn create_transfer_note(
 ) -> anyhow::Result<Note> {
     let script = format!(
         r#"
-        use miden::standards::access::ownable2step->test_account
+        use miden::standards::access::ownable2step as test_account
         @note_script
         pub proc main
             repeat.14 push.0 end
@@ -106,7 +102,7 @@ fn create_accept_note(
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
-        use miden::standards::access::ownable2step->test_account
+        use miden::standards::access::ownable2step as test_account
         @note_script
         pub proc main
             repeat.16 push.0 end
@@ -129,7 +125,7 @@ fn create_cancel_note(
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
-        use miden::standards::access::ownable2step->test_account
+        use miden::standards::access::ownable2step as test_account
         @note_script
         pub proc main
             repeat.14 push.0 end
@@ -155,7 +151,7 @@ fn create_renounce_note(
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
-        use miden::standards::access::ownable2step->test_account
+        use miden::standards::access::ownable2step as test_account
         @note_script
         pub proc main
             repeat.16 push.0 end
@@ -516,7 +512,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
 
     let script = format!(
         r#"
-        use miden::standards::access::ownable2step->test_account
+        use miden::standards::access::ownable2step as test_account
         @note_script
         pub proc main
             repeat.14 push.0 end

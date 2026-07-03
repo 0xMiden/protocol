@@ -48,7 +48,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
         use miden::protocol::faucet
         use miden::tx_kernel_core::asset_vault
         use miden::tx_kernel_core::memory
@@ -243,7 +243,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         use miden::tx_kernel_core::asset_vault
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
 
         begin
             # mint asset
@@ -345,7 +345,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
         use miden::tx_kernel_core::prologue
 
         begin
@@ -382,7 +382,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
         use miden::protocol::faucet
         use miden::tx_kernel_core::asset_vault
         use miden::tx_kernel_core::memory
@@ -535,7 +535,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         use miden::tx_kernel_core::asset_vault
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
 
         begin
             exec.prologue::prepare_transaction

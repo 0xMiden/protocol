@@ -8,12 +8,15 @@ use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_processor::LoadedMastForest;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
 use crate::assembly::{Library, Path};
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
+use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
@@ -330,10 +333,11 @@ pub const TRANSACTION_SCRIPT_ATTRIBUTE: &str = "transaction_script";
 ///
 /// The [TransactionScript] object is composed of an executable program defined by a [MastForest]
 /// and an associated entrypoint.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct TransactionScript {
     mast: Arc<MastForest>,
     entrypoint: MastNodeId,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl TransactionScript {
@@ -354,7 +358,11 @@ impl TransactionScript {
     pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
         assert!(mast.get_node_by_id(entrypoint).is_some());
 
-        Self { mast, entrypoint }
+        Self {
+            mast,
+            entrypoint,
+            package_debug_info: None,
+        }
     }
 
     /// Creates a [TransactionScript] from a [`Package`].
@@ -368,7 +376,11 @@ impl TransactionScript {
         let program =
             package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
-        Ok(TransactionScript::new(program))
+        Ok(Self {
+            mast: program.mast_forest().clone(),
+            entrypoint: program.entrypoint(),
+            package_debug_info: package_debug_info(package),
+        })
     }
 
     /// Returns a new [TransactionScript] instantiated from the provided library.
@@ -383,14 +395,18 @@ impl TransactionScript {
     pub fn from_library(library: &Library) -> Result<Self, TransactionScriptError> {
         let mut entrypoint = None;
 
-        for export in library.exports() {
+        for export in library.manifest.exports() {
             if let Some(proc_export) = export.as_procedure()
                 && proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE)
             {
                 if entrypoint.is_some() {
                     return Err(TransactionScriptError::MultipleProceduresWithAttribute);
                 }
-                entrypoint = Some(proc_export.node);
+                entrypoint = Some(
+                    proc_export
+                        .node
+                        .ok_or(TransactionScriptError::NoProcedureWithAttribute)?,
+                );
             }
         }
 
@@ -399,6 +415,7 @@ impl TransactionScript {
         Ok(Self {
             mast: library.mast_forest().clone(),
             entrypoint,
+            package_debug_info: package_debug_info(library),
         })
     }
 
@@ -425,6 +442,7 @@ impl TransactionScript {
     ) -> Result<Self, TransactionScriptError> {
         // Find the export matching the path
         let export = library
+            .manifest
             .exports()
             .find(|e| e.path().as_ref() == path)
             .ok_or_else(|| TransactionScriptError::ProcedureNotFound(path.to_string().into()))?;
@@ -439,12 +457,16 @@ impl TransactionScript {
         }
 
         // Get the digest of the procedure from the library
-        let digest = library.mast_forest()[proc_export.node].digest();
+        let digest = proc_export.digest;
 
         // Create a minimal MastForest with just an external node referencing the digest
         let (mast, entrypoint) = create_external_node_forest(digest);
 
-        Ok(Self { mast: Arc::new(mast), entrypoint })
+        Ok(Self {
+            mast: Arc::new(mast),
+            entrypoint,
+            package_debug_info: package_debug_info(library),
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -453,6 +475,11 @@ impl TransactionScript {
     /// Returns a reference to the [MastForest] backing this transaction script.
     pub fn mast(&self) -> Arc<MastForest> {
         self.mast.clone()
+    }
+
+    /// Returns the MAST forest and package-owned debug information backing this transaction script.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
     }
 
     /// Returns the commitment of this transaction script (i.e., the script's MAST root).
@@ -470,14 +497,22 @@ impl TransactionScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
+            package_debug_info: self.package_debug_info,
         }
     }
 }
+
+impl PartialEq for TransactionScript {
+    fn eq(&self, other: &Self) -> bool {
+        self.mast == other.mast && self.entrypoint == other.entrypoint
+    }
+}
+
+impl Eq for TransactionScript {}
 
 // SERIALIZATION
 // ================================================================================================
@@ -515,6 +550,19 @@ mod tests {
     }
 
     #[test]
+    fn test_transaction_script_preserves_package_debug_info() {
+        use super::TransactionScript;
+        use crate::assembly::Assembler;
+
+        let assembler = Assembler::default();
+        let package =
+            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
+        let script = TransactionScript::from_package(&package).unwrap();
+
+        assert!(script.loaded_mast_forest().package_debug_info().unwrap().is_some());
+    }
+
+    #[test]
     fn test_transaction_script_with_advice_map() {
         use miden_core::{Felt, Word};
 
@@ -522,7 +570,11 @@ mod tests {
         use crate::assembly::Assembler;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
+        let program = assembler
+            .assemble_program("test-transaction-script", "begin nop end")
+            .unwrap()
+            .try_into_program()
+            .unwrap();
         let script = TransactionScript::new(program);
 
         assert!(script.mast().advice_map().is_empty());
@@ -550,8 +602,8 @@ mod tests {
         use assert_matches::assert_matches;
 
         use super::TransactionScript;
-        use crate::assembly::Assembler;
         use crate::errors::TransactionScriptError;
+        use crate::testing::assembler::assemble_test_library;
         use crate::utils::serde::{Deserializable, Serializable};
 
         let source = "
@@ -560,7 +612,7 @@ mod tests {
                 push.1 drop
             end
         ";
-        let library = Assembler::default().assemble_library([source]).unwrap();
+        let library = assemble_test_library("test-tx-script", "test::tx_script", source);
 
         let script = TransactionScript::from_library(&library).unwrap();
 
@@ -570,19 +622,23 @@ mod tests {
         assert_eq!(script, decoded);
 
         // a library without the attribute is rejected
-        let no_attr = Assembler::default()
-            .assemble_library(["pub proc main push.1 drop end"])
-            .unwrap();
+        let no_attr = assemble_test_library(
+            "test-tx-script-no-attr",
+            "test::tx_script_no_attr",
+            "pub proc main push.1 drop end",
+        );
         assert_matches!(
             TransactionScript::from_library(&no_attr),
             Err(TransactionScriptError::NoProcedureWithAttribute)
         );
 
         // a library with multiple tagged procedures is rejected
-        let multiple = Assembler::default()
-            .assemble_library(["@transaction_script pub proc main_a push.1 drop end
-                 @transaction_script pub proc main_b push.2 drop end"])
-            .unwrap();
+        let multiple = assemble_test_library(
+            "test-tx-script-multiple",
+            "test::tx_script_multiple",
+            "@transaction_script pub proc main_a push.1 drop end
+             @transaction_script pub proc main_b push.2 drop end",
+        );
         assert_matches!(
             TransactionScript::from_library(&multiple),
             Err(TransactionScriptError::MultipleProceduresWithAttribute)
@@ -594,12 +650,12 @@ mod tests {
         use alloc::string::ToString;
 
         use assert_matches::assert_matches;
-        use miden_core::mast::MastNodeExt;
 
         use super::TransactionScript;
         use crate::Word;
-        use crate::assembly::{Assembler, Path};
+        use crate::assembly::Path;
         use crate::errors::TransactionScriptError;
+        use crate::testing::assembler::assemble_test_library;
 
         let source = "
             @transaction_script
@@ -616,16 +672,18 @@ mod tests {
                 push.3 drop
             end
         ";
-        let library = Assembler::default().assemble_library([source]).unwrap();
+        let library =
+            assemble_test_library("test-tx-script-reference", "test::tx_script_reference", source);
 
         // each tagged procedure can be extracted selectively, and the resulting script's root
         // matches the digest of the referenced procedure
         for proc_name in ["main_a", "main_b"] {
             let export = library
+                .manifest
                 .exports()
                 .find(|e| e.path().as_ref().to_string().ends_with(proc_name))
                 .unwrap();
-            let digest = library.mast_forest()[export.as_procedure().unwrap().node].digest();
+            let digest = export.as_procedure().unwrap().digest;
 
             let script =
                 TransactionScript::from_library_reference(&library, export.path().as_ref())
@@ -641,6 +699,7 @@ mod tests {
 
         // a procedure without the attribute is rejected
         let helper = library
+            .manifest
             .exports()
             .find(|e| e.path().as_ref().to_string().ends_with("helper"))
             .unwrap();

@@ -4,8 +4,7 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::{EventId, EventName};
 use miden_protocol::{CoreLibrary, Word};
@@ -98,7 +97,10 @@ impl<'store> BaseHost for MockHost<'store> {
 }
 
 impl<'store> Host for MockHost<'store> {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         self.exec_host.get_mast_forest(node_digest)
     }
 

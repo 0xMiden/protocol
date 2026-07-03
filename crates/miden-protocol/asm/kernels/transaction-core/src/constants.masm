@@ -1,7 +1,7 @@
 # CONSTANTS
 # =================================================================================================
 
-pub use miden::protocol_utils::constants::WORD_NUM_ELEMENTS
+pub use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 
 # The maximum number of storage items associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
