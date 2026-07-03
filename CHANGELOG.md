@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - Added a non-fungible (NFT) faucet (`NonFungibleFaucet`): the asset value is an off-chain salted commitment `hash(user_data, salt)`, and an on-chain asset-status registry keyed by `[hash0, hash1, 0, 0]` enforces per-commitment uniqueness and permanent burn. Added `create_user_non_fungible_faucet` / `create_network_non_fungible_faucet` APIs, the `mint_nft` / `burn_nft` note scripts (`NonFungibleMintNote` / `NonFungibleBurnNote`), a `compute_commitment` helper, and reuses `TokenMetadata` (with `external_link` surfaced as `contract_uri`) and `TokenPolicyManager` for mint/burn/transfer policies ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
