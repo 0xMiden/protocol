@@ -875,6 +875,14 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
+    #[error("library does not contain a procedure with @transaction_script attribute")]
+    NoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @transaction_script attribute")]
+    MultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    ProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
+    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR

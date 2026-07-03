@@ -173,7 +173,8 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
@@ -240,7 +241,8 @@ async fn test_acl_auth_uses_initial_public_key(
 
         const PUB_KEY_SLOT = word("{pub_key_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.99.98.97.96
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -293,7 +295,8 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         const PUB_KEY_SLOT = word("{pub_key_slot}")
         const NEW_PUB_KEY = word("{new_pub_key}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.NEW_PUB_KEY
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -483,7 +486,8 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
@@ -503,7 +507,8 @@ fn compile_call_set_item_script() -> anyhow::Result<TransactionScript> {
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.1.2.3.4
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::set_item
