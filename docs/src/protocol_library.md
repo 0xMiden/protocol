@@ -171,6 +171,7 @@ Transaction procedures manage transaction-level operations including note creati
 | `execute_foreign_procedure`     | Executes the provided procedure against the foreign account.<br/><br/>**Inputs:** `[foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, <inputs>, pad(n)]`<br/>**Outputs:** `[<outputs>]` | Any     |
 | `get_expiration_block_delta`    | Returns the transaction expiration delta, or 0 if not set.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[block_height_delta]`                                                                                   | Any     |
 | `update_expiration_block_delta` | Updates the transaction expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                    | Any     |
+| `compute_fee`                   | Computes the fee required for the current transaction.<br/><br/>**Inputs:** `[num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]`<br/>**Outputs:** `[fee_amount]`                                                                                                    | Any     |
 
 ## Faucet Procedures (`miden::protocol::faucet`)
 

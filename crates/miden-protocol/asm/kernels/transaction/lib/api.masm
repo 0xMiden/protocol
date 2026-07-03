@@ -1430,6 +1430,25 @@ pub proc tx_get_num_output_notes
     # => [num_output_notes, pad(15)]
 end
 
+#! Computes the fee required for the current transaction.
+#!
+#! Inputs:  [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT, pad(11)]
+#! Outputs: [fee_amount, pad(15)]
+#!
+#! Where:
+#! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
+#!   before computing the fee.
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
+#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#!
+#! Invocation: dynexec
+pub proc tx_compute_fee
+    # compute the fee, consuming num_extra_cycles and the exclude notes commitment
+    exec.tx::compute_fee
+    # => [fee_amount, pad(15)]
+end
+
 #! Returns the block commitment of the reference block.
 #!
 #! Inputs:  [pad(16)]
