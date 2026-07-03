@@ -22,6 +22,14 @@
 # - A role is considered to "exist" when it has at least one member. Role admin
 #   relationships set via `set_role_admin` are stored in the config but do not, by
 #   themselves, make the role exist.
+#
+# Security model:
+# Access control is based on the note sender (`active_note::get_sender`), i.e. the account ID
+# that created the note, not the code that ran when it was created. It is meaningful only when
+# every account registered as owner or role member enforces strong authentication. Registering a
+# permissionless account (for example one using the `no_auth` component) as owner or role member
+# provides no protection: anyone can make such an account emit a note carrying an arbitrary script
+# root with that account's ID as sender, defeating the sender check.
 
 use miden::protocol::account_id
 use miden::protocol::active_account
@@ -308,36 +316,6 @@ proc get_role_config
     # => [member_count, admin_role_symbol]
 end
 
-#! Writes the config word for a role.
-#!
-#! The trailing zeros of the stored config word are appended internally so callers do
-#! not need to push them themselves.
-#!
-#! Inputs:  [role_symbol, member_count, admin_role_symbol]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc set_role_config
-    push.0.0
-    # => [0, 0, role_symbol, member_count, admin_role_symbol]
-
-    movdn.4 movdn.4
-    # => [role_symbol, member_count, admin_role_symbol, 0, 0]
-
-    push.0.0.0
-    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, 0, 0]
-
-    push.ROLE_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol,
-    #     member_count, admin_role_symbol, 0, 0]
-
-    exec.native_account::set_map_item
-    # => [OLD_ROLE_CONFIG]
-
-    dropw
-    # => []
-end
-
 #! Returns whether an account holds a role.
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
@@ -437,6 +415,36 @@ proc assert_sender_is_owner_or_role_admin
         assert.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
         # => []
     end
+end
+
+#! Writes the config word for a role.
+#!
+#! The trailing zeros of the stored config word are appended internally so callers do
+#! not need to push them themselves.
+#!
+#! Inputs:  [role_symbol, member_count, admin_role_symbol]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc set_role_config
+    push.0.0
+    # => [0, 0, role_symbol, member_count, admin_role_symbol]
+
+    movdn.4 movdn.4
+    # => [role_symbol, member_count, admin_role_symbol, 0, 0]
+
+    push.0.0.0
+    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, 0, 0]
+
+    push.ROLE_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol,
+    #     member_count, admin_role_symbol, 0, 0]
+
+    exec.native_account::set_map_item
+    # => [OLD_ROLE_CONFIG]
+
+    dropw
+    # => []
 end
 
 #! Internal helper used by `grant_role` to assign a role to an account.
