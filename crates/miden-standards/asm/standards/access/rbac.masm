@@ -22,6 +22,14 @@
 # - A role is considered to "exist" when it has at least one member. Role admin
 #   relationships set via `set_role_admin` are stored in the config but do not, by
 #   themselves, make the role exist.
+#
+# Security model:
+# Access control is based on the note sender (`active_note::get_sender`), i.e. the account ID
+# that created the note, not the code that ran when it was created. It is meaningful only when
+# every account registered as owner or role member enforces strong authentication. Registering a
+# permissionless account (for example one using the `no_auth` component) as owner or role member
+# provides no protection: anyone can make such an account emit a note carrying an arbitrary script
+# root with that account's ID as sender, defeating the sender check.
 
 use miden::protocol::account_id
 use miden::protocol::active_account

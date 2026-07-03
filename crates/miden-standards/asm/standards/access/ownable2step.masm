@@ -16,6 +16,15 @@
 # Storage layout (single slot):
 #   Word:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
 #           word[0]       word[1]        word[2]                  word[3]
+#
+# Security model:
+# Access control is based on the note sender, i.e. the account ID that created the note
+# (`active_note::get_sender`). This authenticates which account created the note, not the code
+# that ran when it was created. It is therefore meaningful only when every account registered as
+# owner enforces strong authentication. Registering a permissionless account (for example one
+# using the `no_auth` component) as owner provides no protection: anyone can make such an account
+# emit a note carrying an arbitrary script root with that account's ID as sender, defeating the
+# owner check.
 
 use miden::protocol::active_account
 use miden::protocol::account_id
