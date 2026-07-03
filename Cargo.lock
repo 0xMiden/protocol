@@ -1101,6 +1101,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generate-packages"
+version = "0.1.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-protocol",
+ "miden-standards",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

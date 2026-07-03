@@ -1,0 +1,17 @@
+[package]
+authors.workspace      = true
+edition.workspace      = true
+exclude.workspace      = true
+homepage.workspace     = true
+license.workspace      = true
+name                   = "generate-packages"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+# Workspace dependencies
+miden-mast-package = { features = ["std"], workspace = true }
+miden-protocol     = { workspace = true }
+miden-standards    = { workspace = true }
