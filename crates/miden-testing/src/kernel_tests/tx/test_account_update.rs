@@ -56,7 +56,8 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
       use miden::core::sys
       use mock::account as mock_account
 
-      begin
+      @transaction_script
+      pub proc main
           call.mock_account::compute_delta_commitment
           # => [DELTA_COMMITMENT, pad(12)]
 
@@ -136,7 +137,8 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
       const SLOT_2_NAME = word("{slot_2_name}")
       const SLOT_3_NAME = word("{slot_3_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           push.{slot_0_tmp_value}
           push.SLOT_0_NAME[0..2]
           # => [slot_id_suffix, slot_id_prefix, VALUE]
@@ -260,7 +262,8 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
       const SLOT_1_NAME = word("{slot_1_name}")
       const SLOT_2_NAME = word("{slot_2_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           push.{key0_final_value} push.{key0}
           push.SLOT_0_NAME[0..2]
           # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
@@ -386,7 +389,8 @@ async fn fungible_asset_update() -> anyhow::Result<()> {
 
     let tx_script = parse_tx_script(format!(
         "
-    begin
+    @transaction_script
+    pub proc main
         push.{ASSET0_VALUE} push.{ASSET0_KEY}
         exec.util::create_default_note_with_moved_asset
         # => []
@@ -490,7 +494,8 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
 
     let tx_script = parse_tx_script(format!(
         "
-    begin
+    @transaction_script
+    pub proc main
         push.{ASSET1_VALUE} push.{ASSET1_KEY}
         exec.util::create_default_note_with_moved_asset
         # => []
@@ -628,7 +633,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             ## Update value storage slot
             push.{updated_slot_value}
             push.MOCK_VALUE_SLOT0[0..2]
@@ -726,7 +732,8 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
       const MAP_SLOT=word("{map2_slot_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -891,7 +898,8 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 
       const MAP_SLOT=word("{slot_name1}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Set the key to a non-empty value.
           push.{non_empty_value}
           push.{map_key}

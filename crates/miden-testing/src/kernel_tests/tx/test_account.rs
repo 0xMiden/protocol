@@ -63,8 +63,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -103,7 +101,8 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             call.mock_account::get_initial_commitment
             # => [INITIAL_COMMITMENT, pad(12)]
             swapdw dropw dropw swapw dropw
@@ -334,7 +333,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_map_item() -> anyhow::Result<()> {
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
@@ -457,7 +456,8 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
 
             const UNKNOWN_SLOT_NAME = word("unknown::slot::name")
 
-            begin
+            @transaction_script
+            pub proc main
                 push.UNKNOWN_SLOT_NAME[0..2]
                 call.account::get_item
             end
@@ -598,7 +598,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     );
 
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
@@ -1010,7 +1010,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         use miden::core::sys
         use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
             push.{ASSET_KEY}
             call.mock_account::get_balance
@@ -1063,7 +1064,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         use miden::core::sys
         use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
             push.{ASSET_KEY}
             call.mock_account::get_balance
@@ -1147,7 +1149,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use mock::account as mock_account
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
@@ -1244,7 +1247,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         use mock::account as mock_account
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create default note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
@@ -1355,7 +1359,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
@@ -1372,7 +1376,8 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
 
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
-        begin
+        @transaction_script
+        pub proc main
             # First check that get_item procedure hasn't been called yet
             procref.mock_account::get_item
             call.mock_account::was_procedure_called
@@ -1487,7 +1492,8 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let tx_script_src = "\
           use account_component::account_module
 
-          begin
+          @transaction_script
+          pub proc main
             call.account_module::custom_setter
           end";
 
@@ -1498,7 +1504,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     )?;
 
     // Build an existing account with nonce 1.
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(account_component)
         .build_existing()?;
@@ -1566,7 +1572,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
 async fn test_has_procedure() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
@@ -1576,7 +1582,8 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         use miden::core::sys
         use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # check that get_item procedure is available on the mock account
             procref.mock_account::get_item
             # => [GET_ITEM_ROOT]
@@ -1721,7 +1728,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_initial_map_item() -> anyhow::Result<()> {
     let map_slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![map_slot.clone()]))
         .build_existing()
@@ -1811,7 +1818,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         })
         .collect();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(slots.clone()))
         .build_existing()
@@ -2010,7 +2017,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
       use component1::interface as comp1_interface
       use component2::interface as comp2_interface
 
-      begin
+      @transaction_script
+      pub proc main
           call.comp1_interface::get_slot_content
           push.{slot_content1}
           assert_eqw.err="failed to get slot content1"

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::fmt::Display;
 use core::num::TryFromIntError;
 
-use miden_core::mast::{MastNode, MastNodeExt};
+use miden_core::mast::MastNodeExt;
 use miden_core::utils::IndexVec;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
@@ -12,10 +12,11 @@ use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
 
 use super::Felt;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastNodeId};
+use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
 use crate::package::{loaded_mast_forest, package_debug_info};
+use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -425,25 +426,6 @@ impl Display for NoteScript {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.pretty_print(f)
     }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Creates a minimal [MastForest] containing only an external node referencing the given digest.
-///
-/// This is useful for creating lightweight references to procedures without copying entire
-/// libraries. The external reference will be resolved at runtime, assuming the source library
-/// is loaded into the VM's MastForestStore.
-fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
-    let mut nodes: miden_core::utils::IndexVec<MastNodeId, MastNode> =
-        miden_core::utils::IndexVec::new();
-    let node_id = nodes
-        .push(ExternalNodeBuilder::new(digest).build().into())
-        .expect("adding external node to empty forest should not fail");
-    let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())
-        .expect("single external node forest should be well-formed");
-    (mast, node_id)
 }
 
 // TESTS

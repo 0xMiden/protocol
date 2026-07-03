@@ -34,7 +34,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
         use miden::protocol::output_note
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}

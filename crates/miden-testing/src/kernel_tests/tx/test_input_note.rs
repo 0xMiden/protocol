@@ -50,7 +50,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         "
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             {check_note_0}
 
             {check_note_1}
@@ -107,7 +108,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the recipient from the input note
             push.0
             exec.input_note::get_recipient
@@ -160,7 +162,8 @@ async fn test_get_sender() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the sender from the input note
             push.0
             exec.input_note::get_sender
@@ -275,7 +278,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         "
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             {check_note_0}
 
             {check_note_1}
@@ -320,7 +324,8 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the storage commitment and length from the input note with index 0 (the only one
             # we have)
             push.0
@@ -370,7 +375,8 @@ async fn test_get_script_root() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the script root from the input note with index 0 (the only one we have)
             push.0
             exec.input_note::get_script_root
@@ -413,7 +419,8 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the serial number from the input note with index 0 (the only one we have)
             push.0
             exec.input_note::get_serial_number

@@ -283,7 +283,8 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
@@ -459,7 +460,8 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0.0
 
             push.{recipient}

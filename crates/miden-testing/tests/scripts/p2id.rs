@@ -243,7 +243,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
             use miden::protocol::output_note
-            begin
+            @transaction_script
+            pub proc main
                 push.{recipient_1}
                 push.{note_type_1}
                 push.{tag_1}
@@ -335,7 +336,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         r#"
         use miden::standards::notes::p2id
 
-        begin
+        @transaction_script
+        pub proc main
             # Push inputs for p2id::new
             push.{serial_num}
             push.{note_type}
