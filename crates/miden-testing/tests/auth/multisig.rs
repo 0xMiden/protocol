@@ -1555,3 +1555,152 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
 
     Ok(())
 }
+
+/// Executes a fully-signed 2-of-4 multisig transaction whose script `call`s one of the public
+/// component getters, so the getter is exercised through the 16-felt `call` ABI (a getter that
+/// returns at any operand-stack depth other than 16 aborts in `restore_context` with
+/// `InvalidStackDepthOnReturn`).
+async fn execute_multisig_getter_call<F>(script_code: &str, make_args: F) -> anyhow::Result<()>
+where
+    F: FnOnce(&[PublicKey]) -> Word,
+{
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script(script_code)?;
+
+    let tx_script_args = make_args(&public_keys);
+    let salt = Word::from([Felt::from_u8(77); 4]);
+
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(tx_script_args)
+        .auth_args(salt);
+
+    // First pass without signatures: the getter `call` must return cleanly so the transaction
+    // reaches authentication and only fails there for missing signatures.
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    // Second pass with a valid quorum: the whole transaction, getter included, executes.
+    tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Regression test for the `call` ABI of `get_threshold_and_num_approvers`.
+///
+/// The script asserts the returned `[default_threshold, num_approvers]` matches the 2-of-4
+/// configuration, which both proves the getter returns at operand-stack depth 16 and that it
+/// yields the correct values.
+#[tokio::test]
+async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
+    let script_code = "
+        begin
+            call.::miden::standards::components::auth::multisig::get_threshold_and_num_approvers
+            # => [default_threshold, num_approvers, pad(14)]
+            push.2 eq assert
+            # => [num_approvers, pad(14)]
+            push.4 eq assert
+            # => [pad(14)]
+        end
+    ";
+
+    execute_multisig_getter_call(script_code, |_| Word::empty()).await
+}
+
+/// Regression test for the `call` ABI of `get_signer_at`.
+///
+/// The index `0` is supplied via `tx_script_args`. The script asserts the returned scheme id is
+/// `1` (`EcdsaK256Keccak`), exercising the getter's five-felt output through the 16-felt `call`
+/// ABI.
+#[tokio::test]
+async fn test_get_signer_at_call_abi() -> anyhow::Result<()> {
+    let script_code = "
+        begin
+            call.::miden::standards::components::auth::multisig::get_signer_at
+            # => [PUB_KEY, scheme_id, pad(11)]
+            movup.4 push.1 eq assert
+            # => [PUB_KEY, pad(11)]
+            dropw
+            # => [pad(12)]
+        end
+    ";
+
+    // Index 0 as the sole input felt; the remaining felts of the word are ignored padding.
+    execute_multisig_getter_call(script_code, |_| Word::empty()).await
+}
+
+/// Regression test for the `call` ABI of `is_signer` when the queried key is a signer.
+///
+/// A real approver public key is supplied via `tx_script_args`; the script asserts the getter
+/// returns `1`.
+#[tokio::test]
+async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
+    let script_code = "
+        begin
+            call.::miden::standards::components::auth::multisig::is_signer
+            # => [is_signer, pad(15)]
+            assert
+            # => [pad(15)]
+        end
+    ";
+
+    execute_multisig_getter_call(script_code, |public_keys| public_keys[0].to_commitment().into())
+        .await
+}
+
+/// Regression test for the `call` ABI of `is_signer` when the queried key is not a signer.
+///
+/// A key that is not part of the approver set is supplied via `tx_script_args`; the script asserts
+/// the getter returns `0` after iterating over every approver.
+#[tokio::test]
+async fn test_is_signer_false_call_abi() -> anyhow::Result<()> {
+    let script_code = "
+        begin
+            call.::miden::standards::components::auth::multisig::is_signer
+            # => [is_signer, pad(15)]
+            assertz
+            # => [pad(15)]
+        end
+    ";
+
+    // A word that is not any approver's public key commitment.
+    execute_multisig_getter_call(script_code, |_| Word::from([Felt::from_u8(0xff); 4])).await
+}
