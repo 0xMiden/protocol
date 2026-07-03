@@ -2,7 +2,6 @@ use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::protocol::output_note
 use miden::standards::wallets::basic->basic_wallet
 
 # ERRORS
@@ -66,16 +65,22 @@ pub proc main
     # => []
 end
 
-#! Creates a new P2ID output note from the given inputs.
+#! Computes the P2ID recipient and returns the note-creation arguments for the given inputs.
 #!
 #! This procedure handles:
 #! - Writing note storage to memory in the expected layout ([suffix, prefix] to match
 #!   existing P2ID storage format)
 #! - Obtaining the note script root via procref
-#! - Building the recipient and creating the note
+#! - Building the recipient
+#!
+#! Note creation itself is intentionally left to the caller: `output_note::create` must originate
+#! from the active account's context, and only the caller knows how to reach it (a note/tx script
+#! must `call` the account's `create_note` procedure, whereas an account procedure can create the
+#! note directly via `exec`). Keeping `p2id::new` creation-agnostic lets it be shared by accounts
+#! that expose different procedures (e.g. a basic wallet vs. the agglayer bridge).
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
-#! Outputs: [note_idx]
+#! Outputs: [tag, note_type, RECIPIENT]
 #!
 #! Where:
 #! - target_id_suffix is the suffix felt of the target account ID.
@@ -83,7 +88,7 @@ end
 #! - tag is the note tag to be included in the note.
 #! - note_type is the storage type of the note (1 = public, 2 = private).
 #! - SERIAL_NUM is the serial number of the note (4 elements).
-#! - note_idx is the index of the created note.
+#! - RECIPIENT is the computed recipient digest of the note (4 elements).
 #!
 #! Invocation: exec
 @locals(2)
@@ -110,7 +115,4 @@ pub proc new
 
     movup.5 movup.5
     # => [tag, note_type, RECIPIENT]
-
-    exec.output_note::create
-    # => [note_idx]
 end
