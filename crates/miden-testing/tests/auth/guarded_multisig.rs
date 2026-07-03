@@ -31,7 +31,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
-    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -106,7 +105,8 @@ fn build_update_guardian_script_source(
                     push.{recipient}
                     push.{note_type}
                     push.{tag}
-                    exec.output_note::create
+                    call.::miden::standards::wallets::basic::create_note
+                    movdn.15 dropw dropw dropw drop drop drop
                     swapdw
                     dropw
                     dropw
@@ -549,7 +549,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_with_output_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
+            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    call.::miden::standards::wallets::basic::create_note\n    movdn.15 dropw dropw dropw drop drop drop\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
@@ -592,17 +592,19 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .execute()
         .await;
 
-    // The transaction creates an output note (no input notes), so after the input check passes
-    // the output check fires.
-    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES);
+    // Creating the output note requires calling the account's `create_note` procedure, which is a
+    // second non-auth procedure. `assert_only_one_non_auth_procedure_called` therefore fires before
+    // the output-note check is ever reached.
+    assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
 
     Ok(())
 }
 
 /// `update_guardian_public_key` rejects every transaction that consumes input notes or creates
-/// output notes. Parametrized over the (input, output) tx layout so each path through the two
-/// separate `assert_no_*_notes` calls in `guardian.masm` is exercised — and the input check
-/// firing before the output check is verified explicitly via the (true, true) case.
+/// output notes. Parametrized over the (input, output) tx layout. Since output notes can only be
+/// created by calling the account's `create_note` procedure, any output note trips the "called
+/// alone" guard before `assert_no_output_notes` is reached; a plain input note that invokes no
+/// account procedure reaches `assert_no_input_notes` directly.
 #[rstest]
 #[case::no_notes(false, false)]
 #[case::input_only(true, false)]
@@ -734,18 +736,21 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .execute()
         .await;
 
-    // Input check fires first, output check fires only when no input notes are present.
+    // A consumed input note that does not invoke an account procedure trips
+    // `assert_no_input_notes`. An output note, however, can only be created by calling the
+    // account's `create_note` procedure, which counts as a second non-auth procedure, so
+    // `assert_only_one_non_auth_procedure_called` fires before the output-note check (and, when
+    // both are present, before the input check) is reached.
     match (include_input_note, include_output_note) {
         (false, false) => {
             result.expect("tx must succeed when neither input nor output notes are present");
         },
-        (true, _) => assert_transaction_executor_error!(
+        (_, true) => {
+            assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE)
+        },
+        (true, false) => assert_transaction_executor_error!(
             result,
             ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
-        ),
-        (false, true) => assert_transaction_executor_error!(
-            result,
-            ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
         ),
     }
 

@@ -242,11 +242,11 @@ mod tests {
     use crate::account::components::StandardAccountComponent;
     use crate::account::wallets::BasicWallet;
 
-    /// Helper that returns the two callable procedures of [`BasicWallet`].
+    /// Helper that returns the callable procedures of [`BasicWallet`].
     fn get_basic_wallet_procedures() -> BTreeSet<AccountProcedureRoot> {
         let procedures: BTreeSet<AccountProcedureRoot> =
             StandardAccountComponent::BasicWallet.procedure_roots().collect();
-        assert_eq!(procedures.len(), 2);
+        assert_eq!(procedures.len(), 3);
         procedures
     }
 

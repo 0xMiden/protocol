@@ -287,7 +287,8 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::wallets::basic::create_note
+            movdn.15 dropw dropw dropw drop drop drop
 
             push.{asset_value}
             push.{asset_key}
