@@ -37,6 +37,15 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// membership. It allows role assignment with domain isolation to minimize the scope of
 /// damage from a compromised role.
 ///
+/// ## Security considerations
+///
+/// Access control is based on the note sender (the account ID that created the note), which
+/// authenticates *which account* created a note but not the *code* that executed when it was
+/// created. It is meaningful only when every account registered as owner or role member enforces
+/// strong authentication. Registering a permissionless account (for example one using `no_auth`)
+/// as owner or role member provides no access restriction: anyone can make such an account emit a
+/// note with an arbitrary script root and that account's ID as sender, defeating the sender check.
+///
 /// ## Relation to [`Ownable2Step`]
 ///
 /// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority is
