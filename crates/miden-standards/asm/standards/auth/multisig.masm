@@ -227,6 +227,14 @@ end
 #! - PUB_KEY_i is the public key of the i-th signer
 #! - SCHEME_ID_i is the signature scheme id of the i-th signer
 #!
+#! Note: per-procedure threshold overrides in `PROC_THRESHOLD_ROOTS_SLOT` are NOT re-scaled by this
+#! procedure. They are absolute signature counts, not ratios, and the only cross-check is
+#! `assert_proc_thresholds_lte_num_approvers`, which enforces `override <= num_approvers`. Growing
+#! the signer set therefore leaves every override unchanged and silently lowers its effective signing
+#! ratio (e.g. a 2-of-2 override becomes 2-of-N). To preserve the intended security level, operators
+#! must re-evaluate and, where appropriate, raise the affected overrides via `set_procedure_threshold`
+#! in the same transaction that grows the signer set; this procedure neither performs nor prompts it.
+#!
 #! Locals:
 #! 0: new_num_of_approvers
 #! 1: init_num_of_approvers

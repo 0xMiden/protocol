@@ -634,6 +634,13 @@ end
 #! - any existing smart procedure policy becomes unreachable under the new number of approvers.
 #! - any provided scheme identifier word is malformed.
 #!
+#! Note: like [`multisig::update_signers_and_threshold`], this procedure does NOT re-scale existing
+#! smart procedure policies. Their immediate/delayed thresholds are absolute signature counts, not
+#! ratios, and `assert_proc_policies_lte_num_approvers` only enforces the reachability bound
+#! (`threshold <= num_approvers`). Growing the signer set silently lowers the effective signing ratio
+#! of every policy; operators must re-evaluate and, where appropriate, raise the affected policies in
+#! the same transaction that grows the signer set.
+#!
 #! Locals:
 #! 0: new_num_of_approvers
 #! 1: init_num_of_approvers
