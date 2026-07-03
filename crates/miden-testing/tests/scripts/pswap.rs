@@ -1129,7 +1129,7 @@ async fn pswap_partial_fill_ratio_test(
 #[tokio::test]
 async fn pswap_partial_fill_ratio_fuzz(#[case] seed: u64) -> anyhow::Result<()> {
     use rand::rngs::SmallRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     const FUZZ_ITERATIONS: usize = 30;
 

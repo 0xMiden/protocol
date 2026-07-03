@@ -2,7 +2,6 @@ use alloc::sync::Arc;
 
 use crate::assembly::Library;
 use crate::assembly::mast::MastForest;
-use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::Package;
 
@@ -14,7 +13,8 @@ const PROTOCOL_PACKAGE_BYTES: &[u8] =
 
 static PROTOCOL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     Arc::new(
-        Package::read_from_bytes(PROTOCOL_PACKAGE_BYTES)
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(PROTOCOL_PACKAGE_BYTES)
             .expect("protocol lib masp should be well-formed"),
     )
 });
@@ -28,23 +28,17 @@ pub struct ProtocolLib(Arc<Package>);
 impl ProtocolLib {
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
-        self.0.mast.mast_forest()
+        self.0.mast_forest()
     }
 }
 
 impl AsRef<Library> for ProtocolLib {
     fn as_ref(&self) -> &Library {
-        self.0.mast.as_ref()
+        self.0.as_ref()
     }
 }
 
 impl From<ProtocolLib> for Library {
-    fn from(value: ProtocolLib) -> Self {
-        Arc::unwrap_or_clone(Arc::unwrap_or_clone(value.0).mast)
-    }
-}
-
-impl From<ProtocolLib> for Package {
     fn from(value: ProtocolLib) -> Self {
         Arc::unwrap_or_clone(value.0)
     }
@@ -69,7 +63,7 @@ mod tests {
     fn test_compile() {
         let path = Path::new("::miden::protocol::active_account::get_id");
         let miden = ProtocolLib::default();
-        let exists = miden.0.mast.module_infos().any(|module| {
+        let exists = miden.0.module_infos().any(|module| {
             module
                 .procedures()
                 .any(|(_, proc)| module.path().join(&proc.name).as_path() == path)

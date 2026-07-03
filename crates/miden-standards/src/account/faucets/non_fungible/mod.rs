@@ -64,7 +64,10 @@ pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(NON_FUNGIBLE_FAUCET_CODE, "faucets/non_fungible_faucet.masl");
+account_component_code!(
+    NON_FUNGIBLE_FAUCET_CODE,
+    "miden-standards-faucets-non-fungible-faucet.masp"
+);
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_MINT_AND_SEND,

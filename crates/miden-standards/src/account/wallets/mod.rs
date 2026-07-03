@@ -27,7 +27,7 @@ use crate::procedure_root;
 // BASIC WALLET
 // ================================================================================================
 
-account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
+account_component_code!(BASIC_WALLET_CODE, "miden-standards-wallets-basic-wallet.masp");
 
 // Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_root!(

@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-policies-burn-min-burn-amount"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::burn::min_burn_amount"
+path      = "min_burn_amount.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

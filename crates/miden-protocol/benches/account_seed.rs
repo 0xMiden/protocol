@@ -3,7 +3,7 @@ use std::time::Duration;
 use criterion::{Criterion, criterion_group, criterion_main};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Running this benchmark with --no-default-features will use the single-threaded account seed
 /// computation.

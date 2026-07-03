@@ -53,15 +53,13 @@ skip = [
   { name = "digest" },
   { name = "keccak" },
   { name = "sha3" },
-  # Allow duplicate rand versions - miden-field uses 0.10, miden-vm uses 0.9
+  # Allow duplicate rand versions - miden-field uses 0.10, proptest uses 0.9.
+  { name = "getrandom" },
   { name = "rand" },
+  { name = "rand_chacha" },
   { name = "rand_core" },
 ]
 skip-tree = [
-  # Allow getrandom v0.2.x - legacy version used by nanorand
-  { name = "getrandom", version = "=0.2.*" },
-  # Allow rand_core v0.6.x - legacy version used by winterfell crates
-  { name = "rand_core", version = "=0.6.*" },
   # Allow rustc_version v0.2.x - build dependency version
   { name = "rustc_version", version = "=0.2.*" },
   # Allow unicode-width v0.1.x - used by miden-formatting vs textwrap conflict

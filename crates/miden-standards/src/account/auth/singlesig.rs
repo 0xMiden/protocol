@@ -19,7 +19,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::Approver;
 use crate::account::account_component_code;
 
-account_component_code!(SINGLESIG_CODE, "auth/singlesig.masl");
+account_component_code!(SINGLESIG_CODE, "miden-standards-auth-singlesig.masp");
 
 // CONSTANTS
 // ================================================================================================

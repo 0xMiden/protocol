@@ -1,15 +1,15 @@
-use agglayer::bridge::bridge_in::CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-use agglayer::bridge::bridge_in::CLAIM_PROOF_DATA_KEY_MEM_ADDR
+use {CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT} from agglayer::bridge::bridge_in
+use {CLAIM_PROOF_DATA_KEY_MEM_ADDR} from agglayer::bridge::bridge_in
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
-use miden::protocol::note::NOTE_TYPE_PUBLIC
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::note_tag
-use miden::standards::note_tag::DEFAULT_TAG
+use {DEFAULT_TAG} from miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
-use miden::standards::note::execution_hint::ALWAYS
+use {ALWAYS} from miden::standards::note::execution_hint
 
 # CONSTANTS
 # =================================================================================================

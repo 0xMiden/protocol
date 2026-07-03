@@ -4,12 +4,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, KernelLibrary, Library, ProjectTargetSelector};
+use miden_assembly::{Assembler, Path as MasmPath, ProjectTargetSelector};
 use miden_core::events::EventId;
-use miden_mast_package::{Package, PackageId, TargetType, Version};
+use miden_mast_package::{Package, PackageExport, PackageId, TargetType, Version};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_project::ast::MidenProject;
+use miden_project::{VersionRequirement, semver};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -165,7 +167,7 @@ fn compile_tx_kernel(
     kernel_package.write_masp_file(target_dir).into_diagnostic()?;
 
     // generate kernel `procedures.rs` file
-    generate_kernel_proc_hash_file(kernel_package.try_into_kernel_library()?, build_dir)?;
+    generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
 
     // Assemble the executable targets and write their packages to the `target_dir`.
     //
@@ -210,9 +212,7 @@ fn compile_kernel_testing_lib(
 /// Generates kernel `procedures.rs` file based on the kernel library.
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
-fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Result<()> {
-    let (_, module_info, _) = kernel.into_parts();
-
+fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
     let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
     let offsets_filename = Path::new(ASM_DIR)
         .join(ASM_PROTOCOL_DIR)
@@ -220,19 +220,55 @@ fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Res
         .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    let generated_procs: BTreeMap<usize, String> = module_info
-        .procedures()
-        .filter(|(_, proc_info)| !to_exclude.contains::<str>(proc_info.name.as_ref()))
-        .map(|(_, proc_info)| {
-            let name = proc_info.name.to_string();
-
-            let Some(&offset) = offsets.get(&name) else {
-                panic!("Offset constant for function `{name}` not found in `{offsets_filename:?}`");
-            };
-
-            (offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest))
+    // Only direct `$kernel::<proc>` exports are dynamic kernel API procedures. Public support
+    // modules also appear in package exports as `$kernel::<module>::<proc>`, but those are not
+    // invoked through `exec_kernel_proc` and therefore do not belong in `KERNEL_PROCEDURES`.
+    let kernel_api_exports: Vec<_> = kernel
+        .manifest
+        .exports()
+        .filter_map(|export| match export {
+            PackageExport::Procedure(proc_info) => Some(proc_info),
+            _ => None,
         })
+        .filter(|proc_info| is_dynamic_kernel_api_export(&proc_info.path))
         .collect();
+
+    for proc_info in kernel_api_exports.iter() {
+        let name = proc_info.path.last().unwrap();
+        if to_exclude.contains::<str>(name) {
+            continue;
+        }
+
+        if !offsets.contains_key(name) {
+            return Err(miette::miette!(
+                "Offset constant for kernel procedure `{}` not found in `{offsets_filename:?}`",
+                proc_info.path,
+            ));
+        }
+    }
+
+    let generated_procs: BTreeMap<usize, String> = offsets
+        .iter()
+        .map(|(name, &offset)| {
+            let mut matching_exports =
+                kernel_api_exports.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
+            let proc_info = matching_exports.next().ok_or_else(|| {
+                miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` does not match any exported procedure"
+                )
+            })?;
+
+            if let Some(other_proc_info) = matching_exports.next() {
+                return Err(miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` matches multiple exported procedures: `{}` and `{}`",
+                    proc_info.path,
+                    other_proc_info.path,
+                ));
+            }
+
+            Ok((offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest)))
+        })
+        .collect::<Result<_>>()?;
 
     let proc_count = generated_procs.len();
     let generated_procs: String = generated_procs.into_iter().enumerate().map(|(index, (offset, txt))| {
@@ -309,26 +345,85 @@ fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
     Assembler::new(source_manager).with_warnings_as_errors(true)
 }
 
+fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
+    path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
+}
+
 /// Builds an in-memory package registry loaded with the `miden-core` library, so the projects can
 /// just declare it by version in the manifest.
 fn core_package_registry() -> Result<InMemoryPackageRegistry> {
-    // TODO: once miden_core_lib gets updated to v0.24, `CoreLibrary` will be a `Package` so we
-    // won't need to add the metadata manually.
-    //
-    // This version must match the `miden-core` requirement declared in `asm/miden-project.toml`;
-    // it's the version of the `miden-core-lib` crate that provides `CoreLibrary`.
-    let library = Arc::new(Library::from(miden_core_lib::CoreLibrary::default()));
-    let package = Package::from_library(
+    let core_package = miden_core_lib::CoreLibrary::default().package();
+    let core_package_version =
+        dependency_package_version(Path::new(ASM_DIR).join(PROJECT_MANIFEST), "miden-core")?;
+    let package = Package::create_with_modules(
         PackageId::from("miden-core"),
-        Version::new(0, 23, 4),
+        core_package_version,
         TargetType::Library,
-        library,
-        core::iter::empty(),
-    );
+        core_package.mast_forest().clone(),
+        core_package.manifest.exports().cloned(),
+        core_package.manifest.modules().cloned(),
+        core_package.manifest.dependencies().cloned(),
+    )
+    .into_diagnostic()?;
 
     let mut registry = InMemoryPackageRegistry::default();
-    registry.cache_package(Arc::from(package)).into_diagnostic()?;
+    registry.cache_package(Arc::new(package)).into_diagnostic()?;
     Ok(registry)
+}
+
+fn dependency_package_version(
+    manifest_path: impl AsRef<Path>,
+    dependency_name: &str,
+) -> Result<Version> {
+    let source_manager = DefaultSourceManager::default();
+    let source_file = source_manager
+        .load_file(manifest_path.as_ref())
+        .map_err(|err| miette::miette!("{err}"))?;
+    let project = MidenProject::parse(source_file).map_err(|err| miette::miette!("{err}"))?;
+    let dependencies = match &project {
+        MidenProject::Workspace(workspace) => &workspace.workspace.config.dependencies,
+        MidenProject::Package(package) => &package.config.dependencies,
+    };
+    let dependency = dependencies
+        .iter()
+        .find(|(name, _)| name.inner().as_ref() == dependency_name)
+        .map(|(_, dependency)| dependency.inner())
+        .ok_or_else(|| miette::miette!("manifest does not depend on `{dependency_name}`"))?;
+
+    match dependency.version() {
+        Some(VersionRequirement::Semantic(version_req)) => {
+            semantic_requirement_lower_bound(dependency_name, version_req.inner())
+        },
+        Some(VersionRequirement::Exact(version)) => Ok(version.version.clone()),
+        Some(VersionRequirement::Digest(_)) | None => Err(miette::miette!(
+            "dependency `{dependency_name}` must use a semantic version requirement"
+        )),
+    }
+}
+
+fn semantic_requirement_lower_bound(
+    dependency_name: &str,
+    version_req: &semver::VersionReq,
+) -> Result<Version> {
+    let [comparator] = version_req.comparators.as_slice() else {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a single semantic version requirement"
+        ));
+    };
+
+    if !matches!(comparator.op, semver::Op::Caret | semver::Op::Exact)
+        || comparator.pre != semver::Prerelease::EMPTY
+    {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a simple semantic version requirement"
+        ));
+    }
+
+    Ok(Version::new(
+        comparator.major,
+        comparator.minor.unwrap_or_default(),
+        comparator.patch.unwrap_or_default(),
+    ))
 }
 
 // ERROR CONSTANTS FILE GENERATION
