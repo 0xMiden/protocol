@@ -7,7 +7,10 @@ use crate::procedure_root;
 // ALLOW-ALL MINT POLICY
 // ================================================================================================
 
-account_component_code!(ALLOW_ALL_MINT_POLICY_CODE, "faucets/policies/mint/allow_all.masl");
+account_component_code!(
+    ALLOW_ALL_MINT_POLICY_CODE,
+    "miden-standards-faucets-policies-mint-allow-all.masp"
+);
 
 procedure_root!(
     ALLOW_ALL_POLICY_ROOT,

@@ -5,18 +5,18 @@ use miden::protocol::native_account
 use miden::protocol::note
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
-use miden::standards::note_tag::DEFAULT_TAG
-use miden::standards::note::execution_hint::ALWAYS
-use miden::protocol::types::MemoryAddress
+use {DEFAULT_TAG} from miden::standards::note_tag
+use {ALWAYS} from miden::standards::note::execution_hint
+use {MemoryAddress} from miden::protocol::types
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
-use agglayer::common::constants::MIDEN_NETWORK_ID
+use {MIDEN_NETWORK_ID} from agglayer::common::constants
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use agglayer::common::eth_address::EthereumAddressFormat
+use {EthereumAddressFormat} from agglayer::common::eth_address
 
 # ERRORS
 # =================================================================================================
@@ -82,7 +82,7 @@ const ATTACHMENT_SCHEME_LOC=12
 # -------------------------------------------------------------------------------------------------
 
 const LEAF_TYPE_ASSET=0
-use miden::protocol::note::NOTE_TYPE_PUBLIC
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
 # PUBLIC INTERFACE

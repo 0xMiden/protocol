@@ -1,6 +1,6 @@
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::standards::faucets::non_fungible->faucet
+use miden::standards::faucets::non_fungible as faucet
 
 # CONSTANTS
 # =================================================================================================
@@ -8,8 +8,8 @@ use miden::standards::faucets::non_fungible->faucet
 const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=9
 const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
 
-use miden::protocol::note::NOTE_TYPE_PUBLIC
-use miden::protocol::note::NOTE_TYPE_PRIVATE
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 
 # Memory addresses of MINT note storage (private mode, 9 items total)
 const STORAGE_PTR = 0

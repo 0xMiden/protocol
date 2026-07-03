@@ -194,7 +194,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::tx_kernel_core::constants::MAX_OUTPUT_NOTES_PER_TX
+        use {{MAX_OUTPUT_NOTES_PER_TX}} from miden::tx_kernel_core::constants
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
 
@@ -1214,7 +1214,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1247,7 +1247,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {DEFAULT_TAG} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1913,7 +1913,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 

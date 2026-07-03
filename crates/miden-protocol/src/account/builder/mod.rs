@@ -309,15 +309,16 @@ impl AccountBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, LazyLock};
+    use std::sync::LazyLock;
 
     use assert_matches::assert_matches;
-    use miden_assembly::{Assembler, Library};
     use miden_core::mast::MastNodeExt;
+    use miden_mast_package::Package;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
@@ -333,19 +334,11 @@ mod tests {
             end
           ";
 
-    static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE1])
-                .expect("code should be valid"),
-        )
+    static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
     });
-    static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE2])
-                .expect("code should be valid"),
-        )
+    static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -434,11 +427,11 @@ mod tests {
         // The merged code should have one procedure from each library.
         assert_eq!(account.code.procedure_roots().count(), 3);
 
-        let foo_root = CUSTOM_LIBRARY1.mast_forest()
-            [CUSTOM_LIBRARY1.get_export_node_id(CUSTOM_LIBRARY1.exports().next().unwrap().path())]
+        let foo_root = CUSTOM_LIBRARY1.mast_forest()[CUSTOM_LIBRARY1
+            .get_export_node_id(CUSTOM_LIBRARY1.manifest.exports().next().unwrap().path())]
         .digest();
-        let bar_root = CUSTOM_LIBRARY2.mast_forest()
-            [CUSTOM_LIBRARY2.get_export_node_id(CUSTOM_LIBRARY2.exports().next().unwrap().path())]
+        let bar_root = CUSTOM_LIBRARY2.mast_forest()[CUSTOM_LIBRARY2
+            .get_export_node_id(CUSTOM_LIBRARY2.manifest.exports().next().unwrap().path())]
         .digest();
 
         assert!(account.code().procedures().contains(&AccountProcedureRoot::from_raw(foo_root)));

@@ -2,11 +2,11 @@
 
 extern crate alloc;
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::utils::serde::Deserializable;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
@@ -65,17 +65,17 @@ pub use utils::Keccak256Output;
 // ================================================================================================
 
 static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masp"));
     Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
 });
 
 static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masp"));
     Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
 });
 
 static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masp"));
     Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
 });
 

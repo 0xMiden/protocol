@@ -19,7 +19,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
-account_component_code!(OWNABLE2STEP_CODE, "access/ownable2step.masl");
+account_component_code!(OWNABLE2STEP_CODE, "miden-standards-access-ownable2step.masp");
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")

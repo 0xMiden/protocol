@@ -1,8 +1,14 @@
 use alloc::sync::Arc;
 
 use miden_protocol::account::AccountCode;
-use miden_protocol::assembly::Library;
-use miden_protocol::assembly::diagnostics::NamedSource;
+use miden_protocol::assembly::{
+    DefaultSourceManager,
+    Library,
+    Linkage,
+    ModuleKind,
+    ModuleParser,
+    Path,
+};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -14,7 +20,7 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 // exposed by the mock account (`mock::account`), which perform the actual creation. Each helper
 // then normalizes the stack to preserve the historical `exec`-based output shape.
 const MOCK_UTIL_LIBRARY_CODE: &str = "
-    use miden::standards::wallets::basic->wallet
+    use miden::standards::wallets::basic as wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
@@ -56,15 +62,21 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
 ";
 
 static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Arc::unwrap_or_clone(
-        TransactionKernel::assembler()
-            .with_dynamic_library(StandardsLib::default())
-            .expect("dynamically linking standards library should work")
-            .with_dynamic_library(AccountCode::mock_account_library())
-            .expect("dynamically linking mock account library should work")
-            .assemble_library([NamedSource::new("mock::util", MOCK_UTIL_LIBRARY_CODE)])
-            .expect("mock util library should be valid"),
-    )
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let root = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new("mock::util")), MOCK_UTIL_LIBRARY_CODE, source_manager.clone())
+        .expect("mock util library should parse");
+    let mut assembler = TransactionKernel::assembler_with_source_manager(source_manager);
+    assembler
+        .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
+        .expect("dynamically linking standards library should work");
+    // Link the mock account library so the helpers' delegating `mock::account::*` calls resolve.
+    assembler
+        .link_package(Arc::new(AccountCode::mock_account_library()), Linkage::Dynamic)
+        .expect("dynamically linking mock account library should work");
+    *assembler
+        .assemble_library("mock-util", root, None::<&str>)
+        .expect("mock util library should be valid")
 });
 
 /// Returns the mock test [`Library`] under the `mock::util` namespace.

@@ -1,7 +1,7 @@
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::non_fungible_asset
-use miden::protocol_utils::asset->asset_utils
+use miden::protocol_utils::asset as asset_utils
 
 # ERRORS
 # =================================================================================================
@@ -17,20 +17,22 @@ const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be comp
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-pub use miden::protocol_utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-pub use miden::protocol_utils::asset::ASSET_SIZE
-pub use miden::protocol_utils::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use miden::protocol_utils::asset::COMPOSITION_NONE
-pub use miden::protocol_utils::asset::COMPOSITION_FUNGIBLE
-pub use miden::protocol_utils::asset::COMPOSITION_CUSTOM
-pub use miden::protocol_utils::asset::key_to_faucet_id
-pub use miden::protocol_utils::asset::key_into_faucet_id
-pub use miden::protocol_utils::asset::key_to_asset_id
-pub use miden::protocol_utils::asset::key_into_asset_id
-pub use miden::protocol_utils::asset::key_to_composition
-pub use miden::protocol_utils::asset::store
-pub use miden::protocol_utils::asset::load
-pub use miden::protocol_utils::asset::validate_metadata
+pub use {
+    ASSET_SIZE,
+    ASSET_VALUE_MEMORY_OFFSET,
+    COMPOSITION_CUSTOM,
+    COMPOSITION_FUNGIBLE,
+    COMPOSITION_NONE,
+    FUNGIBLE_ASSET_MAX_AMOUNT,
+    key_into_asset_id,
+    key_into_faucet_id,
+    key_to_asset_id,
+    key_to_composition,
+    key_to_faucet_id,
+    load,
+    store,
+    validate_metadata,
+} from miden::protocol_utils::asset
 
 # PROCEDURES
 # =================================================================================================

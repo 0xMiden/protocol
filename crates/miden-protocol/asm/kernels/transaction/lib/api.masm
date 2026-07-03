@@ -8,11 +8,12 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
-use miden::tx_kernel_core::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
-use miden::tx_kernel_core::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
-use miden::tx_kernel_core::memory::KERNEL_PROCEDURES_PTR
-
 use miden::core::word
+use {
+    KERNEL_PROCEDURES_PTR,
+    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
+} from miden::tx_kernel_core::memory
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
 
@@ -1673,7 +1674,7 @@ pub proc tx_exec_foreign_proc
     # => [foreign_account_id_suffix, foreign_account_id_prefix, foreign_procedure_inputs(16)]
 
     # check that foreign account ID is not equal zero
-    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
+    dup.1 dup.1 exec.account_id::eqz not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
     # => [foreign_account_id_suffix, foreign_account_id_prefix, foreign_procedure_inputs(16)]
 
     # load the foreign account to the memory

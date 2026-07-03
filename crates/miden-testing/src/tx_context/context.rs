@@ -3,8 +3,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::mast::MastForest;
-use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
+use miden_processor::{ExecutionOutput, FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -63,7 +62,6 @@ pub struct TransactionContext {
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     pub(super) is_lazy_loading_enabled: bool,
-    pub(super) is_debug_mode_enabled: bool,
 }
 
 impl TransactionContext {
@@ -120,14 +118,14 @@ impl TransactionContext {
                 .into();
 
         let program = assembler
-            .assemble_program(virtual_source_file)
+            .assemble_program("tx-context-code", virtual_source_file)
             .expect("code was not well formed");
 
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
         // TransactionContextBuilder.
-        self.mast_store.insert(TransactionKernel::library().mast_forest().clone());
-        self.mast_store.insert(program.mast_forest().clone());
+        self.mast_store.insert_package(&TransactionKernel::library());
+        self.mast_store.insert_package(&program);
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(
             [tx_inputs.account().code()]
@@ -159,7 +157,7 @@ impl TransactionContext {
         CodeExecutor::new(mock_host)
             .stack_inputs(stack_inputs)
             .extend_advice_inputs(advice_inputs)
-            .execute_program(program)
+            .execute_package(program)
             .await
     }
 
@@ -172,10 +170,6 @@ impl TransactionContext {
 
         let mut tx_executor =
             TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
-
-        if self.is_debug_mode_enabled {
-            tx_executor = tx_executor.with_debug_mode();
-        }
 
         if let Some(authenticator) = self.authenticator() {
             tx_executor = tx_executor.with_authenticator(authenticator);
@@ -379,7 +373,7 @@ impl DataStore for TransactionContext {
 }
 
 impl MastForestStore for TransactionContext {
-    fn get(&self, procedure_hash: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

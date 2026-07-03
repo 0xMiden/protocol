@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-metadata-schema-commitment"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::metadata::schema_commitment"
+path      = "schema_commitment.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

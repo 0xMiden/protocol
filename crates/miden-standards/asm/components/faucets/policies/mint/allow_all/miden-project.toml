@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-policies-mint-allow-all"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::mint::allow_all"
+path      = "allow_all.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

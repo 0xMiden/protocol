@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-no-auth"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::no_auth"
+path      = "no_auth.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

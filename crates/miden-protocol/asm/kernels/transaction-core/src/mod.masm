@@ -1,5 +1,23 @@
-#! Root module of the `miden::tx_kernel_core` library.
-#!
-#! This library holds the internal implementation modules of the transaction kernel (prologue,
-#! epilogue, note processing, account, asset, memory, etc.). They are not part of the kernel's
-#! public syscall API (defined in the `tx-kernel` library's `api.masm`).
+# Root module of the `miden::tx_kernel_core` library.
+#
+# This library holds the internal implementation modules of the transaction kernel (prologue,
+# epilogue, note processing, account, asset, memory, etc.). They are not part of the kernel's
+# public syscall API (defined in the `tx-kernel` library's `api.masm`).
+
+pub mod account
+pub mod account_update
+pub mod asset
+pub mod asset_vault
+mod callbacks
+pub mod constants
+pub mod epilogue
+pub mod faucet
+pub mod fungible_asset
+pub mod input_note
+pub mod link_map
+pub mod memory
+pub mod non_fungible_asset
+pub mod note
+pub mod output_note
+pub mod prologue
+pub mod tx

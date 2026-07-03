@@ -14,7 +14,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, Transactio
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
-use rand::Rng;
+use rand::RngExt;
 
 use super::utils::MockChainBlockExt;
 use crate::{AccountState, Auth, MockChain, TxContextInput};

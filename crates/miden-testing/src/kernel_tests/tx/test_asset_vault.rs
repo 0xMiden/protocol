@@ -40,7 +40,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use mock::account->mock_account
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
@@ -161,7 +161,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
         "
         use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use mock::account->mock_account
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
