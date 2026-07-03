@@ -402,11 +402,8 @@ impl TransactionScript {
                 if entrypoint.is_some() {
                     return Err(TransactionScriptError::MultipleProceduresWithAttribute);
                 }
-                entrypoint = Some(
-                    proc_export
-                        .node
-                        .ok_or(TransactionScriptError::NoProcedureWithAttribute)?,
-                );
+                entrypoint =
+                    Some(proc_export.node.ok_or(TransactionScriptError::NoProcedureWithAttribute)?);
             }
         }
 
@@ -441,11 +438,10 @@ impl TransactionScript {
         path: &Path,
     ) -> Result<Self, TransactionScriptError> {
         // Find the export matching the path
-        let export = library
-            .manifest
-            .exports()
-            .find(|e| e.path().as_ref() == path)
-            .ok_or_else(|| TransactionScriptError::ProcedureNotFound(path.to_string().into()))?;
+        let export =
+            library.manifest.exports().find(|e| e.path().as_ref() == path).ok_or_else(|| {
+                TransactionScriptError::ProcedureNotFound(path.to_string().into())
+            })?;
 
         // Get the procedure export and verify it has the @transaction_script attribute
         let proc_export = export
