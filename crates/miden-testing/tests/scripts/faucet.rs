@@ -83,7 +83,8 @@ pub struct FaucetTestParams {
 pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
     format!(
         "
-            begin
+            @transaction_script
+            pub proc main
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
@@ -481,7 +482,8 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 
     let tx_script_code = format!(
         "
-            begin
+            @transaction_script
+            pub proc main
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
@@ -2242,7 +2244,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
 
     let tx_script_code = format!(
         "
-            begin
+            @transaction_script
+            pub proc main
                 # --- First mint: mint {amount_1} tokens to recipient_1 ---
                 push.{recipient_1}
                 push.{note_type}

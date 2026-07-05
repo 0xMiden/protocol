@@ -317,7 +317,8 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
         end
         ",
@@ -407,7 +408,8 @@ async fn test_multisig_smart_set_procedure_policy(
     // stack is preserved across the boundary), so we must manually drop the 7 elements we pushed.
     let set_policy_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{root}
             push.{note_restrictions}
             push.{delayed_threshold}
@@ -500,7 +502,8 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     let target_root = BasicWallet::move_asset_to_note_root().as_word();
     let set_policy_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{root}
             push.0     # note_restrictions
             push.0     # delayed_threshold

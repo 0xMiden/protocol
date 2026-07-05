@@ -40,7 +40,8 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
         "
       use mock::account
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE1}
           push.{FUNGIBLE_ASSET_ID1}
           call.account::add_asset dropw dropw
@@ -92,7 +93,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET1_VALUE}
           push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
@@ -182,7 +184,8 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -242,7 +245,8 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]

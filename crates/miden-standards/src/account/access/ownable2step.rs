@@ -32,6 +32,15 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// must explicitly accept the transfer before it takes effect, preventing accidental transfers
 /// to incorrect addresses.
 ///
+/// ## Security considerations
+///
+/// Access control is based on the note sender (the account ID that created the note), which
+/// authenticates *which account* created a note but not the *code* that executed when it was
+/// created. It is meaningful only when every account registered as owner enforces strong
+/// authentication. Registering a permissionless account (for example one using `no_auth`) as
+/// owner provides no access restriction: anyone can make such an account emit a note with an
+/// arbitrary script root and that account's ID as sender, defeating the owner check.
+///
 /// ## Storage Layout
 ///
 /// The ownership data is stored in a single word:

@@ -101,7 +101,8 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
           push.{ASSET_ID}
           call.faucet::mint
@@ -194,7 +195,8 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         "
         use mock::faucet
 
-        begin
+        @transaction_script
+        pub proc main
             push.0
             push.0
             push.0
@@ -310,7 +312,8 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
           push.{ASSET_ID}
           call.faucet::mint
@@ -430,7 +433,8 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE}
           push.{FUNGIBLE_ASSET_ID}
           call.faucet::burn
@@ -614,7 +618,8 @@ async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
           push.{ASSET_ID}
           call.faucet::burn

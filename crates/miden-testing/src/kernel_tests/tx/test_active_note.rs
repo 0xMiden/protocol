@@ -60,7 +60,8 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
     let code = "
         use miden::protocol::active_note
 
-        begin
+        @transaction_script
+        pub proc main
             # try to get the sender from transaction script
             exec.active_note::get_sender
         end
