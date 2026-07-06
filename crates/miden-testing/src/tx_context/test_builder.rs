@@ -188,7 +188,7 @@ impl TestTransactionBuilder {
             .extend_advice_inputs(self.advice_inputs)
             .tx_script_args(self.tx_script_args)
             .auth_args(self.auth_args)
-            .extend_expected_output_notes(self.expected_output_notes)
+            .expected_output_notes(self.expected_output_notes)
             .with_source_manager(self.source_manager);
 
         if let Some(tx_script) = self.tx_script {

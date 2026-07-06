@@ -225,7 +225,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     ///
     /// A [`RawOutputNote::Partial`] note is ignored, since it does not carry the recipient details
     /// required to reconstruct the note.
-    pub fn extend_expected_output_note(mut self, output_note: RawOutputNote) -> Self {
+    pub fn expected_output_note(mut self, output_note: RawOutputNote) -> Self {
         if let RawOutputNote::Full(note) = output_note {
             self.expected_output_notes.push(note);
         }
@@ -234,8 +234,8 @@ impl<'chain> MockTransactionBuilder<'chain> {
 
     /// Extends the expected output notes.
     ///
-    /// This is the iterator equivalent of [`Self::extend_expected_output_note`].
-    pub fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
+    /// This is the iterator equivalent of [`Self::expected_output_note`].
+    pub fn expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         let output_notes = output_notes.into_iter().filter_map(|note| match note {
             RawOutputNote::Full(note) => Some(note),
             RawOutputNote::Partial(_) => None,
