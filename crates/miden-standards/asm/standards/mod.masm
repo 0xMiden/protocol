@@ -1,0 +1,5 @@
+#! Root module of the `miden::standards` library.
+#!
+#! The standards library provides the reusable account components, note scripts, and supporting
+#! modules built on top of the Miden protocol. The library API is defined by the modules in this
+#! directory.

@@ -24,7 +24,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use crate::account::account_component_code;
 
-account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
+account_component_code!(GUARDED_MULTISIG_CODE, "miden-standards-auth-guarded-multisig.masp");
 
 // CONSTANTS
 // ================================================================================================

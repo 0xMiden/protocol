@@ -51,7 +51,10 @@ pub enum TokenPolicyManagerError {
     DuplicateActivePolicy { kind: &'static str },
 }
 
-account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
+account_component_code!(
+    POLICY_MANAGER_CODE,
+    "miden-standards-faucets-policies-policy-manager.masp"
+);
 
 // PROCEDURE ROOTS
 // ================================================================================================

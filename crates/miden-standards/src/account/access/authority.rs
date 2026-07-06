@@ -22,7 +22,7 @@ use crate::account::account_component_code;
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(AUTHORITY_CODE, "access/authority.masl");
+account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority")

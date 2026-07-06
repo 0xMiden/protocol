@@ -3,7 +3,7 @@ use miden_protocol::account::{AccountComponent, AccountComponentName};
 
 use crate::account::account_component_code;
 
-account_component_code!(NO_AUTH_CODE, "auth/no_auth.masl");
+account_component_code!(NO_AUTH_CODE, "miden-standards-auth-no-auth.masp");
 
 /// An [`AccountComponent`] implementing a no-authentication scheme.
 ///

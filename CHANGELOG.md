@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
+- [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
+
 ## v0.15.3 (2026-06-10)
 
 - [BREAKING] Changed AggLayerBridge to store its AggLayer network ID in account storage ([#3062](https://github.com/0xMiden/protocol/pull/3062)).

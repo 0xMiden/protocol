@@ -25,7 +25,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
-account_component_code!(SINGLESIG_ACL_CODE, "auth/singlesig_acl.masl");
+account_component_code!(SINGLESIG_ACL_CODE, "miden-standards-auth-singlesig-acl.masp");
 
 // CONSTANTS
 // ================================================================================================

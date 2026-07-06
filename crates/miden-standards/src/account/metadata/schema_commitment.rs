@@ -27,6 +27,7 @@ use miden_protocol::assembly::Library;
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
@@ -35,9 +36,11 @@ use miden_protocol::utils::sync::LazyLock;
 static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
+        "/assets/components/miden-standards-metadata-schema-commitment.masp"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
+    let package = Package::read_from_bytes(bytes)
+        .expect("shipped Storage Schema package failed to deserialize");
+    (*package.mast).clone()
 });
 
 /// Schema commitment slot name.

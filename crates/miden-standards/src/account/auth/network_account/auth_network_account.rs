@@ -18,7 +18,7 @@ use super::{
 };
 use crate::account::account_component_code;
 
-account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
+account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================

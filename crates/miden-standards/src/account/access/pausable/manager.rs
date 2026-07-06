@@ -7,7 +7,7 @@ use crate::procedure_root;
 // PAUSABLE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(PAUSABLE_MANAGER_CODE, "access/pausable/manager.masl");
+account_component_code!(PAUSABLE_MANAGER_CODE, "miden-standards-access-pausable-manager.masp");
 
 procedure_root!(
     PAUSABLE_MANAGER_PAUSE,

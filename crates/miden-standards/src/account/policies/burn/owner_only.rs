@@ -9,7 +9,7 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_BURN_POLICY_CODE,
-    "faucets/policies/burn/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-burn-owner-controlled-owner-only.masp"
 );
 
 procedure_root!(

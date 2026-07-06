@@ -31,13 +31,13 @@ impl TransactionMastStore {
     /// - Miden core library [`CoreLibrary`].
     /// - Miden protocol library [`ProtocolLib`].
     /// - Miden standards library [`StandardsLib`].
-    /// - Transaction kernel [`TransactionKernel::kernel`].
+    /// - Transaction kernel [`TransactionKernel::package`].
     pub fn new() -> Self {
         let mast_forests = RwLock::new(BTreeMap::new());
         let store = Self { mast_forests };
 
         // load transaction kernel MAST forest
-        let kernels_forest = TransactionKernel::kernel().mast_forest().clone();
+        let kernels_forest = TransactionKernel::package().mast.mast_forest().clone();
         store.insert(kernels_forest);
 
         // load miden-core-lib MAST forest
@@ -118,7 +118,7 @@ mod tests {
         // Simulate loading account code by inserting the kernel forest again
         // (it adds no new entries since they already exist, but this exercises
         // the insert path without needing to construct a custom MastForest)
-        let kernel_forest = TransactionKernel::kernel().mast_forest().clone();
+        let kernel_forest = TransactionKernel::package().mast.mast_forest().clone();
         store1.insert(kernel_forest);
 
         // A fresh store should be at exactly the same baseline
