@@ -1,0 +1,71 @@
+use agglayer::bridge::bridge_config
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const DEREGISTER_AGG_FAUCET_NUM_STORAGE_ITEMS = 2
+
+const STORAGE_START_PTR = 0
+const FAUCET_ID_SUFFIX = 0
+const FAUCET_ID_PREFIX = 1
+
+# ERRORS
+# =================================================================================================
+
+const ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_FAUCET expects exactly 2 note storage items"
+const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET note attachment target account does not match consuming account"
+
+#! Agglayer Bridge DEREGISTER_AGG_FAUCET script: deregisters the faucet with the given ID,
+#! clearing every registry/metadata entry the bridge holds for it.
+#!
+#! This note can only be consumed by the Agglayer Bridge account targeted by the note attachment,
+#! and only if it was sent by the bridge admin.
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge_config::deregister_faucet procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (2 felts total):
+#! - faucet_id_suffix [0] : 1 felt
+#! - faucet_id_prefix [1] : 1 felt
+#!
+#! Panics if:
+#! - The note attachment target account does not match the consuming bridge account.
+#! - The note does not contain exactly 2 storage items.
+#! - The account does not expose the deregister_faucet procedure.
+#! - The faucet is not currently registered (panics inside deregister_faucet).
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory
+    push.STORAGE_START_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    # Validate the number of storage items
+    push.DEREGISTER_AGG_FAUCET_NUM_STORAGE_ITEMS assert_eq.err=ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # Build deregister_faucet args by loading the two stored felts explicitly.
+    # deregister_faucet expects: [faucet_id_suffix, faucet_id_prefix, pad(14)]
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Deregister the faucet in the bridge
+    call.bridge_config::deregister_faucet
+    # => [pad(18)]
+
+    drop drop
+    # => [pad(16)]
+end

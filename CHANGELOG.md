@@ -77,6 +77,7 @@
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- Introduced `MockTransactionBuilder`, created via `MockChain::build_transaction` ([#3172](https://github.com/0xMiden/protocol/pull/3172)).
 - [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
 - Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
@@ -120,6 +121,7 @@
 - [BREAKING] Removed `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 - Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [agglayer] Added faucet deregistration, letting the bridge admin revoke a registered faucet ([#2838](https://github.com/0xMiden/protocol/pull/2838)).
 
 ### Changes
 
