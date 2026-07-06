@@ -22,7 +22,7 @@ use miden_protocol::note::{
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::vm::{AdviceMap, Package};
 use miden_protocol::{Felt, Word};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::code_builder::CodeBuilder;
 

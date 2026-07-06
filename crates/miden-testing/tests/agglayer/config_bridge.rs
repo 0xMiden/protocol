@@ -13,7 +13,13 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    AccountId,
+    AccountIdVersion,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMapKey,
+};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
@@ -70,7 +76,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // Use a dummy faucet ID to register (any valid AccountId will do)
     let faucet_to_register =
-        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountType::Public);
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32]);
 
     // Verify the faucet is NOT in the registry before registration
     let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();
@@ -164,9 +170,9 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     // Two distinct faucet IDs that both share the same origin token address but live on
     // different origin networks.
     let faucet_network_1 =
-        AccountId::dummy([11; 15], AccountIdVersion::Version1, AccountType::Public);
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([11; 32]);
     let faucet_network_2 =
-        AccountId::dummy([22; 15], AccountIdVersion::Version1, AccountType::Public);
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([22; 32]);
 
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
@@ -294,8 +300,12 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
     );
     builder.add_account(bridge_account.clone())?;
 
-    let faucet_to_register =
-        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountType::Public);
+    let faucet_to_register = AccountId::dummy(
+        [42; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
     let origin_network = 1u32;
@@ -431,8 +441,12 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     );
     builder.add_account(bridge_account.clone())?;
 
-    let faucet_to_register =
-        AccountId::dummy([77; 15], AccountIdVersion::Version1, AccountType::Public);
+    let faucet_to_register = AccountId::dummy(
+        [77; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
     let origin_network = 1u32;
@@ -556,7 +570,12 @@ async fn test_deregister_agg_faucet_rejects_invalid(
     );
     builder.add_account(bridge_account.clone())?;
 
-    let faucet_id = AccountId::dummy([7; 15], AccountIdVersion::Version1, AccountType::Public);
+    let faucet_id = AccountId::dummy(
+        [7; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     // Register the faucet first only for the non-admin case, so its panic comes from the auth check
     // rather than the assert_faucet_registered check.

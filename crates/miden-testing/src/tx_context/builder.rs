@@ -15,16 +15,12 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
     RawOutputNote,
     TransactionArgs,
     TransactionInputs,
     TransactionScript,
 };
-use miden_standards::testing::account_component::IncrNonceAuthComponent;
-use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -40,20 +36,21 @@ use crate::MockChain;
 ///
 /// # Examples
 ///
-/// Create a new account and execute code:
+/// Create a transaction context for an existing account and execute code:
 /// ```
 /// # use anyhow::Result;
-/// # use miden_testing::TransactionContextBuilder;
-/// # use miden_protocol::{account::AccountBuilder, Felt};
-/// # use miden_protocol::transaction::TransactionKernel;
+/// # use miden_protocol::Felt;
+/// # use miden_testing::{Auth, MockChain};
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<()> {
-/// let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+/// let mut builder = MockChain::builder();
+/// let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+/// let mock_chain = builder.build()?;
+/// let tx_context = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?;
 ///
 /// let code = "
-/// use $kernel::prologue
-/// use mock::account
+/// use miden::tx_kernel_core::prologue
 ///
 /// begin
 ///     exec.prologue::prepare_transaction
@@ -84,7 +81,6 @@ pub struct TransactionContextBuilder {
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     is_lazy_loading_enabled: bool,
-    is_debug_mode_enabled: bool,
 }
 
 impl TransactionContextBuilder {
@@ -105,44 +101,7 @@ impl TransactionContextBuilder {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
-    }
-
-    /// Initializes a [TransactionContextBuilder] with a mock account.
-    ///
-    /// The wallet:
-    ///
-    /// - Includes a series of mocked assets ([miden_protocol::asset::AssetVault::mock()]).
-    /// - Has a nonce of `1` (so it does not imply seed validation).
-    /// - Has an ID of [`ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE`].
-    /// - Has an account code based on an
-    ///   [miden_standards::testing::account_component::MockAccountComponent].
-    pub fn with_existing_mock_account() -> Self {
-        Self::new(Account::mock(
-            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-            IncrNonceAuthComponent,
-        ))
-    }
-
-    /// Same as [`Self::with_existing_mock_account`] but with a [`NoopAuthComponent`].
-    pub fn with_noop_auth_account() -> Self {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, NoopAuthComponent);
-
-        Self::new(account)
-    }
-
-    /// Initializes a [TransactionContextBuilder] with a mocked fungible faucet.
-    pub fn with_fungible_faucet(acct_id: u128) -> Self {
-        let account = Account::mock_fungible_faucet(acct_id);
-        Self::new(account)
-    }
-
-    /// Initializes a [TransactionContextBuilder] with a mocked non-fungible faucet.
-    pub fn with_non_fungible_faucet(acct_id: u128) -> Self {
-        let account = Account::mock_non_fungible_faucet(acct_id);
-        Self::new(account)
     }
 
     /// Extend the advice inputs with the provided [AdviceInputs] instance.
@@ -174,12 +133,6 @@ impl TransactionContextBuilder {
         self.foreign_account_inputs.extend(
             inputs.into_iter().map(|(account, witness)| (account.id(), (account, witness))),
         );
-        self
-    }
-
-    /// Extend the set of used input notes
-    pub fn extend_input_notes(mut self, input_notes: Vec<Note>) -> Self {
-        self.input_notes.extend(input_notes);
         self
     }
 
@@ -218,15 +171,6 @@ impl TransactionContextBuilder {
     /// loading events.
     pub fn disable_lazy_loading(mut self) -> Self {
         self.is_lazy_loading_enabled = false;
-        self
-    }
-
-    /// Disables debug mode.
-    ///
-    /// For performance-sensitive applications, debug mode should be disabled because executing in
-    /// debug mode may be up to 100x slower.
-    pub fn disable_debug_mode(mut self) -> Self {
-        self.is_debug_mode_enabled = false;
         self
     }
 
@@ -325,7 +269,7 @@ impl TransactionContextBuilder {
             mast_forest_store.load_account_code(tx_inputs.account().code());
 
             for (account, _) in self.foreign_account_inputs.values() {
-                mast_forest_store.insert(account.code().mast());
+                mast_forest_store.load_account_code(account.code());
             }
 
             mast_forest_store
@@ -341,13 +285,6 @@ impl TransactionContextBuilder {
             source_manager: self.source_manager,
             note_scripts: self.note_scripts,
             is_lazy_loading_enabled: self.is_lazy_loading_enabled,
-            is_debug_mode_enabled: self.is_debug_mode_enabled,
         })
-    }
-}
-
-impl Default for TransactionContextBuilder {
-    fn default() -> Self {
-        Self::with_existing_mock_account()
     }
 }

@@ -1,24 +1,26 @@
-use rand_xoshiro::rand_core::SeedableRng;
+use rand::{RngExt, SeedableRng};
 
-use crate::account::{AccountId, AccountIdV1, AccountIdVersion, AccountType};
+use crate::account::{AccountId, AccountIdV1, AccountIdVersion, AccountType, AssetCallbackFlag};
 
 // CONSTANTS
 // --------------------------------------------------------------------------------------------
 
 // REGULAR ACCOUNTS - PRIVATE
-pub const ACCOUNT_ID_SENDER: u128 = account_id(AccountType::Private, 0xfabb_ccde);
-pub const ACCOUNT_ID_PRIVATE_SENDER: u128 = account_id(AccountType::Private, 0xbfcc_dcee);
+pub const ACCOUNT_ID_SENDER: u128 =
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0xfabb_ccde);
+pub const ACCOUNT_ID_PRIVATE_SENDER: u128 =
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0xbfcc_dcee);
 pub const ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE: u128 =
-    account_id(AccountType::Private, 0xccdd_eeff);
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0xccdd_eeff);
 // REGULAR ACCOUNTS - PUBLIC
 pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE: u128 =
-    account_id(AccountType::Public, 0xaabb_ccdd);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xaabb_ccdd);
 pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2: u128 =
-    account_id(AccountType::Public, 0xbbcc_ddee);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xbbcc_ddee);
 pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE: u128 =
-    account_id(AccountType::Public, 0xacdd_eefc);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xacdd_eefc);
 pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE_ON_CHAIN_2: u128 =
-    account_id(AccountType::Public, 0xeeff_ccdd);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xeeff_ccdd);
 
 // These faucet IDs all have a unique prefix and suffix felts. This is to ensure that when they
 // are used to issue an asset they don't cause us to run into the "multiple leaf" case when
@@ -26,30 +28,42 @@ pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE_ON_CHAIN_2: u128 =
 // this time.
 
 // FUNGIBLE TOKENS - PRIVATE
-pub const ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET: u128 = account_id(AccountType::Private, 0xfabb_cddd);
+pub const ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET: u128 =
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0xfabb_cddd);
 // FUNGIBLE TOKENS - PUBLIC
 /// A fee faucet ID for use in testing scenarios.
-pub const ACCOUNT_ID_FEE_FAUCET: u128 = account_id(AccountType::Public, 0xabcd_acde);
-pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET: u128 = account_id(AccountType::Public, 0xaabc_bcde);
-pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1: u128 = account_id(AccountType::Public, 0xbaca_ddef);
-pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2: u128 = account_id(AccountType::Public, 0xccdb_eefa);
-pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3: u128 = account_id(AccountType::Public, 0xeeff_cc99);
+pub const ACCOUNT_ID_FEE_FAUCET: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xabcd_acde);
+pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xaabc_bcde);
+pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xbaca_ddef);
+pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xccdb_eefa);
+pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xeeff_cc99);
+/// A fungible faucet whose ID has the [`AssetCallbackFlag::Enabled`] bit set, so assets it issues
+/// trigger callbacks.
+pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS: u128 =
+    account_id(AccountType::Public, AssetCallbackFlag::Enabled, 0xdaad_bcef);
 
 // NON-FUNGIBLE TOKENS - PRIVATE
 pub const ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET: u128 =
-    account_id(AccountType::Private, 0xaabc_ccde);
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0xaabc_ccde);
 // NON-FUNGIBLE TOKENS - PUBLIC
 pub const ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET: u128 =
-    account_id(AccountType::Public, 0xbcca_ddef);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xbcca_ddef);
 pub const ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1: u128 =
-    account_id(AccountType::Public, 0xccdf_eefa);
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0xccdf_eefa);
 
 // TEST ACCOUNT IDs WITH CERTAIN PROPERTIES
 /// The Account Id with the maximum possible one bits.
 pub const ACCOUNT_ID_MAX_ONES: u128 =
-    account_id(AccountType::Public, 0) | 0x7fff_ffff_ffff_ff00_7fff_ffff_ffff_ff00;
+    account_id(AccountType::Public, AssetCallbackFlag::Disabled, 0)
+        | 0x7fff_ffff_ffff_ff00_7fff_ffff_ffff_ff00;
 /// The Account Id with the maximum possible zero bits.
-pub const ACCOUNT_ID_MAX_ZEROES: u128 = account_id(AccountType::Private, 0x0000_0000);
+pub const ACCOUNT_ID_MAX_ZEROES: u128 =
+    account_id(AccountType::Private, AssetCallbackFlag::Disabled, 0x0000_0000);
 
 // UTILITIES
 // --------------------------------------------------------------------------------------------
@@ -66,11 +80,16 @@ pub const ACCOUNT_ID_MAX_ZEROES: u128 = account_id(AccountType::Private, 0x0000_
 /// prefix: [0xaa | 5 zero bytes | 0xbb | metadata byte]
 /// suffix: [2 zero bytes | 0xcc | 3 zero bytes | 0xdd | zero byte]
 /// ```
-pub const fn account_id(account_type: AccountType, random: u32) -> u128 {
+pub const fn account_id(
+    account_type: AccountType,
+    asset_callbacks: AssetCallbackFlag,
+    random: u32,
+) -> u128 {
     let mut prefix: u64 = 0;
 
     prefix |= AccountIdVersion::Version1 as u64;
     prefix |= (account_type as u64) << AccountIdV1::ACCOUNT_TYPE_SHIFT;
+    prefix |= (asset_callbacks as u64) << AccountIdV1::ASSET_CALLBACK_FLAG_SHIFT;
 
     // Produce non-trivial IDs by distributing the random value.
     let random_1st_felt_upper = random & 0xff00_0000;
@@ -88,6 +107,13 @@ pub const fn account_id(account_type: AccountType, random: u32) -> u128 {
     id |= (random_2nd_felt_lower as u128) << 8;
 
     id
+}
+
+impl AccountId {
+    /// Returns an [`AccountIdBuilder`].
+    pub fn builder() -> AccountIdBuilder {
+        AccountIdBuilder::new()
+    }
 }
 
 /// A builder for creating [`AccountId`]s for testing purposes.
@@ -114,17 +140,27 @@ pub const fn account_id(account_type: AccountType, random: u32) -> u128 {
 /// ```
 pub struct AccountIdBuilder {
     account_type: Option<AccountType>,
+    asset_callbacks: AssetCallbackFlag,
 }
 
 impl AccountIdBuilder {
     /// Creates a new [`AccountIdBuilder`].
     pub fn new() -> Self {
-        Self { account_type: None }
+        Self {
+            account_type: None,
+            asset_callbacks: AssetCallbackFlag::Disabled,
+        }
     }
 
     /// Sets the [`AccountType`] of the generated [`AccountId`] to the provided value.
     pub fn account_type(mut self, account_type: AccountType) -> Self {
         self.account_type = Some(account_type);
+        self
+    }
+
+    /// Sets the [`AssetCallbackFlag`] of the generated [`AccountId`] to the provided value.
+    pub fn asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
+        self.asset_callbacks = asset_callbacks;
         self
     }
 
@@ -137,7 +173,12 @@ impl AccountIdBuilder {
             None => rng.random(),
         };
 
-        AccountId::dummy(rng.random(), AccountIdVersion::Version1, account_type)
+        AccountId::dummy(
+            rng.random(),
+            AccountIdVersion::Version1,
+            account_type,
+            self.asset_callbacks,
+        )
     }
 
     /// Builds an [`AccountId`] using the provided seed as input for an RNG implemented in

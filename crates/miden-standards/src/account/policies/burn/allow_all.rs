@@ -7,7 +7,10 @@ use crate::procedure_root;
 // ALLOW-ALL BURN POLICY
 // ================================================================================================
 
-account_component_code!(ALLOW_ALL_BURN_POLICY_CODE, "faucets/policies/burn/allow_all.masl");
+account_component_code!(
+    ALLOW_ALL_BURN_POLICY_CODE,
+    "miden-standards-faucets-policies-burn-allow-all.masp"
+);
 
 procedure_root!(
     ALLOW_ALL_POLICY_ROOT,

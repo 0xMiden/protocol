@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::asset::{Asset, AssetVaultKey};
+use crate::asset::{Asset, AssetId};
 use crate::errors::AssetError;
 use crate::utils::serde::{
     ByteReader,
@@ -15,11 +15,11 @@ use crate::{Felt, Word};
 
 /// Describes the updates to an [`AssetVault`](crate::account::AssetVault) after a transaction.
 ///
-/// The patch entries map an [`AssetVaultKey`] to the final [`Word`] value of the asset after the
+/// The patch entries map an [`AssetId`] to the final [`Word`] value of the asset after the
 /// update. If the asset was removed, the value is [`Word::empty`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AccountVaultPatch {
-    entries: BTreeMap<AssetVaultKey, Word>,
+    entries: BTreeMap<AssetId, Word>,
 }
 
 impl AccountVaultPatch {
@@ -32,12 +32,12 @@ impl AccountVaultPatch {
     ///
     /// Returns an error if the provided entries are not valid assets, unless the value is
     /// [`Word::empty`].
-    pub fn new(entries: BTreeMap<AssetVaultKey, Word>) -> Result<Self, AssetError> {
+    pub fn new(entries: BTreeMap<AssetId, Word>) -> Result<Self, AssetError> {
         for (key, value) in entries.iter() {
             // If the asset was not removed (final value != Word::empty), ensure the provided entry
             // is a valid asset.
             if !value.is_empty() {
-                Asset::from_key_value(*key, *value)?;
+                Asset::from_id_and_value(*key, *value)?;
             }
         }
 
@@ -46,12 +46,12 @@ impl AccountVaultPatch {
 
     /// Inserts an asset into the patch, overwriting the previous value.
     pub fn insert_asset(&mut self, asset: Asset) {
-        self.entries.insert(asset.vault_key(), asset.to_value_word());
+        self.entries.insert(asset.id(), asset.to_value_word());
     }
 
     /// Marks an asset as removed by inserting [`Word::empty`] into the patch.
-    pub fn remove_asset(&mut self, asset_vault_key: AssetVaultKey) {
-        self.entries.insert(asset_vault_key, Word::empty());
+    pub fn remove_asset(&mut self, asset_id: AssetId) {
+        self.entries.insert(asset_id, Word::empty());
     }
 
     /// Returns the number of assets being patched.
@@ -60,18 +60,17 @@ impl AccountVaultPatch {
     }
 
     /// Returns a reference to the underlying map of the vault patch.
-    pub fn as_map(&self) -> &BTreeMap<AssetVaultKey, Word> {
+    pub fn as_map(&self) -> &BTreeMap<AssetId, Word> {
         &self.entries
     }
 
     /// Consumes self and returns the underlying map of the vault patch.
-    pub fn into_map(self) -> BTreeMap<AssetVaultKey, Word> {
+    pub fn into_map(self) -> BTreeMap<AssetId, Word> {
         self.entries
     }
 
-    /// Returns an iterator over the asset key-value pairs contained in this patch, sorted by vault
-    /// key.
-    pub fn iter(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
+    /// Returns an iterator over the assets contained in this patch, sorted by ID.
+    pub fn iter(&self) -> impl Iterator<Item = (&AssetId, &Word)> {
         self.entries.iter()
     }
 
@@ -81,7 +80,7 @@ impl AccountVaultPatch {
     }
 
     /// Merges another vault patch into this one. Entries from `other` overwrite any existing
-    /// entries in `self` for the same [`AssetVaultKey`].
+    /// entries in `self` for the same [`AssetId`].
     pub fn merge(&mut self, other: Self) {
         self.entries.extend(other.entries);
     }
@@ -89,8 +88,8 @@ impl AccountVaultPatch {
     /// Appends the vault patch to the given `elements` from which the patch commitment will be
     /// computed.
     pub(super) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
-        for (asset_vault_key, asset_value_or_empty_word) in self.entries.iter() {
-            elements.extend_from_slice(asset_vault_key.to_word().as_elements());
+        for (asset_id, asset_value_or_empty_word) in self.entries.iter() {
+            elements.extend_from_slice(asset_id.to_word().as_elements());
             elements.extend_from_slice(asset_value_or_empty_word.as_elements());
         }
 
@@ -106,7 +105,7 @@ impl AccountVaultPatch {
 
     /// Returns an iterator over the keys of assets that were removed (i.e. whose value is
     /// [`Word::empty`]).
-    pub fn removed_asset_keys(&self) -> impl Iterator<Item = &AssetVaultKey> {
+    pub fn removed_asset_ids(&self) -> impl Iterator<Item = &AssetId> {
         self.entries
             .iter()
             .filter(|(_key, value)| value.is_empty())
@@ -120,22 +119,22 @@ impl AccountVaultPatch {
             .iter()
             .filter(|(_key, value)| !value.is_empty())
             .map(|(key, value)| {
-                Asset::from_key_value(*key, *value).expect("patch should track valid assets")
+                Asset::from_id_and_value(*key, *value).expect("patch should track valid assets")
             })
     }
 }
 
 impl Serializable for AccountVaultPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_usize(self.removed_asset_keys().count());
-        target.write_many(self.removed_asset_keys());
+        target.write_usize(self.removed_asset_ids().count());
+        target.write_many(self.removed_asset_ids());
 
         target.write_usize(self.updated_assets().count());
         target.write_many(self.updated_assets());
     }
 
     fn get_size_hint(&self) -> usize {
-        let removed_size = AssetVaultKey::SERIALIZED_SIZE * self.removed_asset_keys().count();
+        let removed_size = AssetId::SERIALIZED_SIZE * self.removed_asset_ids().count();
         let updated_size: usize = self.updated_assets().map(|asset| asset.get_size_hint()).sum();
 
         2 * 0usize.get_size_hint() + removed_size + updated_size
@@ -145,15 +144,15 @@ impl Serializable for AccountVaultPatch {
 impl Deserializable for AccountVaultPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_removed_assets = source.read_usize()?;
-        let mut entries: BTreeMap<AssetVaultKey, Word> = source
-            .read_many_iter::<AssetVaultKey>(num_removed_assets)?
-            .map(|result| result.map(|key| (key, Word::empty())))
+        let mut entries: BTreeMap<AssetId, Word> = source
+            .read_many_iter::<AssetId>(num_removed_assets)?
+            .map(|result| result.map(|id| (id, Word::empty())))
             .collect::<Result<_, _>>()?;
 
         let num_added_assets = source.read_usize()?;
         for result in source.read_many_iter::<Asset>(num_added_assets)? {
             let asset = result?;
-            entries.insert(asset.vault_key(), asset.to_value_word());
+            entries.insert(asset.id(), asset.to_value_word());
         }
 
         Self::new(entries).map_err(|err| DeserializationError::InvalidValue(err.to_string()))

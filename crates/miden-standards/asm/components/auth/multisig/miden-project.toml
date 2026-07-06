@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-multisig"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::multisig"
+path      = "multisig.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

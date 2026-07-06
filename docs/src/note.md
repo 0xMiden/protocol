@@ -10,6 +10,11 @@ A `Note` is the medium through which [Accounts](account/index.md) communicate. A
 
 In Miden's hybrid UTXO and account-based model notes represent UTXO's which enable parallel transaction execution and privacy through asynchronous local `Note` production and consumption.
 
+Notes are not only a vehicle for asset transfers. They serve two distinct purposes:
+
+- **Transferring assets** between accounts.
+- **Invoking an account's public procedures**: when a note is consumed, its [script](#script) runs and calls into the target account's interface, acting on the data carried in the note's [storage](#storage). A note cannot change an account arbitrarily; it interacts only through the procedures the account exposes.
+
 ## Note core components
 
 A `Note` is composed of several core components, illustrated below:
@@ -56,7 +61,10 @@ A `Note` can store up to 1024 items in its storage, which adds up to a maximum o
 A unique and immutable identifier for the `Note`.
 :::
 
-The serial number has two main purposes. Firstly by adding some randomness to the `Note` it ensures it's uniqueness, secondly in private notes it helps prevent linkability between the note's hash and its nullifier. The serial number should be a random 32 bytes number chosen by the user. If leaked, the note’s nullifier can be easily computed, potentially compromising privacy.
+The serial number is a random 32-byte value chosen by the note's creator. It serves two purposes:
+
+- **Uniqueness**: its randomness ensures each note is distinct even when two notes hold identical assets, scripts, and inputs, preventing collisions in the notes database.
+- **Privacy**: for a private note the serial number is kept secret. It is one of the inputs to the note's [nullifier](#note-nullifier-ensuring-private-consumption), which is what keeps the note's creation unlinkable from its consumption.
 
 ### Metadata
 
@@ -129,7 +137,7 @@ A note targeted at an account is a note that is intended or even enforced to be 
 #### Use Case Tags
 
 Use case notes are notes that are not intended to be consumed by a specific account, but by anyone willing to fulfill the note's contract. One example is a SWAP note that trades one asset against another. Such a use case note can define the structure of their note tags. A sensible structure for a SWAP note could be:
-- encoding the 2 bits of the note's type.
+- encoding the 1 bit of the note's type.
 - encoding the note script root, i.e. making it identifiable as a SWAP note, for example by
   using 16 bits of the SWAP script root.
 - encoding the SWAP pair, for example by using 8 bits of the offered asset faucet ID and 8 bits
@@ -170,13 +178,24 @@ The `Note` nullifier, computed as:
 hash(SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT)
 ```
 
+Where:
+
+- **`SERIAL_NUM`** — the note's [serial number](#serial-number).
+- **`SCRIPT_ROOT`** — the commitment to the note's [script](#script), i.e. the script's MAST root.
+- **`STORAGE_COMMITMENT`** — a commitment to the note's [storage](#storage).
+- **`ASSET_COMMITMENT`** — a commitment to the note's [assets](#assets).
+- **`METADATA`** — the note's public [metadata](#metadata) (sender, note type, and tag).
+- **`ATTACHMENTS_COMMITMENT`** — a commitment to the note's [attachments](#attachments).
+
+Like the note's ID, the nullifier is a commitment to the note's data, but it is computed differently so that neither can be derived from the other. The serial number is one of its inputs, and its randomness is what makes each note's nullifier unique.
+
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
 - One cannot derive a note's ID from its nullifier.
 - To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, assets_commitment, metadata, and attachments_commitment.
 
-That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
+For a private note, the operator stores only its ID and never sees these components, so only the parties that hold the full `Note` details can tell whether it has been consumed. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/note/nullifier.png').default} style={{width: '70%'}} alt="Nullifier diagram"/>
@@ -228,13 +247,16 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Storage:** Requires exactly 16 storage items specifying:
-  - Requested asset details
-  - Payback note recipient information
-  - Note creation parameters (type, tag, attachment)
+- **Storage:** Requires exactly 16 storage items, laid out as:
+  - Requested asset (8 felts)
+  - Payback recipient digest (4 felts; used for private payback, zero for public)
+  - Payback note type
+  - Payback tag
+  - Payback target account ID prefix (used for public payback, zero for private)
+  - Payback target account ID suffix (used for public payback, zero for private)
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
-  1. Creates a payback note containing the requested asset for the original note issuer
+  1. Creates a payback P2ID note containing the requested asset for the original note issuer. For private payback, the precomputed recipient digest is loaded from storage and used directly. For public payback, the recipient is reconstructed on-chain from the payback target account ID and a serial derived as `swap_serial + 1`, which also registers the preimage in the advice map so the public note can be validated.
   2. Adds the note's asset to the consuming account's vault
 - **Requirements:** Account must expose both:
   - `miden::standards::wallets::basic::receive_asset` procedure

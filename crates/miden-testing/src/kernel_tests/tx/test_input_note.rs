@@ -16,7 +16,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -50,7 +50,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         "
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             {check_note_0}
 
             {check_note_1}
@@ -60,8 +61,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     ",
         check_note_0 = check_asset_info_code(
             0,
-            p2id_note_0_assets.assets().commitment(),
-            p2id_note_0_assets.assets().num_assets()
+            p2any_note_0_assets.assets().commitment(),
+            p2any_note_0_assets.assets().num_assets()
         ),
         check_note_1 = check_asset_info_code(
             1,
@@ -81,7 +82,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2any_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -98,7 +99,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -107,7 +108,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the recipient from the input note
             push.0
             exec.input_note::get_recipient
@@ -151,7 +153,7 @@ async fn test_get_sender() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -160,7 +162,8 @@ async fn test_get_sender() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the sender from the input note
             push.0
             exec.input_note::get_sender
@@ -200,7 +203,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
+        p2any_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -234,14 +237,14 @@ async fn test_get_assets() -> anyhow::Result<()> {
         for (asset_index, asset) in note.assets().iter().enumerate() {
             check_assets_code.push_str(&format!(
                 r#"
-                    # load the asset key stored in memory
+                    # load the asset ID stored in memory
                     padw dup.4 mem_loadw_le
-                    # => [STORED_ASSET_KEY, dest_ptr]
+                    # => [STORED_ASSET_ID, dest_ptr]
 
-                    # assert the asset key matches
-                    push.{NOTE_ASSET_KEY}
-                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
-                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # assert the asset ID matches
+                    push.{NOTE_ASSET_ID}
+                    assert_eqw.err="expected asset ID at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_ID}"
                     # => [dest_ptr]
 
                     # load the asset value stored in memory
@@ -258,7 +261,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
                     add.{ASSET_SIZE}
                     # => [dest_ptr+ASSET_SIZE]
                 "#,
-                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_ID = asset.to_id_word(),
                 NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
@@ -275,7 +278,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         "
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             {check_note_0}
 
             {check_note_1}
@@ -283,7 +287,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
             {check_note_2}
         end
     ",
-        check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
+        check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
@@ -294,7 +298,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2any_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -311,7 +315,7 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -320,7 +324,8 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the storage commitment and length from the input note with index 0 (the only one
             # we have)
             push.0
@@ -361,7 +366,7 @@ async fn test_get_script_root() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -370,7 +375,8 @@ async fn test_get_script_root() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the script root from the input note with index 0 (the only one we have)
             push.0
             exec.input_note::get_script_root
@@ -404,7 +410,7 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
+        p2any_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -413,7 +419,8 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
         r#"
         use miden::protocol::input_note
 
-        begin
+        @transaction_script
+        pub proc main
             # get the serial number from the input note with index 0 (the only one we have)
             push.0
             exec.input_note::get_serial_number

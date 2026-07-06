@@ -1,0 +1,305 @@
+# miden::standards::faucets::non_fungible
+#
+# Non-fungible (NFT) faucet logic: the token symbol slot and accessor, an asset-status registry
+# keyed by the token ID, and the `mint_and_send` / `receive_and_burn` procedures wrapping the
+# active mint/burn policies from the `TokenPolicyManager`.
+#
+# Identity model: the asset value is the off-chain commitment `hash(user_data, salt)`; the
+# protocol derives the asset ID's asset class from the value's first two elements. For an NFT
+# faucet every asset has a unique class, so that class is really a unique identifier of each NFT
+# within the faucet - its token ID. This file therefore calls those two elements
+# (token_id_suffix, token_id_prefix). Uniqueness is enforced on-chain by the status registry
+# keyed by `[token_id_suffix, token_id_prefix, 0, 0]`: a commitment can be issued at most once
+# and, once burned, is permanently consumed.
+#
+# Shared token metadata (name, description, logo_uri, external_link) lives in the parent
+# `miden::standards::faucets` namespace.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::faucet
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::standards::faucets::policies::policy_manager
+
+# =================================================================================================
+# CONSTANTS — slot names
+# =================================================================================================
+
+pub const SYMBOL_SLOT = word("miden::standards::faucets::non_fungible::symbol")
+pub const ASSET_STATUS_SLOT = word("miden::standards::faucets::non_fungible::asset_status")
+
+# =================================================================================================
+# CONSTANTS — status values, memory & errors
+# =================================================================================================
+
+# Asset status codes stored at element 0 of the status registry value.
+const STATUS_ISSUED = 1
+const STATUS_BURNED = 2
+
+# The local memory address holding the asset commitment across the mint flow.
+const ASSET_VALUE_LOCAL = 0
+# The memory address at which a note's assets are written by `active_note::get_assets`.
+const ASSET_PTR = 0
+
+const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
+const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
+const ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
+
+# =================================================================================================
+# PRIVATE HELPERS
+# =================================================================================================
+
+#! Builds the asset-status registry key from a token ID.
+#!
+#! Inputs:  [token_id_suffix, token_id_prefix]
+#! Outputs: [STATUS_KEY]
+#!
+#! Where:
+#! - STATUS_KEY is `[token_id_suffix, token_id_prefix, 0, 0]`. The trailing zeros ensure two asset
+#!   values that collide in their first two elements cannot produce two distinct status keys.
+#!
+#! Invocation: exec
+proc create_status_key
+    push.0 push.0
+    # => [0, 0, token_id_suffix, token_id_prefix]
+
+    movdn.3 movdn.3
+    # => [token_id_suffix, token_id_prefix, 0, 0]
+end
+
+#! Builds a status registry value word from a status code.
+#!
+#! Inputs:  [status]
+#! Outputs: [STATUS_VALUE]
+#!
+#! Where:
+#! - STATUS_VALUE is `[status, 0, 0, 0]`.
+#!
+#! Invocation: exec
+proc build_status_value
+    push.0 push.0 push.0
+    # => [0, 0, 0, status]
+
+    movup.3
+    # => [status, 0, 0, 0]
+end
+
+#! Reads the status registered for a status key from the asset-status registry.
+#!
+#! Inputs:  [STATUS_KEY]
+#! Outputs: [status]
+#!
+#! Where:
+#! - status is the first element of the registry value word; the other elements are always zero.
+#!
+#! Invocation: exec
+proc get_status_by_key
+    push.ASSET_STATUS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [status, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [status]
+end
+
+# =================================================================================================
+# PUBLIC API — SYMBOL
+# =================================================================================================
+
+#! Returns the token symbol (single felt).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [symbol, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_symbol
+    push.SYMBOL_SLOT[0..2] exec.active_account::get_item
+    # => [symbol, 0, 0, 0, pad(16)]
+
+    movdn.4 dropw
+    # => [symbol, pad(15)]
+end
+
+# =================================================================================================
+# PUBLIC API — ASSET STATUS
+# =================================================================================================
+
+#! Returns the status registered for a token ID.
+#!
+#! Inputs:  [token_id_suffix, token_id_prefix, pad(14)]
+#! Outputs: [status, pad(15)]
+#!
+#! Where:
+#! - token_id_suffix, token_id_prefix are the first two elements of the asset commitment.
+#! - status is 0 if not issued, 1 if issued, 2 if burned.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_asset_status
+    exec.create_status_key
+    # => [STATUS_KEY, pad(14)]
+
+    exec.get_status_by_key
+    # => [status, pad(15)]
+end
+
+# =================================================================================================
+# MINT AND SEND
+# =================================================================================================
+
+#! Mints a non-fungible asset for the provided commitment and sends it to the recipient.
+#!
+#! The asset value is the off-chain commitment `hash(user_data, salt)`. The active mint policy
+#! runs over the asset value, the commitment is marked issued in the status registry (asserting
+#! it was not already issued), and an output note carrying the asset is created.
+#!
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Where:
+#! - ASSET_VALUE is the asset commitment.
+#! - tag, note_type configure the output note.
+#! - RECIPIENT is the recipient of the asset.
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - the active mint policy validation fails.
+#! - the faucet is paused.
+#! - the asset commitment has already been issued.
+#!
+#! Invocation: call
+@locals(4)
+@account_procedure
+pub proc mint_and_send
+    # stash the commitment for the status key and the asset creation
+    dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # run the active mint policy over the asset value
+    exec.policy_manager::execute_mint_policy
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # assert the policy did not modify the asset value: for an NFT the value must remain the
+    # unmodified commitment, so a policy that mutates it is rejected
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    # => [ORIG_ASSET_VALUE, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    assert_eqw.err=ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # build the status key from the token ID (commitment elements 0 and 1)
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
+
+    exec.asset::non_fungible_value_into_asset_class
+    # => [token_id_suffix, token_id_prefix, tag, note_type, RECIPIENT, pad(10)]
+
+    exec.create_status_key
+    # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
+
+    # build the ISSUED status value and write it, asserting the commitment was not already issued
+    push.STATUS_ISSUED exec.build_status_value
+    # => [STATUS_VALUE, STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
+
+    swapw
+    # => [STATUS_KEY, STATUS_VALUE, tag, note_type, RECIPIENT, pad(10)]
+
+    push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
+    # => [OLD_STATUS_WORD, tag, note_type, RECIPIENT, pad(10)]
+
+    exec.word::eqz assert.err=ERR_NFT_ALREADY_ISSUED
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # create the output note (keep a second note_idx for add_asset)
+    exec.output_note::create dup
+    # => [note_idx, note_idx, pad(15)]
+
+    # build the asset from the commitment, mint it, add it to the note
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    exec.faucet::create_non_fungible_asset
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    dupw.1 dupw.1
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    exec.faucet::mint
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    exec.output_note::add_asset
+    # => [note_idx, pad(15)]
+end
+
+# =================================================================================================
+# RECEIVE AND BURN
+# =================================================================================================
+
+#! Receives a non-fungible asset from the active note and burns it.
+#!
+#! Burning removes the asset from circulation and marks the commitment BURNED in the status
+#! registry (asserting it was ISSUED). A burned commitment is permanently consumed and can never
+#! be issued again.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active burn policy validation fails.
+#! - the procedure is not called from a note context.
+#! - the note does not contain exactly one asset.
+#! - the asset was not issued by this faucet.
+#! - the asset is not in the issued state.
+#!
+#! Invocation: call
+@account_procedure
+pub proc receive_and_burn
+    # get the single asset from the note (fails if not called from a note context)
+    push.ASSET_PTR exec.active_note::get_assets
+    # => [num_assets, pad(16)]
+
+    eq.1 assert.err=ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS
+    # => [pad(16)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+
+    # run the active burn policy on a copy of the asset
+    dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+
+    # build the status key from the token ID without disturbing [ASSET_ID, ASSET_VALUE]
+    dupw.1
+    # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    exec.asset::non_fungible_value_into_asset_class
+    # => [token_id_suffix, token_id_prefix, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    exec.create_status_key
+    # => [STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    # write BURNED and assert the commitment was ISSUED (old status element)
+    push.STATUS_BURNED exec.build_status_value
+    # => [STATUS_VALUE, STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    swapw
+    # => [STATUS_KEY, STATUS_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
+    # => [OLD_STATUS_WORD, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    movdn.3 drop drop drop
+    # => [old_status, ASSET_ID, ASSET_VALUE, pad(16)]
+
+    eq.STATUS_ISSUED assert.err=ERR_NFT_NOT_ISSUED
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+
+    # burn the asset (validates faucet origin), consuming [ASSET_ID, ASSET_VALUE]
+    exec.faucet::burn
+    # => [pad(16)]
+end

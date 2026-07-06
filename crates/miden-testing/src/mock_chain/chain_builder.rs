@@ -22,6 +22,7 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
+    AssetCallbackFlag,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -55,9 +56,9 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
-use rand::Rng;
+use rand::RngExt;
 
 use crate::mock_chain::chain::AccountAuthenticator;
 use crate::utils::{create_p2any_note, create_spawn_note};
@@ -329,6 +330,9 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
+            .with_asset_callbacks(AssetCallbackFlag::from(
+                token_policy_manager.has_transfer_policy(),
+            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -340,8 +344,11 @@ impl MockChainBuilder {
     /// using default decimals and `AllowAll` policies, then adds it as an existing account with
     /// [`Authority::AuthControlled`].
     ///
-    /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and use [`AccountBuilder`] directly.
+    /// The faucet installs only `AllowAll` mint and burn policies and no transfer policy, so its
+    /// account ID has asset callbacks disabled and its assets transfer freely without triggering a
+    /// faucet callback. For a faucet with transfer policies (and thus callbacks), construct a
+    /// [`FungibleFaucet`] with a [`TokenPolicyManager`] manually and use [`AccountBuilder`]
+    /// directly.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -367,14 +374,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -477,7 +483,8 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a new (uncreated) basic auth-controlled fungible faucet from a
-    /// token-symbol shorthand using default decimals and `AllowAll` policies.
+    /// token-symbol shorthand using default decimals and `AllowAll` mint/burn policies (no transfer
+    /// policy, so asset callbacks are disabled).
     pub fn create_new_faucet(
         &mut self,
         auth_method: Auth,
@@ -499,14 +506,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -669,14 +675,14 @@ impl MockChainBuilder {
         asset: &[Asset],
         note_type: NoteType,
     ) -> Result<Note, NoteError> {
-        let note = P2idNote::create(
-            sender_account_id,
-            target_account_id,
-            asset.to_vec(),
-            note_type,
-            NoteAttachments::default(),
-            &mut self.rng,
-        )?;
+        let note: Note = P2idNote::builder()
+            .sender(sender_account_id)
+            .target(target_account_id)
+            .assets(asset.iter().copied())
+            .note_type(note_type)
+            .generate_serial_number(&mut self.rng)
+            .build()?
+            .into();
         self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
@@ -696,16 +702,16 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
-        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
-
-        let note = P2ideNote::create(
-            sender_account_id,
-            storage,
-            asset.to_vec(),
-            note_type,
-            NoteAttachments::default(),
-            &mut self.rng,
-        )?;
+        let note: Note = P2ideNote::builder()
+            .sender(sender_account_id)
+            .target(target_account_id)
+            .assets(asset.iter().copied())
+            .note_type(note_type)
+            .maybe_reclaim_height(reclaim_height)
+            .maybe_timelock_height(timelock_height)
+            .generate_serial_number(&mut self.rng)
+            .build()?
+            .into();
 
         self.add_output_note(RawOutputNote::Full(note.clone()));
 

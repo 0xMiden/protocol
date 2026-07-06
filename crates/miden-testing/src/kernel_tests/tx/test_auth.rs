@@ -9,7 +9,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{ConditionalAuthComponent, ERR_WRONG_ARGS_MSG};
 use miden_standards::testing::mock_account::MockAccountExt;
 
-use crate::{Auth, TransactionContextBuilder, assert_transaction_executor_error};
+use crate::{Auth, TestTransactionBuilder, assert_transaction_executor_error};
 
 pub const ERR_WRONG_ARGS: MasmError = MasmError::from_static_str(ERR_WRONG_ARGS_MSG);
 
@@ -30,7 +30,7 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
         ONE, // incr_nonce = true
     ];
 
-    let tx_context = TransactionContextBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
     tx_context.execute().await.context("failed to execute transaction")?;
 
@@ -55,7 +55,7 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
         Felt::new_unchecked(101),
     ];
 
-    let tx_context = TransactionContextBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
     let execution_result = tx_context.execute().await;
 
@@ -76,7 +76,8 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
 
     // Create a transaction script that calls the auth procedure
     let tx_script_source = "
-        begin
+        @transaction_script
+        pub proc main
             call.::incr_nonce::auth_incr_nonce
         end
     ";
@@ -85,7 +86,7 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
         .with_dynamically_linked_library(auth_component.component_code())?
         .compile_tx_script(tx_script_source)?;
 
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
     let execution_result = tx_context.execute().await;
 

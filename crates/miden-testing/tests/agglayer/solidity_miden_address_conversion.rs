@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use miden_agglayer::{EthEmbeddedAccountId, agglayer_library};
-use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -50,8 +50,7 @@ async fn execute_program_with_default_host(
 
     let processor = FastProcessor::new(stack_inputs)
         .with_advice(advice_inputs)
-        .map_err(ExecutionError::advice_error_no_context)?
-        .with_debugging(true);
+        .map_err(ExecutionError::advice_error_no_context)?;
     processor.execute(&program, &mut host).await
 }
 
@@ -150,11 +149,13 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         );
 
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-            .with_dynamic_library(CoreLibrary::default())
+            .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .unwrap()
-            .with_dynamic_library(agglayer_library())
+            .with_package(Arc::new(agglayer_library()), Linkage::Dynamic)
             .unwrap()
-            .assemble_program(&script_code)
+            .assemble_program("agglayer-test-script", &script_code)
+            .unwrap()
+            .try_into_program()
             .unwrap();
 
         let exec_output = execute_program_with_default_host(program).await?;

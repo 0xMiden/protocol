@@ -12,7 +12,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -109,7 +109,7 @@ pub(crate) enum TransactionEvent {
         /// The vault root identifying the asset vault from which a witness is requested.
         vault_root: Word,
         /// The asset for which a witness is requested.
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     },
 
     AccountAfterIncrementNonce,
@@ -147,8 +147,7 @@ pub(crate) enum TransactionEvent {
     /// The data necessary to handle an auth request.
     AuthRequest {
         pub_key_commitment: PublicKeyCommitment,
-        tx_summary: TransactionSummary,
-        signature: Option<Vec<Felt>>,
+        tx_summary_or_signature: TxSummaryOrSignature,
     },
 
     Unauthorized {
@@ -163,21 +162,6 @@ pub(crate) enum TransactionEvent {
     },
 
     Progress(TransactionProgressEvent),
-}
-
-#[derive(Debug)]
-pub(crate) struct AssetPatch {
-    pub asset_key: AssetVaultKey,
-    /// The absolute value of `asset_key` in the vault before the operation.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation.
-    pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -215,35 +199,29 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, account_vault_root_ptr]
-                let asset_vault_key = process.get_stack_word(1);
+                // Expected stack state: [event, ASSET_ID, ASSET_VALUE, account_vault_root_ptr]
+                let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(9);
 
-                let asset_vault_key =
-                    AssetVaultKey::try_from(asset_vault_key).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultBefore{Add,Remove}Asset",
-                            source,
-                        }
-                    })?;
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultBefore{Add,Remove}Asset",
+                        source,
+                    }
+                })?;
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(
-                    base_host,
-                    process,
-                    asset_vault_key,
-                    current_vault_root,
-                )?
+                on_account_vault_asset_accessed(base_host, process, asset_id, current_vault_root)?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset
             | TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
-                let asset_key = process.get_stack_word(1);
+                // [event, ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+                let asset_id = process.get_stack_word(1);
                 let initial_vault_value = process.get_stack_word(5);
                 let final_vault_value = process.get_stack_word(9);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountVaultAfterRemoveAsset",
                         source,
@@ -251,7 +229,7 @@ impl TransactionEvent {
                 })?;
 
                 let patch = AssetPatch {
-                    asset_key,
+                    asset_id,
                     initial_vault_value,
                     final_vault_value,
                 };
@@ -262,19 +240,19 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountOnAssetDeltaComputation => Some({
                 // Expected stack state:
-                // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+                // [event, delta_op, ASSET_ID, DELTA_ASSET_VALUE]
                 let delta_op = process.get_stack_item(1);
-                let asset_key = process.get_stack_word(2);
+                let asset_id = process.get_stack_word(2);
                 let delta_asset_value = process.get_stack_word(6);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountOnAssetDeltaComputation",
                         source,
                     }
                 })?;
                 let asset =
-                    Asset::from_key_value(asset_key, delta_asset_value).map_err(|source| {
+                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "AccountOnAssetDeltaComputation",
                             source,
@@ -298,11 +276,11 @@ impl TransactionEvent {
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, vault_root_ptr]
-                let asset_key = process.get_stack_word(1);
+                // [event, ASSET_ID, vault_root_ptr]
+                let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(5);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountVaultBeforeGetAsset",
                         source,
@@ -310,7 +288,7 @@ impl TransactionEvent {
                 })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
+                on_account_vault_asset_accessed(base_host, process, asset_id, vault_root)?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
@@ -450,13 +428,13 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_idx]
-                let asset_key = process.get_stack_word(1);
+                // Expected stack state: [event, ASSET_ID, ASSET_VALUE, note_idx]
+                let asset_id = process.get_stack_word(1);
                 let asset_value = process.get_stack_word(5);
                 let note_idx = process.get_stack_item(9);
 
                 let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                    Asset::from_id_and_value_words(asset_id, asset_value).map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "NoteBeforeAddAsset",
                             source,
@@ -494,18 +472,24 @@ impl TransactionEvent {
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
                 let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let signature = process
+                let auth_request = if let Some(signature) = process
                     .advice_provider()
                     .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec());
+                    .map(|slice| slice.to_vec())
+                {
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
+                    }
+                } else {
+                    let tx_summary = extract_tx_summary(base_host, process, message)?;
+                    TransactionEvent::AuthRequest {
+                        pub_key_commitment,
+                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
+                    }
+                };
 
-                let tx_summary = extract_tx_summary(base_host, process, message)?;
-
-                Some(TransactionEvent::AuthRequest {
-                    pub_key_commitment,
-                    tx_summary,
-                    signature,
-                })
+                Some(auth_request)
             },
 
             TransactionEventId::Unauthorized => {
@@ -581,6 +565,34 @@ impl TransactionEvent {
     }
 }
 
+// TX SUMMARY OR SIGNATURE
+// ================================================================================================
+
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(crate) enum TxSummaryOrSignature {
+    TxSummary(TransactionSummary),
+    Signature(Vec<Felt>),
+}
+
+// ASSET PATCH AND DELTA
+// ================================================================================================
+
+#[derive(Debug)]
+pub(crate) struct AssetPatch {
+    pub asset_id: AssetId,
+    /// The absolute value of `asset_id` in the vault before the operation.
+    pub initial_vault_value: Word,
+    /// The absolute value of `asset_id` in the vault after the operation.
+    pub final_vault_value: Word,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
+}
+
 // RECIPIENT DATA
 // ================================================================================================
 
@@ -600,17 +612,17 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Checks if the necessary witness for accessing the asset identified by the vault key is already
+/// Checks if the necessary witness for accessing the asset identified by the asset ID is already
 /// in the merkle store, and:
 /// - If so, returns `None`.
 /// - If not, returns `Some` with all necessary data for requesting it.
 fn on_account_vault_asset_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
     process: &ProcessorState,
-    vault_key: AssetVaultKey,
+    asset_id: AssetId,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::try_from(vault_key.hash().to_leaf_index().position())
+    let leaf_index = Felt::try_from(asset_id.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 
@@ -633,7 +645,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
         Ok(Some(TransactionEvent::AccountVaultBeforeAssetAccess {
             active_account_id,
             vault_root,
-            asset_key: vault_key,
+            asset_id,
         }))
     }
 }

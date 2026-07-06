@@ -1,53 +1,71 @@
-use alloc::vec;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_protocol::account::AccountProcedureRoot;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::errors::AccountError;
 
-use crate::account::access::PausableManager;
-use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
+use crate::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSigAcl,
+    AuthSingleSigAclConfig,
+    GuardianConfig,
+};
 use crate::account::faucets::FungibleFaucet;
-use crate::account::policies::TokenPolicyManager;
-
-/// Returns every authority-gated setter procedure root exported by a fungible faucet account
-/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`).
-///
-/// Under `Authority::AuthControlled` the auth component must authenticate calls to every
-/// procedure in this list, otherwise the setters become permissionless. Use this when
-/// constructing a custom [`AuthSingleSigAcl`] trigger procedure list; for the canonical
-/// configuration, prefer [`user_faucet_single_sig_acl`].
-pub fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
-    vec![
-        FungibleFaucet::mint_and_send_root(),
-        FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
-        PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ]
-}
 
 /// Convenience constructor for the typical user-account fungible faucet auth component: an
-/// [`AuthSingleSigAcl`] with the trigger procedure list set to
-/// [`all_authority_gated_setter_roots`] and `allow_unauthorized_input_notes=true`.
-///
-/// Production callers that need a different ACL shape should construct [`AuthSingleSigAcl`]
-/// directly, optionally seeding the trigger list with [`all_authority_gated_setter_roots`].
+/// [`AuthSingleSigAcl`] whose exempt set carries only `receive_and_burn`. Every other
+/// authority-gated procedure (the metadata setters, the policy setters, `mint_and_send`,
+/// `pause` / `unpause`) requires a signature, while a BURN note targeted at the faucet can be
+/// consumed without one.
 pub fn user_faucet_single_sig_acl(
     pub_key: PublicKeyCommitment,
     scheme: AuthScheme,
-) -> Result<AuthSingleSigAcl, AccountError> {
-    AuthSingleSigAcl::new(
-        pub_key,
-        scheme,
-        AuthSingleSigAclConfig::new()
-            .with_auth_trigger_procedures(all_authority_gated_setter_roots())
-            .with_allow_unauthorized_input_notes(true),
-    )
+) -> AuthSingleSigAcl {
+    let exempt_procedures = BTreeSet::from([FungibleFaucet::receive_and_burn_root()]);
+    let config = AuthSingleSigAclConfig::new(exempt_procedures)
+        .expect("`receive_and_burn` is within MAX_NUM_PROCEDURES");
+    AuthSingleSigAcl::new(Approver::new(pub_key, scheme), config)
+}
+
+/// Convenience constructor for a multisig user-account fungible faucet auth component: an
+/// [`AuthMultisig`] over `approvers` with the given `default_threshold`. Every authority-gated
+/// setter is protected by that threshold automatically: [`AuthMultisig`] is fail-closed, so a
+/// called procedure with no per-procedure override contributes the default threshold and cannot
+/// be authorized with fewer signatures. No per-procedure overrides are configured here.
+pub fn user_faucet_multisig(
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+    default_threshold: u32,
+) -> Result<AuthMultisig, AccountError> {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| Approver::new(*pub_key, *auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, default_threshold)?;
+    let config = AuthMultisigConfig::new(approver_set);
+    AuthMultisig::new(config)
+}
+
+/// Convenience constructor for a guardian-backed multisig user-account fungible faucet auth
+/// component: an [`AuthGuardedMultisig`] over `approvers` with the given `default_threshold` and
+/// `guardian`. Every authority-gated setter is protected by that threshold automatically:
+/// [`AuthGuardedMultisig`] is fail-closed, so a called procedure with no per-procedure override
+/// contributes the default threshold and cannot be authorized with fewer signatures. No
+/// per-procedure overrides are configured here.
+pub fn user_faucet_guarded(
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+    default_threshold: u32,
+    guardian: GuardianConfig,
+) -> Result<AuthGuardedMultisig, AccountError> {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| Approver::new(*pub_key, *auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, default_threshold)?;
+    let config = AuthGuardedMultisigConfig::new(approver_set, guardian)?;
+    AuthGuardedMultisig::new(config)
 }

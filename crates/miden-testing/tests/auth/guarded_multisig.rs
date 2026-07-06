@@ -20,6 +20,8 @@ use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     GuardianConfig,
@@ -100,7 +102,8 @@ fn build_update_guardian_script_source(
                 "
                 use miden::protocol::output_note
 
-                begin
+                @transaction_script
+                pub proc main
                     push.{recipient}
                     push.{note_type}
                     push.{tag}
@@ -119,7 +122,8 @@ fn build_update_guardian_script_source(
         },
         None => format!(
             "
-            begin
+            @transaction_script
+            pub proc main
                 push.{new_guardian_key_word}
                 push.{new_guardian_scheme_id}
                 call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
@@ -141,10 +145,11 @@ fn create_guarded_multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
-        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .map(|(pub_key, auth_scheme)| Approver::new(pub_key.to_commitment(), *auth_scheme))
         .collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
 
-    let config = AuthGuardedMultisigConfig::new(approvers, threshold, guardian)?
+    let config = AuthGuardedMultisigConfig::new(approver_set, guardian)?
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
@@ -186,7 +191,10 @@ async fn test_guarded_multisig_signature_required(
     let mut multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -259,7 +267,7 @@ async fn test_guarded_multisig_signature_required(
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
@@ -296,7 +304,10 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -311,7 +322,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let update_salt = Word::from([Felt::new_unchecked(991); 4]);
@@ -445,7 +456,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -455,7 +469,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let mut mock_chain_builder =
@@ -537,7 +551,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_with_output_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
+            "use miden::protocol::output_note\n@transaction_script\npub proc main\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
@@ -622,7 +636,10 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;

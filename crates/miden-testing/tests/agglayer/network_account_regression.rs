@@ -75,7 +75,8 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
         .build_tx_context(bridge_account.id(), &[], slice::from_ref(&update_ger_note))?
@@ -163,7 +164,8 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
         .build_tx_context(faucet.id(), &[], &[])?

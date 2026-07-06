@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::field::PrimeField64;
@@ -24,51 +24,40 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::note::{
-    NoteConsumptionStatus,
-    P2idNote,
-    P2ideNote,
-    P2ideNoteStorage,
-    StandardNote,
-};
-use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TransactionContextBuilder, TxContextInput};
+use crate::{Auth, MockChain, TestTransactionBuilder, TxContextInput};
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
-    let p2id_note = P2idNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(10)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([2u32; 4])),
-    )?;
+    let p2id_note: Note = P2idNote::builder()
+        .sender(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(10))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .build()?
+        .into();
 
-    let p2ide_note = P2ideNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        P2ideNoteStorage::new(
-            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-            None,
-            None,
-        ),
-        vec![FungibleAsset::mock(10)],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::from([2u32; 4])),
-    )?;
+    let p2ide_note: Note = P2ideNote::builder()
+        .sender(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(FungibleAsset::mock(10))
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .build()?
+        .into();
 
     let notes = vec![p2id_note, p2ide_note];
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .extend_input_notes(notes.clone())
         .build()?;
 
@@ -76,8 +65,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -104,28 +92,17 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 async fn check_note_consumability_custom_notes_success(
     #[case] notes: Vec<Note>,
 ) -> anyhow::Result<()> {
-    let tx_context = {
-        use miden_protocol::account::auth::AuthScheme;
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
 
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let (_, authenticator) = Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        }
-        .build_component();
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(notes.clone())
-            .authenticator(authenticator)
-            .build()?
-    };
+    let tx_context = mock_chain.build_tx_context(account, &[], &notes)?.build()?;
 
     let account_id = tx_context.account().id();
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor = TransactionExecutor::new(&tx_context)
-        .with_authenticator(tx_context.authenticator().unwrap())
-        .with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -156,7 +133,6 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     let failing_note_2 = NoteBuilder::new(
@@ -164,7 +140,6 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.2 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     let successful_note_1 = builder.add_p2id_note(
@@ -204,8 +179,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -278,8 +252,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let tx_args = tx_context.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -321,14 +294,12 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.1 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
     let failing_note_1 = NoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.0 div end")
-    .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
     // Create a note that causes epilogue failure. Adds assets to the transaction without moving
@@ -355,8 +326,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args().clone();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -430,8 +400,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let tx_args = tx_context.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumability_info: NoteConsumptionStatus = notes_checker
@@ -514,8 +483,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -663,8 +631,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -753,8 +720,7 @@ async fn test_check_note_consumability_static_analysis_sender(
     let block_ref = tx_context.tx_inputs().block_header().block_num();
     let tx_args = tx_context.tx_args();
 
-    let executor =
-        TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context).with_tracing();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs

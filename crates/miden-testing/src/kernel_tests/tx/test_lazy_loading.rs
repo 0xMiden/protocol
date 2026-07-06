@@ -14,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
-use crate::{MockChain, TransactionContextBuilder};
+use crate::{MockChain, TestTransactionBuilder};
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -40,26 +40,27 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
         "
       use mock::account
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE1}
-          push.{FUNGIBLE_ASSET_KEY1}
+          push.{FUNGIBLE_ASSET_ID1}
           call.account::add_asset dropw dropw
 
           push.{FUNGIBLE_ASSET_VALUE2}
-          push.{FUNGIBLE_ASSET_KEY2}
+          push.{FUNGIBLE_ASSET_ID2}
           call.account::add_asset dropw dropw
       end
       ",
-        FUNGIBLE_ASSET_KEY1 = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET_ID1 = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET_VALUE1 = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET_KEY2 = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET_ID2 = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
     let builder = CodeBuilder::with_mock_libraries();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .extend_input_notes(vec![asset_note])
         .with_source_manager(source_manager)
@@ -92,7 +93,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET1_VALUE}
           push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
@@ -120,9 +122,9 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => []
       end
       ",
-        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET1_VALUE = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
@@ -182,7 +184,8 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -206,16 +209,16 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::with_existing_mock_account()
+    let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
         .execute()
         .await?;
 
-    let map_patch = tx.account_patch().storage().get_map(mock_map_slot).unwrap();
-    assert_eq!(map_patch.entries().get(&existing_key).unwrap(), &value0);
-    assert_eq!(map_patch.entries().get(&non_existent_key).unwrap(), &value1);
+    let storage_patch = tx.account_patch().storage();
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &existing_key), Some(value0));
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &non_existent_key), Some(value1));
 
     Ok(())
 }
@@ -242,7 +245,8 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
@@ -269,7 +273,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

@@ -586,7 +586,6 @@ mod tests {
     use crate::account::{
         Account,
         AccountId,
-        AccountIdVersion,
         AccountPatch,
         AccountStoragePatch,
         AccountType,
@@ -594,6 +593,7 @@ mod tests {
         AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
+        StorageMapPatchEntries,
         StorageSlotName,
     };
     use crate::block::BlockNumber;
@@ -659,7 +659,9 @@ mod tests {
         for _ in 0..required_entries {
             map.insert(StorageMapKey::from_raw(rand_value()), rand_value::<Word>());
         }
-        let storage_patch = StorageMapPatch::new(map);
+        let storage_patch = StorageMapPatch::Update {
+            entries: StorageMapPatchEntries::from_raw(map),
+        };
 
         // A patch that exceeds the limit returns an error.
         let storage_patch =
@@ -730,7 +732,7 @@ mod tests {
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =
-            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+            AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

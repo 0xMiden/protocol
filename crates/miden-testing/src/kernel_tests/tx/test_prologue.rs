@@ -82,19 +82,11 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
-use crate::{
-    Auth,
-    MockChain,
-    TransactionContext,
-    TransactionContextBuilder,
-    assert_execution_error,
-};
+use crate::{Auth, MockChain, TestTransactionBuilder, TransactionContext, assert_execution_error};
 
 #[tokio::test]
 async fn test_transaction_prologue() -> anyhow::Result<()> {
@@ -113,13 +105,13 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(111)],
         );
-        TransactionContextBuilder::new(account)
+        TestTransactionBuilder::new(account)
             .extend_input_notes(vec![input_note_1, input_note_2, input_note_3])
             .build()?
     };
 
     let code = "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -127,7 +119,8 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         ";
 
     let mock_tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             nop
         end
         ";
@@ -511,16 +504,16 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let asset_key = asset.to_key_word();
+            let asset_id = asset.to_id_word();
             let asset_value = asset.to_value_word();
 
-            let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
-            let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;
+            let asset_id_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
+            let asset_value_addr = asset_id_addr + ASSET_VALUE_OFFSET;
 
             assert_eq!(
-                exec_output.get_note_mem_word(note_idx, asset_key_addr),
-                asset_key,
-                "asset key should be stored at the correct offset"
+                exec_output.get_note_mem_word(note_idx, asset_id_addr),
+                asset_id,
+                "asset ID should be stored at the correct offset"
             );
 
             assert_eq!(
@@ -545,7 +538,7 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
@@ -567,13 +560,13 @@ async fn create_simple_account() -> anyhow::Result<()> {
 pub async fn create_account_test(
     account: Account,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    TransactionContextBuilder::new(account).build().unwrap().execute().await
+    TestTransactionBuilder::new(account).build().unwrap().execute().await
 }
 
 pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .account_type(account_type)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
@@ -608,26 +601,22 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     let mut mock_chain = MockChain::new();
     mock_chain.prove_next_block()?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;
-
-    let tx_inputs = mock_chain
-        .get_transaction_inputs(&account, &[], &[])
-        .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
     let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_inputs(tx_inputs)
+    let tx_context = mock_chain
+        .build_tx_context(account, &[], &[])?
         .extend_advice_inputs(adv_inputs)
         .build()?;
 
     let code = "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
 
       begin
           exec.prologue::prepare_transaction
@@ -643,10 +632,10 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_version() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction
@@ -669,10 +658,10 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_timestamp() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction

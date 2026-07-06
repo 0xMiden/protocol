@@ -11,7 +11,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::utils::create_p2id_note_exact;
+use miden_standards::note::P2idNote;
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;
@@ -34,14 +34,15 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
         use miden::protocol::output_note
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
             exec.output_note::create
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             dropw dropw dropw dropw
         end
@@ -49,7 +50,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         recipient = swap_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = Felt::from(swap_note.metadata().tag()),
-        ASSET_KEY = offered_asset.to_key_word(),
+        ASSET_ID = offered_asset.to_id_word(),
         ASSET_VALUE = offered_asset.to_value_word(),
     );
 
@@ -161,6 +162,61 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
+// the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
+// serial number, then registers it with the advice provider via `p2id::new ->
+// note::build_recipient`.
+#[tokio::test]
+async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {
+    let payback_note_type = NoteType::Public;
+    let SwapTestSetup {
+        mock_chain,
+        mut sender_account,
+        mut target_account,
+        offered_asset,
+        requested_asset,
+        swap_note,
+        payback_note,
+    } = setup_swap_test(payback_note_type)?;
+
+    let consume_swap_note_tx = mock_chain
+        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
+        .context("failed to build tx context")?
+        .build()?
+        .execute()
+        .await?;
+
+    target_account.apply_patch(consume_swap_note_tx.account_patch())?;
+
+    let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
+    assert_eq!(
+        output_payback_note.id(),
+        NoteId::new(payback_note.commitment(), output_payback_note.metadata())
+    );
+    assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
+
+    assert_eq!(target_account.vault().assets().count(), 1);
+    assert!(target_account.vault().assets().any(|asset| asset == offered_asset));
+
+    let full_payback_note = Note::new(
+        payback_note.assets().clone(),
+        *output_payback_note.metadata().partial_metadata(),
+        payback_note.recipient().clone(),
+    );
+
+    let consume_payback_tx = mock_chain
+        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
+        .context("failed to build tx context")?
+        .build()?
+        .execute()
+        .await?;
+
+    sender_account.apply_patch(consume_payback_tx.account_patch())?;
+    assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
+
+    Ok(())
+}
+
 // Creates a swap note with a public payback note, then consumes it to complete the swap
 // The target account receives the offered asset and creates a public payback note for the sender
 #[tokio::test]
@@ -182,14 +238,16 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     // When consuming a SWAP note with a public payback note output
     // it is necessary to add the details of the public note to the advice provider
     // via `.extend_expected_output_notes()`
-    let payback_p2id_note = create_p2id_note_exact(
-        target_account.id(),
-        sender_account.id(),
-        vec![requested_asset],
-        payback_note_type,
-        payback_note.serial_num(),
-    )
-    .unwrap();
+    let payback_p2id_note = Note::from(
+        P2idNote::builder()
+            .sender(target_account.id())
+            .target(sender_account.id())
+            .assets(vec![requested_asset])
+            .note_type(payback_note_type)
+            .serial_number(payback_note.serial_num())
+            .build()
+            .unwrap(),
+    );
 
     let consume_swap_note_tx = mock_chain
         .build_tx_context(target_account.id(), &[swap_note.id()], &[])

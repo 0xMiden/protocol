@@ -2,8 +2,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
-    AssetCallbackFlag,
-    AssetVaultKey,
+    AssetId,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -28,24 +27,24 @@ use miden_protocol::{ONE, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{TransactionContextBuilder, assert_execution_error};
+use crate::{TestTransactionBuilder, assert_execution_error};
 
 /// Tests that account::get_balance returns the correct amount.
 #[tokio::test]
 async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_id = AssetId::new_fungible(faucet_id);
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
             exec.prologue::prepare_transaction
 
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_balance
             # => [balance]
 
@@ -53,14 +52,14 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
             swap drop
         end
             "#,
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
-        tx_context.account().vault().get_balance(asset_key)?.as_u64()
+        tx_context.account().vault().get_balance(asset_id)?.as_u64()
     );
 
     Ok(())
@@ -69,27 +68,32 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 /// Tests that asset_vault::peek_asset returns the correct asset.
 #[tokio::test]
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_id = AssetId::new_fungible(faucet_id);
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use $kernel::memory
-        use $kernel::asset_vault
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::asset_vault
+        use miden::core::crypto::hashes::poseidon2
 
         begin
             exec.prologue::prepare_transaction
 
             exec.memory::get_account_vault_root_ptr
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, account_vault_root_ptr]
+            push.{ASSET_ID}
+            # => [ASSET_ID, account_vault_root_ptr]
 
             # emit an event to fetch the merkle path for the asset since peek_asset does not do
-            # that
+            # that. the event handler expects the raw ASSET_ID, so it is emitted before hashing.
             emit.event("miden::protocol::account::vault_before_get_asset")
-            # => [ASSET_KEY, account_vault_root_ptr]
+            # => [ASSET_ID, account_vault_root_ptr]
+
+            # hash the asset ID into the SMT key that peek_asset expects
+            exec.poseidon2::hash
+            # => [ASSET_ID_HASH, account_vault_root_ptr]
 
             exec.asset_vault::peek_asset
             # => [PEEKED_ASSET_VALUE]
@@ -98,14 +102,14 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             swapw dropw
         end
             "#,
-        ASSET_KEY = asset_key.to_word()
+        ASSET_ID = asset_id.to_word()
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
-        tx_context.account().vault().get(asset_key).unwrap().to_value_word()
+        tx_context.account().vault().get(asset_id).unwrap().to_value_word()
     );
 
     Ok(())
@@ -115,7 +119,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
 async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
     // Disable lazy loading otherwise the handler will return an error before the transaction kernel
     // can abort, which is what we want to test.
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .disable_lazy_loading()
         .build()?;
 
@@ -124,16 +128,16 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3]));
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
             exec.prologue::prepare_transaction
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_balance
         end
         ",
-        ASSET_KEY = non_fungible_asset.to_key_word(),
+        ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;
@@ -148,25 +152,25 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let non_fungible_asset =
         tx_context.account().vault().assets().find(Asset::is_non_fungible).unwrap();
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::active_account
 
         begin
             exec.prologue::prepare_transaction
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.active_account::has_non_fungible_asset
 
             # truncate the stack
             swap drop
         end
         ",
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -178,7 +182,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT;
@@ -186,20 +190,20 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::add_asset
 
             # truncate the stack
             swapdw dropw dropw
         end
         ",
-        FUNGIBLE_ASSET_KEY = add_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = add_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
@@ -223,7 +227,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
@@ -232,18 +236,18 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::add_asset
             dropw dropw
         end
         ",
-        FUNGIBLE_ASSET_KEY = add_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = add_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
@@ -257,7 +261,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
     let mut account_vault = tx_context.account().vault().clone();
     let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
@@ -266,20 +270,20 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.account::add_asset
 
             # truncate the stack
             swapdw dropw dropw
         end
         ",
-        NON_FUNGIBLE_ASSET_KEY = add_non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = add_non_fungible_asset.to_id_word(),
         NON_FUNGIBLE_ASSET_VALUE = add_non_fungible_asset.to_value_word(),
     );
 
@@ -300,7 +304,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
@@ -309,18 +313,18 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.account::add_asset
             dropw dropw
         end
         ",
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
@@ -334,7 +338,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
@@ -343,20 +347,20 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::remove_asset
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = remove_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
@@ -377,24 +381,24 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
 #[tokio::test]
 async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT + 1;
     let remove_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::remove_asset
         end
         ",
-        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = remove_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
@@ -410,7 +414,7 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
@@ -419,20 +423,20 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::remove_asset
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = remove_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
@@ -453,7 +457,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
 #[tokio::test]
 async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
 
@@ -470,17 +474,17 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::remove_asset
         end
         ",
-        FUNGIBLE_ASSET_KEY = non_existent_non_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = non_existent_non_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = non_existent_non_fungible_asset.to_value_word(),
     );
 
@@ -498,7 +502,7 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
@@ -507,20 +511,20 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.account::remove_asset
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
@@ -551,7 +555,7 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
     for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
         let code = format!(
             "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSETA}
@@ -593,7 +597,7 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
 
         let code = format!(
             "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSETA}
@@ -633,7 +637,7 @@ async fn test_split_fungible_asset_success(
 
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET0}
@@ -670,7 +674,7 @@ async fn test_split_fungible_asset_fails_when_amount_exceeds_balance() -> anyhow
 
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET0}
@@ -709,7 +713,7 @@ async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {
     // Sanity check that the Rust implementation errors when adding assets from different faucets.
     assert_matches!(
         asset0.add(asset1).unwrap_err(),
-        AssetError::FungibleAssetInconsistentVaultKeys { .. }
+        AssetError::FungibleAssetInconsistentIds { .. }
     );
 
     Ok(())

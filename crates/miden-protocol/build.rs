@@ -4,9 +4,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, DefaultSourceManager, KernelLibrary, Library};
+use miden_assembly::{Assembler, Path as MasmPath, ProjectTargetSelector};
 use miden_core::events::EventId;
+use miden_core_lib::CoreLibrary;
+use miden_mast_package::{Package, PackageExport};
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -17,12 +21,21 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_PROTOCOL_DIR: &str = "protocol";
 
-const SHARED_UTILS_DIR: &str = "shared_utils";
-const SHARED_MODULES_DIR: &str = "shared_modules";
+const ASM_PROTOCOL_UTILS_DIR: &str = "protocol_utils";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
-const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
+/// Name of the manifest file defining a Miden project.
+const PROJECT_MANIFEST: &str = "miden-project.toml";
+
+/// The build profile used when assembling the Miden projects.
+const BUILD_PROFILE: &str = "release";
+
+// Executable target names, as declared in the respective `miden-project.toml` files.
+const TX_KERNEL_MAIN_TARGET: &str = "main";
+const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
+const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
@@ -52,9 +65,10 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/protocol directory into a Protocol library file (.masl) under
-///   miden::protocol namespace.
-/// - Compiles the contents of asm/kernels into the transaction kernel library.
+///
+/// Assembles the Miden projects defined by the `miden-project.toml` files in the `asm` directory
+/// into MAST packages (.masp files): the transaction kernel library and executables, the batch
+/// kernel executable, and the user-facing protocol library.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -69,25 +83,21 @@ fn main() -> Result<()> {
     // set source directory to {OUT_DIR}/asm
     let source_dir = dst.join(ASM_DIR);
 
-    // copy the shared modules to the kernel and protocol library folders
-    copy_shared_modules(&source_dir)?;
-
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    // The miden-core library is provided through an in-memory registry
+    let mut store = InMemoryPackageRegistry::default();
+    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
+
     // compile transaction kernel
-    let mut assembler = compile_tx_kernel(
-        &source_dir.join(ASM_TX_KERNEL_DIR),
-        &target_dir.join("kernels"),
-        &build_dir,
-    )?;
+    compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
 
     // compile protocol library
-    let protocol_lib = compile_protocol_lib(&source_dir, &target_dir, assembler.clone())?;
-    assembler.link_dynamic_library(protocol_lib)?;
+    compile_protocol_lib(&source_dir, &target_dir, &mut store)?;
 
     // compile batch kernel
-    compile_batch_kernel(&source_dir, &target_dir.join("kernels"))?;
+    compile_batch_kernel(&source_dir, &target_dir.join("kernels"), &mut store)?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
@@ -99,141 +109,166 @@ fn main() -> Result<()> {
 // COMPILE BATCH KERNEL
 // ================================================================================================
 
-/// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the result
-/// to the `target_dir` as a `batch_kernel.masb` binary file.
-fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
-    let batch_kernel_dir = source_dir.join(ASM_BATCH_KERNEL_DIR);
-    let main_file_path = batch_kernel_dir.join("main.masm");
+/// Assembles the batch kernel project in `{source_dir}/kernels/batch` and saves the resulting
+/// executable package to the `target_dir`.
+fn compile_batch_kernel(
+    source_dir: &Path,
+    target_dir: &Path,
+    store: &mut InMemoryPackageRegistry,
+) -> Result<()> {
+    let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let mut project_assembler =
+        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
 
-    let assembler = build_assembler(None)?;
-    let batch_main = assembler.assemble_program(main_file_path)?;
+    let batch_kernel_package = project_assembler
+        .assemble(ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET), BUILD_PROFILE)?;
 
-    let masb_file_path = target_dir.join("batch_kernel.masb");
-    batch_main.write_to_file(masb_file_path).into_diagnostic()
+    batch_kernel_package.write_masp_file(target_dir).into_diagnostic()
 }
 
 // COMPILE TRANSACTION KERNEL
 // ================================================================================================
 
-/// Reads the transaction kernel MASM source from the `source_dir`, compiles it, saves the results
-/// to the `target_dir`, and returns an [Assembler] instantiated with the compiled kernel.
+/// Assembles the transaction kernel project in `{source_dir}/kernels/transaction` and saves the
+/// resulting packages to the `target_dir`.
 ///
-/// Additionally it compiles the transaction script executor program, see the
-/// [compile_tx_script_main] procedure for details.
+/// The project is expected to have the following structure:
 ///
-/// `source_dir` is expected to have the following structure:
+/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction
+///   kernel.
+/// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction
+///   kernel.
+/// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary
+///   transaction script.
 ///
-/// - {source_dir}/api.masm       -> defines exported procedures from the transaction kernel.
-/// - {source_dir}/main.masm      -> defines the executable program of the transaction kernel.
-/// - {source_dir}/tx_script_main -> defines the executable program of the arbitrary transaction
-///   script.
-/// - {source_dir}/lib            -> contains common modules used by both api.masm and main.masm.
+/// The following are written to the `target_dir`:
 ///
-/// The compiled files are written as follows:
+/// - the kernel library package, compiled from lib/api.masm.
+/// - the kernel executable package, compiled from bin/main.masm.
+/// - the transaction script executor package, compiled from bin/tx_script_main.masm.
 ///
-/// - {target_dir}/tx_kernel.masl             -> contains kernel library compiled from api.masm.
-/// - {target_dir}/tx_kernel.masb             -> contains the executable compiled from main.masm.
-/// - {target_dir}/tx_script_main.masb        -> contains the executable compiled from
-///   tx_script_main.masm.
-/// - src/transaction/procedures/kernel_v0.rs -> contains the kernel procedures table.
-fn compile_tx_kernel(source_dir: &Path, target_dir: &Path, build_dir: &str) -> Result<Assembler> {
-    let shared_utils_path = std::path::Path::new(ASM_DIR).join(SHARED_UTILS_DIR);
-    let kernel_path = miden_assembly::Path::kernel_path();
-
-    let mut assembler = build_assembler(None)?;
-    // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-    assembler.compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-
-    // assemble the kernel library and write it to the "tx_kernel.masl" file
-    let kernel_lib = assembler
-        .assemble_kernel_from_dir(source_dir.join("api.masm"), Some(source_dir.join("lib")))?;
-
-    // generate kernel `procedures.rs` file
-    generate_kernel_proc_hash_file(kernel_lib.clone(), build_dir)?;
-
-    let output_file = target_dir.join("tx_kernel").with_extension(Library::LIBRARY_EXTENSION);
-    kernel_lib.write_to_file(output_file).into_diagnostic()?;
-
-    let assembler = build_assembler(Some(kernel_lib))?;
-
-    // assemble the kernel program and write it to the "tx_kernel.masb" file
-    let mut main_assembler = assembler.clone();
-    // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-    main_assembler.compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-    main_assembler.compile_and_statically_link_from_dir(source_dir.join("lib"), kernel_path)?;
-
-    let main_file_path = source_dir.join("main.masm");
-    let kernel_main = main_assembler.clone().assemble_program(main_file_path)?;
-
-    let masb_file_path = target_dir.join("tx_kernel.masb");
-    kernel_main.write_to_file(masb_file_path).into_diagnostic()?;
-
-    // compile the transaction script main program
-    compile_tx_script_main(source_dir, target_dir, main_assembler)?;
-
-    #[cfg(any(feature = "testing", test))]
-    {
-        let mut kernel_lib_assembler = assembler.clone();
-        // Build kernel as a library and save it to file.
-        // This is needed in test assemblers to access individual procedures which would otherwise
-        // be hidden when using KernelLibrary (api.masm)
-
-        // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-        kernel_lib_assembler
-            .compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-
-        let test_lib = kernel_lib_assembler
-            .assemble_library_from_dir(source_dir.join("lib"), kernel_path)
-            .unwrap();
-
-        let masb_file_path =
-            target_dir.join("kernel_library").with_extension(Library::LIBRARY_EXTENSION);
-        (*test_lib).write_to_file(masb_file_path).into_diagnostic()?;
-    }
-
-    Ok(assembler)
-}
-
-/// Reads the transaction script executor MASM source from the `source_dir/tx_script_main.masm`,
-/// compiles it and saves the results to the `target_dir` as a `tx_script_main.masb` binary file.
-fn compile_tx_script_main(
+/// The kernel procedures table is written to `{build_dir}/procedures.rs`.
+fn compile_tx_kernel(
     source_dir: &Path,
     target_dir: &Path,
-    main_assembler: Assembler,
+    build_dir: &str,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
-    // assemble the transaction script executor program and write it to the "tx_script_main.masb"
-    // file.
-    let tx_script_main_file_path = source_dir.join("tx_script_main.masm");
-    let tx_script_main = main_assembler.assemble_program(tx_script_main_file_path)?;
+    let project_dir = source_dir.join(ASM_TX_KERNEL_DIR);
 
-    let masb_file_path = target_dir.join("tx_script_main.masb");
-    tx_script_main.write_to_file(masb_file_path).into_diagnostic()
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let mut project_assembler = build_assembler(source_manager.clone())
+        .for_project_at_path(project_dir.join(PROJECT_MANIFEST), store)?;
+
+    // assemble the kernel library and write its package to the `target_dir`
+    let kernel_package =
+        project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+    kernel_package.write_masp_file(target_dir).into_diagnostic()?;
+
+    // generate kernel `procedures.rs` file
+    generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
+
+    // Assemble the executable targets and write their packages to the `target_dir`.
+    //
+    // The kernel internals live in the `miden-tx-kernel-core` library, which both programs
+    // depend on, so the executables are assembled directly through the project manifest.
+    for target_name in [TX_KERNEL_MAIN_TARGET, TX_SCRIPT_MAIN_TARGET] {
+        let package = project_assembler
+            .assemble(ProjectTargetSelector::Executable(target_name), BUILD_PROFILE)?;
+        package.write_masp_file(target_dir).into_diagnostic()?;
+    }
+
+    // make sure the store is released before it is borrowed again below
+    drop(project_assembler);
+
+    // Assemble the kernel internals as a plain library and write its package to the `target_dir`.
+    // This is needed in test assemblers to access individual internal procedures which are not
+    // part of the kernel's public syscall API (api.masm).
+    #[cfg(any(feature = "testing", test))]
+    compile_kernel_testing_lib(source_dir, target_dir, store)?;
+
+    Ok(())
+}
+
+/// Assembles the `miden-tx-kernel-core` library and saves the resulting package to the
+/// `target_dir`.
+#[cfg(any(feature = "testing", test))]
+fn compile_kernel_testing_lib(
+    source_dir: &Path,
+    target_dir: &Path,
+    store: &mut InMemoryPackageRegistry,
+) -> Result<()> {
+    let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let mut assembler =
+        build_assembler(source_manager).for_project_at_path(core_manifest, store)?;
+
+    let package = assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+
+    package.write_masp_file(target_dir).into_diagnostic()
 }
 
 /// Generates kernel `procedures.rs` file based on the kernel library.
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
-fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Result<()> {
-    let (_, module_info, _) = kernel.into_parts();
-
+fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
     let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
-    let offsets_filename =
-        Path::new(ASM_DIR).join(ASM_PROTOCOL_DIR).join("kernel_proc_offsets.masm");
+    let offsets_filename = Path::new(ASM_DIR)
+        .join(ASM_PROTOCOL_DIR)
+        .join("src")
+        .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    let generated_procs: BTreeMap<usize, String> = module_info
-        .procedures()
-        .filter(|(_, proc_info)| !to_exclude.contains::<str>(proc_info.name.as_ref()))
-        .map(|(_, proc_info)| {
-            let name = proc_info.name.to_string();
-
-            let Some(&offset) = offsets.get(&name) else {
-                panic!("Offset constant for function `{name}` not found in `{offsets_filename:?}`");
-            };
-
-            (offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest))
+    // Only direct `$kernel::<proc>` exports are dynamic kernel API procedures. Public support
+    // modules also appear in package exports as `$kernel::<module>::<proc>`, but those are not
+    // invoked through `exec_kernel_proc` and therefore do not belong in `KERNEL_PROCEDURES`.
+    let kernel_api_exports: Vec<_> = kernel
+        .manifest
+        .exports()
+        .filter_map(|export| match export {
+            PackageExport::Procedure(proc_info) => Some(proc_info),
+            _ => None,
         })
+        .filter(|proc_info| is_dynamic_kernel_api_export(&proc_info.path))
         .collect();
+
+    for proc_info in kernel_api_exports.iter() {
+        let name = proc_info.path.last().unwrap();
+        if to_exclude.contains::<str>(name) {
+            continue;
+        }
+
+        if !offsets.contains_key(name) {
+            return Err(miette::miette!(
+                "Offset constant for kernel procedure `{}` not found in `{offsets_filename:?}`",
+                proc_info.path,
+            ));
+        }
+    }
+
+    let generated_procs: BTreeMap<usize, String> = offsets
+        .iter()
+        .map(|(name, &offset)| {
+            let mut matching_exports =
+                kernel_api_exports.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
+            let proc_info = matching_exports.next().ok_or_else(|| {
+                miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` does not match any exported procedure"
+                )
+            })?;
+
+            if let Some(other_proc_info) = matching_exports.next() {
+                return Err(miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` matches multiple exported procedures: `{}` and `{}`",
+                    proc_info.path,
+                    other_proc_info.path,
+                ));
+            }
+
+            Ok((offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest)))
+        })
+        .collect::<Result<_>>()?;
 
     let proc_count = generated_procs.len();
     let generated_procs: String = generated_procs.into_iter().enumerate().map(|(index, (offset, txt))| {
@@ -284,64 +319,34 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
 // COMPILE PROTOCOL LIB
 // ================================================================================================
 
-/// Reads the MASM files from "{source_dir}/protocol" directory, compiles them into a Miden assembly
-/// library, saves the library into "{target_dir}/protocol.masl", and returns the compiled library.
+/// Assembles the protocol library project in `{source_dir}/protocol` and saves the resulting
+/// library package to `target_dir`.
 fn compile_protocol_lib(
     source_dir: &Path,
     target_dir: &Path,
-    mut assembler: Assembler,
-) -> Result<Library> {
-    let source_dir = source_dir.join(ASM_PROTOCOL_DIR);
-    let shared_path = Path::new(ASM_DIR).join(SHARED_UTILS_DIR);
+    store: &mut InMemoryPackageRegistry,
+) -> Result<()> {
+    let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let mut project_assembler =
+        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
 
-    // add the shared modules to the protocol lib under the miden::protocol::util namespace
-    // note that this module is not publicly exported, it is only available for linking the library
-    // itself
-    assembler.compile_and_statically_link_from_dir(&shared_path, PROTOCOL_LIB_NAMESPACE)?;
+    let protocol_package =
+        project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-    let protocol_lib = assembler.assemble_library_from_dir(source_dir, PROTOCOL_LIB_NAMESPACE)?;
-
-    let output_file = target_dir.join("protocol").with_extension(Library::LIBRARY_EXTENSION);
-    protocol_lib.write_to_file(output_file).into_diagnostic()?;
-
-    Ok(Arc::unwrap_or_clone(protocol_lib))
+    protocol_package.write_masp_file(target_dir).into_diagnostic()
 }
 
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a new [Assembler] loaded with miden-core-lib and the specified kernel, if provided.
-fn build_assembler(kernel: Option<KernelLibrary>) -> Result<Assembler> {
-    kernel
-        .map(|kernel| Assembler::with_kernel(Arc::new(DefaultSourceManager::default()), kernel))
-        .unwrap_or_default()
-        .with_warnings_as_errors(true)
-        .with_dynamic_library(miden_core_lib::CoreLibrary::default())
+/// Returns a new [Assembler] using the provided source manager, with warnings treated as errors.
+fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
+    Assembler::new(source_manager).with_warnings_as_errors(true)
 }
 
-/// Copies the content of the build `shared_modules` folder to the `lib` and `protocol` build
-/// folders. This is required to include the shared modules as APIs of the `kernel` and `protocol`
-/// libraries.
-///
-/// This is done to make it possible to import the modules in the `shared_modules` folder directly,
-/// i.e. "use $kernel::account_id".
-fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
-    // source is expected to be an `OUT_DIR/asm` folder
-    let shared_modules_dir = source_dir.as_ref().join(SHARED_MODULES_DIR);
-
-    for module_path in shared::get_masm_files(shared_modules_dir).unwrap() {
-        let module_name = module_path.file_name().unwrap();
-
-        // copy to kernel lib
-        let kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
-        fs::copy(&module_path, kernel_lib_folder.join(module_name)).into_diagnostic()?;
-
-        // copy to protocol lib
-        let protocol_lib_folder = source_dir.as_ref().join(ASM_PROTOCOL_DIR);
-        fs::copy(&module_path, protocol_lib_folder.join(module_name)).into_diagnostic()?;
-    }
-
-    Ok(())
+fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
+    path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
 }
 
 // ERROR CONSTANTS FILE GENERATION
@@ -376,7 +381,7 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // For now these are duplicated in the tx kernel and protocol error module.
     // ------------------------------------------
 
-    let shared_utils_dir = asm_source_dir.join(SHARED_UTILS_DIR);
+    let shared_utils_dir = asm_source_dir.join(ASM_PROTOCOL_UTILS_DIR);
     let shared_utils_errors = shared::extract_all_masm_errors(&shared_utils_dir)
         .context("failed to extract all masm errors")?;
 
@@ -386,6 +391,12 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
     let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
         .context("failed to extract all masm errors")?;
+    // Most kernel error constants live in the tx kernel core library, which is a separate project.
+    let kernel_core_dir = asm_source_dir.join(ASM_TX_KERNEL_CORE_DIR);
+    errors.extend(
+        shared::extract_all_masm_errors(&kernel_core_dir)
+            .context("failed to extract all masm errors")?,
+    );
     errors.extend_from_slice(&shared_utils_errors);
     validate_tx_kernel_category(&errors)?;
 
@@ -605,29 +616,6 @@ mod shared {
         }
 
         Ok(())
-    }
-
-    /// Returns a vector with paths to all MASM files in the specified directory and its
-    /// subdirectories.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            for entry in WalkDir::new(path) {
-                let entry = entry.into_diagnostic()?;
-                let file_path = entry.path().to_path_buf();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
     }
 
     /// Returns true if the provided path resolves to a file with `.masm` extension.

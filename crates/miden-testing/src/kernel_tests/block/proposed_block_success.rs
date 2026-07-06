@@ -14,7 +14,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, Transactio
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
-use rand::Rng;
+use rand::RngExt;
 
 use super::utils::MockChainBlockExt;
 use crate::{AccountState, Auth, MockChain, TxContextInput};
@@ -175,7 +175,7 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
 
     assert_matches!(account_update.details(), AccountUpdateDetails::Public(patch) => {
         assert_eq!(patch.vault().num_assets(), 1);
-        assert_eq!(patch.vault().as_map().get(&asset.vault_key()), Some(&expected_asset.to_value_word()));
+        assert_eq!(patch.vault().as_map().get(&asset.id()), Some(&expected_asset.to_value_word()));
     });
 
     Ok(())
@@ -189,8 +189,8 @@ async fn proposed_block_authenticating_unauthenticated_notes() -> anyhow::Result
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let note0 = builder.add_p2id_note(sender_id, account0.id(), &[], NoteType::Private)?;
-    let note1 = builder.add_p2id_note(sender_id, account1.id(), &[], NoteType::Public)?;
+    let note0 = builder.add_p2any_note(sender_id, NoteType::Private, [])?;
+    let note1 = builder.add_p2any_note(sender_id, NoteType::Public, [])?;
     let chain = builder.build()?;
 
     // These txs will use block1 as the reference block.

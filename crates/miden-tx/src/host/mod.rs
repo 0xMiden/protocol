@@ -28,14 +28,12 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
-use miden_processor::mast::MastForest;
 use miden_processor::trace::RowIndex;
-use miden_processor::{Felt, MastForestStore, ProcessorState};
+use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -60,7 +58,12 @@ use miden_protocol::transaction::{
     TransactionMeasurements,
     TransactionSummary,
 };
-pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
+pub(crate) use tx_event::{
+    RecipientData,
+    TransactionEvent,
+    TransactionProgressEvent,
+    TxSummaryOrSignature,
+};
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
@@ -364,7 +367,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         slot_name: StorageSlotName,
         new_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.storage().set_item(slot_name, new_value);
+        self.update_tracker.storage().set_item(slot_name, new_value)?;
 
         Ok(Vec::new())
     }
@@ -379,7 +382,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         self.update_tracker
             .storage()
-            .set_map_item(slot_name, key, old_map_value, new_map_value);
+            .set_map_item(slot_name, key, old_map_value, new_map_value)?;
 
         Ok(Vec::new())
     }
@@ -480,7 +483,7 @@ where
     STORE: MastForestStore,
 {
     /// Returns the [`MastForest`] that contains the procedure with the given `procedure_root`.
-    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
+    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         // Search in the note MAST forest store, otherwise fall back to the user-provided store
         match self.scripts_mast_store.get(procedure_root) {
             Some(forest) => Some(forest),

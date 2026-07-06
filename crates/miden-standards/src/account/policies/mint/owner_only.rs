@@ -9,7 +9,7 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_MINT_POLICY_CODE,
-    "faucets/policies/mint/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-mint-owner-controlled-owner-only.masp"
 );
 
 procedure_root!(

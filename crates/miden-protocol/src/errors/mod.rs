@@ -14,7 +14,7 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -28,7 +28,7 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
@@ -186,6 +186,8 @@ pub enum AccountError {
     PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
+    #[error("unknown storage patch operation tag {0}")]
+    UnknownStoragePatchOperation(u8),
     /// This variant can be used by methods that are not inherent to the account but want to return
     /// this error type.
     #[error("{error_msg}")]
@@ -440,6 +442,8 @@ pub enum AccountDeltaError {
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
+    #[error("a full state delta must only contain storage create operations")]
+    FullStateDeltaContainsNonCreateOp,
 }
 
 #[derive(Debug, Error)]
@@ -455,11 +459,36 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
+    #[error("a full state patch must only contain storage create operations")]
+    FullStatePatchContainsNonCreateStorageOp,
+
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
-    #[error("cannot merge two full state patches")]
-    MergingFullStatePatches,
+    #[error("storage slot name {0} is assigned to more than one slot patch")]
+    DuplicateStorageSlotName(StorageSlotName),
+
+    #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
+    TooManyStorageSlotPatches(usize),
+
+    #[error(
+        "a full state patch cannot be merged on top of another patch; it must be the merge base"
+    )]
+    MergeIncomingFullStatePatch,
+
+    #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
+    StoragePatchMergeDoubleCreate(StorageSlotName),
+
+    #[error(
+        "failed to merge storage patch for slot {0}: cannot create a slot after it was updated, which indicates it already exists"
+    )]
+    StoragePatchMergeCreateAfterUpdate(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot update slot after it was removed")]
+    StoragePatchMergeUpdateAfterRemove(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot remove a slot twice")]
+    StoragePatchMergeDoubleRemove(StorageSlotName),
 
     #[error(
         "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
@@ -529,30 +558,25 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
+        "cannot combine fungible assets with different asset IDs: {original_id} and {other_id}"
     )]
-    FungibleAssetInconsistentVaultKeys {
-        original_key: AssetVaultKey,
-        other_key: AssetVaultKey,
-    },
+    FungibleAssetInconsistentIds { original_id: AssetId, other_id: AssetId },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+        "asset class prefix and suffix in a non-fungible asset ID must match indices 0 and 1 in the value, but asset class was {asset_class} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
-    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
-    FungibleAssetIdMustBeZero(AssetId),
+    NonFungibleAssetClassMustMatchValue { asset_class: AssetClass, value: Word },
+    #[error("asset class prefix and suffix in a fungible asset ID must be zero but was {0}")]
+    FungibleAssetClassMustBeZero(AssetClass),
     #[error(
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error("smt proof in asset witness contains invalid key or value")]
+    #[error("smt proof in asset witness contains invalid ID or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("vault key {key} is not present in the provided asset witness SMT proof")]
-    AssetWitnessMissingKey { key: AssetVaultKey },
-    #[error("unknown native asset callbacks encoding: {0}")]
-    UnknownAssetCallbackFlag(u8),
+    #[error("asset ID {id} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingId { id: AssetId },
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
     #[error("unknown asset delta operation encoding: {0}")]
@@ -677,9 +701,9 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("partial vault contains invalid asset value {value} at key {key}")]
-    InvalidAssetForKey {
-        key: AssetVaultKey,
+    #[error("partial vault contains invalid asset value {value} at ID {id}")]
+    InvalidAssetForId {
+        id: AssetId,
         value: Word,
         #[source]
         source: AssetError,
@@ -848,6 +872,14 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
+    #[error("library does not contain a procedure with @transaction_script attribute")]
+    NoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @transaction_script attribute")]
+    MultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    ProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
+    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR

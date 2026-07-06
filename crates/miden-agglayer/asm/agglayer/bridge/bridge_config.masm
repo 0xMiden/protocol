@@ -82,6 +82,7 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #! - the GER has already been registered in storage.
 #!
 #! Invocation: call
+@account_procedure
 pub proc update_ger
     # assert the note sender is the global exit root injector.
     exec.assert_sender_is_ger_injector
@@ -125,6 +126,7 @@ end
 #! - the GER is not currently registered in the bridge's GER map.
 #!
 #! Invocation: call
+@account_procedure
 pub proc remove_ger
     # assert the note sender is the global exit root remover.
     exec.assert_sender_is_ger_remover
@@ -214,6 +216,7 @@ end
 #!
 #! Invocation: call
 @locals(14)
+@account_procedure
 pub proc register_faucet
     exec.assert_sender_is_bridge_admin
     # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
@@ -359,6 +362,7 @@ end
 #! - the note sender is not the bridge admin.
 #!
 #! Invocation: call
+@account_procedure
 pub proc store_faucet_metadata_hash
     exec.assert_sender_is_bridge_admin
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
@@ -404,6 +408,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
+@account_procedure
 pub proc deregister_faucet
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin

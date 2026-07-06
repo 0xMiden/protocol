@@ -89,9 +89,8 @@ impl AccountUpdateTracker {
         let storage_patch = self.storage.into_patch();
         let vault_delta = self.vault.into_delta();
 
-        AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta)
+        AccountDelta::new(account_id, storage_patch, vault_delta, self.code, nonce_delta)
             .expect("account delta created in delta tracker should be valid")
-            .with_code(self.code)
     }
 
     /// Consumes `self` and returns the resulting [`AccountPatch`].

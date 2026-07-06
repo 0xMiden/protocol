@@ -11,10 +11,10 @@
 # - `claim` for bridge-in
 # - `bridge_out` for bridge-out
 
-pub use ::agglayer::bridge::bridge_config::register_faucet
-pub use ::agglayer::bridge::bridge_config::store_faucet_metadata_hash
-pub use ::agglayer::bridge::bridge_config::deregister_faucet
-pub use ::agglayer::bridge::bridge_config::update_ger
-pub use ::agglayer::bridge::bridge_config::remove_ger
-pub use ::agglayer::bridge::bridge_in::claim
-pub use ::agglayer::bridge::bridge_out::bridge_out
+pub use {register_faucet} from agglayer::bridge::bridge_config
+pub use {store_faucet_metadata_hash} from agglayer::bridge::bridge_config
+pub use {deregister_faucet} from agglayer::bridge::bridge_config
+pub use {update_ger} from agglayer::bridge::bridge_config
+pub use {remove_ger} from agglayer::bridge::bridge_config
+pub use {claim} from agglayer::bridge::bridge_in
+pub use {bridge_out} from agglayer::bridge::bridge_out

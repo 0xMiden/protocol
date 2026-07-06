@@ -9,12 +9,12 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::AuthMultisig;
+use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -82,11 +82,12 @@ fn create_multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
-        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .map(|(pub_key, auth_scheme)| Approver::new(pub_key.to_commitment(), *auth_scheme))
         .collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
+        .with_auth_component(Auth::Multisig { approver_set, proc_threshold_map })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
@@ -185,7 +186,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
@@ -357,7 +358,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
@@ -489,14 +491,14 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     }
 
     // Create a new output note for the second transaction with new signers
-    let output_note_new = P2idNote::create(
-        updated_multisig_account.id(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![output_note_asset],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Word::empty()),
-    )?;
+    let output_note_new: Note = P2idNote::builder()
+        .sender(updated_multisig_account.id())
+        .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
+        .asset(output_note_asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .build()?
+        .into();
 
     // Create a new spawn note for the second transaction
     let input_note_new = create_spawn_note([&output_note_new])?;
@@ -625,7 +627,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Create transaction script
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -841,7 +843,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";

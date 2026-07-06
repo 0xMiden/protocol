@@ -188,9 +188,8 @@ The split is necessary because the 16-element MASM stack cannot fit all 18 regis
 felts at once. For a detailed description of the registries, see
 [Section 7](#7-faucet-registry).
 
-TODO: Faucet registrations are permanent; no remapping or deregistration is supported
-([#2704](https://github.com/0xMiden/protocol/issues/2704),
-[#2705](https://github.com/0xMiden/protocol/issues/2705)).
+TODO: Token remapping and migration are not supported
+([#2704](https://github.com/0xMiden/protocol/issues/2704)).
 
 TODO: Faucet existence and code commitment are not validated during registration
 ([#2709](https://github.com/0xMiden/protocol/issues/2709)).
@@ -403,18 +402,18 @@ modules in `asm/agglayer/common/`.
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]` |
+| **Inputs** | `[ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]` |
 | **Outputs** | `[note_idx, pad(15)]` |
 | **Context** | Consuming a `MINT` note on the faucet account |
 | **Panics** | Faucet owner verification fails; minting exceeds supply; the asset stored in the MINT note does not belong to the consuming faucet |
 
 Re-export of `miden::standards::faucets::fungible::mint_and_send`. Mints the asset
-identified by `ASSET_KEY` / `ASSET_VALUE` and creates an output note with the given
+identified by `ASSET_ID` / `ASSET_VALUE` and creates an output note with the given
 recipient. Requires the faucet's owner (the bridge account) to be the creator of this note
 (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
 `mint_and_send` executes the current access policy via
 `exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
-for the active faucet and panics if the stored `ASSET_KEY` does not belong to that faucet,
+for the active faucet and panics if the stored `ASSET_ID` does not belong to that faucet,
 which binds the MINT note to its resolved faucet (see §4.8).
 
 #### `agglayer_faucet::get_metadata_hash`
@@ -845,7 +844,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_KEY)` |
+| `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
 | `storage` | None (0 felts) |
 
@@ -948,7 +947,7 @@ to mint and distribute assets to the recipient.
 |-------|-------|----------|
 | 0-3 | `P2ID_SCRIPT_ROOT` | Script root of the P2ID output note |
 | 4-7 | `SERIAL_NUM` | Serial number for the P2ID note (same as PROOF_DATA_KEY) |
-| 8-11 | `ASSET_KEY` | Vault key of the fungible asset to mint (faucet ID baked in) |
+| 8-11 | `ASSET_ID` | Asset ID of the fungible asset to mint (faucet ID baked in) |
 | 12-15 | `ASSET_VALUE` | Value word of the asset: `[native_amount, 0, 0, 0]` |
 | 16 | `dest_tag` | Note tag for the P2ID output note (targeting the destination account) |
 | 17-19 | padding | Zeros so the P2ID storage below stays word-aligned |
@@ -960,15 +959,15 @@ to mint and distribute assets to the recipient.
 The standard MINT script for public note creation loads the 22 storage items from the MINT
 note storage, reconstructs the P2ID `RECIPIENT` from `P2ID_SCRIPT_ROOT`, `SERIAL_NUM`, and
 the P2ID storage at `[20..21]`, and calls the faucet's `mint_and_send` procedure
-(re-exported from `fungible::mint_and_send`) with the stored `ASSET_KEY`, `ASSET_VALUE`,
+(re-exported from `fungible::mint_and_send`) with the stored `ASSET_ID`, `ASSET_VALUE`,
 `dest_tag`, and `RECIPIENT`.
 
-`mint_and_send` saves the supplied `ASSET_KEY` in a local, runs the active mint policy
+`mint_and_send` saves the supplied `ASSET_ID` in a local, runs the active mint policy
 (`owner_controlled::owner_only` for AggLayer faucets, which asserts the MINT note's sender
 is the faucet's owner -- the bridge account, set via `Ownable2Step` at account creation),
 and creates the skeleton P2ID output note via `output_note::create`. It then derives the
-asset to mint for the active faucet and panics if the stored `ASSET_KEY` does not belong to
-that faucet, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_KEY`
+asset to mint for the active faucet and panics if the stored `ASSET_ID` does not belong to
+that faucet, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_ID`
 was resolved for faucet A cannot be consumed by any other faucet B even if both share the
 bridge as owner. Once the bind passes, the minted asset is attached to the P2ID output
 note via `output_note::add_asset`.
@@ -978,7 +977,7 @@ note via `output_note::add_asset`.
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_KEY` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
+| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_ID` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
 
 ---
 

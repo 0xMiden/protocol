@@ -37,7 +37,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::proven_tx_builder::MockProvenTxBuilder;
 use crate::utils::create_p2any_note;
@@ -68,8 +68,8 @@ pub fn setup_chain() -> TestSetup {
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);
     let note1 = builder
-        .add_p2id_note(account1.id(), account2.id(), &[], NoteType::Public)
-        .expect("adding p2id note1 should work");
+        .add_p2any_note(account1.id(), NoteType::Public, [])
+        .expect("adding p2any note1 should work");
     let mut chain = builder.build().expect("genesis should be valid");
     chain.prove_next_block().expect("valid setup");
 
@@ -915,7 +915,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     let mut updated_account = account.clone();
     updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
+    assert_eq!(updated_account.vault().get(asset.id()).unwrap(), asset);
 
     let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
         &account.code_interface(),

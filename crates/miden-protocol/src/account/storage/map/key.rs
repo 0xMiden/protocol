@@ -10,7 +10,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Hasher, Word};
 
 // STORAGE MAP KEY
 // ================================================================================================

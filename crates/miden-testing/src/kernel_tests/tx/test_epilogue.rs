@@ -35,7 +35,7 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
-    TransactionContextBuilder,
+    TestTransactionBuilder,
     TxContextInput,
     assert_execution_error,
     assert_transaction_executor_error,
@@ -51,15 +51,15 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let input_note_1 =
         create_public_p2any_note(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(), [asset]);
 
-    let tx_context = TransactionContextBuilder::new(account.clone())
+    let tx_context = TestTransactionBuilder::new(account.clone())
         .extend_input_notes(vec![input_note_1])
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_1.clone())])
         .build()?;
 
     let code = format!(
         "
-        use $kernel::prologue
-        use $kernel::epilogue
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::epilogue
         use miden::protocol::output_note
         use miden::core::sys
 
@@ -73,7 +73,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.output_note::add_asset
             # => []
 
@@ -86,7 +86,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -159,7 +159,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
     let output_note0 = create_p2any_note(account.id(), NoteType::Private, [asset0], &mut rng);
     let output_note1 = create_p2any_note(account.id(), NoteType::Private, [asset1], &mut rng);
 
-    let tx_context = TransactionContextBuilder::new(account.clone())
+    let tx_context = TestTransactionBuilder::new(account.clone())
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(output_note0.clone()),
             RawOutputNote::Full(output_note1.clone()),
@@ -167,8 +167,8 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         .build()?;
 
     let mut code = "
-            use $kernel::prologue
-            use $kernel::epilogue
+            use miden::tx_kernel_core::prologue
+            use miden::tx_kernel_core::epilogue
             use miden::protocol::output_note
             use miden::core::sys
 
@@ -188,14 +188,14 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         # => [note_idx]
 
         push.{ASSET_VALUE}
-        push.{ASSET_KEY}
+        push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
         # => []
         ",
             recipient = note.recipient().digest(),
             note_type = Felt::from(note.metadata().note_type()),
             tag = Felt::from(note.metadata().tag()),
-            ASSET_KEY = asset.to_key_word(),
+            ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
     }
@@ -265,15 +265,16 @@ async fn epilogue_fails_when_assets_arent_preserved(
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           # create a note with the output asset
           push.{OUTPUT_ASSET_VALUE}
-          push.{OUTPUT_ASSET_KEY}
+          push.{OUTPUT_ASSET_ID}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET_KEY = output_asset.to_key_word(),
+        OUTPUT_ASSET_ID = output_asset.to_id_word(),
         OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 
@@ -298,14 +299,14 @@ async fn epilogue_fails_when_assets_arent_preserved(
 
 #[tokio::test]
 async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let test_pairs: [(u64, u64); 3] = [(9, 12), (18, 3), (20, 20)];
     let code_template = "
-        use $kernel::prologue
-        use $kernel::tx
-        use $kernel::epilogue
-        use $kernel::account
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::tx
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::account
 
         begin
             exec.prologue::prepare_transaction
@@ -348,11 +349,11 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
 
 #[tokio::test]
 async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let test_values = [0u64, u16::MAX as u64 + 1, u32::MAX as u64];
     let code_template = "
-        use $kernel::tx
+        use miden::tx_kernel_core::tx
 
         begin
             push.{value_1}
@@ -372,13 +373,13 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code_template = "
-    use $kernel::prologue
-    use $kernel::epilogue
-    use $kernel::tx
-    use $kernel::account
+    use miden::tx_kernel_core::prologue
+    use miden::tx_kernel_core::epilogue
+    use miden::tx_kernel_core::tx
+    use miden::tx_kernel_core::account
 
     begin
         exec.prologue::prepare_transaction
@@ -407,16 +408,16 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let expected_nonce = ONE + ONE;
 
     let code = format!(
         r#"
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::account
-        use $kernel::epilogue
-        use $kernel::memory
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::memory
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -453,7 +454,8 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.91.92.93.94
             push.MOCK_VALUE_SLOT0[0..2]
             repeat.5 movup.5 drop end
@@ -468,7 +470,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
-    let result = TransactionContextBuilder::with_noop_auth_account()
+    let result = TestTransactionBuilder::with_noop_auth_account()
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -503,7 +505,7 @@ async fn epilogue_fails_when_nonce_not_incremented() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_epilogue_execute_empty_transaction() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_noop_auth_account().build()?;
+    let tx_context = TestTransactionBuilder::with_noop_auth_account().build()?;
 
     let result = tx_context.execute().await;
 
@@ -523,9 +525,9 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
         r#"
         use miden::core::word
         use miden::protocol::output_note
-        use $kernel::prologue
-        use $kernel::epilogue
-        use $kernel::note
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::epilogue
+        use miden::tx_kernel_core::note
 
         begin
             exec.prologue::prepare_transaction
@@ -556,7 +558,7 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
         note_type = note_type as u8,
     );
 
-    let tx_context = TransactionContextBuilder::with_noop_auth_account().build()?;
+    let tx_context = TestTransactionBuilder::with_noop_auth_account().build()?;
 
     let result = tx_context.execute_code(&code).await.map(|_| ());
 
