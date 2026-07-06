@@ -17,6 +17,7 @@ use miden_protocol::errors::AccountIdError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::account_id_from_felt_pair;
 use crate::account::account_component_code;
 
 account_component_code!(WARDEN_CODE, "miden-standards-access-warden.masp");
@@ -170,20 +171,4 @@ pub enum WardenError {
     StorageLookupFailed(#[source] miden_protocol::errors::AccountError),
     #[error("invalid warden account ID in storage")]
     InvalidWardenId(#[source] AccountIdError),
-}
-
-// HELPERS
-// ================================================================================================
-
-/// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
-/// Returns `Ok(None)` when both felts are zero (no warden assigned).
-fn account_id_from_felt_pair(
-    suffix: Felt,
-    prefix: Felt,
-) -> Result<Option<AccountId>, AccountIdError> {
-    if suffix == Felt::ZERO && prefix == Felt::ZERO {
-        Ok(None)
-    } else {
-        AccountId::try_from_elements(suffix, prefix).map(Some)
-    }
 }
