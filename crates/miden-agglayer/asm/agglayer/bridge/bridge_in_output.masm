@@ -21,7 +21,7 @@ use {ALWAYS} from miden::standards::note::execution_hint
 # memory zero-init.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
-# - ASSET_ID         [8..11]  : 4 felts (asset ID of asset to mint)
+# - ASSET_ID          [8..11]  : 4 felts (asset ID of asset to mint)
 # - ASSET_VALUE       [12..15] : 4 felts (asset value word; [amount, 0, 0, 0])
 # - tag               [16]     : 1 felt
 # - padding           [17..19] : 3 felts (word-aligns P2ID; explicitly zeroed)
