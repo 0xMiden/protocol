@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Bound the reference block commitment and the transaction expiration into the signed transaction summary. `auth::create_tx_summary` now produces six words (`[ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, REF_PARAMS, SALT]`, where `REF_PARAMS = [0, 0, expiration_delta, ref_block_num]`), inserted into the advice map via the new `auth::build_signed_message` procedure, and `TransactionSummary` gained `block_commitment` and `ref_params` fields ([#3221](https://github.com/0xMiden/protocol/pull/3221)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
