@@ -710,8 +710,11 @@ pub proc is_signer(pub_key: word) -> felt
     # => [is_signer, pad(15)]
 end
 
-#! Check if transaction has already been executed and add it to executed transactions for replay protection, and
-#! finalizes multisig authentication.
+#! Records the transaction as executed and asserts it was not already executed, providing replay
+#! protection and finalizing multisig authentication.
+#!
+#! Writes IS_EXECUTED_FLAG into EXECUTED_TXS_SLOT keyed by MSG via set_map_item, then asserts the
+#! slot did not already hold the flag.
 #!
 #! Inputs:  [MSG]
 #! Outputs: []
@@ -720,7 +723,7 @@ end
 #! - the same transaction has already been executed
 #!
 #! Invocation: exec
-pub proc assert_new_tx(msg: word)
+pub proc record_and_assert_new_tx(msg: word)
     push.IS_EXECUTED_FLAG
     # => [[is_executed, 0, 0, 0], MSG]
 
@@ -766,9 +769,9 @@ end
 #! Where:
 #! - SALT is a cryptographically random nonce folded into the signed message, and thus into the
 #!   TX_SUMMARY_COMMITMENT, so that otherwise-identical transactions produce distinct commitments and
-#!   can run concurrently. That commitment's uniqueness is what `assert_new_tx` records and checks to
+#!   can run concurrently. That commitment's uniqueness is what `record_and_assert_new_tx` records and checks to
 #!   enforce replay protection; `auth_tx` itself records nothing, so a wrapper must call
-#!   `assert_new_tx` for replay protection to hold.
+#!   `record_and_assert_new_tx` for replay protection to hold.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
 #! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
