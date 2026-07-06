@@ -1566,13 +1566,9 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
 /// component getters, so the getter is exercised through the 16-felt `call` ABI (a getter that
 /// returns at any operand-stack depth other than 16 aborts in `restore_context` with
 /// `InvalidStackDepthOnReturn`).
-///
-/// The getter's inputs are supplied through `tx_script_args` (`make_args`), which fills the
-/// 16-element `call` frame directly; pushing a full input word in the script instead would grow the
-/// operand stack past 16 and break the getters' fixed output truncation.
-async fn execute_multisig_getter_call<F>(script_code: &str, make_args: F) -> anyhow::Result<()>
+async fn execute_multisig_getter_call<F>(build_script: F) -> anyhow::Result<()>
 where
-    F: FnOnce(&[PublicKey]) -> Word,
+    F: FnOnce(&[PublicKey]) -> String,
 {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -1590,17 +1586,16 @@ where
         .build()
         .unwrap();
 
+    let script_code = build_script(&public_keys);
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script(script_code)?;
+        .compile_tx_script(&script_code)?;
 
-    let tx_script_args = make_args(&public_keys);
     let salt = Word::from([Felt::from_u8(77); 4]);
 
     let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(tx_script)
-        .tx_script_args(tx_script_args)
         .auth_args(salt);
 
     // First pass without signatures: the getter `call` must return cleanly so the transaction
@@ -1641,7 +1636,8 @@ where
 /// yields the correct values.
 #[tokio::test]
 async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
-    let script_code = "
+    execute_multisig_getter_call(|_| {
+        "
         @transaction_script
         pub proc main
             call.::miden::standards::components::auth::multisig::get_threshold_and_num_approvers
@@ -1650,74 +1646,88 @@ async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
             # => [num_approvers, pad(14)]
             push.4 eq assert
             # => [pad(14)]
+            exec.::miden::core::sys::truncate_stack
         end
-    ";
-
-    execute_multisig_getter_call(script_code, |_| Word::empty()).await
+        "
+        .to_string()
+    })
+    .await
 }
 
 /// Regression test for the `call` ABI of `get_signer_at`.
 ///
-/// The index `0` is supplied via `tx_script_args`. The script asserts the returned scheme id
-/// matches `EcdsaK256Keccak`, exercising the getter's five-felt output through the 16-felt `call`
-/// ABI.
+/// The signer at index `0` is queried and the script asserts the returned scheme id matches
+/// `EcdsaK256Keccak`, exercising the getter's five-felt output through the 16-felt `call` ABI.
 #[tokio::test]
 async fn test_get_signer_at_call_abi() -> anyhow::Result<()> {
     let expected_scheme_id = AuthScheme::EcdsaK256Keccak.as_u8();
-    let script_code = format!(
-        r#"
+    execute_multisig_getter_call(move |_| {
+        format!(
+            r#"
         @transaction_script
         pub proc main
+            # query the signer at index 0
+            push.0
             call.::miden::standards::components::auth::multisig::get_signer_at
             # => [PUB_KEY, scheme_id, pad(11)]
             movup.4 eq.{expected_scheme_id} assert.err="expected scheme ID {expected_scheme_id}"
             # => [PUB_KEY, pad(11)]
             dropw
             # => [pad(12)]
+            exec.::miden::core::sys::truncate_stack
         end
         "#
-    );
-
-    // Index 0 as the sole input felt; the remaining felts of the word are ignored padding.
-    execute_multisig_getter_call(&script_code, |_| Word::empty()).await
+        )
+    })
+    .await
 }
 
 /// Regression test for the `call` ABI of `is_signer` when the queried key is a signer.
 ///
-/// A real approver public key is supplied via `tx_script_args`; the script asserts the getter
-/// returns `1`.
+/// A real approver public key is pushed by the script; the getter must return `1`.
 #[tokio::test]
 async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
-    let script_code = "
+    execute_multisig_getter_call(|public_keys| {
+        let pub_key = public_keys[0].to_commitment();
+        format!(
+            r#"
         @transaction_script
         pub proc main
+            push.{pub_key}
             call.::miden::standards::components::auth::multisig::is_signer
             # => [is_signer, pad(15)]
             assert
             # => [pad(15)]
+            exec.::miden::core::sys::truncate_stack
         end
-    ";
-
-    execute_multisig_getter_call(script_code, |public_keys| public_keys[0].to_commitment().into())
-        .await
+        "#
+        )
+    })
+    .await
 }
 
 /// Regression test for the `call` ABI of `is_signer` when the queried key is not a signer.
 ///
-/// A key that is not part of the approver set is supplied via `tx_script_args`; the script asserts
-/// the getter returns `0` after iterating over every approver.
+/// A key that is not part of the approver set is pushed by the script; the getter must return `0`
+/// after iterating over every approver.
 #[tokio::test]
 async fn test_is_signer_false_call_abi() -> anyhow::Result<()> {
-    let script_code = "
+    execute_multisig_getter_call(|_| {
+        // A word that is not any approver's public key commitment.
+        let non_signer = Word::from([Felt::from_u8(0xff); 4]);
+        format!(
+            r#"
         @transaction_script
         pub proc main
+            push.{non_signer}
             call.::miden::standards::components::auth::multisig::is_signer
             # => [is_signer, pad(15)]
             assertz
             # => [pad(15)]
+            exec.::miden::core::sys::truncate_stack
         end
-    ";
-
-    // A word that is not any approver's public key commitment.
-    execute_multisig_getter_call(script_code, |_| Word::from([Felt::from_u8(0xff); 4])).await
+        "#
+        )
+    })
+    .await
 }

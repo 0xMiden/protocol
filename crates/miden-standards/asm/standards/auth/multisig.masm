@@ -96,7 +96,6 @@ const ERR_CLEANUP_THRESHOLD_CONFIG_NOT_RECONCILED = "threshold config must be re
 #! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
 #! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
 #!
-#!
 #! Inputs: [init_num_of_approvers, new_num_of_approvers]
 #! Outputs: []
 #!
