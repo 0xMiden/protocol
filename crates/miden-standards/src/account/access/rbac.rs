@@ -234,6 +234,8 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         let mut membership_entries = Vec::new();
 
         for (role, members) in &rbac.roles {
+            // A `BTreeSet<AccountId>` cannot hold more than `u32::MAX` distinct account IDs in
+            // practice, so this conversion is infallible; the bound is purely defensive.
             let member_count =
                 u32::try_from(members.len()).expect("role member count fits into u32");
 

@@ -818,3 +818,32 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
 
     Ok(())
 }
+
+/// `with_roles` drops a role mapped to an empty member set (a role with no members is a no-op),
+/// while non-empty roles are still seeded.
+#[test]
+fn test_rbac_with_roles_drops_empty_role() -> anyhow::Result<()> {
+    let owner = test_account_id(111);
+    let member = test_account_id(112);
+
+    let minter = role("MINTER");
+    let burner = role("BURNER");
+
+    let account = create_rbac_account_with_members(
+        owner,
+        BTreeMap::from([
+            // Mapped to an empty set: dropped, not seeded.
+            (minter.clone(), BTreeSet::new()),
+            // Mapped to a non-empty set: seeded.
+            (burner.clone(), BTreeSet::from([member])),
+        ]),
+    )?;
+
+    assert_eq!(get_role_config(&account, &minter)?.0, Felt::ZERO);
+    assert!(!is_role_member(&account, &minter, member)?);
+
+    assert_eq!(get_role_config(&account, &burner)?.0, Felt::ONE);
+    assert!(is_role_member(&account, &burner, member)?);
+
+    Ok(())
+}
