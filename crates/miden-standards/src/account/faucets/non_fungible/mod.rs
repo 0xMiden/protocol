@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountStorage,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
@@ -60,6 +61,43 @@ pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
         .expect("storage slot name should be valid")
 });
+
+// ASSET STATUS
+// ================================================================================================
+
+// On-chain status codes stored at element 0 of the asset-status registry value. These must match
+// the `STATUS_ISSUED` / `STATUS_BURNED` constants in the non-fungible faucet MASM.
+const STATUS_ISSUED: u64 = 1;
+const STATUS_BURNED: u64 = 2;
+
+/// The issuance status of a non-fungible asset within a [`NonFungibleFaucet`].
+///
+/// Mirrors the on-chain `get_asset_status` procedure: the faucet's asset-status registry maps each
+/// token ID to `Issued` or `Burned`; a token ID that was never issued is absent from the registry
+/// and reported as `NotIssued`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetStatus {
+    /// The commitment has never been issued by this faucet.
+    NotIssued,
+    /// An NFT has been issued for the commitment and has not been burned.
+    Issued,
+    /// The commitment was issued and later burned; it is permanently consumed and can never be
+    /// issued again.
+    Burned,
+}
+
+impl AssetStatus {
+    /// Builds an [`AssetStatus`] from the raw status code held in element 0 of the registry value
+    /// word (0 = not issued, 1 = issued, 2 = burned).
+    fn from_status_code(status: Felt) -> Result<Self, NonFungibleFaucetError> {
+        match status.as_canonical_u64() {
+            0 => Ok(Self::NotIssued),
+            STATUS_ISSUED => Ok(Self::Issued),
+            STATUS_BURNED => Ok(Self::Burned),
+            other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other }),
+        }
+    }
+}
 
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
@@ -266,6 +304,33 @@ impl NonFungibleFaucet {
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
         Hasher::merge(&[data_digest, salt])
+    }
+
+    /// Reads the issuance [`AssetStatus`] of the asset identified by `commitment` from the faucet
+    /// account's `storage`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the asset-status slot cannot be read or holds an invalid status code.
+    ///
+    /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
+    pub fn asset_status(
+        storage: &AccountStorage,
+        commitment: Word,
+    ) -> Result<AssetStatus, NonFungibleFaucetError> {
+        // The registry key is the token ID (commitment elements 0 and 1) padded to a word, matching
+        // the `create_status_key` procedure in the non-fungible faucet MASM.
+        let key =
+            StorageMapKey::new(Word::new([commitment[0], commitment[1], Felt::ZERO, Felt::ZERO]));
+
+        let status_word = storage.get_map_item(Self::asset_status_slot(), key).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: Self::asset_status_slot().clone(),
+                source: err,
+            }
+        })?;
+
+        AssetStatus::from_status_code(status_word[0])
     }
 
     /// Returns the storage slot schema for the token symbol slot.

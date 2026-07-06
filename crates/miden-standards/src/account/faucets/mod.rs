@@ -18,6 +18,7 @@ pub use fungible::{
     create_singlesig_user_fungible_faucet,
 };
 pub use non_fungible::{
+    AssetStatus,
     NonFungibleFaucet,
     NonFungibleFaucetBuilder,
     create_network_non_fungible_faucet,
@@ -89,6 +90,8 @@ pub enum NonFungibleFaucetError {
     AccountCreationFailed(#[source] AccountError),
     #[error("account is not a non-fungible faucet account")]
     NotANonFungibleFaucetAccount,
+    #[error("asset status registry holds invalid status code {status}: must be 0, 1 or 2")]
+    InvalidAssetStatus { status: u64 },
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }

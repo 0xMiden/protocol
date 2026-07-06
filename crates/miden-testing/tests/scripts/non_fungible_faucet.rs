@@ -9,7 +9,7 @@ use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
-use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
+use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistOwnerControlled,
     BurnPolicy,
@@ -190,11 +190,23 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         NonFungibleFaucet::compute_asset_commitment(b"burnable token", Word::from([5, 6, 7, 8u32]));
     let recipient = Word::from([9, 9, 9, 9u32]);
 
+    // before minting, the commitment has never been issued
+    assert_eq!(
+        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        AssetStatus::NotIssued,
+    );
+
     // 1. mint and apply the patch so the faucet records the commitment as ISSUED (required for the
     //    burn below to find the asset in the issued state)
     let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
     let mut faucet = faucet;
     faucet.apply_patch(minted.account_patch())?;
+
+    // after minting, the status API reports the commitment as ISSUED
+    assert_eq!(
+        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        AssetStatus::Issued,
+    );
 
     // 2. consume a BURN note carrying the minted NFT against the faucet
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
@@ -207,13 +219,20 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    // the burn transaction succeeding is the assertion: receive_and_burn would abort with
+    // the burn transaction succeeding is part of the assertion: receive_and_burn would abort with
     // ERR_NFT_NOT_ISSUED if the commitment were not in the issued state.
-    mock_chain
+    let burned = mock_chain
         .build_tx_context(faucet.clone(), &[], &[burn_note])?
         .build()?
         .execute()
         .await?;
+
+    // after burning, the status API reports the commitment as BURNED
+    faucet.apply_patch(burned.account_patch())?;
+    assert_eq!(
+        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        AssetStatus::Burned,
+    );
 
     Ok(())
 }
