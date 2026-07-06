@@ -789,10 +789,9 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
     Ok(())
 }
 
-/// Regression test for the RBAC super-admin finding (audit L-15): once a role is delegated to a
-/// dedicated admin role, the general `ADMIN` role can no longer grant it. The role becomes
-/// exclusively controlled by its delegated admin, so a sensitive capability can be kept out of
-/// reach of the general administrator.
+/// Regression test: Once a role is delegated to a dedicated admin role, the general `ADMIN`
+/// role can no longer grant it. The role becomes exclusively controlled by its delegated admin,
+/// so a sensitive capability can be kept out of reach of the general administrator.
 #[tokio::test]
 async fn test_rbac_delegation_locks_out_admin() -> anyhow::Result<()> {
     let owner = test_account_id(101); // seeded as the sole ADMIN member

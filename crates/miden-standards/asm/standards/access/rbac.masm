@@ -4,9 +4,7 @@
 #
 # Provides per-role membership tracking with delegated role admins. Members are tracked
 # with a boolean flag and a per-role member count. Role administration is fully role-based:
-# the built-in `ADMIN` role is the default administrator of every role, mirroring the
-# OpenZeppelin AccessControl `DEFAULT_ADMIN_ROLE`. There is no external super-admin above
-# the role graph.
+# the built-in `ADMIN` role is the default administrator of every role.
 #
 # Storage layout (2 slots):
 #
@@ -416,8 +414,7 @@ end
 #! Asserts that the note sender holds the role's effective admin role.
 #!
 #! The effective admin is the role's configured delegated admin, or the built-in `ADMIN`
-#! role when none is configured. There is no owner override: role administration is fully
-#! role-based.
+#! role when none is configured.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []

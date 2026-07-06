@@ -52,12 +52,10 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// ## Administration model
 ///
-/// Role administration is fully role-based; there is no external owner acting as an
-/// unconditional super-admin above the role graph. Every role has an *effective admin role*:
+/// Role administration is fully role-based. Every role has an *effective admin role*:
 /// its configured delegated admin when set, otherwise the built-in
 /// [`ADMIN`][Self::ADMIN_ROLE] role. Only members of a role's effective admin role may grant,
-/// revoke, or re-point (`set_role_admin`) that role. This mirrors the OpenZeppelin
-/// `AccessControl` `DEFAULT_ADMIN_ROLE`.
+/// revoke, or re-point (`set_role_admin`) that role.
 ///
 /// The component is seeded at construction with one or more members of the `ADMIN` role (see
 /// [`new`][Self::new] / [`with_admins`][Self::with_admins]); this bootstraps administration.

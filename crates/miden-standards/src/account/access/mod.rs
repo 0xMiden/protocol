@@ -50,9 +50,9 @@ pub enum AccessControl {
     /// fallback authority for gated procedures without a configured role) and is also seeded as
     /// the initial member of the RBAC `ADMIN` role, which bootstraps role administration.
     ///
-    /// Role administration itself is fully role-based and does not consult the owner: each role
-    /// is managed by its effective admin role (its delegated admin, or `ADMIN` by default). See
-    /// [`RoleBasedAccessControl`] for the administration model.
+    /// Role administration itself is fully role-based. Each role is managed by its effective
+    /// admin role (its delegated admin, or `ADMIN` by default). See [`RoleBasedAccessControl`]
+    /// for the administration model.
     ///
     /// `roles` assigns a role to individual authority-gated procedures, keyed by procedure root
     /// (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` → `UNPAUSER`). A gated
