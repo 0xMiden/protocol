@@ -1470,18 +1470,6 @@ mod tests {
         assert_eq!(chain.account_authenticators, deserialized.account_authenticators);
     }
 
-    /// Asserts that every validator has a positional signature that verifies against its key.
-    fn assert_signatures_verify(
-        signatures: &BlockSignatures,
-        validator_keys: &ValidatorKeys,
-        commitment: Word,
-    ) {
-        assert_eq!(signatures.len(), validator_keys.len());
-        for (signature, key) in signatures.as_signatures().iter().zip(validator_keys.as_keys()) {
-            assert!(signature.verify(commitment, key));
-        }
-    }
-
     #[test]
     fn mock_chain_block_signatures() -> anyhow::Result<()> {
         let mut builder = MockChain::builder();
@@ -1492,11 +1480,10 @@ mod tests {
         // as the signer of block 1.
         let genesis_block = chain.latest_block();
         let genesis_validator_keys = genesis_block.header().validator_keys().clone();
-        assert_signatures_verify(
-            genesis_block.signatures(),
-            &genesis_validator_keys,
-            genesis_block.header().commitment(),
-        );
+        genesis_block
+            .signatures()
+            .verify_against(genesis_block.header().commitment(), &genesis_validator_keys)
+            .unwrap();
 
         // Add another block.
         chain.prove_next_block()?;
@@ -1504,11 +1491,10 @@ mod tests {
         // The next block's signatures must verify against the validator keys committed to by its
         // parent (the genesis block), not the keys in its own header.
         let next_block = chain.latest_block();
-        assert_signatures_verify(
-            next_block.signatures(),
-            &genesis_validator_keys,
-            next_block.header().commitment(),
-        );
+        next_block
+            .signatures()
+            .verify_against(next_block.header().commitment(), &genesis_validator_keys)
+            .unwrap();
 
         // Without rotation, the validator keys are carried through from the genesis header to the
         // next.
