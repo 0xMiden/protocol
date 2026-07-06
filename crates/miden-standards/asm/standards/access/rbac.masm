@@ -3,10 +3,7 @@
 # Role-based access control for account components.
 #
 # Provides per-role membership tracking with delegated role admins. Members are tracked
-# with a boolean flag and a per-role member count. Role administration is fully role-based:
-# the built-in `ADMIN` role is the default administrator of every role, mirroring the
-# OpenZeppelin AccessControl `DEFAULT_ADMIN_ROLE`. There is no external super-admin above
-# the role graph.
+# with a boolean flag and a per-role member count. Role administration is fully role-based.
 #
 # Storage layout (2 slots):
 #
@@ -225,9 +222,9 @@ pub proc grant_role
     dup exec.assert_sender_is_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    # Validate the account ID. This is the only membership-mutating path that validates:
-    # grant is the sole writer of the membership map, so every stored key is already valid
-    # and revoke/renounce need not re-check (an invalid ID cannot match a stored key).
+    # Validate the account ID. Grant is the sole writer of the membership map, so validating
+    # here guarantees every stored key is valid; revoke and renounce therefore skip the check,
+    # since an invalid ID can never match a stored key.
     dup.2 dup.2 exec.account_id::validate_structure
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
@@ -420,17 +417,17 @@ proc get_effective_role_admin
     dup eq.0
     # => [is_unset, admin_role_symbol]
 
-    if.true
-        drop push.ADMIN_ROLE
-    end
+    push.ADMIN_ROLE swap
+    # => [is_unset, ADMIN_ROLE, admin_role_symbol]
+
+    cdrop
     # => [effective_admin_role_symbol]
 end
 
 #! Asserts that the note sender holds the role's effective admin role.
 #!
 #! The effective admin is the role's configured delegated admin, or the built-in `ADMIN`
-#! role when none is configured. There is no owner override: role administration is fully
-#! role-based.
+#! role when none is configured.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
@@ -504,13 +501,10 @@ proc set_membership_internal
     # => [is_member, role_symbol, account_suffix, account_prefix]
 
     # Stash the membership flag and role_symbol; both are needed after the map write.
-    dup loc_store.MEMBERSHIP_FLAG_LOC
-    # => [is_member, role_symbol, account_suffix, account_prefix]
+    loc_store.MEMBERSHIP_FLAG_LOC
+    # => [role_symbol, account_suffix, account_prefix]
 
-    dup.1 loc_store.ROLE_SYMBOL_LOC
-    # => [is_member, role_symbol, account_suffix, account_prefix]
-
-    drop
+    dup loc_store.ROLE_SYMBOL_LOC
     # => [role_symbol, account_suffix, account_prefix]
 
     push.0
@@ -518,14 +512,14 @@ proc set_membership_internal
 
     # Build the value word [is_member, 0, 0, 0] on top of the key word.
     push.0.0.0 loc_load.MEMBERSHIP_FLAG_LOC
-    # => [is_member, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix]
+    # => [[is_member, 0, 0, 0], 0, role_symbol, account_suffix, account_prefix]
 
     swapw
-    # => [0, role_symbol, account_suffix, account_prefix, is_member, 0, 0, 0]
+    # => [0, role_symbol, account_suffix, account_prefix, [is_member, 0, 0, 0]]
 
     push.ROLE_MEMBERSHIP_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
-    #     is_member, 0, 0, 0]
+    #     [is_member, 0, 0, 0]]
 
     exec.native_account::set_map_item
     # => [OLD_MEMBERSHIP_WORD]

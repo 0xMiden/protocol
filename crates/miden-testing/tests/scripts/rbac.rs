@@ -24,6 +24,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 // HELPERS
 // ================================================================================================
@@ -690,43 +691,6 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Once a role is delegated, only its delegated admin — not the `ADMIN` role — may clear the
-/// delegation, reverting the role to `ADMIN` management.
-#[tokio::test]
-async fn test_rbac_delegated_admin_can_clear_own_delegation() -> anyhow::Result<()> {
-    let owner = test_account_id(91);
-    let manager = test_account_id(94);
-
-    let user_role = role("USER");
-    let manager_role = role("MANAGER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    // Owner (ADMIN) delegates USER to MANAGER and seeds a MANAGER member.
-    let set_admin_note = build_note(owner, set_role_admin_script(&user_role, Some(&manager_role)))?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
-
-    let grant_manager_note = build_note(owner, grant_role_script(&manager_role, manager))?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_manager_note).await?;
-
-    // The owner (ADMIN) can no longer touch USER's admin config — delegation is exclusive.
-    let owner_clear_note = build_note(owner, set_role_admin_script(&user_role, None))?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&owner_clear_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
-
-    // The MANAGER member clears the delegation, reverting USER to ADMIN management.
-    let clear_admin_note = build_note(manager, set_role_admin_script(&user_role, None))?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &clear_admin_note).await?;
-
-    let query_note = build_note(owner, assert_role_admin_script(&user_role, None))?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &query_note).await?;
-
-    Ok(())
-}
-
 #[tokio::test]
 async fn test_rbac_set_role_admin_rejects_zero_role_symbol() -> anyhow::Result<()> {
     let owner = test_account_id(92);
@@ -789,13 +753,28 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
     Ok(())
 }
 
-/// Regression test: Once a role is delegated to a dedicated admin role, the general `ADMIN`
-/// role can no longer grant it. The role becomes exclusively controlled by its delegated admin,
+/// The action that a role's delegated admin performs exclusively, out of the general `ADMIN`
+/// role's reach.
+enum DelegatedAdminAction {
+    /// Grant the delegated role to a member (`grant_role`).
+    GrantRole,
+    /// Clear the delegation, reverting the role to `ADMIN` management (`set_role_admin(_, None)`).
+    ClearDelegation,
+}
+
+/// Regression test: once a role is delegated to a dedicated admin role, the general `ADMIN` role
+/// is locked out of it entirely — it can neither manage membership (`grant_role`) nor re-point the
+/// delegation (`set_role_admin`). The role becomes exclusively controlled by its delegated admin,
 /// so a sensitive capability can be kept out of reach of the general administrator.
+#[rstest]
+#[case::grant_role(DelegatedAdminAction::GrantRole)]
+#[case::clear_delegation(DelegatedAdminAction::ClearDelegation)]
 #[tokio::test]
-async fn test_rbac_delegation_locks_out_admin() -> anyhow::Result<()> {
+async fn test_rbac_delegation_locks_out_admin(
+    #[case] action: DelegatedAdminAction,
+) -> anyhow::Result<()> {
     let owner = test_account_id(101); // seeded as the sole ADMIN member
-    let finance = test_account_id(102);
+    let delegated_admin = test_account_id(102);
     let member = test_account_id(103);
 
     let minter = role("MINTER");
@@ -806,21 +785,35 @@ async fn test_rbac_delegation_locks_out_admin() -> anyhow::Result<()> {
     // ADMIN (owner) delegates MINTER to MINT_ADMIN and seeds a MINT_ADMIN member.
     let set_admin_note = build_note(owner, set_role_admin_script(&minter, Some(&mint_admin)))?;
     let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
-    let grant_finance_note = build_note(owner, grant_role_script(&mint_admin, finance))?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_finance_note).await?;
+    let grant_admin_note = build_note(owner, grant_role_script(&mint_admin, delegated_admin))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_admin_note).await?;
 
-    // The ADMIN member (owner) can no longer grant MINTER — it is out of ADMIN's reach.
-    let owner_grant_note = build_note(owner, grant_role_script(&minter, member))?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&owner_grant_note))?
-        .build()?;
-    let result = tx.execute().await;
+    // The guarded action MINTER's effective admin controls; both grant and re-delegation are
+    // gated on the delegated admin, so neither is reachable by the general ADMIN role.
+    let action_script = match action {
+        DelegatedAdminAction::GrantRole => grant_role_script(&minter, member),
+        DelegatedAdminAction::ClearDelegation => set_role_admin_script(&minter, None),
+    };
+
+    // The ADMIN member (owner) can no longer perform it — MINTER is out of ADMIN's reach.
+    let owner_note = build_note(owner, action_script.clone())?;
+    let result = mock_chain
+        .build_tx_context(updated.clone(), &[], slice::from_ref(&owner_note))?
+        .build()?
+        .execute()
+        .await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
 
-    // Only the delegated MINT_ADMIN member can grant MINTER.
-    let finance_grant_note = build_note(finance, grant_role_script(&minter, member))?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &finance_grant_note).await?;
-    assert!(is_role_member(&updated, &minter, member)?);
+    // Only the delegated MINT_ADMIN member can, and the action takes effect.
+    let admin_note = build_note(delegated_admin, action_script)?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &admin_note).await?;
+    match action {
+        DelegatedAdminAction::GrantRole => assert!(is_role_member(&updated, &minter, member)?),
+        DelegatedAdminAction::ClearDelegation => {
+            let query_note = build_note(owner, assert_role_admin_script(&minter, None))?;
+            execute_note_and_apply(&mock_chain, &updated, &query_note).await?;
+        },
+    }
 
     Ok(())
 }
@@ -834,7 +827,7 @@ async fn test_rbac_admin_membership_can_be_handed_off() -> anyhow::Result<()> {
     let new_admin = test_account_id(105);
     let member = test_account_id(106);
 
-    let admin = role("ADMIN");
+    let admin = RoleBasedAccessControl::admin_role();
     let pauser = role("PAUSER");
 
     let (account, mock_chain) = create_rbac_chain(owner)?;
@@ -850,10 +843,11 @@ async fn test_rbac_admin_membership_can_be_handed_off() -> anyhow::Result<()> {
 
     // The former ADMIN (owner) can no longer administer roles.
     let owner_grant_note = build_note(owner, grant_role_script(&pauser, member))?;
-    let tx = mock_chain
+    let result = mock_chain
         .build_tx_context(updated.clone(), &[], slice::from_ref(&owner_grant_note))?
-        .build()?;
-    let result = tx.execute().await;
+        .build()?
+        .execute()
+        .await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
 
     // The new ADMIN can.
@@ -869,7 +863,7 @@ async fn test_rbac_admin_membership_can_be_handed_off() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_rbac_owner_seeded_as_initial_admin() -> anyhow::Result<()> {
     let owner = test_account_id(107);
-    let admin = role("ADMIN");
+    let admin = RoleBasedAccessControl::admin_role();
 
     let account = create_rbac_account_with_owner(owner)?;
 

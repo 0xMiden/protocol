@@ -20,18 +20,6 @@ use crate::utils::ShortCapitalString;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleSymbol(ShortCapitalString);
 
-impl Ord for RoleSymbol {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.as_element().as_canonical_u64().cmp(&other.as_element().as_canonical_u64())
-    }
-}
-
-impl PartialOrd for RoleSymbol {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl RoleSymbol {
     /// Alphabet used for role symbols (`A-Z` and `_`).
     pub const ALPHABET: &'static str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
@@ -72,6 +60,18 @@ impl RoleSymbol {
     /// Returns the [`Felt`] encoding of this role symbol.
     pub fn as_element(&self) -> Felt {
         self.0.as_element(Self::ALPHABET).expect("RoleSymbol alphabet is always valid")
+    }
+}
+
+impl Ord for RoleSymbol {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_element().as_canonical_u64().cmp(&other.as_element().as_canonical_u64())
+    }
+}
+
+impl PartialOrd for RoleSymbol {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
