@@ -1698,10 +1698,8 @@ async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
         end
     ";
 
-    execute_multisig_getter_call(script_code, |public_keys| {
-        public_keys[0].to_commitment().into()
-    })
-    .await
+    execute_multisig_getter_call(script_code, |public_keys| public_keys[0].to_commitment().into())
+        .await
 }
 
 /// Regression test for the `call` ABI of `is_signer` when the queried key is not a signer.
