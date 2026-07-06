@@ -10,11 +10,19 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteRecipient,
+    NoteStorage,
+    NoteType,
+    PartialNoteMetadata,
+};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
@@ -1228,6 +1236,122 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.prove_next_block()?;
 
     assert_eq!(multisig_account.vault().get_balance(asset.id())?.as_u64(), 6);
+
+    Ok(())
+}
+
+/// Regression test for the audit finding "Per-Procedure Threshold Overrides Can Reduce Required
+/// Signatures for Untracked Transaction Effects".
+///
+/// A low per-procedure override (`receive_asset` = 1) must not lower the required signatures for
+/// output notes created directly by the transaction script. Such notes are not attributed to any
+/// tracked native procedure (`was_procedure_called` never fires for them), so they must stay bound
+/// to the default threshold. Consuming a P2ID note (tracked `receive_asset`, override 1) while the
+/// tx script also creates an output note must therefore require the default threshold (2), not 1.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_proc_threshold_override_does_not_lower_untracked_output_notes(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    // receive_asset is overridden to require only 1 signature.
+    let proc_threshold_map = vec![(BasicWallet::receive_asset_root(), 1)];
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, proc_threshold_map)?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+
+    // P2ID note consumed by the multisig: triggers the tracked `receive_asset` (override 1).
+    let input_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+
+    let mock_chain = mock_chain_builder.build()?;
+
+    // Assetless output note created directly by the tx script via `output_note::create`, which is
+    // NOT tracked by `was_procedure_called`. It carries no assets, so it stays balance-neutral and
+    // needs no (tracked) `move_asset_to_note`.
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
+    let output_note = Note::new(
+        NoteAssets::new(vec![])?,
+        PartialNoteMetadata::new(multisig_account.id(), NoteType::Public),
+        NoteRecipient::new(
+            Word::from([1_u32, 2_u32, 3_u32, 4_u32]),
+            note_script.clone(),
+            NoteStorage::default(),
+        ),
+    );
+
+    let create_output_note_script = CodeBuilder::default().compile_tx_script(format!(
+        "use miden::protocol::output_note\n@transaction_script\npub proc main\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    drop\nend",
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Public as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    ))?;
+
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
+        .tx_script(create_output_note_script)
+        .add_note_script(note_script)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .auth_args(salt);
+
+    // Execute unsigned to obtain the tx summary to sign.
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+
+    // 1 signature must FAIL: the untracked output note keeps the threshold at the default (2),
+    // even though the only tracked procedure (`receive_asset`) is overridden to 1.
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let one_sig_result = tx_context_builder
+        .clone()
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .build()?
+        .execute()
+        .await;
+    one_sig_result.unwrap_err().unwrap_unauthorized_err();
+
+    // 2 signatures (the default threshold) must SUCCEED.
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+    let two_sig_result = tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        two_sig_result.is_ok(),
+        "creating an output note must require the default threshold, not the receive_asset override"
+    );
 
     Ok(())
 }

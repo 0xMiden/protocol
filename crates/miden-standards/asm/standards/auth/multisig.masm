@@ -5,6 +5,7 @@
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::standards::auth
 use miden::standards::auth::signature
 use miden::core::word
@@ -444,6 +445,15 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     end
 
     drop
+    # => [transaction_threshold]
+
+    # Output notes are not attributed to any tracked native procedure, so a
+    # low per-procedure override must not authorize them below default_threshold.
+    exec.tx::get_num_output_notes neq.0
+    # => [has_output_notes, transaction_threshold]
+    if.true
+        loc_load.DEFAULT_THRESHOLD_LOC u32max
+    end
     # => [transaction_threshold]
 
     loc_load.DEFAULT_THRESHOLD_LOC

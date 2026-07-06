@@ -1,5 +1,6 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::standards::auth
 use miden::standards::auth::multisig
@@ -177,11 +178,25 @@ end
 #! - transaction_threshold is the effective minimum number of signatures required.
 #!
 #! Invocation: exec
+@locals(1)
 proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
+    # save default_threshold for the output-note floor below
+    dup loc_store.0
+    # => [default_threshold, policy_threshold]
+
     dup.1 eq.0
     # => [is_policy_zero, default_threshold, policy_threshold]
 
     cdrop
+    # => [effective_transaction_threshold]
+
+    # Output notes are not attributed to any tracked native procedure, so a
+    # low per-procedure policy must not authorize them below default_threshold.
+    exec.tx::get_num_output_notes neq.0
+    # => [has_output_notes, effective_transaction_threshold]
+    if.true
+        loc_load.0 u32max
+    end
     # => [effective_transaction_threshold]
 end
 
