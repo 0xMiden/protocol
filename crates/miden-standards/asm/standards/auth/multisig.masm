@@ -581,8 +581,6 @@ pub proc set_procedure_threshold
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
     # => [proc_threshold, PROC_ROOT]
 
-    # Ensure PROC_ROOT is one of the account's procedures before storing an override for it,
-    # so a threshold cannot be silently written under a root the account does not have.
     movdn.4 dupw
     # => [PROC_ROOT, PROC_ROOT, proc_threshold]
 
@@ -647,12 +645,11 @@ pub proc get_signer_at
     exec.active_account::get_initial_map_item
     # => [[scheme_id, 0, 0, 0], PUB_KEY]
 
-    # move scheme_id below the whole PUB_KEY word in one step, then drop the zero padding
     movdn.7 drop drop drop
     # => [PUB_KEY, scheme_id, pad(15)]
 
     # truncate the stack
-    movup.5 drop movup.5 drop movup.5 drop movup.5 drop
+    repeat.4 movup.5 drop end
     # => [PUB_KEY, scheme_id, pad(11)]
 end
 
