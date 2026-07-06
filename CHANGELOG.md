@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
