@@ -4,7 +4,6 @@ use miden::core::crypto::dsa::ecdsa_k256_keccak
 use miden::protocol::active_account
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
-use miden::protocol::tx
 use miden::standards::auth
 
 # CONSTANTS
@@ -36,13 +35,14 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #! - 2 => falcon512_poseidon2
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
-#! changed or not. Then it computes and signs the following message (in memory order):
-#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-#!  OUTPUT_NOTES_COMMITMENT, [0, 0, ref_block_num, final_nonce]]
+#! changed or not. Then it computes and signs the commitment to the following summary
+#! (in memory order):
+#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!  BLOCK_COMMITMENT, [0, 0, expiration_delta, ref_block_num], [0, 0, 0, final_nonce]]
 #!
-#! Including the final_nonce is necessary for replay protection. The reference block number is
-#! included to commit to the transaction creator's intended reference block of the transaction
-#! which determines the fee parameters and therefore the fee amount that is deducted.
+#! Including the final_nonce is necessary for replay protection. The reference block number and
+#! commitment, and the expiration delta are bound by the summary itself, so the SALT only needs to
+#! carry the final_nonce.
 #!
 #! Inputs:  [PUB_KEY, scheme_id]
 #! Outputs: []
@@ -53,21 +53,14 @@ pub proc authenticate_transaction
     # ---------------------------------------------------------------------------------------------
     # This has to happen before computing the delta commitment, otherwise that procedure will abort
     exec.native_account::incr_nonce
-    exec.tx::get_block_number
-    push.0.0
-    # => [[0, 0, ref_block_num, final_nonce], PUB_KEY, scheme_id]
+    push.0.0.0
+    # => [[0, 0, 0, final_nonce], PUB_KEY, scheme_id]
 
     # Compute the message that is signed.
     # ---------------------------------------------------------------------------------------------
-    exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
-
-    # insert tx summary into advice provider for extraction by the host
-    adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
-
-    # The commitment to the tx summary is the message that is signed
-    exec.auth::hash_tx_summary
+    # ref_block_num, BLOCK_COMMITMENT and expiration_delta are bound inside the summary, and the
+    # summary is inserted into the advice map for extraction by the host.
+    exec.auth::build_signed_message
     # OS => [MESSAGE, PUB_KEY, scheme_id]
     # AS => []
 

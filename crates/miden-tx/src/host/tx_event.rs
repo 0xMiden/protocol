@@ -712,7 +712,8 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+///         BLOCK_COMMITMENT, REF_PARAMS, SALT
 ///     ]
 /// }
 /// ```
@@ -727,21 +728,25 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    if commitments.len() != 16 {
+    if commitments.len() != 24 {
         return Err(TransactionKernelError::TransactionSummaryConstructionFailed(
-            "expected 4 words for transaction summary commitments".into(),
+            "expected 6 words for transaction summary commitments".into(),
         ));
     }
 
     let account_delta_commitment = extract_word(commitments, 0);
     let input_notes_commitment = extract_word(commitments, 4);
     let output_notes_commitment = extract_word(commitments, 8);
-    let salt = extract_word(commitments, 12);
+    let block_commitment = extract_word(commitments, 12);
+    let ref_params = extract_word(commitments, 16);
+    let salt = extract_word(commitments, 20);
 
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        block_commitment,
+        ref_params,
         salt,
     )?;
 

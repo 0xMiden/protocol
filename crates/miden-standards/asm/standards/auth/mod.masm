@@ -13,50 +13,129 @@ pub mod tx_script_allowlist
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
 #! Inputs:  [SALT]
-#! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+#! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!           BLOCK_COMMITMENT, REF_PARAMS, SALT]
 #!
 #! Where:
 #! - SALT is a user-defined input recommended to use as replay protection.
+#! - REF_PARAMS is [0, 0, expiration_delta, ref_block_num]. It binds the transaction expiration
+#!   and the readable reference block number.
+#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block. It binds the block
+#!   canonically instead of by height only, closing the reorg and (up to shared history)
+#!   cross-network replay ambiguity.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 pub proc create_tx_summary
+    # Bind the  reference block and expiration into the summary.
+    # REF_PARAMS = [0, 0, expiration_delta, ref_block_num]
+    exec.tx::get_block_number
+    exec.tx::get_expiration_block_delta
+    push.0.0
+    # => [REF_PARAMS, SALT]
+
+    # Bind the reference block by its commitment.
+    exec.tx::get_block_commitment
+    # => [BLOCK_COMMITMENT, REF_PARAMS, SALT]
+
     exec.tx::get_output_notes_commitment
-    # => [OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
 
     exec.tx::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
 
     exec.native_account::compute_delta_commitment
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+    #     BLOCK_COMMITMENT, REF_PARAMS, SALT]
 end
 
 #! Hashes the provided transaction summary and returns its commitment.
 #!
-#! Inputs:  [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+#! The summary is six words, absorbed in three permutation rounds (the sponge rate is two words).
+#!
+#! Inputs:  [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!           BLOCK_COMMITMENT, REF_PARAMS, SALT]
 #! Outputs: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
 #! - SALT is an arbitrary word used for replay protection.
+#! - REF_PARAMS is [0, 0, expiration_delta, ref_block_num].
+#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 pub proc hash_tx_summary
     # pad capacity element of the hasher
     padw movdnw.2
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [DELTA, INPUT, CAPACITY, OUTPUT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
 
+    # Round 1: absorb DELTA + INPUT
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    # drop rate words
     dropw dropw
-    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [CAPACITY, OUTPUT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
 
+    # Round 2: absorb OUTPUT + BLOCK_COMMITMENT
     movdnw.2
-    # => [OUTPUT_NOTES_COMMITMENT, SALT, CAPACITY]
+    # => [OUTPUT, BLOCK_COMMITMENT, CAPACITY, REF_PARAMS, SALT]
+    exec.poseidon2::permute
+    dropw dropw
+    # => [CAPACITY, REF_PARAMS, SALT]
 
+    # Round 3: absorb REF_PARAMS + SALT
+    movdnw.2
+    # => [REF_PARAMS, SALT, CAPACITY]
     exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
+    # => [TX_SUMMARY_COMMITMENT]
+end
+
+#! Builds the transaction summary, inserts it into the advice map keyed by its commitment, and
+#! returns that commitment.
+#!
+#! Inputs:  [SALT]
+#! Outputs: [TX_SUMMARY_COMMITMENT]
+#!
+#! Where:
+#! - SALT is a user-defined input recommended to use as replay protection.
+#! - TX_SUMMARY_COMMITMENT is the commitment to the transaction summary, used as the signed message.
+#!
+#! Invocation: exec
+@locals(24)
+pub proc build_signed_message
+    exec.create_tx_summary
+    # => [DELTA, INPUT, OUTPUT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
+
+    # Persist the six summary words to local memory in the order the host reads them.
+    loc_storew_le.0  dropw
+    loc_storew_le.4  dropw
+    loc_storew_le.8  dropw
+    loc_storew_le.12 dropw
+    loc_storew_le.16 dropw
+    loc_storew_le.20 dropw
+    # => []
+
+    # Reload the six words in reverse so DELTA ends up on top, matching hash_tx_summary's inputs.
+    padw loc_loadw_le.20
+    padw loc_loadw_le.16
+    padw loc_loadw_le.12
+    padw loc_loadw_le.8
+    padw loc_loadw_le.4
+    padw loc_loadw_le.0
+    # => [DELTA, INPUT, OUTPUT, BLOCK_COMMITMENT, REF_PARAMS, SALT]
+
+    exec.hash_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # Insert the six words into the advice map keyed by the summary commitment.
+    locaddr.0 movdn.4
+    # => [TX_SUMMARY_COMMITMENT, start_ptr]
+
+    locaddr.0 add.24 movdn.5
+    # => [TX_SUMMARY_COMMITMENT, start_ptr, end_ptr]
+
+    adv.insert_mem
+    # => [TX_SUMMARY_COMMITMENT, start_ptr, end_ptr]
+
+    movup.4 drop movup.4 drop
     # => [TX_SUMMARY_COMMITMENT]
 end

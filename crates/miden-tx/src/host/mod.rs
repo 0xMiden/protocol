@@ -429,6 +429,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        block_commitment: Word,
+        ref_params: Word,
         salt: Word,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
@@ -469,7 +471,14 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        Ok(TransactionSummary::new(account_delta, input_notes, output_notes, salt))
+        Ok(TransactionSummary::new(
+            account_delta,
+            input_notes,
+            output_notes,
+            block_commitment,
+            ref_params,
+            salt,
+        ))
     }
 
     /// Returns the underlying store of the base host.

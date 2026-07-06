@@ -1041,13 +1041,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         dropw padw
         # => [SALT, pad(12)]
 
-        exec.::miden::standards::auth::create_tx_summary
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-        adv.insert_hqword
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-        exec.::miden::standards::auth::hash_tx_summary
+        exec.::miden::standards::auth::build_signed_message
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
         emit.AUTH_UNAUTHORIZED_EVENT
@@ -1195,13 +1189,7 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
             dropw padw
             # => [SALT, pad(12)]
 
-            exec.::miden::standards::auth::create_tx_summary
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-            adv.insert_hqword
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-            exec.::miden::standards::auth::hash_tx_summary
+            exec.::miden::standards::auth::build_signed_message
             # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
             emit.AUTH_UNAUTHORIZED_EVENT

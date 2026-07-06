@@ -441,7 +441,6 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
-      use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
@@ -451,19 +450,13 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce
-          exec.tx::get_block_number
-          push.0.0
-          # => [[0, 0, block_num, final_nonce], pad(16)]
+          push.0.0.0
+          # => [[0, 0, 0, final_nonce], pad(16)]
           # => [SALT, pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-          # insert tx summary into advice provider for extraction by the host
-          adv.insert_hqword
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-          exec.auth::hash_tx_summary
+          # Builds the six-word summary, inserts it into the advice map, and returns its commitment.
+          # The reference block, its commitment and the expiration delta are bound by the summary.
+          exec.auth::build_signed_message
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -498,6 +491,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let tx_context = mock_chain.build_tx_context(account, &[input_note.id()], &[])?.build()?;
     let ref_block_num = tx_context.tx_inputs().block_header().block_num().as_u32();
+    let ref_block_commitment = tx_context.tx_inputs().block_header().commitment();
     let final_nonce = tx_context.account().nonce().as_canonical_u64() as u32 + 1;
     let input_notes = tx_context.input_notes().clone();
     let output_notes = RawOutputNotes::new(vec![RawOutputNote::Partial(output_note.into())])?;
@@ -510,9 +504,10 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
         assert_eq!(tx_summary.output_notes(), &output_notes);
-        assert_eq!(tx_summary.salt(), Word::from(
-          [0, 0, ref_block_num, final_nonce]
-        ));
+        assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
+        // No expiration delta is set, so REF_PARAMS is [0, 0, 0, ref_block_num].
+        assert_eq!(tx_summary.ref_params(), Word::from([0, 0, 0, ref_block_num]));
+        assert_eq!(tx_summary.salt(), Word::from([0, 0, 0, final_nonce]));
     });
 
     Ok(())
@@ -539,6 +534,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
 
     let tx = tx_builder.clone().build()?;
     let ref_block_num = tx.tx_inputs().block_header().block_num();
+    let ref_block_commitment = tx.tx_inputs().block_header().commitment();
     let tx = tx.execute().await?;
 
     let nonce_delta = Felt::ONE;
@@ -554,7 +550,10 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account_delta,
         InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
         RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2any_note))])?,
-        Word::from([0, 0, ref_block_num.as_u32(), final_nonce.as_canonical_u64() as u32]),
+        ref_block_commitment,
+        // No expiration delta is set, so REF_PARAMS is [0, 0, 0, ref_block_num].
+        Word::from([0, 0, 0, ref_block_num.as_u32()]),
+        Word::from([0, 0, 0, final_nonce.as_canonical_u64() as u32]),
     );
 
     let summary_commitment = expected_summary.to_commitment();

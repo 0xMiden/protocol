@@ -362,6 +362,11 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
+    // The reference block the signed summary is bound to. The replay below must reference the same
+    // block, otherwise the summary (which now binds the reference block and its commitment) would
+    // differ and the signatures would fail to verify before the replay-protection check is reached.
+    let ref_block = mock_chain.latest_block_header().block_num();
+
     // Build base transaction context
     let tx_context_builder =
         mock_chain.build_tx_context(multisig_account.id(), &[], &[])?.auth_args(salt);
@@ -398,10 +403,11 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
 
-    // Attempt to execute the same transaction again - should fail due to replay protection
-    // Must rebuild from the updated mock chain to pick up the new account state
+    // Attempt to execute the same transaction again - should fail due to replay protection.
+    // Rebuild from the updated mock chain to pick up the new account state, but reference the
+    // original block so the summary (and therefore the signed message) matches the first execution.
     let tx_context_replay = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_tx_context_at(ref_block, multisig_account.id(), &[], &[])?
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)

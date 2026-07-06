@@ -724,15 +724,9 @@ pub proc auth_tx(salt: word)
 
     # ------ Computing transaction summary ------
 
-    exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    # insert tx summary into advice provider for extraction by the host
-    adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    # the commitment to the tx summary is the message that is signed
-    exec.auth::hash_tx_summary
+    # The summary binds the reference block, its commitment and the expiration delta, and is
+    # inserted into the advice map for extraction by the host. The commitment is the signed message.
+    exec.auth::build_signed_message
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
