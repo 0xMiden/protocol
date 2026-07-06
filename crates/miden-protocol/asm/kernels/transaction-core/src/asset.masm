@@ -14,6 +14,8 @@ const ERR_VAULT_SPLIT_COMPOSITION_NONE="assets with composition none cannot be s
 
 const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be compared"
 
+const ERR_FAUCET_IS_NOT_ASSET_ORIGIN="the faucet is not the origin of the asset"
+
 # CONSTANT ACCESSORS
 # =================================================================================================
 
@@ -184,10 +186,42 @@ pub proc validate
     # => [ASSET_ID, ASSET_VALUE]
 end
 
+#! Validates that an asset is well formed and originates from the provided faucet_id.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix of the faucet's account ID.
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset is not well formed (see validate).
+#! - the asset's faucet ID does not match the provided faucet_id.
+pub proc validate_origin
+    movdn.9 movdn.9
+    # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the asset ID and value are valid
+    exec.validate
+    # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the origin of the asset is the faucet_id provided via the stack
+    exec.id_to_faucet_id
+    # => [asset_faucet_id_suffix, asset_faucet_id_prefix, ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    movup.11 movup.11
+    # => [faucet_id_suffix, faucet_id_prefix, asset_faucet_id_suffix, asset_faucet_id_prefix, ASSET_ID, ASSET_VALUE]
+
+    exec.account_id::is_equal assert.err=ERR_FAUCET_IS_NOT_ASSET_ORIGIN
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
 #! Merges two values for the same asset and returns the combined value.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
-#! and have already been validated.
+#! WARNING: This procedure assumes both asset values have the same asset ID and have already been
+#! validated. The `asset_composition` must be taken from the asset ID.
 #!
 #! Inputs:  [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [MERGED_ASSET_VALUE]

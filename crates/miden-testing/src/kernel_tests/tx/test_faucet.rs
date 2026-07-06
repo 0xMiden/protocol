@@ -11,6 +11,7 @@ use miden_protocol::asset::{
     NonFungibleAsset,
 };
 use miden_protocol::errors::tx_kernel::{
+    ERR_FAUCET_IS_NOT_ASSET_ORIGIN,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
@@ -21,6 +22,7 @@ use miden_protocol::errors::tx_kernel::{
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_SENDER,
 };
@@ -118,7 +120,7 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
 
     Ok(())
 }
@@ -148,7 +150,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
     let exec_output = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_output, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
 }
 
@@ -298,7 +300,7 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let exec_output = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_output, ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
 }
 
@@ -329,7 +331,7 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
 
     Ok(())
 }
@@ -337,10 +339,9 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
 /// Tests minting a fungible asset with callbacks enabled.
 #[tokio::test]
 async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()> {
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    // Use a faucet ID with callbacks enabled.
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS).unwrap();
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
-
-    // Build a asset ID with callbacks enabled.
     let asset_id = AssetId::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
