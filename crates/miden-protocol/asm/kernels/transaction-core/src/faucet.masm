@@ -35,7 +35,7 @@ pub proc mint_fungible_asset
     # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
 
     # add the asset to the input vault for asset preservation
-    exec.asset_vault::add_fungible_asset
+    exec.asset_vault::add_asset
     # => [INITIAL_ASSET_VALUE, NEW_ASSET_VALUE]
 
     # drop INITIAL_ASSET_VALUE; mint_fungible_asset returns only NEW_ASSET_VALUE
@@ -109,7 +109,7 @@ proc mint_non_fungible_asset
     # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
 
     # add the non-fungible asset to the input vault for asset preservation
-    exec.asset_vault::add_non_fungible_asset
+    exec.asset_vault::add_asset
     # => [INITIAL_ASSET_VALUE, NEW_ASSET_VALUE]
 
     # drop INITIAL_ASSET_VALUE; mint_non_fungible_asset returns only NEW_ASSET_VALUE
