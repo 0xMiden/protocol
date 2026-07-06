@@ -55,7 +55,8 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
             r#"
       use miden::protocol::native_account
 
-      begin
+      @transaction_script
+      pub proc main
           exec.native_account::compute_delta_commitment
           # => [DELTA_COMMITMENT]
 
@@ -133,7 +134,8 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
       const SLOT_2_NAME = word("{slot_2_name}")
       const SLOT_3_NAME = word("{slot_3_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           push.{slot_0_tmp_value}
           push.SLOT_0_NAME[0..2]
           # => [slot_id_suffix, slot_id_prefix, VALUE]
@@ -257,7 +259,8 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
       const SLOT_1_NAME = word("{slot_1_name}")
       const SLOT_2_NAME = word("{slot_2_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           push.{key0_final_value} push.{key0}
           push.SLOT_0_NAME[0..2]
           # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
@@ -383,7 +386,8 @@ async fn fungible_asset_update() -> anyhow::Result<()> {
 
     let tx_script = parse_tx_script(format!(
         "
-    begin
+    @transaction_script
+    pub proc main
         push.{ASSET0_VALUE} push.{ASSET0_KEY}
         exec.util::create_default_note_with_moved_asset
         # => []
@@ -401,13 +405,13 @@ async fn fungible_asset_update() -> anyhow::Result<()> {
         # => []
     end
     ",
-        ASSET0_KEY = removed_asset0.to_key_word(),
+        ASSET0_KEY = removed_asset0.to_id_word(),
         ASSET0_VALUE = removed_asset0.to_value_word(),
-        ASSET1_KEY = removed_asset1.to_key_word(),
+        ASSET1_KEY = removed_asset1.to_id_word(),
         ASSET1_VALUE = removed_asset1.to_value_word(),
-        ASSET2_KEY = removed_asset2.to_key_word(),
+        ASSET2_KEY = removed_asset2.to_id_word(),
         ASSET2_VALUE = removed_asset2.to_value_word(),
-        ASSET3_KEY = removed_asset3.to_key_word(),
+        ASSET3_KEY = removed_asset3.to_id_word(),
         ASSET3_VALUE = removed_asset3.to_value_word(),
     ))?;
 
@@ -421,7 +425,7 @@ async fn fungible_asset_update() -> anyhow::Result<()> {
         .insert_asset(original_asset0.add(added_asset0)?.sub(removed_asset0)?.into());
     expected_vault_patch
         .insert_asset(original_asset2.add(added_asset2)?.sub(removed_asset2)?.into());
-    expected_vault_patch.remove_asset(removed_asset3.vault_key());
+    expected_vault_patch.remove_asset(removed_asset3.id());
     expected_vault_patch.insert_asset(added_asset4.into());
 
     AccountUpdateTest {
@@ -487,7 +491,8 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
 
     let tx_script = parse_tx_script(format!(
         "
-    begin
+    @transaction_script
+    pub proc main
         push.{ASSET1_VALUE} push.{ASSET1_KEY}
         exec.util::create_default_note_with_moved_asset
         # => []
@@ -506,16 +511,16 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         # re-add asset 3
         push.{ASSET3_VALUE}
         push.{ASSET3_KEY}
-        # => [ASSET_KEY, ASSET_VALUE]
+        # => [ASSET_ID, ASSET_VALUE]
         exec.add_asset dropw
         # => []
     end
     ",
-        ASSET1_KEY = asset1.to_key_word(),
+        ASSET1_KEY = asset1.to_id_word(),
         ASSET1_VALUE = asset1.to_value_word(),
-        ASSET2_KEY = asset2.to_key_word(),
+        ASSET2_KEY = asset2.to_id_word(),
         ASSET2_VALUE = asset2.to_value_word(),
-        ASSET3_KEY = asset3.to_key_word(),
+        ASSET3_KEY = asset3.to_id_word(),
         ASSET3_VALUE = asset3.to_value_word(),
     ))?;
 
@@ -524,7 +529,7 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
 
     let mut expected_vault_patch = AccountVaultPatch::default();
     expected_vault_patch.insert_asset(asset0.into());
-    expected_vault_patch.remove_asset(Asset::from(asset1).vault_key());
+    expected_vault_patch.remove_asset(Asset::from(asset1).id());
 
     AccountUpdateTest {
         initial_storage_slots: vec![],
@@ -603,7 +608,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
 
             # move the asset into the new note
             swapw dropw
-            push.{ASSET_VALUE} push.{ASSET_KEY}
+            push.{ASSET_VALUE} push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [pad(16)]
 
@@ -612,7 +617,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             ",
             note_type = NoteType::Private as u8,
             tag = NoteTag::default(),
-            ASSET_KEY = removed_asset.to_key_word(),
+            ASSET_ID = removed_asset.to_id_word(),
             ASSET_VALUE = removed_asset.to_value_word(),
         ));
     }
@@ -625,7 +630,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             ## Update value storage slot
             push.{updated_slot_value}
             push.MOCK_VALUE_SLOT0[0..2]
@@ -657,8 +663,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
     let expected_vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
 
     let mut expected_vault_patch = AccountVaultPatch::default();
-    expected_vault_patch.remove_asset(asset_0.vault_key());
-    expected_vault_patch.remove_asset(asset_1.vault_key());
+    expected_vault_patch.remove_asset(asset_0.id());
+    expected_vault_patch.remove_asset(asset_1.id());
     expected_vault_patch.insert_asset(asset_2);
     expected_vault_patch.insert_asset(asset_3);
 
@@ -723,7 +729,8 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
       const MAP_SLOT=word("{map2_slot_name}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -888,7 +895,8 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 
       const MAP_SLOT=word("{slot_name1}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Set the key to a non-empty value.
           push.{non_empty_value}
           push.{map_key}
@@ -1047,7 +1055,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         push.0 assert.err=\"emitting the event should have aborted execution\"
     end
     ",
-        ASSET0_KEY = asset0.to_key_word(),
+        ASSET0_KEY = asset0.to_id_word(),
         ASSET0_VALUE = asset0.to_value_word(),
     );
 
@@ -1135,11 +1143,11 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => []
       end
 
-      #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+      #! Inputs:  [ASSET_ID, ASSET_VALUE]
       #! Outputs: [FINAL_ASSET_VALUE]
       proc add_asset
           repeat.8 push.0 movdn.8 end
-          # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+          # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
           call.account::add_asset
           # => [FINAL_ASSET_VALUE, pad(12)]
@@ -1148,11 +1156,11 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => [FINAL_ASSET_VALUE]
       end
 
-      #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+      #! Inputs:  [ASSET_ID, ASSET_VALUE]
       #! Outputs: [ASSET_VALUE]
       proc remove_asset
           padw padw swapdw
-          # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+          # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
           call.account::remove_asset
           # => [ASSET_VALUE, pad(12)]

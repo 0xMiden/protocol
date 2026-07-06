@@ -1,11 +1,11 @@
 use alloc::string::ToString;
 use core::fmt;
 
-use super::vault::AssetVaultKey;
+use super::vault::AssetId;
 use super::{Asset, AssetAmount, AssetComposition, AssetError, Word};
 use crate::Felt;
 use crate::account::{AccountId, AssetCallbackFlag};
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -61,47 +61,47 @@ impl FungibleAsset {
         Ok(Self { faucet_id, amount })
     }
 
-    /// Creates a fungible asset from the provided key and value.
+    /// Creates a fungible asset from the provided ID and value.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not contain a valid faucet ID.
-    /// - The provided key's does not have [`AssetComposition::Fungible`] set.
-    /// - The provided key's asset ID limbs are not zero.
+    /// - The provided ID does not contain a valid faucet ID.
+    /// - The provided ID does not have [`AssetComposition::Fungible`] set.
+    /// - The provided ID's asset class limbs are not zero.
     /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
     ///   most significant elements are not zero.
-    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
-        if !key.composition().is_fungible() {
+    pub fn from_id_and_value(id: AssetId, value: Word) -> Result<Self, AssetError> {
+        if !id.composition().is_fungible() {
             return Err(AssetError::AssetCompositionMismatch {
-                faucet_id: key.faucet_id(),
+                faucet_id: id.faucet_id(),
                 expected: AssetComposition::Fungible,
-                actual: key.composition(),
+                actual: id.composition(),
             });
         }
 
-        if !key.asset_id().is_empty() {
-            return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
+        if !id.asset_class().is_empty() {
+            return Err(AssetError::FungibleAssetClassMustBeZero(id.asset_class()));
         }
 
         if value[1] != Felt::ZERO || value[2] != Felt::ZERO || value[3] != Felt::ZERO {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        Self::new(key.faucet_id(), value[0].as_canonical_u64())
+        Self::new(id.faucet_id(), value[0].as_canonical_u64())
     }
 
-    /// Creates a fungible asset from the provided key and value.
+    /// Creates a fungible asset from the provided ID and value.
     ///
-    /// Prefer [`Self::from_key_value`] for more type safety.
+    /// Prefer [`Self::from_id_and_value`] for more type safety.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - [`Self::from_key_value`] fails.
-    pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
-        let vault_key = AssetVaultKey::try_from(key)?;
-        Self::from_key_value(vault_key, value)
+    /// - [`Self::from_id_and_value`] fails.
+    pub fn from_id_and_value_words(id: Word, value: Word) -> Result<Self, AssetError> {
+        let asset_id = AssetId::try_from(id)?;
+        Self::from_id_and_value(asset_id, value)
     }
 
     // PUBLIC ACCESSORS
@@ -124,18 +124,18 @@ impl FungibleAsset {
 
     /// Returns true if this and the other asset were issued from the same faucet.
     pub fn is_same(&self, other: &Self) -> bool {
-        self.vault_key() == other.vault_key()
+        self.id() == other.id()
     }
 
-    /// Returns the key which is used to store this asset in the account vault.
-    pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::new(AssetId::default(), self.faucet_id, AssetComposition::Fungible)
-            .expect("default asset id should be valid for fungible composition")
+    /// Returns the [`AssetId`] which uniquely identifies this asset in the account vault.
+    pub fn id(&self) -> AssetId {
+        AssetId::new(AssetClass::default(), self.faucet_id, AssetComposition::Fungible)
+            .expect("default asset class should be valid for fungible composition")
     }
 
-    /// Returns the asset's key encoded to a [`Word`].
-    pub fn to_key_word(&self) -> Word {
-        self.vault_key().to_word()
+    /// Returns the asset's [`AssetId`] encoded to a [`Word`].
+    pub fn to_id_word(&self) -> Word {
+        self.id().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
@@ -150,14 +150,14 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets do not have the same vault key (i.e. different faucet).
+    /// - The assets do not have the same asset ID (i.e. different faucet).
     /// - The total value of assets is greater than or equal to 2^63.
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
         if !self.is_same(&other) {
-            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
-                original_key: self.vault_key(),
-                other_key: other.vault_key(),
+            return Err(AssetError::FungibleAssetInconsistentIds {
+                original_id: self.id(),
+                other_id: other.id(),
             });
         }
 
@@ -170,14 +170,14 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets do not have the same vault key (i.e. different faucet).
+    /// - The assets do not have the same asset ID (i.e. different faucet).
     /// - The final amount would be negative.
     #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
         if !self.is_same(&other) {
-            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
-                original_key: self.vault_key(),
-                other_key: other.vault_key(),
+            return Err(AssetError::FungibleAssetInconsistentIds {
+                original_id: self.id(),
+                other_id: other.id(),
             });
         }
 
@@ -264,13 +264,15 @@ mod tests {
     };
 
     #[test]
-    fn fungible_asset_from_key_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
-        let asset_key =
-            set_asset_metadata(FungibleAsset::mock(25).vault_key(), AssetComposition::None.as_u8());
+    fn fungible_asset_from_id_and_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
+        let asset_id =
+            set_asset_metadata(FungibleAsset::mock(25).id(), AssetComposition::None.as_u8());
 
-        let err =
-            FungibleAsset::from_key_value_words(asset_key, FungibleAsset::mock(5).to_value_word())
-                .unwrap_err();
+        let err = FungibleAsset::from_id_and_value_words(
+            asset_id,
+            FungibleAsset::mock(5).to_value_word(),
+        )
+        .unwrap_err();
         assert_matches!(err, AssetError::AssetCompositionMismatch {
                 faucet_id: _, expected, actual: _
             } => {
@@ -281,29 +283,30 @@ mod tests {
     }
 
     #[test]
-    fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
+    fn fungible_asset_from_id_and_value_words_fails_on_invalid_asset_class() -> anyhow::Result<()> {
         let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
-        let mut asset_key =
-            AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible)?
-                .to_word();
-        asset_key[0] = Felt::from(1u32);
-        asset_key[1] = Felt::from(2u32);
+        let mut asset_id =
+            AssetId::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?.to_word();
+        asset_id[0] = Felt::from(1u32);
+        asset_id[1] = Felt::from(2u32);
 
-        let err =
-            FungibleAsset::from_key_value_words(asset_key, FungibleAsset::mock(5).to_value_word())
-                .unwrap_err();
-        assert_matches!(err, AssetError::FungibleAssetIdMustBeZero(_));
+        let err = FungibleAsset::from_id_and_value_words(
+            asset_id,
+            FungibleAsset::mock(5).to_value_word(),
+        )
+        .unwrap_err();
+        assert_matches!(err, AssetError::FungibleAssetClassMustBeZero(_));
 
         Ok(())
     }
 
     #[test]
-    fn fungible_asset_from_key_value_fails_on_invalid_value() -> anyhow::Result<()> {
+    fn fungible_asset_from_id_and_value_fails_on_invalid_value() -> anyhow::Result<()> {
         let asset = FungibleAsset::mock(42);
         let mut invalid_value = asset.to_value_word();
         invalid_value[2] = Felt::from(5u32);
 
-        let err = FungibleAsset::from_key_value(asset.vault_key(), invalid_value).unwrap_err();
+        let err = FungibleAsset::from_id_and_value(asset.id(), invalid_value).unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
 
         Ok(())
@@ -328,8 +331,8 @@ mod tests {
 
             assert_eq!(
                 fungible_asset,
-                FungibleAsset::from_key_value_words(
-                    fungible_asset.to_key_word(),
+                FungibleAsset::from_id_and_value_words(
+                    fungible_asset.to_id_word(),
                     fungible_asset.to_value_word()
                 )?
             )
@@ -345,11 +348,11 @@ mod tests {
     }
 
     #[test]
-    fn test_vault_key_for_fungible_asset() {
+    fn test_asset_id_for_fungible_asset() {
         let asset = FungibleAsset::mock(34);
 
-        assert_eq!(asset.vault_key().faucet_id(), FungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_id().prefix().as_canonical_u64(), 0);
-        assert_eq!(asset.vault_key().asset_id().suffix().as_canonical_u64(), 0);
+        assert_eq!(asset.id().faucet_id(), FungibleAsset::mock_issuer());
+        assert_eq!(asset.id().asset_class().prefix().as_canonical_u64(), 0);
+        assert_eq!(asset.id().asset_class().suffix().as_canonical_u64(), 0);
     }
 }

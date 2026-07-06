@@ -281,7 +281,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
         ## TRANSACTION SCRIPT
         ## ========================================================================================
-        begin
+        @transaction_script
+        pub proc main
             ## Send some assets from the account vault
             ## ------------------------------------------------------------------------------------
             # partially deplete fungible asset balance
@@ -293,14 +294,14 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             dup
             push.{REMOVED_ASSET_VALUE_1}
-            push.{REMOVED_ASSET_KEY_1}
-            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+            push.{REMOVED_ASSET_ID_1}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
             exec.util::move_asset_to_note
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE_2}
-            push.{REMOVED_ASSET_KEY_2}
+            push.{REMOVED_ASSET_ID_2}
             exec.util::move_asset_to_note
             # => []
 
@@ -313,13 +314,13 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             dup
             push.{REMOVED_ASSET_VALUE_3}
-            push.{REMOVED_ASSET_KEY_3}
+            push.{REMOVED_ASSET_ID_3}
             exec.util::move_asset_to_note
             # => [note_idx]
 
             dup
             push.{REMOVED_ASSET_VALUE_4}
-            push.{REMOVED_ASSET_KEY_4}
+            push.{REMOVED_ASSET_ID_4}
             exec.util::move_asset_to_note
             # => [note_idx]
 
@@ -348,13 +349,13 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => []
         end
     ",
-        REMOVED_ASSET_KEY_1 = removed_asset_1.to_key_word(),
+        REMOVED_ASSET_ID_1 = removed_asset_1.to_id_word(),
         REMOVED_ASSET_VALUE_1 = removed_asset_1.to_value_word(),
-        REMOVED_ASSET_KEY_2 = removed_asset_2.to_key_word(),
+        REMOVED_ASSET_ID_2 = removed_asset_2.to_id_word(),
         REMOVED_ASSET_VALUE_2 = removed_asset_2.to_value_word(),
-        REMOVED_ASSET_KEY_3 = removed_asset_3.to_key_word(),
+        REMOVED_ASSET_ID_3 = removed_asset_3.to_id_word(),
         REMOVED_ASSET_VALUE_3 = removed_asset_3.to_value_word(),
-        REMOVED_ASSET_KEY_4 = removed_asset_4.to_key_word(),
+        REMOVED_ASSET_ID_4 = removed_asset_4.to_id_word(),
         REMOVED_ASSET_VALUE_4 = removed_asset_4.to_value_word(),
         RECIPIENT2 = expected_output_note_2.recipient().digest(),
         RECIPIENT3 = expected_output_note_3.recipient().digest(),
@@ -600,7 +601,8 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     use test::module_1
     use miden::core::sys
 
-    begin
+    @transaction_script
+    pub proc main
         push.1.2
         call.module_1::foo
         exec.sys::truncate_stack
@@ -650,7 +652,8 @@ async fn failed_tx_script_reports_package_debug_message() -> anyhow::Result<()> 
 
     let tx_script = CodeBuilder::default().compile_tx_script(format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0 assert.err="{ERROR_MESSAGE}"
         end
         "#
@@ -672,7 +675,8 @@ async fn failed_tx_view_script_reports_package_debug_message() -> anyhow::Result
 
     let tx_script = CodeBuilder::default().compile_tx_script(format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0 assert.err="{ERROR_MESSAGE}"
         end
         "#
@@ -716,7 +720,8 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
     let tx_script_input_value = Word::from([9, 8, 7, 6u32]);
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # push the tx script input key onto the stack
             push.{tx_script_input_key}
 
@@ -749,7 +754,8 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             # => [TX_SCRIPT_ARGS]
             # `TX_SCRIPT_ARGS` value is a user provided word, which could be used during the
             # transaction execution. In this example it is a `[1, 2, 3, 4]` word.
@@ -788,7 +794,8 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 /// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
 #[tokio::test]
 async fn test_get_script_root_with_script() -> anyhow::Result<()> {
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
     let expected_root = tx_script.root();
 
     let code = format!(
@@ -872,7 +879,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let script = r#"
             adv_map A([1,2,3,4]) = [5,6,7,8]
 
-            begin
+            @transaction_script
+            pub proc main
                 call.::test::adv_map_component::assert_adv_map
 
                 # test account code advice map

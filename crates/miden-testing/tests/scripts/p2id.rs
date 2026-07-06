@@ -243,14 +243,15 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
             use miden::protocol::output_note
-            begin
+            @transaction_script
+            pub proc main
                 push.{recipient_1}
                 push.{note_type_1}
                 push.{tag_1}
                 exec.output_note::create
 
                 push.{ASSET_VALUE_1}
-                push.{ASSET_KEY_1}
+                push.{ASSET_ID_1}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
 
@@ -260,7 +261,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 exec.output_note::create
 
                 push.{ASSET_VALUE_2}
-                push.{ASSET_KEY_2}
+                push.{ASSET_ID_2}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
             end
@@ -268,12 +269,12 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         recipient_1 = output_note_1.recipient().digest(),
         note_type_1 = NoteType::Public as u8,
         tag_1 = Felt::from(output_note_1.metadata().tag()),
-        ASSET_KEY_1 = asset_1.to_key_word(),
+        ASSET_ID_1 = asset_1.to_id_word(),
         ASSET_VALUE_1 = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         note_type_2 = NoteType::Public as u8,
         tag_2 = Felt::from(output_note_2.metadata().tag()),
-        ASSET_KEY_2 = asset_2.to_key_word(),
+        ASSET_ID_2 = asset_2.to_id_word(),
         ASSET_VALUE_2 = asset_2.to_value_word(),
     );
 
@@ -294,8 +295,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     account.apply_patch(executed_transaction.account_patch())?;
 
-    assert_eq!(account.vault().get_balance(input_note_asset_1.vault_key())?.as_u64(), 111);
-    assert_eq!(account.vault().get_balance(asset_1.vault_key())?.as_u64(), 5);
+    assert_eq!(account.vault().get_balance(input_note_asset_1.id())?.as_u64(), 111);
+    assert_eq!(account.vault().get_balance(asset_1.id())?.as_u64(), 5);
 
     Ok(())
 }
@@ -333,7 +334,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         r#"
         use miden::standards::notes::p2id
 
-        begin
+        @transaction_script
+        pub proc main
             # Push inputs for p2id::new
             push.{serial_num}
             push.{note_type}
@@ -347,7 +349,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
 
             # Add an asset to the created note
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
 
             # Clean up stack
@@ -359,7 +361,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         tag = Felt::from(tag),
         note_type = NoteType::Public as u8,
         serial_num = serial_num,
-        ASSET_KEY = FungibleAsset::mock(50).to_key_word(),
+        ASSET_ID = FungibleAsset::mock(50).to_id_word(),
         ASSET_VALUE = FungibleAsset::mock(50).to_value_word(),
     );
 

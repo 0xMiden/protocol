@@ -39,7 +39,8 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
         r#"
         use miden::standards::components::metadata::code_inspection as code_inspection
 
-        begin
+        @transaction_script
+        pub proc main
             # stack: [PROC_ROOT, pad(12)]
             call.code_inspection::has_procedure
             # => [is_procedure_available, pad(15)]
