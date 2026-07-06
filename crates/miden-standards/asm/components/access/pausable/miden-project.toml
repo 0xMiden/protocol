@@ -5,7 +5,7 @@ version.workspace = true
 [lib]
 kind      = "account-component"
 namespace = "miden::standards::components::access::pausable"
-path      = "mod.masm"
+path      = "pausable.masm"
 
 [dependencies]
 miden-core.workspace      = true

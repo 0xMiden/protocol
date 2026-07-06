@@ -8,7 +8,7 @@
 #! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
 #! account-wide pause check.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:

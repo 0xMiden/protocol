@@ -7,7 +7,7 @@ use crate::code_builder::CodeBuilder;
 const MOCK_FAUCET_CODE: &str = "
     use miden::protocol::faucet
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc mint
@@ -15,7 +15,7 @@ const MOCK_FAUCET_CODE: &str = "
         # => [pad(16)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc burn
@@ -123,7 +123,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [STORAGE_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc add_asset
@@ -131,7 +131,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [FINAL_ASSET_VALUE, pad(12)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc remove_asset

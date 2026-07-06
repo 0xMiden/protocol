@@ -118,7 +118,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///     mock_chain
 ///         .committed_account(receiver.id())?
 ///         .vault()
-///         .get_balance(fungible_asset.vault_key())?,
+///         .get_balance(fungible_asset.id())?,
 ///     fungible_asset.amount()
 /// );
 /// # Ok(())

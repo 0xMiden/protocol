@@ -8,7 +8,7 @@ pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -288,7 +288,7 @@ where
         input_notes: InputNotes<InputNote>,
         tx_args: TransactionArgs,
     ) -> Result<TransactionInputs, TransactionExecutorError> {
-        let (mut asset_vault_keys, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
+        let (mut asset_ids, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
         ref_blocks.insert(block_ref);
 
         let (account, block_header, blockchain) = self
@@ -303,16 +303,16 @@ where
             .map_err(TransactionExecutorError::InvalidTransactionInputs)?
             .with_tx_args(tx_args);
 
-        // filter out any asset vault keys for which we already have witnesses in the advice inputs
-        asset_vault_keys.retain(|asset_key| {
-            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_key)
+        // filter out any asset IDs for which we already have witnesses in the advice inputs
+        asset_ids.retain(|asset_id| {
+            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_id)
         });
 
         // if any of the witnesses are missing, fetch them from the data store and add to tx_inputs
-        if !asset_vault_keys.is_empty() {
+        if !asset_ids.is_empty() {
             let asset_witnesses = self
                 .data_store
-                .get_vault_asset_witnesses(account_id, native_account_vault_root, asset_vault_keys)
+                .get_vault_asset_witnesses(account_id, native_account_vault_root, asset_ids)
                 .await
                 .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
 
@@ -426,7 +426,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 /// Validates that input notes were not created after the reference block.
 ///
 /// Returns the set of block numbers required to execute the provided notes and the set of asset
-/// vault keys that will be needed in the transaction prologue.
+/// asset IDs that will be needed in the transaction prologue.
 ///
 /// The transaction input vault is a copy of the account vault and to mutate the input vault (during
 /// the prologue, for asset preservation), witnesses for the note assets against the account vault
@@ -434,9 +434,9 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 fn validate_input_notes(
     notes: &InputNotes<InputNote>,
     block_ref: BlockNumber,
-) -> Result<(BTreeSet<AssetVaultKey>, BTreeSet<BlockNumber>), TransactionExecutorError> {
+) -> Result<(BTreeSet<AssetId>, BTreeSet<BlockNumber>), TransactionExecutorError> {
     let mut ref_blocks: BTreeSet<BlockNumber> = BTreeSet::new();
-    let mut asset_vault_keys: BTreeSet<AssetVaultKey> = BTreeSet::new();
+    let mut asset_ids: BTreeSet<AssetId> = BTreeSet::new();
 
     for input_note in notes.iter() {
         // Validate that notes were not created after the reference, and build the set of required
@@ -451,10 +451,10 @@ fn validate_input_notes(
             ref_blocks.insert(location.block_num());
         }
 
-        asset_vault_keys.extend(input_note.note().assets().iter().map(Asset::vault_key));
+        asset_ids.extend(input_note.note().assets().iter().map(Asset::id));
     }
 
-    Ok((asset_vault_keys, ref_blocks))
+    Ok((asset_ids, ref_blocks))
 }
 
 /// Validates that the number of cycles specified is within the allowed range.
