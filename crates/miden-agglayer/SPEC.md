@@ -220,7 +220,11 @@ initial role holders are seeded at account creation.
 
 TODO: On-chain role management — notes that call `grant_role` / `revoke_role` /
 `transfer_ownership` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
-follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706).
+follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706). The note scripts and Rust
+builders for these `Rbac` / `Ownable2Step` procedures are tracked more broadly by
+[#3046](https://github.com/0xMiden/protocol/issues/3046) (note configuration for standards
+components); once they exist, the bridge only needs to add their script roots to
+[`AggLayerBridge::allowed_notes`].
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).

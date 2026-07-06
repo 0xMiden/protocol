@@ -15,6 +15,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
@@ -342,6 +343,51 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_GER_ALREADY_REGISTERED);
+
+    Ok(())
+}
+
+/// A note sender that does not hold the `GER_INJECTOR` role cannot inject a GER: `update_ger`
+/// reverts via the account's `Authority` role check with `ERR_SENDER_LACKS_ROLE`.
+#[tokio::test]
+async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account = create_existing_bridge_account_with_roles(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // The GER remover (who does not hold the GER_INJECTOR role) attempts to send the UPDATE_GER
+    // note.
+    let ger = ExitRoot::from([0x33; 32]);
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }

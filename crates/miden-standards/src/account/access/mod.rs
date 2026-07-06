@@ -79,9 +79,7 @@ impl IntoIterator for AccessControl {
             },
             AccessControl::Rbac { owner, roles, members } => vec![
                 Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::with_roles(members)
-                    .expect("initial RBAC role assignments should be valid")
-                    .into(),
+                RoleBasedAccessControl::with_roles(members).into(),
                 Authority::RbacControlled { roles }.into(),
             ]
             .into_iter(),
@@ -92,4 +90,4 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::{RbacError, RoleBasedAccessControl};
+pub use rbac::RoleBasedAccessControl;

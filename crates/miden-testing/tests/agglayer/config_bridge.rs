@@ -1,9 +1,12 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_agglayer::{
     AggLayerBridge,
+    AgglayerBridgeError,
+    BridgeRoles,
     ConfigAggBridgeNote,
     ConversionMetadata,
     EthAddress,
@@ -15,7 +18,8 @@ use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_testing::{Auth, MockChain};
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use super::test_utils::create_existing_bridge_account_with_roles;
 
@@ -275,4 +279,95 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     assert_eq!(value_2, expected_2, "(addr, network=2) must resolve to faucet_network_2");
 
     Ok(())
+}
+
+/// A note sender that does not hold the `FAUCET_ADMIN` role cannot register a faucet:
+/// `register_faucet` reverts via the account's `Authority` role check with `ERR_SENDER_LACKS_ROLE`.
+#[tokio::test]
+async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account_with_roles(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let faucet_to_register =
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([7; 32]);
+
+    // The GER injector (who does not hold the FAUCET_ADMIN role) attempts to send the
+    // CONFIG_AGG_BRIDGE note.
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address: EthAddress::from_hex(
+                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            )
+            .unwrap(),
+            scale: 0,
+            origin_network: 1,
+            is_native: false,
+            metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+        },
+        ger_injector.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[config_note])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    Ok(())
+}
+
+/// `BridgeRoles::new` rejects an empty holder set for any role so a bridge cannot be deployed with
+/// an unfillable role.
+#[test]
+fn bridge_roles_new_rejects_empty_role() {
+    let account = |seed: u8| {
+        AccountId::builder()
+            .account_type(AccountType::Public)
+            .build_with_seed([seed; 32])
+    };
+    let (a, b, c) = (account(1), account(2), account(3));
+
+    // A non-empty set for every role succeeds.
+    assert!(
+        BridgeRoles::new(BTreeSet::from([a]), BTreeSet::from([b]), BTreeSet::from([c]),).is_ok()
+    );
+
+    // An empty set for any single role is rejected.
+    for empty in 0..3 {
+        let sets: [BTreeSet<AccountId>; 3] = core::array::from_fn(|i| {
+            if i == empty {
+                BTreeSet::new()
+            } else {
+                BTreeSet::from([a])
+            }
+        });
+        let [faucet_admins, ger_injectors, ger_removers] = sets;
+        let err = BridgeRoles::new(faucet_admins, ger_injectors, ger_removers).unwrap_err();
+        assert!(matches!(err, AgglayerBridgeError::EmptyBridgeRole(_)));
+    }
 }

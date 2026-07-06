@@ -163,43 +163,61 @@ procedure_root!(
     AggLayerBridge::code()
 );
 
-/// A privileged AggLayer bridge role together with the accounts that initially hold it.
+/// The accounts that initially hold each of the bridge's privileged RBAC roles.
 ///
-/// Used to seed the bridge account's RBAC role membership at creation. Each variant maps to a
-/// distinct role symbol and gates a specific set of bridge procedures:
-/// - [`FAUCET_ADMIN`][BridgeRoleMember::FaucetAdmin] gates `register_faucet` and
-///   `store_faucet_metadata_hash`.
-/// - [`GER_INJECTOR`][BridgeRoleMember::GerInjector] gates `update_ger`.
-/// - [`GER_REMOVER`][BridgeRoleMember::GerRemover] gates `remove_ger`.
+/// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
+/// set of bridge procedures:
+/// - `FAUCET_ADMIN` gates `register_faucet` and `store_faucet_metadata_hash`.
+/// - `GER_INJECTOR` gates `update_ger`.
+/// - `GER_REMOVER` gates `remove_ger`.
 ///
-/// Each variant carries all accounts that initially hold the role.
+/// Construct via [`BridgeRoles::new`], which rejects an empty holder set for any role: naming all
+/// three roles is mandatory, and a bridge cannot be deployed with a role that has no holders (which
+/// could not be repaired until on-chain role management lands, see
+/// [#2706](https://github.com/0xMiden/protocol/issues/2706)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BridgeRoleMember {
-    /// Holders of the `FAUCET_ADMIN` role.
-    FaucetAdmin(Vec<AccountId>),
-    /// Holders of the `GER_INJECTOR` role.
-    GerInjector(Vec<AccountId>),
-    /// Holders of the `GER_REMOVER` role.
-    GerRemover(Vec<AccountId>),
+pub struct BridgeRoles {
+    faucet_admins: BTreeSet<AccountId>,
+    ger_injectors: BTreeSet<AccountId>,
+    ger_removers: BTreeSet<AccountId>,
 }
 
-impl BridgeRoleMember {
-    /// Returns the role symbol of this role.
-    pub fn role_symbol(&self) -> RoleSymbol {
-        match self {
-            BridgeRoleMember::FaucetAdmin(_) => AggLayerBridge::faucet_admin_role(),
-            BridgeRoleMember::GerInjector(_) => AggLayerBridge::ger_injector_role(),
-            BridgeRoleMember::GerRemover(_) => AggLayerBridge::ger_remover_role(),
+impl BridgeRoles {
+    /// Creates the initial bridge role membership from the holders of each role.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the three roles is given an empty
+    /// set of holders.
+    pub fn new(
+        faucet_admins: BTreeSet<AccountId>,
+        ger_injectors: BTreeSet<AccountId>,
+        ger_removers: BTreeSet<AccountId>,
+    ) -> Result<Self, AgglayerBridgeError> {
+        for (role, members) in [
+            (AggLayerBridge::faucet_admin_role(), &faucet_admins),
+            (AggLayerBridge::ger_injector_role(), &ger_injectors),
+            (AggLayerBridge::ger_remover_role(), &ger_removers),
+        ] {
+            if members.is_empty() {
+                return Err(AgglayerBridgeError::EmptyBridgeRole(role));
+            }
         }
+
+        Ok(Self {
+            faucet_admins,
+            ger_injectors,
+            ger_removers,
+        })
     }
 
-    /// Returns the accounts that hold the role.
-    pub fn account_ids(&self) -> &[AccountId] {
-        match self {
-            BridgeRoleMember::FaucetAdmin(ids)
-            | BridgeRoleMember::GerInjector(ids)
-            | BridgeRoleMember::GerRemover(ids) => ids,
-        }
+    /// Returns the RBAC role-membership map used to seed the account's RBAC component.
+    pub(crate) fn role_members(&self) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
+        BTreeMap::from([
+            (AggLayerBridge::faucet_admin_role(), self.faucet_admins.clone()),
+            (AggLayerBridge::ger_injector_role(), self.ger_injectors.clone()),
+            (AggLayerBridge::ger_remover_role(), self.ger_removers.clone()),
+        ])
     }
 }
 
@@ -221,7 +239,7 @@ impl BridgeRoleMember {
 /// The bridge's privileged roles are managed by the account's RBAC stack (`Ownable2Step` +
 /// `RoleBasedAccessControl` + `Authority`), installed alongside this component at account
 /// creation. The role-gated procedures call `authority::assert_authorized`, which requires the note
-/// sender to hold the role mapped to the procedure. See [`BridgeRoleMember`] and
+/// sender to hold the role mapped to the procedure. See [`BridgeRoles`] and
 /// [`AggLayerBridge::procedure_roles`].
 ///
 /// ## Storage Layout
@@ -324,21 +342,6 @@ impl AggLayerBridge {
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
         ])
-    }
-
-    /// Groups the given role members by role symbol for seeding the account's RBAC component.
-    /// Roles with no provided members are omitted.
-    pub fn rbac_role_members(
-        members: &[BridgeRoleMember],
-    ) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
-        let mut roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>> = BTreeMap::new();
-        for member in members {
-            roles
-                .entry(member.role_symbol())
-                .or_default()
-                .extend(member.account_ids().iter().copied());
-        }
-        roles
     }
 
     // PUBLIC ACCESSORS
@@ -697,6 +700,8 @@ pub enum AgglayerBridgeError {
         "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
     )]
     CodeCommitmentMismatch,
+    #[error("bridge role {0} must have at least one initial holder")]
+    EmptyBridgeRole(RoleSymbol),
 }
 
 // HELPER FUNCTIONS

@@ -151,24 +151,13 @@ impl RoleBasedAccessControl {
     ///
     /// Each entry grants a role to a set of accounts at account creation, exactly as if the owner
     /// had called `grant_role` for each member at runtime. Because roles and members are modeled as
-    /// a map of sets, duplicate roles and duplicate members are impossible by construction. All
-    /// seeded roles are owner-managed; delegated admins can be configured later via
-    /// `set_role_admin`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - a role maps to an empty member set.
-    /// - a role has more members than `u32::MAX`.
-    pub fn with_roles(roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>>) -> Result<Self, RbacError> {
-        for (role, members) in &roles {
-            if members.is_empty() {
-                return Err(RbacError::EmptyRole(role.clone()));
-            }
-            u32::try_from(members.len()).map_err(|_| RbacError::TooManyMembers(role.clone()))?;
-        }
-
-        Ok(Self { roles })
+    /// a map of sets, duplicate roles and duplicate members are impossible by construction. A role
+    /// mapped to an empty set is dropped — a role with no members is a no-op, matching the runtime
+    /// semantics where a role exists only while it has at least one member. All seeded roles are
+    /// owner-managed; delegated admins can be configured later via `set_role_admin`.
+    pub fn with_roles(mut roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>>) -> Self {
+        roles.retain(|_, members| !members.is_empty());
+        Self { roles }
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -179,6 +168,22 @@ impl RoleBasedAccessControl {
     /// Returns the storage slot name for the per-role membership map.
     pub fn role_membership_slot() -> &'static StorageSlotName {
         &ROLE_MEMBERSHIP_SLOT_NAME
+    }
+
+    /// Returns the `role_config` map key for a role: the word `[0, 0, 0, role]`.
+    pub fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
+        StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
+    }
+
+    /// Returns the `role_membership` map key for a `(role, account)` pair: the word
+    /// `[0, role, account_suffix, account_prefix]`.
+    pub fn role_membership_key(role: &RoleSymbol, account: &AccountId) -> StorageMapKey {
+        StorageMapKey::from_raw(Word::from([
+            Felt::ZERO,
+            Felt::from(role),
+            account.suffix(),
+            account.prefix().as_felt(),
+        ]))
     }
 
     /// Returns the schema entry for the per-role config map.
@@ -229,28 +234,17 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         let mut membership_entries = Vec::new();
 
         for (role, members) in &rbac.roles {
-            let role_felt = Felt::from(role);
-            let member_count = u32::try_from(members.len())
-                .expect("member count fits into u32 (validated in with_roles)");
+            let member_count =
+                u32::try_from(members.len()).expect("role member count fits into u32");
 
             config_entries.push((
-                StorageMapKey::from_raw(Word::from([
-                    Felt::ZERO,
-                    Felt::ZERO,
-                    Felt::ZERO,
-                    role_felt,
-                ])),
+                RoleBasedAccessControl::role_config_key(role),
                 Word::from([Felt::from(member_count), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             ));
 
             for member in members {
                 membership_entries.push((
-                    StorageMapKey::from_raw(Word::from([
-                        Felt::ZERO,
-                        role_felt,
-                        member.suffix(),
-                        member.prefix().as_felt(),
-                    ])),
+                    RoleBasedAccessControl::role_membership_key(role, member),
                     Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
                 ));
             }
@@ -273,16 +267,4 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         )
         .expect("RBAC component should satisfy the requirements of a valid account component")
     }
-}
-
-// RBAC ERROR
-// ================================================================================================
-
-/// Errors that can occur when seeding a [`RoleBasedAccessControl`] component with initial roles.
-#[derive(Debug, thiserror::Error)]
-pub enum RbacError {
-    #[error("role {0} has no initial members")]
-    EmptyRole(RoleSymbol),
-    #[error("role {0} has more members than the u32 maximum")]
-    TooManyMembers(RoleSymbol),
 }

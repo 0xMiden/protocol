@@ -9,15 +9,65 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountType,
+    AssetCallbackFlag,
+};
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
-use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
+use crate::{
+    BridgeRoles,
+    CgiChainHash,
+    EthAddress,
+    EthAmount,
+    ExitRoot,
+    GlobalIndex,
+    LeafData,
+    MetadataHash,
+    create_existing_bridge_account,
+};
+
+// BRIDGE ACCOUNT HELPERS
+// ================================================================================================
+
+/// A fixed dummy governance owner used for bridge accounts in tests that don't exercise the
+/// owner's role-management powers.
+pub fn bridge_test_owner() -> AccountId {
+    AccountId::dummy(
+        [0xee; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    )
+}
+
+/// Creates an existing bridge account seeded with a single holder per role and the fixed
+/// [`bridge_test_owner`] as the governance owner.
+pub fn create_existing_bridge_account_with_roles(
+    seed: Word,
+    faucet_admin: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+) -> Account {
+    let roles = BridgeRoles::new(
+        BTreeSet::from([faucet_admin]),
+        BTreeSet::from([ger_injector]),
+        BTreeSet::from([ger_remover]),
+    )
+    .expect("single-holder role sets are non-empty");
+    create_existing_bridge_account(seed, bridge_test_owner(), roles)
+}
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================

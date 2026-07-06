@@ -2,8 +2,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::Library;
@@ -35,7 +33,7 @@ pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
-pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoleMember, RemovedGerHashChain};
+pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoles, RemovedGerHashChain};
 pub use claim_note::{
     CgiChainHash,
     ClaimNote,
@@ -133,15 +131,15 @@ fn create_agglayer_faucet_component(
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
 /// Access control is provided by the RBAC stack: `owner` becomes the account's `Ownable2Step`
-/// governance owner, and `role_members` seeds the initial holders of the `FAUCET_ADMIN`,
-/// `GER_INJECTOR`, and `GER_REMOVER` roles that gate the bridge's privileged procedures.
+/// governance owner, and `roles` seeds the initial holders of the `FAUCET_ADMIN`, `GER_INJECTOR`,
+/// and `GER_REMOVER` roles that gate the bridge's privileged procedures.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
 fn create_bridge_account_builder(
     seed: Word,
     owner: AccountId,
-    role_members: Vec<BridgeRoleMember>,
+    roles: BridgeRoles,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
@@ -149,7 +147,7 @@ fn create_bridge_account_builder(
         .with_components(AccessControl::Rbac {
             owner,
             roles: AggLayerBridge::procedure_roles(),
-            members: AggLayerBridge::rbac_role_members(&role_members),
+            members: roles.role_members(),
         })
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
@@ -160,13 +158,9 @@ fn create_bridge_account_builder(
 /// Creates a new bridge account with the standard configuration.
 ///
 /// This creates a new account suitable for production use. `owner` is the governance owner; the
-/// initial role holders are seeded from `role_members` (see [`BridgeRoleMember`]).
-pub fn create_bridge_account(
-    seed: Word,
-    owner: AccountId,
-    role_members: Vec<BridgeRoleMember>,
-) -> Account {
-    create_bridge_account_builder(seed, owner, role_members)
+/// initial role holders are seeded from `roles` (see [`BridgeRoles`]).
+pub fn create_bridge_account(seed: Word, owner: AccountId, roles: BridgeRoles) -> Account {
+    create_bridge_account_builder(seed, owner, roles)
         .build()
         .expect("bridge account should be valid")
 }
@@ -175,12 +169,8 @@ pub fn create_bridge_account(
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(
-    seed: Word,
-    owner: AccountId,
-    role_members: Vec<BridgeRoleMember>,
-) -> Account {
-    create_bridge_account_builder(seed, owner, role_members)
+pub fn create_existing_bridge_account(seed: Word, owner: AccountId, roles: BridgeRoles) -> Account {
+    create_bridge_account_builder(seed, owner, roles)
         .build_existing()
         .expect("bridge account should be valid")
 }

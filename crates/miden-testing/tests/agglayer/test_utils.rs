@@ -1,8 +1,8 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use alloc::vec;
 
+use miden_agglayer::agglayer_library;
 pub use miden_agglayer::testing::{
     ClaimDataSource,
     LEAF_VALUE_VECTORS_JSON,
@@ -11,8 +11,8 @@ pub use miden_agglayer::testing::{
     MtfVectorsFile,
     SOLIDITY_CANONICAL_ZEROS,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    create_existing_bridge_account_with_roles,
 };
-use miden_agglayer::{BridgeRoleMember, agglayer_library, create_existing_bridge_account};
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
@@ -23,14 +23,6 @@ use miden_processor::{
     FastProcessor,
     Program,
     StackInputs,
-};
-use miden_protocol::Word;
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountType,
-    AssetCallbackFlag,
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::TransactionKernel;
@@ -51,43 +43,6 @@ pub const MTF_VECTORS_JSON: &str = include_str!(
 pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
     serde_json::from_str(MTF_VECTORS_JSON).expect("failed to parse MTF vectors JSON")
 });
-
-// BRIDGE ACCOUNT HELPERS
-// ================================================================================================
-
-/// A fixed dummy governance owner used for bridge accounts in tests that don't exercise the
-/// owner's role-management powers (granting/revoking roles, transferring ownership).
-pub fn bridge_test_owner() -> AccountId {
-    AccountId::dummy(
-        [0xee; 15],
-        AccountIdVersion::Version1,
-        AccountType::Public,
-        AssetCallbackFlag::Disabled,
-    )
-}
-
-/// Creates an existing bridge account seeded with the three operational roles held by the given
-/// accounts (`FAUCET_ADMIN`, `GER_INJECTOR`, `GER_REMOVER`) and the fixed [`bridge_test_owner`]
-/// as the governance owner.
-///
-/// Drop-in replacement for `create_existing_bridge_account` in tests: same `(seed, faucet_admin,
-/// ger_injector, ger_remover)` arguments, but wires up the RBAC role seeding.
-pub fn create_existing_bridge_account_with_roles(
-    seed: Word,
-    faucet_admin: AccountId,
-    ger_injector: AccountId,
-    ger_remover: AccountId,
-) -> Account {
-    create_existing_bridge_account(
-        seed,
-        bridge_test_owner(),
-        vec![
-            BridgeRoleMember::FaucetAdmin(vec![faucet_admin]),
-            BridgeRoleMember::GerInjector(vec![ger_injector]),
-            BridgeRoleMember::GerRemover(vec![ger_remover]),
-        ],
-    )
-}
 
 // HELPER FUNCTIONS
 // ================================================================================================
