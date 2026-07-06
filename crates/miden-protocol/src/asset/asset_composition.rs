@@ -12,7 +12,7 @@ use crate::utils::serde::{
 /// Indicates how an asset is composed (i.e. how its merge/split semantics are defined).
 ///
 /// The composition is encoded in the metadata byte of an
-/// [`AssetVaultKey`](super::AssetVaultKey) and determines how the asset is handled by the
+/// [`AssetId`](super::AssetId) and determines how the asset is handled by the
 /// asset vault, account delta and faucet logic.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]

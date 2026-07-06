@@ -2,19 +2,28 @@ use alloc::sync::Arc;
 
 use crate::assembly::Library;
 use crate::assembly::mast::MastForest;
-use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
+use crate::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
 
-const PROTOCOL_LIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masl"));
+const PROTOCOL_PACKAGE_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-protocol.masp"));
+
+static PROTOCOL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(PROTOCOL_PACKAGE_BYTES)
+            .expect("protocol lib masp should be well-formed"),
+    )
+});
 
 // PROTOCOL LIBRARY
 // ================================================================================================
 
 #[derive(Clone)]
-pub struct ProtocolLib(Library);
+pub struct ProtocolLib(Arc<Package>);
 
 impl ProtocolLib {
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
@@ -25,24 +34,19 @@ impl ProtocolLib {
 
 impl AsRef<Library> for ProtocolLib {
     fn as_ref(&self) -> &Library {
-        &self.0
+        self.0.as_ref()
     }
 }
 
 impl From<ProtocolLib> for Library {
     fn from(value: ProtocolLib) -> Self {
-        value.0
+        Arc::unwrap_or_clone(value.0)
     }
 }
 
 impl Default for ProtocolLib {
     fn default() -> Self {
-        static PROTOCOL_LIB: LazyLock<ProtocolLib> = LazyLock::new(|| {
-            let contents = Library::read_from_bytes(PROTOCOL_LIB_BYTES)
-                .expect("protocol lib masl should be well-formed");
-            ProtocolLib(contents)
-        });
-        PROTOCOL_LIB.clone()
+        ProtocolLib(PROTOCOL_PACKAGE.clone())
     }
 }
 

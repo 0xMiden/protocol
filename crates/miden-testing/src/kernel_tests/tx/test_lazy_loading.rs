@@ -40,19 +40,20 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
         "
       use mock::account
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE1}
-          push.{FUNGIBLE_ASSET_KEY1}
+          push.{FUNGIBLE_ASSET_ID1}
           call.account::add_asset dropw dropw
 
           push.{FUNGIBLE_ASSET_VALUE2}
-          push.{FUNGIBLE_ASSET_KEY2}
+          push.{FUNGIBLE_ASSET_ID2}
           call.account::add_asset dropw dropw
       end
       ",
-        FUNGIBLE_ASSET_KEY1 = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET_ID1 = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET_VALUE1 = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET_KEY2 = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET_ID2 = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
@@ -92,7 +93,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET1_VALUE}
           push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
@@ -120,9 +122,9 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => []
       end
       ",
-        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET1_VALUE = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
@@ -182,7 +184,8 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -242,7 +245,8 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]

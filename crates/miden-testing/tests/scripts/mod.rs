@@ -1,9 +1,9 @@
 mod allowlist;
 mod authority;
 mod blocklist;
+mod code_inspection;
 mod expiration;
 mod faucet;
-mod guardian;
 mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;
@@ -13,3 +13,4 @@ mod pswap;
 mod rbac;
 mod send_note;
 mod swap;
+mod warden;

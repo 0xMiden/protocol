@@ -4,7 +4,12 @@ use assert_matches::assert_matches;
 
 use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor};
+use crate::assembly::mast::{
+    ExternalNodeBuilder,
+    JoinNodeBuilder,
+    MastForest,
+    MastForestContributor,
+};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
@@ -77,25 +82,40 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     Ok(())
 }
 
-// Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building
-// a MastForest with many external nodes. External nodes carry no debug info, so
-// `minify_script()` (called inside `PublicOutputNote::new()`) cannot shrink them.
+// Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building a MastForest with
+// many reachable external nodes. External nodes carry no debug info, so `minify_script()` (called
+// inside `PublicOutputNote::new()`) cannot shrink them below the limit.
 #[test]
 fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let sender_id = ACCOUNT_ID_SENDER.try_into().unwrap();
 
-    // Build a large MastForest by adding many external nodes. Each node stores a
-    // 32-byte digest; 7000 nodes comfortably exceed the 256 KiB limit.
+    // Build a large reachable MastForest by joining many external nodes. Each external node stores
+    // a 32-byte digest, and each join node keeps the previous nodes reachable after compaction. The
+    // joins are balanced to keep recursive traversals shallow.
     let mut mast = MastForest::new();
-    let mut root_id = None;
+    let mut roots = alloc::vec::Vec::new();
     for i in 0..7_000_u16 {
         let digest = Word::new([Felt::from(i + 1), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-        let id = ExternalNodeBuilder::new(digest)
+        let external_id = ExternalNodeBuilder::new(digest)
             .add_to_forest(&mut mast)
             .expect("adding external node should not fail");
-        root_id = Some(id);
+        roots.push(external_id);
     }
-    let root_id = root_id.unwrap();
+    while roots.len() > 1 {
+        let mut next_roots = alloc::vec::Vec::with_capacity(roots.len().div_ceil(2));
+        for chunk in roots.chunks(2) {
+            let root_id = match chunk {
+                [left, right] => JoinNodeBuilder::new([*left, *right])
+                    .add_to_forest(&mut mast)
+                    .expect("adding join node should not fail"),
+                [root] => *root,
+                _ => unreachable!("chunks of two have one or two elements"),
+            };
+            next_roots.push(root_id);
+        }
+        roots = next_roots;
+    }
+    let root_id = roots.pop().expect("at least one root should exist");
     mast.make_root(root_id);
 
     let script = NoteScript::from_parts(Arc::new(mast), root_id);
@@ -120,6 +140,13 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     assert!(
         computed_note_size > NOTE_MAX_SIZE as usize,
         "Expected note size ({computed_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
+    );
+    let mut minified_note = oversized_note.clone();
+    minified_note.minify_script();
+    let minified_note_size = minified_note.get_size_hint();
+    assert!(
+        minified_note_size > NOTE_MAX_SIZE as usize,
+        "Expected minified note size ({minified_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
     );
 
     // Creating a PublicOutputNote should fail with size limit error

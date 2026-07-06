@@ -13,6 +13,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
+use miden_protocol::vm::PackageDebugInfo;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
@@ -436,8 +437,16 @@ where
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options);
+        let program = TransactionKernel::main();
+        let kernel_debug_info = TransactionKernel::main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let result = processor
-            .execute(&TransactionKernel::main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(map_execution_error);
 

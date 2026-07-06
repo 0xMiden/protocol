@@ -1,4 +1,4 @@
-use agglayer::bridge::bridge_in -> bridge
+use agglayer::bridge::bridge_in as bridge
 use miden::protocol::active_note
 use miden::core::crypto::hashes::poseidon2
 use miden::standards::attachments::network_account_target

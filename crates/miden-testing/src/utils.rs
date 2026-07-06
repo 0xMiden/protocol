@@ -149,10 +149,10 @@ pub fn create_p2any_note(
                 # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw movup.8 mem_loadw_le
-                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw padw swapdw
-                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, pad(12), dest_ptr]
 
                 call.wallet::receive_asset
                 # => [pad(16), dest_ptr]
@@ -168,9 +168,8 @@ pub fn create_p2any_note(
         r#"
         use mock::account
         use miden::protocol::active_note
-        use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
-        use ::miden::protocol::asset::ASSET_SIZE
-        use miden::standards::wallets::basic->wallet
+        use {{ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET}} from miden::protocol::asset
+        use miden::standards::wallets::basic as wallet
 
         @note_script
         pub proc main
@@ -228,7 +227,7 @@ where
 
     let (note_code, advice_map) = note_script_that_creates_notes(sender_id, output_notes)?;
 
-    let note = NoteBuilder::new(sender_id, SmallRng::from_os_rng())
+    let note = NoteBuilder::new(sender_id, SmallRng::from_rng(&mut rand::rng()))
         .code(note_code)
         .advice_map(advice_map)
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
@@ -304,12 +303,12 @@ fn note_script_that_creates_notes<'note>(
             out.push_str(&format!(
                 " dup
                   push.{ASSET_VALUE}
-                  push.{ASSET_KEY}
-                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  push.{ASSET_ID}
+                  # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
                   call.::miden::standards::wallets::basic::move_asset_to_note
                   # => [note_idx]
                 ",
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }

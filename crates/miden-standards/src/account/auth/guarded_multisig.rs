@@ -25,7 +25,7 @@ use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
 
-account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
+account_component_code!(GUARDED_MULTISIG_CODE, "miden-standards-auth-guarded-multisig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -196,6 +196,15 @@ impl AuthGuardedMultisigConfig {
 /// combined with guardian authorization, so operations require both multisig approval and a valid
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
+///
+/// # Privacy
+///
+/// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
+/// key and signature at proving time and therefore do not get public-key privacy; those using
+/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
+///
+/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
+/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
 #[derive(Debug)]
 pub struct AuthGuardedMultisig {
     multisig: AuthMultisig,

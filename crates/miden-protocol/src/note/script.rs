@@ -5,13 +5,18 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
+use miden_core::utils::IndexVec;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_processor::LoadedMastForest;
 
 use super::Felt;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
+use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
+use crate::package::{loaded_mast_forest, package_debug_info};
+use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -68,10 +73,11 @@ impl Deserializable for NoteScriptRoot {
 ///
 /// A note's script represents a program which must be executed for a note to be consumed. As such
 /// it defines the rules and side effects of consuming a given note.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct NoteScript {
     mast: Arc<MastForest>,
     entrypoint: MastNodeId,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl NoteScript {
@@ -87,6 +93,7 @@ impl NoteScript {
         Self {
             entrypoint: code.entrypoint(),
             mast: code.mast_forest().clone(),
+            package_debug_info: None,
         }
     }
 
@@ -104,7 +111,11 @@ impl NoteScript {
     /// Panics if the specified entrypoint is not in the provided MAST forest.
     pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
         assert!(mast.get_node_by_id(entrypoint).is_some());
-        Self { mast, entrypoint }
+        Self {
+            mast,
+            entrypoint,
+            package_debug_info: None,
+        }
     }
 
     /// Returns a new [NoteScript] instantiated from the provided library.
@@ -119,14 +130,16 @@ impl NoteScript {
     pub fn from_library(library: &Library) -> Result<Self, NoteError> {
         let mut entrypoint = None;
 
-        for export in library.exports() {
+        for export in library.manifest.exports() {
             if let Some(proc_export) = export.as_procedure() {
                 // Check for @note_script attribute
                 if proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
                     if entrypoint.is_some() {
                         return Err(NoteError::NoteScriptMultipleProceduresWithAttribute);
                     }
-                    entrypoint = Some(proc_export.node);
+                    entrypoint = Some(
+                        proc_export.node.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?,
+                    );
                 }
             }
         }
@@ -136,6 +149,7 @@ impl NoteScript {
         Ok(Self {
             mast: library.mast_forest().clone(),
             entrypoint,
+            package_debug_info: package_debug_info(library),
         })
     }
 
@@ -159,6 +173,7 @@ impl NoteScript {
     pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
         // Find the export matching the path
         let export = library
+            .manifest
             .exports()
             .find(|e| e.path().as_ref() == path)
             .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
@@ -173,12 +188,16 @@ impl NoteScript {
         }
 
         // Get the digest of the procedure from the library
-        let digest = library.mast_forest()[proc_export.node].digest();
+        let digest = proc_export.digest;
 
         // Create a minimal MastForest with just an external node referencing the digest
         let (mast, entrypoint) = create_external_node_forest(digest);
 
-        Ok(Self { mast: Arc::new(mast), entrypoint })
+        Ok(Self {
+            mast: Arc::new(mast),
+            entrypoint,
+            package_debug_info: package_debug_info(library),
+        })
     }
 
     /// Creates an [`NoteScript`] from a [`Package`].
@@ -191,7 +210,7 @@ impl NoteScript {
     /// - The package contains a library which contains multiple procedures with the `@note_script`
     ///   attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        Ok(NoteScript::from_library(&package.mast))?
+        Ok(NoteScript::from_library(package))?
     }
 
     // PUBLIC ACCESSORS
@@ -207,19 +226,44 @@ impl NoteScript {
         self.mast.clone()
     }
 
+    /// Returns the MAST forest and package-owned debug information backing this note script.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
+    }
+
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
         self.entrypoint
     }
 
-    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
-    /// procedure names.
-    ///
-    /// See [`MastForest::clear_debug_info`] for more details.
+    /// Compacts this script's [`MastForest`], removing duplicate and unreachable nodes while
+    /// preserving the script root.
+    pub fn compact(&mut self) {
+        let root = self.root();
+        let mut roots = self.mast.procedure_roots().to_vec();
+        if !roots.contains(&self.entrypoint) {
+            roots.push(self.entrypoint);
+        }
+        let mast = MastForest::from_raw_parts(
+            IndexVec::try_from(self.mast.nodes().to_vec())
+                .expect("note script MAST forest should not exceed the maximum node count"),
+            roots,
+            self.mast.advice_map().clone(),
+        )
+        .expect("note script MAST forest should be valid after preserving the entrypoint");
+        let (mast, root_map) = mast.compact();
+        self.entrypoint = root_map
+            .map_root(0, &self.entrypoint)
+            .expect("entrypoint should be preserved when compacting a note script MAST forest");
+        self.mast = Arc::new(mast);
+        self.package_debug_info = None;
+
+        debug_assert_eq!(self.root(), root);
+    }
+
+    #[deprecated(note = "use NoteScript::compact instead")]
     pub fn clear_debug_info(&mut self) {
-        let mut mast = self.mast.clone();
-        Arc::make_mut(&mut mast).clear_debug_info();
-        self.mast = mast;
+        self.compact();
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
@@ -232,14 +276,22 @@ impl NoteScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
+            package_debug_info: self.package_debug_info,
         }
     }
 }
+
+impl PartialEq for NoteScript {
+    fn eq(&self, other: &Self) -> bool {
+        self.mast == other.mast && self.entrypoint == other.entrypoint
+    }
+}
+
+impl Eq for NoteScript {}
 
 // CONVERSIONS INTO NOTE SCRIPT
 // ================================================================================================
@@ -312,7 +364,7 @@ impl TryFrom<&[Felt]> for NoteScript {
                 })?;
             data.extend(element.to_le_bytes())
         }
-        data.shrink_to(len as usize);
+        data.truncate(len as usize);
 
         // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
@@ -376,37 +428,30 @@ impl Display for NoteScript {
     }
 }
 
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Creates a minimal [MastForest] containing only an external node referencing the given digest.
-///
-/// This is useful for creating lightweight references to procedures without copying entire
-/// libraries. The external reference will be resolved at runtime, assuming the source library
-/// is loaded into the VM's MastForestStore.
-fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
-    let mut mast = MastForest::new();
-    let node_id = ExternalNodeBuilder::new(digest)
-        .add_to_forest(&mut mast)
-        .expect("adding external node to empty forest should not fail");
-    mast.make_root(node_id);
-    (mast, node_id)
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
+    use miden_core::mast::{
+        BasicBlockNodeBuilder,
+        CallNodeBuilder,
+        MastForest,
+        MastForestContributor,
+    };
+    use miden_core::operations::Operation;
+
     use super::{Felt, NoteScript, Vec};
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
-        let assembler = Assembler::default();
         let script_src = DEFAULT_NOTE_SCRIPT;
-        let library = assembler.assemble_library([script_src]).unwrap();
+        let library =
+            assemble_test_library("test-note-script-roundtrip", "test::note_roundtrip", script_src);
         let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
@@ -416,13 +461,60 @@ mod tests {
     }
 
     #[test]
+    fn test_note_script_preserves_package_debug_info() {
+        let library = assemble_test_library(
+            "test-note-script-debug-info",
+            "test::note_debug_info",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let note_script = NoteScript::from_library(&library).unwrap();
+
+        assert!(note_script.loaded_mast_forest().package_debug_info().unwrap().is_some());
+    }
+
+    #[test]
+    fn test_note_script_compact_preserves_non_root_entrypoint() {
+        let mut forest = MastForest::new();
+        let entrypoint = BasicBlockNodeBuilder::new(vec![Operation::Add])
+            .add_to_forest(&mut forest)
+            .unwrap();
+        let root = CallNodeBuilder::new(entrypoint).add_to_forest(&mut forest).unwrap();
+        forest.make_root(root);
+
+        let mut script = NoteScript::from_parts(Arc::new(forest), entrypoint);
+        let script_root = script.root();
+
+        script.compact();
+
+        assert_eq!(script.root(), script_root);
+    }
+
+    #[test]
+    fn test_note_script_compact_preserves_unrooted_entrypoint() {
+        let mut forest = MastForest::new();
+        let entrypoint = BasicBlockNodeBuilder::new(vec![Operation::Add])
+            .add_to_forest(&mut forest)
+            .unwrap();
+
+        let mut script = NoteScript::from_parts(Arc::new(forest), entrypoint);
+        let script_root = script.root();
+
+        script.compact();
+
+        assert_eq!(script.root(), script_root);
+    }
+
+    #[test]
     fn test_note_script_with_advice_map() {
         use miden_core::advice::AdviceMap;
 
         use crate::Word;
 
-        let assembler = Assembler::default();
-        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let library = assemble_test_library(
+            "test-note-script-with-advice-map",
+            "test::note_with_advice_map",
+            DEFAULT_NOTE_SCRIPT,
+        );
         let script = NoteScript::from_library(&library).unwrap();
 
         assert!(script.mast().advice_map().is_empty());

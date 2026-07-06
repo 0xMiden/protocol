@@ -2,11 +2,11 @@
 
 extern crate alloc;
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::utils::serde::Deserializable;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
@@ -65,17 +65,17 @@ pub use utils::Keccak256Output;
 // ================================================================================================
 
 static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masp"));
     Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
 });
 
 static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masp"));
     Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
 });
 
 static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masp"));
     Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
 });
 
@@ -265,6 +265,34 @@ pub fn create_existing_agglayer_faucet(
         token_supply,
         bridge_account_id,
     )
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
+}
+
+/// Creates an existing agglayer faucet account with the specified configuration and the asset
+/// callback flag enabled.
+///
+/// This creates an existing account suitable for testing scenarios.
+#[cfg(any(feature = "testing", test))]
+pub fn create_existing_agglayer_faucet_with_callbacks(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    bridge_account_id: AccountId,
+) -> Account {
+    use miden_protocol::account::AssetCallbackFlag;
+
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+    )
+    .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }

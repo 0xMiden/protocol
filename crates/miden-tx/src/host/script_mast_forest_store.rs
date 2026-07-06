@@ -1,9 +1,7 @@
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 
-use miden_processor::MastForestStore;
+use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::Word;
-use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::vm::AdviceMap;
@@ -14,7 +12,7 @@ use miden_protocol::vm::AdviceMap;
 /// transaction and input note scripts.
 #[derive(Debug, Clone, Default)]
 pub struct ScriptMastForestStore {
-    mast_forests: BTreeMap<Word, Arc<MastForest>>,
+    mast_forests: BTreeMap<Word, LoadedMastForest>,
     advice_map: AdviceMap,
 }
 
@@ -30,24 +28,24 @@ impl ScriptMastForestStore {
         };
 
         for note_script in note_scripts {
-            mast_store.insert(note_script.as_ref().mast());
+            mast_store.insert(note_script.as_ref().loaded_mast_forest());
         }
 
         if let Some(tx_script) = tx_script {
-            mast_store.insert(tx_script.mast());
+            mast_store.insert(tx_script.loaded_mast_forest());
         }
         mast_store
     }
 
     /// Registers all procedures of the provided [MastForest] with this store.
-    fn insert(&mut self, mast_forest: Arc<MastForest>) {
+    fn insert(&mut self, loaded_mast_forest: LoadedMastForest) {
         // only register procedures that are local to this forest
-        for proc_digest in mast_forest.local_procedure_digests() {
-            self.mast_forests.insert(proc_digest, mast_forest.clone());
+        for proc_digest in loaded_mast_forest.mast_forest().local_procedure_digests() {
+            self.mast_forests.insert(proc_digest, loaded_mast_forest.clone());
         }
 
         // collect advice data from the forest
-        for (key, values) in mast_forest.advice_map().clone() {
+        for (key, values) in loaded_mast_forest.mast_forest().advice_map().clone() {
             self.advice_map.insert((*key).into(), values);
         }
     }
@@ -62,7 +60,7 @@ impl ScriptMastForestStore {
 // ================================================================================================
 
 impl MastForestStore for ScriptMastForestStore {
-    fn get(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         self.mast_forests.get(procedure_root).cloned()
     }
 }

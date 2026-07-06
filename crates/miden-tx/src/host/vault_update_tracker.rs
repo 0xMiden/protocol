@@ -9,7 +9,7 @@ use miden_protocol::account::{
     NonFungibleAssetDelta,
     NonFungibleDeltaAction,
 };
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId};
 
 use crate::TransactionKernelError;
 use crate::host::tx_event::{AssetDelta, AssetPatch};
@@ -17,8 +17,8 @@ use crate::host::tx_event::{AssetDelta, AssetPatch};
 /// Keeps track of the updates to an account's vault during transaction execution.
 ///
 /// On each add/remove event the tracker records:
-/// - the initial value of the touched vault key, only the very first time it is observed,
-/// - the final absolute value of the touched vault key in [`AccountVaultPatch`].
+/// - the initial value of the touched asset ID, only the very first time it is observed,
+/// - the final absolute value of the touched asset ID in [`AccountVaultPatch`].
 ///
 /// When the delta commitment is computed in the VM, the tracker records the relative change as the
 /// per-asset [`AssetDelta`] reported by the kernel. Note that the delta could be computed multiple
@@ -26,23 +26,23 @@ use crate::host::tx_event::{AssetDelta, AssetPatch};
 /// kernel delta.
 ///
 /// At the end of the transaction, [`Self::into_patch`] normalizes the patch by dropping entries
-/// whose final value equals the initial value, i.e. vault keys that were touched but ultimately
+/// whose final value equals the initial value, i.e. asset IDs that were touched but ultimately
 /// unchanged.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VaultUpdateTracker {
-    /// The latest absolute [`AssetDelta`] reported by the kernel for each touched vault key.
-    delta: BTreeMap<AssetVaultKey, AssetDelta>,
-    /// For each touched vault key, the `(initial, final)` absolute values. The initial value is
+    /// The latest absolute [`AssetDelta`] reported by the kernel for each touched asset ID.
+    delta: BTreeMap<AssetId, AssetDelta>,
+    /// For each touched asset ID, the `(initial, final)` absolute values. The initial value is
     /// recorded only on the very first observation and never overwritten; the final value is
     /// updated on every observation.
-    entries: BTreeMap<AssetVaultKey, (Word, Word)>,
+    entries: BTreeMap<AssetId, (Word, Word)>,
 }
 
 impl VaultUpdateTracker {
     /// Inserts an asset patch.
     pub fn update_patch(&mut self, patch: AssetPatch) -> Result<(), TransactionKernelError> {
         self.entries
-            .entry(patch.asset_key)
+            .entry(patch.asset_id)
             .and_modify(|(_, r#final)| *r#final = patch.final_vault_value)
             .or_insert((patch.initial_vault_value, patch.final_vault_value));
 
@@ -51,7 +51,7 @@ impl VaultUpdateTracker {
 
     /// Inserts an asset delta.
     pub fn update_delta(&mut self, delta: AssetDelta) {
-        self.delta.insert(delta.asset.vault_key(), delta);
+        self.delta.insert(delta.asset.id(), delta);
     }
 
     /// Clears the accumulating vault delta.
@@ -90,11 +90,10 @@ impl VaultUpdateTracker {
     ///
     /// TODO(unified_delta): Will be simplified once `AccountVaultDelta` tracks only generic assets.
     fn build_delta(&self) -> AccountVaultDelta {
-        let mut fungible: BTreeMap<AssetVaultKey, i64> = BTreeMap::new();
-        let mut non_fungible: BTreeMap<AssetVaultKey, (_, NonFungibleDeltaAction)> =
-            BTreeMap::new();
+        let mut fungible: BTreeMap<AssetId, i64> = BTreeMap::new();
+        let mut non_fungible: BTreeMap<AssetId, (_, NonFungibleDeltaAction)> = BTreeMap::new();
 
-        for (&vault_key, asset_delta) in &self.delta {
+        for (&asset_id, asset_delta) in &self.delta {
             match asset_delta.asset {
                 Asset::Fungible(fungible_asset) => {
                     let amount = fungible_asset.amount().as_i64();
@@ -102,14 +101,14 @@ impl VaultUpdateTracker {
                         AssetDeltaOperation::Add => amount,
                         AssetDeltaOperation::Remove => -amount,
                     };
-                    fungible.insert(vault_key, signed_amount);
+                    fungible.insert(asset_id, signed_amount);
                 },
                 Asset::NonFungible(non_fungible_asset) => {
                     let action = match asset_delta.delta_op {
                         AssetDeltaOperation::Add => NonFungibleDeltaAction::Add,
                         AssetDeltaOperation::Remove => NonFungibleDeltaAction::Remove,
                     };
-                    non_fungible.insert(vault_key, (non_fungible_asset, action));
+                    non_fungible.insert(asset_id, (non_fungible_asset, action));
                 },
             }
         }

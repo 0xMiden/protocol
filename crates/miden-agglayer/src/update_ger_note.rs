@@ -3,12 +3,12 @@
 //! This module provides helpers for creating UPDATE_GER notes,
 //! which are used to update the Global Exit Root in the bridge account.
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::utils::serde::Deserializable;
 use miden_utils_sync::LazyLock;
 
 use crate::ExitRoot;
@@ -19,7 +19,7 @@ use crate::ger_note::create_ger_note;
 
 // Initialize the UPDATE_GER note script only once
 static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/update_ger.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/update_ger.masp"));
     let library =
         Library::read_from_bytes(bytes).expect("shipped UPDATE_GER script library is well-formed");
     NoteScript::from_library(&library).expect("shipped UPDATE_GER script is well-formed")

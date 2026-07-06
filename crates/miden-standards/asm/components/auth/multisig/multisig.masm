@@ -1,0 +1,28 @@
+# The MASM code of the Multi-Signature Authentication Component.
+#
+# See the `AuthMultisig` Rust type's documentation for more details.
+
+use miden::standards::auth::multisig
+
+pub use {update_signers_and_threshold} from miden::standards::auth::multisig
+pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
+pub use {set_procedure_threshold} from miden::standards::auth::multisig
+pub use {get_signer_at} from miden::standards::auth::multisig
+pub use {is_signer} from miden::standards::auth::multisig
+
+#! Authenticate a transaction with multi-signature support.
+#!
+#! Inputs:
+#!   Operand stack: [SALT]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_tx_multisig(salt: word)
+    exec.multisig::auth_tx
+    # => [TX_SUMMARY_COMMITMENT]
+
+    exec.multisig::assert_new_tx
+    # => []
+end

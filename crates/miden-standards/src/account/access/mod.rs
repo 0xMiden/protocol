@@ -4,10 +4,10 @@ use alloc::vec;
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
 
 pub mod authority;
-pub mod guardian;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
+pub mod warden;
 
 /// Access control configuration for network-style accounts whose authority-gated setters are
 /// gated by an owner / role check rather than by the account's auth component.
@@ -82,7 +82,7 @@ impl IntoIterator for AccessControl {
 }
 
 pub use authority::{Authority, AuthorityError};
-pub use guardian::{Guardian, GuardianError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::RoleBasedAccessControl;
+pub use warden::{Warden, WardenError};

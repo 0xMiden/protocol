@@ -3,8 +3,14 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, MastForestStore, ProcessorState};
+use miden_processor::{
+    BaseHost,
+    FutureMaybeSend,
+    Host,
+    LoadedMastForest,
+    MastForestStore,
+    ProcessorState,
+};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
@@ -92,7 +98,10 @@ impl<STORE> Host for TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         let result = self.base_host.get_mast_forest(node_digest);
         async move { result }
     }
