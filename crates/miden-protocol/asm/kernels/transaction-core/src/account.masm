@@ -217,7 +217,9 @@ end
 
 ### ACCOUNT COMMITMENT ###################################################
 
-#! Returns the commitment of the active account at the beginning of the transaction.
+#! Returns the commitment of the native account at the beginning of the transaction.
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  []
 #! Outputs: [INIT_COMMITMENT]
@@ -225,16 +227,7 @@ end
 #! Where:
 #! - INIT_COMMITMENT is the initial account commitment.
 pub proc get_initial_commitment
-    # determine whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account]
-
-    if.true
-        exec.memory::get_init_account_commitment
-    else
-        # for the foreign account current commitment equals to initial
-        exec.compute_commitment
-    end
+    exec.memory::get_init_account_commitment
     # => [INIT_COMMITMENT]
 end
 
@@ -282,7 +275,9 @@ pub use {get_account_code_commitment as get_code_commitment} from miden::tx_kern
 
 ### STORAGE COMMITMENT ###################################################
 
-#! Returns the storage commitment of the active account at the beginning of the transaction.
+#! Returns the storage commitment of the native account at the beginning of the transaction.
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  []
 #! Outputs: [INIT_ACCOUNT_STORAGE_COMMITMENT]
@@ -290,22 +285,8 @@ pub use {get_account_code_commitment as get_code_commitment} from miden::tx_kern
 #! Where:
 #! - INIT_ACCOUNT_STORAGE_COMMITMENT is the initial account storage commitment.
 pub proc get_initial_storage_commitment
-    # Get the storage commitment of the active account. For the foreign account this commitment will
-    # be initial.
-    exec.memory::get_account_storage_commitment
-    # => [ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
     # get the initial storage commitment of the native account
     exec.memory::get_init_account_storage_commitment
-    # => [INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
-    # check whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account, INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
-    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, or
-    # ACTIVE_ACCOUNT_STORAGE_COMMITMENT otherwise
-    cdropw
     # => [INIT_ACCOUNT_STORAGE_COMMITMENT]
 end
 
@@ -327,7 +308,9 @@ end
 
 ### VAULT ROOT ###########################################################
 
-#! Returns the vault root of the active account at the beginning of the transaction.
+#! Returns the vault root of the native account at the beginning of the transaction.
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  []
 #! Outputs: [INIT_ACCOUNT_VAULT_ROOT]
@@ -335,22 +318,8 @@ end
 #! Where:
 #! - INIT_ACCOUNT_VAULT_ROOT is the initial account vault root.
 pub proc get_initial_vault_root
-    # Get the vault root of the active account. For the foreign account this root will be equal to 
-    # the initial one.
-    exec.memory::get_account_vault_root
-    # => [ACTIVE_ACCOUNT_VAULT_ROOT]
-
     # get the initial vault root of the native account
     exec.memory::get_init_native_account_vault_root
-    # => [INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
-
-    # check whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account, INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
-
-    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_VAULT_ROOT, or
-    # ACTIVE_ACCOUNT_VAULT_ROOT otherwise
-    cdropw
     # => [INIT_ACCOUNT_VAULT_ROOT]
 end
 
@@ -471,7 +440,9 @@ pub proc get_typed_item
     # => [VALUE, slot_type]
 end
 
-#! Gets an item from the account storage at its initial state (beginning of transaction).
+#! Gets an item from the native account storage at its initial state (beginning of transaction).
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [INIT_VALUE]
@@ -484,9 +455,9 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_initial_item
-    # get account initial storage slots section offset
-    exec.memory::get_account_initial_storage_slots_ptr
-    # => [account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+    # get native account initial storage slots section offset
+    exec.memory::get_native_account_initial_storage_slots_ptr
+    # => [native_account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr]
@@ -569,7 +540,9 @@ pub proc get_map_item
 end
 
 #! Returns the VALUE located under the specified KEY within the map contained in the given
-#! account storage slot at its initial state (beginning of transaction).
+#! native account storage slot at its initial state (beginning of transaction).
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [INIT_VALUE]
@@ -583,8 +556,8 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_initial_map_item
-    exec.memory::get_account_initial_storage_slots_ptr
-    # => [initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+    exec.memory::get_native_account_initial_storage_slots_ptr
+    # => [native_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
 
     exec.get_map_item_raw
 end
@@ -773,8 +746,10 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the ASSET_VALUE associated with the provided asset ID in the active account's vault at
+#! Returns the ASSET_VALUE associated with the provided asset ID in the native account's vault at
 #! the beginning of the transaction.
+#!
+#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [ASSET_VALUE]
@@ -783,8 +758,8 @@ end
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 pub proc get_initial_asset
-    # get the vault root associated with the initial vault root of the native account
-    exec.memory::get_account_initial_vault_root_ptr movdn.4
+    # get the initial vault root ptr of the native account
+    exec.memory::get_init_native_account_vault_root_ptr movdn.4
     # => [ASSET_ID, init_native_vault_root_ptr]
 
     # emit event to signal that an asset is requested
@@ -1444,8 +1419,8 @@ pub proc get_item_patch
     movup.2 exec.get_item_raw
     # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, offset]
 
-    # get account initial storage slots section offset
-    exec.memory::get_account_initial_storage_slots_ptr
+    # get native account initial storage slots section offset
+    exec.memory::get_native_account_initial_storage_slots_ptr
     # => [init_storage_slots_ptr, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, offset]
 
     movup.7 add

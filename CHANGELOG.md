@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Moved the initial-state account getters (`get_initial_commitment`, `get_initial_storage_commitment`, `get_initial_vault_root`, `get_initial_item`, `get_initial_map_item`, `get_initial_asset`, `get_initial_balance`) from `miden::protocol::active_account` to `miden::protocol::native_account`. They now always operate on the native account and panic with `ERR_ACCOUNT_IS_NOT_NATIVE` when invoked from a foreign procedure invocation (FPI) context ([#2034](https://github.com/0xMiden/protocol/issues/2034)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).

@@ -25,6 +25,7 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_IS_NOT_NATIVE,
     ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
     ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
     ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
@@ -864,25 +865,26 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     Ok(())
 }
 
-/// Test that the `miden::get_initial_balance` procedure works correctly being called from a foreign
-/// account.
+/// Test that `get_initial_balance` cannot be called against a foreign account. It is a
+/// native-account-only procedure (composed from `get_initial_asset`), so invoking it from an FPI
+/// context must fail with `ERR_ACCOUNT_IS_NOT_NATIVE`.
 #[tokio::test]
-async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
+async fn foreign_account_get_initial_balance_fails() -> anyhow::Result<()> {
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
     let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 10)?);
     let fungible_asset_id = AssetId::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
-        use miden::protocol::active_account
+        use miden::protocol::native_account
 
         @account_procedure
         pub proc get_initial_balance
             # push the asset ID on the stack
             push.{FUNGIBLE_ASSET_ID}
 
-            # get the initial balance of the asset associated with the provided asset ID
-            exec.active_account::get_balance
+            # attempt to get the initial balance of the asset (native-only; must fail under FPI)
+            exec.native_account::get_initial_balance
             # => [initial_balance]
 
             # truncate the stack
@@ -926,7 +928,7 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # Get the initial balance of the fungible asset from the foreign account
+            # Attempt to get the initial balance of the fungible asset from the foreign account
 
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
@@ -939,12 +941,8 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, pad(15)]
 
+            # this must fail, since get_initial_balance is a native-account only procedure
             exec.tx::execute_foreign_procedure
-            # => [init_foreign_balance]
-
-            # assert that the initial balance of the asset in the foreign account equals 10
-            push.10 assert_eq.err=\"Initial balance should be 10\"
-            # => []
 
             # truncate the stack
             exec.sys::truncate_stack
@@ -960,14 +958,16 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    mock_chain
+    let result = mock_chain
         .build_tx_context(native_account.id(), &[], &[])?
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
         .execute()
-        .await?;
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
 
     Ok(())
 }
@@ -1884,10 +1884,12 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that get_initial_item and get_initial_map_item work correctly with foreign accounts.
+/// Test that `get_initial_item` and `get_initial_map_item` cannot be called against a foreign
+/// account. These are native-account-only procedures, so invoking them from an FPI context must
+/// fail via `memory::assert_native_account` with `ERR_ACCOUNT_IS_NOT_NATIVE`.
 #[tokio::test]
-async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -> anyhow::Result<()>
-{
+async fn test_get_initial_item_and_get_initial_map_item_fail_for_foreign_account()
+-> anyhow::Result<()> {
     // Create a native account
     let native_account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
@@ -1897,12 +1899,12 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
     let mock_map_slot = AccountStorage::mock_map_slot();
-    let (map_key, map_value) = STORAGE_LEAVES_2[0];
+    let (map_key, _map_value) = STORAGE_LEAVES_2[0];
 
-    // Create foreign procedures that test get_initial_item and get_initial_map_item
+    // Foreign procedures that attempt to call the native-only initial getters.
     let foreign_account_code_source = format!(
         r#"
-        use miden::protocol::active_account
+        use miden::protocol::native_account
         use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
@@ -1910,13 +1912,13 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         @account_procedure
         pub proc test_get_initial_item
             push.MOCK_VALUE_SLOT0[0..2]
-            exec.active_account::get_initial_item
+            exec.native_account::get_initial_item
             exec.sys::truncate_stack
         end
 
         @account_procedure
         pub proc test_get_initial_map_item
-            exec.active_account::get_initial_map_item
+            exec.native_account::get_initial_map_item
             exec.sys::truncate_stack
         end
     "#,
@@ -1941,9 +1943,30 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
             .build()?;
     mock_chain.prove_next_block()?;
 
-    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
+    let foreign_account_id_prefix = foreign_account.id().prefix().as_felt();
+    let foreign_account_id_suffix = foreign_account.id().suffix();
 
-    let code = format!(
+    // Each foreign procedure is invoked in a separate transaction, and each invocation is expected
+    // to fail because the initial getters are native-account only.
+    let get_initial_item_code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::tx
+
+        @transaction_script
+        pub proc main
+            # attempt to call the native-only get_initial_item on a foreign account
+            padw padw padw push.0.0.0
+            procref.::foreign_account::test_get_initial_item
+            push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
+            exec.tx::execute_foreign_procedure
+
+            exec.sys::truncate_stack
+        end
+        "#,
+    );
+
+    let get_initial_map_item_code = format!(
         r#"
         use miden::core::sys
         use miden::protocol::tx
@@ -1952,47 +1975,38 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
         @transaction_script
         pub proc main
-            # Test get_initial_item on foreign account
-            padw padw padw push.0.0.0
-            # => [pad(15)]
-            procref.::foreign_account::test_get_initial_item
-            push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
-            exec.tx::execute_foreign_procedure
-            push.{expected_value_slot_0}
-            assert_eqw.err="foreign account get_initial_item should work"
-
-            # Test get_initial_map_item on foreign account
+            # attempt to call the native-only get_initial_map_item on a foreign account
             padw padw push.0.0
             push.{map_key}
             push.MOCK_MAP_SLOT[0..2]
             procref.::foreign_account::test_get_initial_map_item
             push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
             exec.tx::execute_foreign_procedure
-            push.{map_value}
-            assert_eqw.err="foreign account get_initial_map_item should work"
 
             exec.sys::truncate_stack
         end
         "#,
         mock_map_slot = mock_map_slot.name(),
-        foreign_account_id_prefix = foreign_account.id().prefix().as_felt(),
-        foreign_account_id_suffix = foreign_account.id().suffix(),
-        expected_value_slot_0 = mock_value_slot0.content().value(),
         map_key = &map_key,
-        map_value = &map_value,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
-        .compile_tx_script(code)?;
+    for code in [get_initial_item_code, get_initial_map_item_code] {
+        let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
-        .foreign_accounts(vec![foreign_account_inputs])
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
+        let tx_script = CodeBuilder::with_mock_libraries()
+            .with_dynamically_linked_library(foreign_account_component.component_code())?
+            .compile_tx_script(code)?;
+
+        let result = mock_chain
+            .build_tx_context(native_account.id(), &[], &[])?
+            .foreign_accounts(vec![foreign_account_inputs])
+            .tx_script(tx_script)
+            .build()?
+            .execute()
+            .await;
+
+        assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+    }
 
     Ok(())
 }

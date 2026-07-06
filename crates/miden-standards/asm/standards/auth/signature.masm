@@ -1,7 +1,6 @@
 use miden::core::crypto::dsa::falcon512_poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::core::crypto::dsa::ecdsa_k256_keccak
-use miden::protocol::active_account
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
@@ -176,7 +175,7 @@ end
 #! the provided account storage map slot, verifies their signatures against the transaction message,
 #! and returns the number of successfully verified signatures.
 #!
-#! Note: Calls `active_account::get_initial_map_item` to access the transaction's initial storage
+#! Note: Calls `native_account::get_initial_map_item` to access the transaction's initial storage
 #! state rather than the current state. This is crucial when validating transactions that update
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
@@ -221,7 +220,7 @@ pub proc verify_signatures
         # Get public key from initial storage state
         loc_load.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
         loc_load.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [OWNER_PUB_KEY, i-1, MSG]
 
         loc_storew_le.CURRENT_PK_LOC
@@ -278,7 +277,7 @@ pub proc verify_signatures
             # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
             
             # Get scheme_id for signer index i-1 from initial storage state.
-            exec.active_account::get_initial_map_item
+            exec.native_account::get_initial_map_item
             # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
 
             movdn.3 drop drop drop

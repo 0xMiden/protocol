@@ -86,7 +86,7 @@ const DEFAULT_THRESHOLD_LOC = 1
 #! Invocation: exec
 pub proc get_procedure_policy
     push.PROCEDURE_POLICIES_SLOT[0..2]
-    exec.active_account::get_initial_map_item
+    exec.native_account::get_initial_map_item
     # => [immediate_threshold, delayed_threshold, note_restrictions, 0]
 
     movup.3 drop
