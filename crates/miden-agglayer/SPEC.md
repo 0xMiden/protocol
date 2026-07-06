@@ -49,7 +49,7 @@ asset and the destination network/address. The bridge account consumes this note
 5. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (LET).
 6. Dispatches on the faucet's `is_native` flag (also read from the registry):
    - **Wrapped faucet (`is_native = false`):** the bridge does not hold the asset onchain; it
-     emits a public [`BURN`](#46-burn-generated) note targeting the faucet, which the faucet
+     emits a public [`BURN`](#47-burn-generated) note targeting the faucet, which the faucet
      consumes to burn the asset and decrement the faucet's token supply.
    - **Miden-native faucet (`is_native = true`):** the bridge does not hold mint/burn authority
      for the faucet, so it cannot emit a `BURN`. Instead it locks the asset by adding it to
@@ -81,12 +81,13 @@ The `CLAIM` note is consumed by the bridge account:
    `NEW_CGI = Keccak256(OLD_CGI, Keccak256(GLOBAL_INDEX, LEAF_VALUE))`.
 5. Checks and sets the claim nullifier to prevent double-claiming.
 6. Looks up the faucet from the `(origin_token_address, origin_network)` pair via the token
-   registry.
+   registry, then, as defense-in-depth, asserts the resolved faucet is still registered
+   (`assert_faucet_registered`) so a claim only ever mints through a currently-registered faucet.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
 8. Dispatches on the faucet's `is_native` flag:
-   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#48-mint-generated)
+   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#49-mint-generated)
      note targeting the faucet. The faucet consumes the `MINT` note, mints the specified amount,
-     and creates a [`P2ID`](#47-p2id-generated) note delivering the minted assets to the
+     and creates a [`P2ID`](#48-p2id-generated) note delivering the minted assets to the
      recipient's Miden account.
    - **Miden-native faucet (`is_native = true`):** the bridge cannot mint via the faucet, so
      it removes the asset from its own vault (`native_account::remove_asset`) and emits a
@@ -107,7 +108,7 @@ TODO: Claims cannot be reversed once the nullifier is set
 ![GER injection flow](diagrams/ger-injection.png)
 
 Global Exit Roots represent a snapshot of exit tree roots across all AggLayer-connected
-chains. A GER injector observes L1 GER updates and creates [`UPDATE_GER`](#44-update_ger) notes
+chains. A GER injector observes L1 GER updates and creates [`UPDATE_GER`](#45-update_ger) notes
 on Miden. The bridge consumes these notes:
 
 1. Asserts the note sender is the designated GER injector.
@@ -126,7 +127,7 @@ to be valid.
 > failure explicit and prevents the GER injector from accidentally creating unconsumed notes.
 
 A separate GER Remover role can revoke a previously-registered GER by sending a
-[`REMOVE_GER`](#45-remove_ger) note. The bridge consumes such a note and:
+[`REMOVE_GER`](#46-remove_ger) note. The bridge consumes such a note and:
 
 1. Asserts the note sender is the designated GER remover (a role distinct from the GER
    injector so that insertion and revocation authority can be split).
@@ -187,9 +188,8 @@ The split is necessary because the 16-element MASM stack cannot fit all 18 regis
 felts at once. For a detailed description of the registries, see
 [Section 7](#7-faucet-registry).
 
-TODO: Faucet registrations are permanent; no remapping or deregistration is supported
-([#2704](https://github.com/0xMiden/protocol/issues/2704),
-[#2705](https://github.com/0xMiden/protocol/issues/2705)).
+TODO: Token remapping and migration are not supported
+([#2704](https://github.com/0xMiden/protocol/issues/2704)).
 
 TODO: Faucet existence and code commitment are not validated during registration
 ([#2709](https://github.com/0xMiden/protocol/issues/2709)).
@@ -200,10 +200,10 @@ The bridge has three administrative roles set at account creation time:
 
 - **Bridge admin** (`admin_account_id`): authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes.
-- **GER injector** (`ger_injector_account_id`): authorizes GER updates via [`UPDATE_GER`](#44-update_ger)
+- **GER injector** (`ger_injector_account_id`): authorizes GER updates via [`UPDATE_GER`](#45-update_ger)
   notes.
 - **GER remover** (`ger_remover_account_id`): authorizes GER removals via
-  [`REMOVE_GER`](#45-remove_ger) notes. Kept distinct from the GER injector so that insertion
+  [`REMOVE_GER`](#46-remove_ger) notes. Kept distinct from the GER injector so that insertion
   and revocation authority can be split.
 
 All roles are verified by checking the note sender against the stored account ID.
@@ -224,6 +224,7 @@ The bridge account has a single unified `bridge` component (`components/bridge.m
 which is a thin wrapper that re-exports procedures from the `agglayer` library modules:
 
 - `bridge_config::register_faucet`
+- `bridge_config::deregister_faucet`
 - `bridge_config::update_ger`
 - `bridge_config::remove_ger`
 - `bridge_in::claim`
@@ -272,6 +273,36 @@ Asserts the note sender matches the bridge admin stored in
    pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
    the address alone would let a CLAIM bound to one origin network resolve to the faucet of
    the same address on another network.
+
+If the faucet is already registered (a re-registration under a different token identity), the prior
+`token_registry` key is recomputed from the existing metadata and cleared before the new entry is
+written, so a `token_registry` key never outlives the registration that created it.
+
+#### `bridge_config::deregister_faucet`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
+| **Panics** | Note sender is not the bridge admin; faucet is not currently registered |
+
+Asserts the note sender matches the bridge admin stored in
+`agglayer::bridge::admin_account_id` and the faucet is currently registered (via
+`assert_faucet_registered`), then clears all of the faucet's entries:
+
+1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
+2. `token_registry_map`: recomputes the key from the faucet's stored `origin_token_addr` and
+   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`) and clears it to
+   `[0, 0, 0, 0]`. Recomputing the key from on-chain metadata rather than the note guarantees it
+   matches the faucet's current registration.
+3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
+
+After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so the bridge admin
+should warn users with notes in flight. As defense-in-depth, `claim` and `bridge_out` also re-check
+`assert_faucet_registered` after the token lookup, so a faucet can never mint or unlock through a
+`token_registry` entry once it is deregistered.
 
 #### `bridge_config::update_ger`
 
@@ -326,7 +357,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
    `asset_conversion::verify_u256_to_native_amount_conversion`.
-8. Builds a MINT output note targeting the faucet (see [Section 4.8](#48-mint-generated)).
+8. Builds a MINT output note targeting the faucet (see [Section 4.9](#49-mint-generated)).
 
 #### Bridge Account Storage
 
@@ -641,7 +672,61 @@ two-step registration into `faucet_registry_map` and `token_registry_map`).
 | **Issuer** | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.4 UPDATE_GER
+### 4.4 DEREGISTER_AGG_FAUCET
+
+**Purpose:** Deregisters a faucet from the bridge's faucet and token registries.
+
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Bridge admin (sender authorization enforced by the bridge's `deregister_faucet` procedure) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `deregister_agg_faucet.masm` |
+| `storage` | 2 felts -- the faucet id |
+
+**Storage layout (2 felts):**
+
+| Index | Field | Encoding |
+|-------|-------|----------|
+| 0 | `faucet_id_suffix` | Felt (AccountId suffix of the faucet to deregister) |
+| 1 | `faucet_id_prefix` | Felt (AccountId prefix of the faucet to deregister) |
+
+The origin token address and origin network are not carried by the note; the bridge reads them
+back from its own `faucet_metadata_map` when clearing the token registry.
+
+**Consumption:** Script validates attachment target, loads storage, and calls
+`bridge_config::deregister_faucet` (which asserts sender is bridge admin, asserts
+the faucet is currently registered, and clears the `faucet_registry_map`,
+`token_registry_map`, and `faucet_metadata_map` entries).
+
+After consumption, in-flight B2AGG / CLAIM notes referencing the deregistered
+faucet will fail their `assert_faucet_registered` / `lookup_faucet_by_token_address`
+checks. The bridge admin should drain or otherwise warn users about pending
+notes before sending a `DEREGISTER_AGG_FAUCET`.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Bridge admin only -- **enforced** by `bridge_config::deregister_faucet` procedure |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+
+### 4.5 UPDATE_GER
 
 **Purpose:** Stores a new Global Exit Root (GER) in the bridge account so that subsequent
 CLAIM notes can be verified against it.
@@ -687,7 +772,7 @@ CLAIM notes can be verified against it.
 | **Issuer** | GER injector only -- **enforced** by `bridge_config::update_ger` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.5 REMOVE_GER
+### 4.6 REMOVE_GER
 
 **Purpose:** Removes a previously-registered Global Exit Root (GER) from the bridge account so
 that subsequent CLAIM notes referencing it fail validation, and folds the removed GER into the
@@ -736,7 +821,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | **Issuer** | GER remover only -- **enforced** by `bridge_config::remove_ger` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.6 BURN (generated)
+### 4.7 BURN (generated)
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
 
@@ -780,7 +865,7 @@ decreases the faucet's total token supply by the burned amount.
 | **Issuer** | Bridge account (created by `bridge_out::bridge_out`) |
 | **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.7 P2ID (generated)
+### 4.8 P2ID (generated)
 
 **Purpose:** Created by the faucet (via `mint_and_send`) when consuming a MINT note, to
 deliver minted assets to the recipient.
@@ -828,7 +913,7 @@ script). All note assets are added to the consuming account via
 | **Issuer** | Faucet account (created by `mint_and_send`) |
 | **Consumer** | Destination account only -- **enforced** by P2ID script (checks `target_account_id`) |
 
-### 4.8 MINT (generated)
+### 4.9 MINT (generated)
 
 **Purpose:** Created by `bridge_in::claim` on the bridge account. Consumed by the faucet
 to mint and distribute assets to the recipient.
@@ -1202,6 +1287,11 @@ note consumption will fail.
 The bridge admin is a trusted role, and is the sole entity that can register faucets on
 the Miden side (enforced by the caller restriction on
 [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
+
+The bridge admin can also revoke a faucet's authorization via a
+[`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note (see
+[Section 4.4](#44-deregister_agg_faucet)), which retires compromised, broken, or deprecated faucets
+without redeploying the bridge.
 
 #### Wrapped (`is_native = false`) vs Miden-native (`is_native = true`) faucets
 

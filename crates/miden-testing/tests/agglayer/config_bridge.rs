@@ -2,21 +2,30 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use miden_agglayer::errors::{ERR_FAUCET_NOT_REGISTERED, ERR_SENDER_NOT_BRIDGE_ADMIN};
 use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
     ConversionMetadata,
+    DeregisterAggFaucetNote,
     EthAddress,
     MetadataHash,
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    AccountId,
+    AccountIdVersion,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMapKey,
+};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -246,6 +255,407 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     .into();
     assert_eq!(value_1, expected_1, "(addr, network=1) must resolve to faucet_network_1");
     assert_eq!(value_2, expected_2, "(addr, network=2) must resolve to faucet_network_2");
+
+    Ok(())
+}
+
+/// Builds the `faucet_metadata_map` sub-key for a faucet: `[sub_key, 0, suffix, prefix]`.
+///
+/// Mirrors the key layout written by `register_faucet` / read by `get_faucet_conversion_info`.
+fn faucet_metadata_key(faucet: AccountId, sub_key: u8) -> StorageMapKey {
+    StorageMapKey::from_raw(
+        [Felt::from(sub_key), Felt::ZERO, faucet.suffix(), faucet.prefix().as_felt()].into(),
+    )
+}
+
+/// Tests that a DEREGISTER_AGG_FAUCET note clears a previously-registered faucet from the faucet
+/// registry, the token registry, AND the faucet metadata map.
+///
+/// Flow:
+/// 1. Create admin + bridge accounts
+/// 2. Register a faucet via CONFIG_AGG_BRIDGE
+/// 3. Verify all three maps hold the expected non-zero values
+/// 4. Deregister via DEREGISTER_AGG_FAUCET
+/// 5. Verify all three maps hold [0, 0, 0, 0]
+#[tokio::test]
+async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let faucet_to_register = AccountId::dummy(
+        [42; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let origin_token_address =
+        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_network = 1u32;
+    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+
+    // ---- Build registration + deregistration notes ----
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    let deregister_note = DeregisterAggFaucetNote::create(
+        faucet_to_register,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // ---- TX0: consume CONFIG_AGG_BRIDGE to register ----
+    let register_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    let register_executed = register_tx.execute().await?;
+
+    let mut updated_bridge = bridge_account.clone();
+    updated_bridge.apply_patch(register_executed.account_patch())?;
+
+    let faucet_slot = AggLayerBridge::faucet_registry_map_slot_name();
+    let token_slot = AggLayerBridge::token_registry_map_slot_name();
+    let metadata_slot = AggLayerBridge::faucet_metadata_map_slot_name();
+    let faucet_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_to_register).as_word());
+    let token_key = token_registry_key(&origin_token_address, origin_network);
+    // Sub-key 0 (ADDR_LO) holds the first four felts of the origin token address.
+    let metadata_addr_lo_key = faucet_metadata_key(faucet_to_register, 0);
+    let expected_addr_lo: Word = origin_token_address.to_elements()[0..4]
+        .try_into()
+        .map(|a: [Felt; 4]| a.into())
+        .expect("origin token address has at least 4 felts");
+
+    assert_eq!(
+        updated_bridge.storage().get_map_item(faucet_slot, faucet_key)?,
+        [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
+        "faucet_registry should be [1, 0, 0, 0] after registration"
+    );
+    assert_eq!(
+        updated_bridge.storage().get_map_item(token_slot, token_key)?,
+        [
+            Felt::ZERO,
+            Felt::ZERO,
+            faucet_to_register.suffix(),
+            faucet_to_register.prefix().as_felt(),
+        ]
+        .into(),
+        "token_registry should hold the faucet ID after registration"
+    );
+    // This both verifies metadata was written and validates the key layout used below.
+    assert_eq!(
+        updated_bridge.storage().get_map_item(metadata_slot, metadata_addr_lo_key)?,
+        expected_addr_lo,
+        "faucet_metadata sub-key 0 should hold the origin address after registration"
+    );
+
+    mock_chain.add_pending_executed_transaction(&register_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // ---- TX1: consume DEREGISTER_AGG_FAUCET to clear ----
+    let deregister_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build()?;
+    let deregister_executed = deregister_tx.execute().await?;
+
+    updated_bridge.apply_patch(deregister_executed.account_patch())?;
+
+    assert_eq!(
+        updated_bridge.storage().get_map_item(faucet_slot, faucet_key)?,
+        [Felt::ZERO; 4].into(),
+        "faucet_registry should be cleared to [0, 0, 0, 0] after deregistration"
+    );
+    assert_eq!(
+        updated_bridge.storage().get_map_item(token_slot, token_key)?,
+        [Felt::ZERO; 4].into(),
+        "token_registry should be cleared to [0, 0, 0, 0] after deregistration"
+    );
+    // All four metadata sub-keys (0/1 origin address+network, 2/3 metadata hash lo/hi) are cleared.
+    for sub_key in 0..4u8 {
+        assert_eq!(
+            updated_bridge
+                .storage()
+                .get_map_item(metadata_slot, faucet_metadata_key(faucet_to_register, sub_key))?,
+            [Felt::ZERO; 4].into(),
+            "faucet_metadata sub-key {sub_key} should be cleared after deregistration"
+        );
+    }
+
+    Ok(())
+}
+
+/// Tests that DEREGISTER_AGG_FAUCET clears a Miden-native (`is_native = true`) faucet just like a
+/// wrapped one. `deregister_faucet` does not branch on `is_native` (it overwrites the whole
+/// `[1, is_native, 0, 0]` registry word with zeros), so this guards against a regression that would
+/// make deregistration `is_native`-dependent.
+#[tokio::test]
+async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let faucet_to_register = AccountId::dummy(
+        [77; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let origin_token_address =
+        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_network = 1u32;
+    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: true,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    let deregister_note = DeregisterAggFaucetNote::create(
+        faucet_to_register,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    let register_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+
+    let mut updated_bridge = bridge_account.clone();
+    updated_bridge.apply_patch(register_executed.account_patch())?;
+
+    let faucet_slot = AggLayerBridge::faucet_registry_map_slot_name();
+    let token_slot = AggLayerBridge::token_registry_map_slot_name();
+    let faucet_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_to_register).as_word());
+    let token_key = token_registry_key(&origin_token_address, origin_network);
+
+    // A native faucet registers with the is_native flag set: [1, 1, 0, 0].
+    assert_eq!(
+        updated_bridge.storage().get_map_item(faucet_slot, faucet_key)?,
+        [Felt::ONE, Felt::ONE, Felt::ZERO, Felt::ZERO].into(),
+        "faucet_registry should be [1, 1, 0, 0] after native registration"
+    );
+
+    mock_chain.add_pending_executed_transaction(&register_executed)?;
+    mock_chain.prove_next_block()?;
+
+    let deregister_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    updated_bridge.apply_patch(deregister_executed.account_patch())?;
+
+    assert_eq!(
+        updated_bridge.storage().get_map_item(faucet_slot, faucet_key)?,
+        [Felt::ZERO; 4].into(),
+        "faucet_registry should be cleared after deregistering a native faucet"
+    );
+    assert_eq!(
+        updated_bridge.storage().get_map_item(token_slot, token_key)?,
+        [Felt::ZERO; 4].into(),
+        "token_registry should be cleared after deregistering a native faucet"
+    );
+    assert_eq!(
+        updated_bridge.storage().get_map_item(
+            AggLayerBridge::faucet_metadata_map_slot_name(),
+            faucet_metadata_key(faucet_to_register, 0)
+        )?,
+        [Felt::ZERO; 4].into(),
+        "faucet_metadata should be cleared after deregistering a native faucet"
+    );
+
+    Ok(())
+}
+
+/// Tests that DEREGISTER_AGG_FAUCET rejects invalid deregistrations:
+/// - an unregistered faucet panics with `ERR_FAUCET_NOT_REGISTERED`;
+/// - a non-admin sender panics with `ERR_SENDER_NOT_BRIDGE_ADMIN`, even when the faucet is
+///   registered (so the panic comes from the auth check, not the registration check);
+/// - an already-deregistered faucet panics with `ERR_FAUCET_NOT_REGISTERED`, demonstrating that
+///   deregistration revokes the faucet end-to-end (this is the exact check in-flight B2AGG / CLAIM
+///   notes rely on).
+#[rstest::rstest]
+#[case::unregistered_faucet(false, false, false, ERR_FAUCET_NOT_REGISTERED)]
+#[case::non_admin_sender(true, false, true, ERR_SENDER_NOT_BRIDGE_ADMIN)]
+#[case::already_deregistered(true, true, false, ERR_FAUCET_NOT_REGISTERED)]
+#[tokio::test]
+async fn test_deregister_agg_faucet_rejects_invalid(
+    #[case] register_first: bool,
+    #[case] deregister_first: bool,
+    #[case] sender_is_attacker: bool,
+    #[case] expected_err: MasmError,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let attacker = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let faucet_id = AccountId::dummy(
+        [7; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+
+    // Register the faucet first only for the non-admin case, so its panic comes from the auth check
+    // rather than the assert_faucet_registered check.
+    let config_note = if register_first {
+        Some(ConfigAggBridgeNote::create(
+            ConversionMetadata {
+                faucet_account_id: faucet_id,
+                origin_token_address: EthAddress::from_hex(
+                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                )
+                .unwrap(),
+                scale: 0,
+                origin_network: 1,
+                is_native: false,
+                metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+            },
+            bridge_admin.id(),
+            bridge_account.id(),
+            builder.rng_mut(),
+        )?)
+    } else {
+        None
+    };
+
+    // A prior successful (admin) deregistration, used by the already-deregistered case.
+    let prior_deregister_note = if deregister_first {
+        Some(DeregisterAggFaucetNote::create(
+            faucet_id,
+            bridge_admin.id(),
+            bridge_account.id(),
+            builder.rng_mut(),
+        )?)
+    } else {
+        None
+    };
+
+    let sender = if sender_is_attacker {
+        attacker.id()
+    } else {
+        bridge_admin.id()
+    };
+    let deregister_note =
+        DeregisterAggFaucetNote::create(faucet_id, sender, bridge_account.id(), builder.rng_mut())?;
+
+    if let Some(note) = &config_note {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+    if let Some(note) = &prior_deregister_note {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+    let mut mock_chain = builder.build()?;
+
+    if let Some(note) = config_note {
+        let register_executed = mock_chain
+            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+        mock_chain.add_pending_executed_transaction(&register_executed)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    if let Some(note) = prior_deregister_note {
+        let deregister_executed = mock_chain
+            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+        mock_chain.add_pending_executed_transaction(&deregister_executed)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
 }
