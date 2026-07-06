@@ -1,5 +1,5 @@
 use miden::protocol_utils::account_id
-use miden::tx_kernel_core::asset
+use $kernel::asset
 
 # ERRORS
 # =================================================================================================

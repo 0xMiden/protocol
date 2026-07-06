@@ -3,7 +3,7 @@ name              = "miden-tx-kernel-core"
 version.workspace = true
 
 [lib]
-namespace = "miden::tx_kernel_core"
+namespace = "$kernel"
 path      = "src/mod.masm"
 
 [dependencies]

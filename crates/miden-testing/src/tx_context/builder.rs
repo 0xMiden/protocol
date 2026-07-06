@@ -52,7 +52,7 @@ use crate::MockChain;
 /// let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 ///
 /// let code = "
-/// use miden::tx_kernel_core::prologue
+/// use $kernel::prologue
 /// use mock::account
 ///
 /// begin

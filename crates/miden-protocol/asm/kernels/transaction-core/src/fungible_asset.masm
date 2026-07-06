@@ -2,7 +2,7 @@
 
 use miden::protocol_utils::account_id
 use miden::protocol_utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-use miden::tx_kernel_core::asset
+use $kernel::asset
 
 # RE-EXPORTS
 # =================================================================================================

@@ -1,8 +1,8 @@
 use miden::core::collections::smt
 
-use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::fungible_asset
-use miden::tx_kernel_core::non_fungible_asset
+use $kernel::asset
+use $kernel::fungible_asset
+use $kernel::non_fungible_asset
 
 # ERRORS
 # =================================================================================================

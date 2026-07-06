@@ -1,4 +1,4 @@
-#! Root module of the `miden::tx_kernel_core` library.
+#! Root module of the `$kernel` library.
 #!
 #! This library holds the internal implementation modules of the transaction kernel (prologue,
 #! epilogue, note processing, account, asset, memory, etc.). They are not part of the kernel's

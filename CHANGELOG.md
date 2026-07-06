@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
-- [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
+- Migrated `miden-protocol`, `miden-standards` library and account components libraries to a miden-project structure ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
+- Added `TransactionKernel::package()`, `From<ProtocolLib> for Package`, and `From<StandardsLib> for Package` to expose the assembled packages ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
 
 ## v0.15.3 (2026-06-10)
 

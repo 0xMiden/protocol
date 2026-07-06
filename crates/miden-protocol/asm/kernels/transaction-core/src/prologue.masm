@@ -3,21 +3,21 @@ use miden::core::collections::mmr
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
-use miden::tx_kernel_core::account
+use $kernel::account
 use miden::protocol_utils::account_id
-use miden::tx_kernel_core::asset_vault
-use miden::tx_kernel_core::asset::ASSET_SIZE
-use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::constants::EMPTY_SMT_ROOT
-use miden::tx_kernel_core::constants::MAX_ASSETS_PER_NOTE
-use miden::tx_kernel_core::constants::MAX_INPUT_NOTES_PER_TX
-use miden::tx_kernel_core::constants::MAX_NOTE_STORAGE_ITEMS
-use miden::tx_kernel_core::constants::NOTE_TREE_DEPTH
-use miden::tx_kernel_core::memory
-use miden::tx_kernel_core::memory::BLOCK_DATA_SECTION_OFFSET
-use miden::tx_kernel_core::memory::INPUT_VAULT_ROOT_PTR
-use miden::tx_kernel_core::memory::KERNEL_PROCEDURES_PTR
-use miden::tx_kernel_core::memory::PARTIAL_BLOCKCHAIN_PTR
+use $kernel::asset_vault
+use $kernel::asset::ASSET_SIZE
+use $kernel::asset
+use $kernel::constants::EMPTY_SMT_ROOT
+use $kernel::constants::MAX_ASSETS_PER_NOTE
+use $kernel::constants::MAX_INPUT_NOTES_PER_TX
+use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
+use $kernel::constants::NOTE_TREE_DEPTH
+use $kernel::memory
+use $kernel::memory::BLOCK_DATA_SECTION_OFFSET
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
+use $kernel::memory::KERNEL_PROCEDURES_PTR
+use $kernel::memory::PARTIAL_BLOCKCHAIN_PTR
 
 # CONSTS
 # =================================================================================================

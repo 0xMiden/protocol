@@ -425,10 +425,10 @@ impl CodeBuilder {
     /// Returns a [`CodeBuilder`] with the transaction kernel as a library.
     ///
     /// This assembler is the same as [`TransactionKernel::assembler`] but additionally includes the
-    /// kernel library on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
-    /// library is added separately because even though the library (`api.masm`) and the kernel
-    /// binary (`main.masm`) include this code, it is not otherwise accessible. By adding it
-    /// separately, we can invoke procedures from the kernel library to test them individually.
+    /// kernel library on the namespace of `$kernel`. The `$kernel` library is added separately
+    /// because even though the library (`api.masm`) and the kernel binary (`main.masm`) include
+    /// this code, it is not otherwise accessible. By adding it separately, we can invoke procedures
+    /// from the kernel library to test them individually.
     #[cfg(any(feature = "testing", test))]
     pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
@@ -473,7 +473,7 @@ impl CodeBuilder {
         // standards library.
         let mut builder = Self::with_source_manager(source_manager);
 
-        // Expose kernel procedures under `miden::tx_kernel_core` for testing.
+        // Expose kernel procedures under `$kernel` for testing.
         builder
             .link_dynamic_library(&TransactionKernel::library())
             .expect("failed to link kernel library");

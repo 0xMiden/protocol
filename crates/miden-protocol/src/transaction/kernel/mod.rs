@@ -7,7 +7,7 @@ use crate::account::{AccountHeader, AccountId};
 #[cfg(any(feature = "testing", test))]
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
-use crate::assembly::{Assembler, DefaultSourceManager};
+use crate::assembly::{Assembler, DefaultSourceManager, KernelLibrary};
 use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -86,6 +86,16 @@ impl TransactionKernel {
         KERNEL_PACKAGE.clone()
     }
 
+    /// Returns a library with the transaction kernel system procedures.
+    ///
+    /// # Panics
+    /// Panics if the transaction kernel package does not contain a kernel library.
+    pub fn kernel() -> KernelLibrary {
+        KERNEL_PACKAGE
+            .try_into_kernel_library()
+            .expect("transaction kernel package should contain a kernel library")
+    }
+
     /// Returns an AST of the transaction kernel executable program.
     ///
     /// # Panics
@@ -149,10 +159,7 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        let kernel_lib = Self::package()
-            .try_into_kernel_library()
-            .expect("transaction kernel package should contain a kernel library");
-        Assembler::with_kernel(source_manager, kernel_lib)
+        Assembler::with_kernel(source_manager, Self::kernel())
             .with_dynamic_library(CoreLibrary::default())
             .expect("failed to load std-lib")
             .with_dynamic_library(ProtocolLib::default())

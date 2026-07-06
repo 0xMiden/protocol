@@ -99,8 +99,8 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -158,8 +158,8 @@ async fn test_active_note_is_public_and_is_private(
 
     let code = format!(
         r#"
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -199,8 +199,8 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
 
     // calling get_sender should return sender of the active note
     let code = "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -244,8 +244,8 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
     };
 
     let code = "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
         use miden::protocol::note
 
@@ -366,8 +366,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
 
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
 
         proc process_note_0
@@ -496,8 +496,8 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
 
         begin
@@ -590,7 +590,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
         .build()?;
 
     let tx_code = "
-            use miden::tx_kernel_core::prologue
+            use $kernel::prologue
             use miden::protocol::active_note
 
             begin
@@ -635,7 +635,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 
     // calling get_serial_number should return the serial number of the active note
     let code = "
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use miden::protocol::active_note
 
         begin
@@ -676,7 +676,7 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
 
     // calling get_script_root should return script root of the active note
     let code = "
-    use miden::tx_kernel_core::prologue
+    use $kernel::prologue
     use miden::protocol::active_note
 
     begin
@@ -756,8 +756,8 @@ async fn test_note_find_attachment(
 
     let code = format!(
         r#"
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use $kernel::prologue
+        use $kernel::note->note_internal
         use miden::protocol::active_note
         use miden::protocol::input_note
 

@@ -1,9 +1,9 @@
-use miden::tx_kernel_core::account
-use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::asset_vault
-use miden::tx_kernel_core::fungible_asset
-use miden::tx_kernel_core::non_fungible_asset
-use miden::tx_kernel_core::memory::INPUT_VAULT_ROOT_PTR
+use $kernel::account
+use $kernel::asset
+use $kernel::asset_vault
+use $kernel::fungible_asset
+use $kernel::non_fungible_asset
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
 
 # FUNGIBLE ASSETS
 # ==================================================================================================

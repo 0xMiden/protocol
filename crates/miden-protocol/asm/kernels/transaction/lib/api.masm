@@ -1,16 +1,16 @@
-use miden::tx_kernel_core::asset
-use miden::tx_kernel_core::account
-use miden::tx_kernel_core::account_delta
+use $kernel::asset
+use $kernel::account
+use $kernel::account_delta
 use miden::protocol_utils::account_id
-use miden::tx_kernel_core::faucet
-use miden::tx_kernel_core::input_note
-use miden::tx_kernel_core::memory
-use miden::tx_kernel_core::output_note
-use miden::tx_kernel_core::tx
+use $kernel::faucet
+use $kernel::input_note
+use $kernel::memory
+use $kernel::output_note
+use $kernel::tx
 
-use miden::tx_kernel_core::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
-use miden::tx_kernel_core::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
-use miden::tx_kernel_core::memory::KERNEL_PROCEDURES_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+use $kernel::memory::KERNEL_PROCEDURES_PTR
 
 use miden::core::word
 

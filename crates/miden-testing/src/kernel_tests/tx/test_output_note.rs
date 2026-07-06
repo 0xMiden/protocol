@@ -91,7 +91,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -171,7 +171,7 @@ fn note_creation_script(tag: Felt) -> String {
     format!(
         "
             use miden::protocol::output_note
-            use miden::tx_kernel_core::prologue
+            use $kernel::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -198,9 +198,9 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::tx_kernel_core::constants::MAX_OUTPUT_NOTES_PER_TX
-        use miden::tx_kernel_core::memory
-        use miden::tx_kernel_core::prologue
+        use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+        use $kernel::memory
+        use $kernel::prologue
 
         begin
             push.MAX_OUTPUT_NOTES_PER_TX
@@ -288,7 +288,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         use miden::protocol::tx
         use miden::protocol::output_note
 
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
 
         #! Since we execute in the kernel context, we write to local memory rather than to global
         #! kernel memory to avoid accidental overwrites.
@@ -434,7 +434,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -504,7 +504,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -631,7 +631,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use miden::protocol::output_note
 
         begin
@@ -714,7 +714,7 @@ async fn test_add_assets_around_max_per_note(
 
     let code = format!(
         "
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use miden::protocol::output_note
 
         begin
@@ -793,7 +793,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
     let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
     let code = format!(
         "
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use miden::protocol::output_note
         use miden::protocol::note
         use miden::core::sys
@@ -1220,7 +1220,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
         "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use mock::util
 
         begin
@@ -1253,7 +1253,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
     let code = "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use mock::util
 
         begin
@@ -1923,7 +1923,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
         "
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
         use mock::util
 
         begin
@@ -2000,7 +2000,7 @@ async fn test_output_note_index_out_of_bounds(
         use miden::protocol::output_note
         use mock::util
 
-        use miden::tx_kernel_core::prologue
+        use $kernel::prologue
 
         begin
             exec.prologue::prepare_transaction

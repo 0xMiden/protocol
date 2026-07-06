@@ -32,7 +32,7 @@ async fn insertion() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-      use miden::tx_kernel_core::link_map
+      use $kernel::link_map
 
       const MAP_PTR={map_ptr}
 
@@ -524,7 +524,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
 
     let code = format!(
         r#"
-      use miden::tx_kernel_core::link_map
+      use $kernel::link_map
       begin
           {test_code}
       end

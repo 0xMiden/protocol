@@ -70,8 +70,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
     };
 
     let code = "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note
+        use $kernel::prologue
+        use $kernel::note
 
         begin
             exec.prologue::prepare_transaction
@@ -126,9 +126,9 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     };
 
     let code =  "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::memory
-        use miden::tx_kernel_core::note
+        use $kernel::prologue
+        use $kernel::memory
+        use $kernel::note
 
         begin
             exec.prologue::prepare_transaction
@@ -383,8 +383,8 @@ async fn test_build_metadata() -> anyhow::Result<()> {
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
             "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::output_note
+        use $kernel::prologue
+        use $kernel::output_note
 
         begin
           exec.prologue::prepare_transaction
