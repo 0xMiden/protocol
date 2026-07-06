@@ -45,8 +45,14 @@ pub enum AccessControl {
     /// Two-step ownership transfer with the provided initial owner. The setter gate enforces
     /// `sender == owner`.
     Ownable2Step { owner: AccountId },
-    /// Role-based access control. Includes [`Ownable2Step`] internally. The provided `owner`
-    /// becomes the top-level RBAC authority (the account's owner).
+    /// Role-based access control. Includes [`Ownable2Step`] internally. The provided `owner` is
+    /// the account's [`Ownable2Step`] owner (used for the emergency freeze switch and as the
+    /// fallback authority for gated procedures without a configured role) and is also seeded as
+    /// the initial member of the RBAC `ADMIN` role, which bootstraps role administration.
+    ///
+    /// Role administration itself is fully role-based and does not consult the owner: each role
+    /// is managed by its effective admin role (its delegated admin, or `ADMIN` by default). See
+    /// [`RoleBasedAccessControl`] for the administration model.
     ///
     /// `roles` assigns a role to individual authority-gated procedures, keyed by procedure root
     /// (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` → `UNPAUSER`). A gated
@@ -72,7 +78,7 @@ impl IntoIterator for AccessControl {
             },
             AccessControl::Rbac { owner, roles } => vec![
                 Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::empty().into(),
+                RoleBasedAccessControl::new(owner).into(),
                 Authority::RbacControlled { roles }.into(),
             ]
             .into_iter(),

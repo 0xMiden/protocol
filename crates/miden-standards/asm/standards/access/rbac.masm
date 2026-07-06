@@ -2,9 +2,11 @@
 #
 # Role-based access control for account components.
 #
-# Provides per-role membership tracking with delegated role admins, on top of the
-# Ownable2Step component which supplies the top-level authority. Members are tracked
-# with a boolean flag and a per-role member count
+# Provides per-role membership tracking with delegated role admins. Members are tracked
+# with a boolean flag and a per-role member count. Role administration is fully role-based:
+# the built-in `ADMIN` role is the default administrator of every role, mirroring the
+# OpenZeppelin AccessControl `DEFAULT_ADMIN_ROLE`. There is no external super-admin above
+# the role graph.
 #
 # Storage layout (2 slots):
 #
@@ -15,10 +17,14 @@
 #   Map: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
 #
 # Authority model:
-# - The account's Ownable2Step owner is the top-level RBAC authority. The owner can
-#   set role admins and grant/revoke any role.
-# - Each role can have a delegated admin role (set via `set_role_admin`). Members of
-#   the admin role can grant/revoke that role without being the owner.
+# - Every role has an effective admin role. It is the role's configured
+#   `admin_role_symbol` when set, otherwise the built-in `ADMIN` role. Only members of a
+#   role's effective admin role may grant, revoke, or re-point (`set_role_admin`) that role.
+# - Delegation is exclusive: once a role's admin is delegated to another role, the `ADMIN`
+#   role no longer has any authority over it. This lets a role be placed exclusively under a
+#   dedicated admin role and kept out of reach of the general administrator.
+# - The `ADMIN` role administers itself (its own effective admin is `ADMIN`), so `ADMIN`
+#   membership can be granted, revoked, and renounced through the standard API.
 # - A role is considered to "exist" when it has at least one member. Role admin
 #   relationships set via `set_role_admin` are stored in the config but do not, by
 #   themselves, make the role exist.
@@ -26,8 +32,8 @@
 # Security model:
 # Access control is based on the note sender (`active_note::get_sender`), i.e. the account ID
 # that created the note, not the code that ran when it was created. It is meaningful only when
-# every account registered as owner or role member enforces strong authentication. Registering a
-# permissionless account (for example one using the `no_auth` component) as owner or role member
+# every account registered as a role member enforces strong authentication. Registering a
+# permissionless account (for example one using the `no_auth` component) as a role member
 # provides no protection: anyone can make such an account emit a note carrying an arbitrary script
 # root with that account's ID as sender, defeating the sender check.
 
@@ -35,7 +41,6 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
-use miden::standards::access::ownable2step
 
 # CONSTANTS
 # =================================================================================================
@@ -52,11 +57,16 @@ const ROLE_MEMBERSHIP_SLOT = word("miden::standards::access::rbac::role_membersh
 const SET_MEMBERSHIP = [1, 0, 0, 0]
 const CLEAR_MEMBERSHIP = [0, 0, 0, 0]
 
+# The built-in default admin role. A role whose `admin_role_symbol` is unset (0) is
+# administered by members of this role. Encodes the role symbol "ADMIN".
+# Keep in sync with `RoleBasedAccessControl::ADMIN_ROLE` on the Rust side.
+const ADMIN_ROLE = 1836707
+
 # ERRORS
 # =================================================================================================
 
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
-const ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN = "note sender is not the owner or a role admin"
+const ERR_SENDER_NOT_ROLE_ADMIN = "note sender does not hold the role's admin role"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
 const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
@@ -156,25 +166,27 @@ end
 #! make the role exist.
 #!
 #! Pass `admin_role_symbol = 0` to clear the delegation and revert the role to
-#! owner-only management.
+#! management by the default `ADMIN` role.
 #!
 #! Inputs:  [role_symbol, admin_role_symbol, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to configure.
-#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for
-#!   owner-only management.
+#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 to revert to
+#!   management by the default `ADMIN` role.
 #!
 #! Panics if:
-#! - the note sender is not the current owner.
 #! - role_symbol is zero.
+#! - the note sender does not hold the role's current effective admin role.
 #!
 #! Invocation: call
 @account_procedure
 pub proc set_role_admin
-    exec.ownable2step::assert_sender_is_owner
     dup exec.assert_role_symbol_non_zero
+    # => [role_symbol, new_admin_role_symbol, pad(14)]
+
+    dup exec.assert_sender_is_role_admin
     # => [role_symbol, new_admin_role_symbol, pad(14)]
 
     dup exec.get_role_member_count_internal
@@ -201,8 +213,7 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current owner nor a holder of the role's
-#!   delegated admin role.
+#! - the note sender does not hold the role's effective admin role.
 #! - the account ID is invalid.
 #!
 #! Invocation: call
@@ -211,7 +222,7 @@ pub proc grant_role
     dup exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_owner_or_role_admin
+    dup exec.assert_sender_is_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.grant_role_internal
@@ -232,8 +243,7 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current owner nor a holder of the role's
-#!   delegated admin role.
+#! - the note sender does not hold the role's effective admin role.
 #! - the account does not hold the role.
 #! - the account ID is invalid.
 #!
@@ -243,7 +253,7 @@ pub proc revoke_role
     dup exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_owner_or_role_admin
+    dup exec.assert_sender_is_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.revoke_role_internal
@@ -381,40 +391,50 @@ proc is_sender_in_role
     # => [has_role]
 end
 
-#! Asserts that the note sender is the owner or a member of the role's delegated
-#! admin role.
+#! Returns the effective admin role for a role.
+#!
+#! The effective admin is the role's configured delegated admin (`admin_role_symbol`) when
+#! set, otherwise the built-in `ADMIN` role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [effective_admin_role_symbol]
+#!
+#! Invocation: exec
+proc get_effective_role_admin
+    exec.get_role_admin_internal
+    # => [admin_role_symbol]
+
+    dup eq.0
+    # => [is_unset, admin_role_symbol]
+
+    if.true
+        drop push.ADMIN_ROLE
+    end
+    # => [effective_admin_role_symbol]
+end
+
+#! Asserts that the note sender holds the role's effective admin role.
+#!
+#! The effective admin is the role's configured delegated admin, or the built-in `ADMIN`
+#! role when none is configured. There is no owner override: role administration is fully
+#! role-based.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the note sender is neither the current owner nor a holder of the role's
-#!   delegated admin role.
+#! - the note sender does not hold the role's effective admin role.
 #!
 #! Invocation: exec
-proc assert_sender_is_owner_or_role_admin
-    exec.ownable2step::is_sender_owner
-    # => [is_owner, role_symbol]
+proc assert_sender_is_role_admin
+    exec.get_effective_role_admin
+    # => [effective_admin_role_symbol]
 
-    if.true
-        drop
-        # => []
-    else
-        # [role_symbol] - look up the role's admin role and check sender membership
-        exec.get_role_admin_internal
-        # => [admin_role_symbol]
+    exec.is_sender_in_role
+    # => [has_admin_role]
 
-        # Reject if no admin role is configured (sender can't be a holder of role 0).
-        dup eq.0
-        assertz.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
-        # => [admin_role_symbol]
-
-        exec.is_sender_in_role
-        # => [has_admin_role]
-
-        assert.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
-        # => []
-    end
+    assert.err=ERR_SENDER_NOT_ROLE_ADMIN
+    # => []
 end
 
 #! Writes the config word for a role.

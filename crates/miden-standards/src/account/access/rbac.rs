@@ -1,4 +1,5 @@
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
     AccountComponentCode,
@@ -10,11 +11,15 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
+    AccountId,
+    RoleSymbol,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
@@ -31,55 +36,58 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 
 /// Role-based access control (RBAC) for account components.
 ///
-/// RBAC provides fine-grained access control on top of [`Ownable2Step`]. Instead of having
-/// one account holding every privilege, privileges are split into named roles (for example
-/// `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against the caller's role
-/// membership. It allows role assignment with domain isolation to minimize the scope of
-/// damage from a compromised role.
+/// Instead of having one account holding every privilege, privileges are split into named
+/// roles (for example `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against
+/// the caller's role membership. It allows role assignment with domain isolation to minimize
+/// the scope of damage from a compromised role.
 ///
 /// ## Security considerations
 ///
 /// Access control is based on the note sender (the account ID that created the note), which
 /// authenticates *which account* created a note but not the *code* that executed when it was
-/// created. It is meaningful only when every account registered as owner or role member enforces
+/// created. It is meaningful only when every account registered as a role member enforces
 /// strong authentication. Registering a permissionless account (for example one using `no_auth`)
-/// as owner or role member provides no access restriction: anyone can make such an account emit a
+/// as a role member provides no access restriction: anyone can make such an account emit a
 /// note with an arbitrary script root and that account's ID as sender, defeating the sender check.
 ///
-/// ## Relation to [`Ownable2Step`]
+/// ## Administration model
 ///
-/// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority is
-/// the [`Ownable2Step`] owner of the account. Build the pair via
-/// [`AccessControl::Rbac`][crate::account::access::AccessControl::Rbac] passed to
-/// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components].
-/// This avoids duplicated state, duplicated 2-step transfer logic, and duplicated notes
-/// for owner transfers. If you only need single-account control, use [`Ownable2Step`]
-/// alone.
+/// Role administration is fully role-based; there is no external owner acting as an
+/// unconditional super-admin above the role graph. Every role has an *effective admin role*:
+/// its configured delegated admin when set, otherwise the built-in
+/// [`ADMIN`][Self::ADMIN_ROLE] role. Only members of a role's effective admin role may grant,
+/// revoke, or re-point (`set_role_admin`) that role. This mirrors the OpenZeppelin
+/// `AccessControl` `DEFAULT_ADMIN_ROLE`.
 ///
-/// [`Ownable2Step`]: crate::account::access::Ownable2Step
+/// The component is seeded at construction with one or more members of the `ADMIN` role (see
+/// [`new`][Self::new] / [`with_admins`][Self::with_admins]); this bootstraps administration.
+/// The `ADMIN` role administers itself, so `ADMIN` membership can be granted, revoked, and
+/// renounced through the standard API.
 ///
-/// ## Owner management
+/// ## Role hierarchy and exclusive delegation
 ///
-/// The owner can grant and revoke any role, configure the delegated admin of any role via
-/// `set_role_admin`, and transfer or renounce its own position. Owner transfer and
-/// renouncement go through [`Ownable2Step`] (`transfer_ownership`, `accept_ownership`,
-/// `renounce_ownership`).
+/// Every role may have its admin delegated to another role via `set_role_admin`. Accounts
+/// holding a role's admin role are authorized to grant and revoke that role. For example,
+/// accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have no authority over
+/// `BURNER` or `PAUSER`.
 ///
-/// ## Role hierarchy
+/// Delegation is *exclusive*: once a role's admin is delegated to another role, the `ADMIN`
+/// role loses all authority over it (grant, revoke, and further `set_role_admin` are then
+/// gated on the delegated admin). This lets a sensitive role — say a token issuer — be placed
+/// exclusively under a dedicated admin role and kept out of reach of the general
+/// administrator. To hand authority back, the current delegated admin re-points the role
+/// (passing `0` reverts it to the `ADMIN` role).
 ///
-/// Every role may optionally have a delegated admin role. Accounts holding a role's admin
-/// role are authorized to grant and revoke that role without going through the owner.
-/// For example, accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have no
-/// authority over `BURNER` or `PAUSER`. This lets responsibilities be distributed so that
-/// compromise of one domain does not spill into the others.
-///
-/// Combined with owner renouncement, this supports a fully decentralized configuration:
-/// once every role has its own admin role populated, the owner can renounce and the
-/// system continues to operate with each role managed only by its designated admin role.
+/// This supports a fully decentralized configuration: seed `ADMIN`, populate each role's
+/// dedicated admin role, delegate, and finally revoke or renounce the bootstrap `ADMIN`
+/// members so no single key retains authority over the whole graph.
 ///
 /// The delegated admin of a role can itself be any role, including one that it admins.
 /// Circular relationships are possible but should be designed with care, since each role
-/// can then revoke the other.
+/// can then revoke the other. Note that revoking the last member of a role's effective admin
+/// (including the last `ADMIN` member for undelegated roles) leaves that role unmanageable
+/// until a member of its effective admin role is restored — treat `ADMIN` renouncement with
+/// the same caution as ownership renouncement.
 ///
 /// ## Role semantics
 ///
@@ -115,11 +123,27 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// ```
 ///
 /// [`RoleSymbol`]: miden_protocol::account::RoleSymbol
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RoleBasedAccessControl;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleBasedAccessControl {
+    /// Accounts seeded as members of the built-in [`ADMIN`][Self::ADMIN_ROLE] role at
+    /// construction. Bootstraps role administration; may be empty for an account that seeds
+    /// `ADMIN` membership by other means, but such a component starts with no administrator.
+    initial_admins: Vec<AccountId>,
+}
 
 impl RoleBasedAccessControl {
     pub const NAME: &'static str = "miden::standards::components::access::rbac";
+
+    /// The built-in default admin role symbol. A role whose delegated admin is unset is
+    /// administered by members of this role.
+    ///
+    /// Keep in sync with the `ADMIN_ROLE` constant in `asm/standards/access/rbac.masm`.
+    pub const ADMIN_ROLE: &'static str = "ADMIN";
+
+    /// Returns the built-in default admin [`RoleSymbol`].
+    pub fn admin_role() -> RoleSymbol {
+        RoleSymbol::new(Self::ADMIN_ROLE).expect("ADMIN is a valid role symbol")
+    }
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -131,10 +155,23 @@ impl RoleBasedAccessControl {
         &RBAC_CODE
     }
 
-    /// Returns an empty RBAC component. Roles are populated at runtime via the
-    /// `grant_role`, `set_role_admin`, etc. procedures exposed by the component.
-    pub fn empty() -> Self {
-        Self
+    /// Returns an RBAC component whose `ADMIN` role is seeded with the given `initial_admin`.
+    ///
+    /// The initial admin bootstraps role administration: it can grant every role (including
+    /// `ADMIN`), configure delegated admins, and later hand off or renounce its own `ADMIN`
+    /// membership. Additional roles are populated at runtime via the `grant_role`,
+    /// `set_role_admin`, etc. procedures exposed by the component.
+    pub fn new(initial_admin: AccountId) -> Self {
+        Self { initial_admins: vec![initial_admin] }
+    }
+
+    /// Returns an RBAC component whose `ADMIN` role is seeded with the given `initial_admins`.
+    ///
+    /// Duplicate account IDs are ignored. Passing an empty list produces a component with no
+    /// initial administrator, which cannot manage any role until `ADMIN` membership is
+    /// established by other means; prefer [`new`][Self::new] unless that is intended.
+    pub fn with_admins(initial_admins: Vec<AccountId>) -> Self {
+        Self { initial_admins }
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -186,14 +223,53 @@ impl RoleBasedAccessControl {
 }
 
 impl From<RoleBasedAccessControl> for AccountComponent {
-    fn from(_rbac: RoleBasedAccessControl) -> Self {
+    fn from(rbac: RoleBasedAccessControl) -> Self {
+        let admin_symbol: Felt = RoleBasedAccessControl::admin_role().as_element();
+
+        // Deduplicate so the seeded member count matches the number of membership entries.
+        let mut admins: Vec<AccountId> = Vec::with_capacity(rbac.initial_admins.len());
+        for admin in rbac.initial_admins {
+            if !admins.contains(&admin) {
+                admins.push(admin);
+            }
+        }
+
+        // Seed ADMIN membership: [0, ADMIN, suffix, prefix] -> [1, 0, 0, 0].
+        let membership_entries = admins.iter().map(|admin| {
+            (
+                StorageMapKey::new(Word::from([
+                    Felt::ZERO,
+                    admin_symbol,
+                    admin.suffix(),
+                    admin.prefix().as_felt(),
+                ])),
+                Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            )
+        });
+        let role_membership_map = StorageMap::with_entries(membership_entries)
+            .expect("seeded role membership map should be valid");
+
+        // Seed the ADMIN role config with its member count. The delegated admin is left unset
+        // (0) so ADMIN administers itself. When there are no admins, the config stays empty.
+        let role_config_map = if admins.is_empty() {
+            StorageMap::with_entries(vec![]).expect("empty role config map should be valid")
+        } else {
+            let member_count =
+                u32::try_from(admins.len()).expect("number of initial admins should fit in u32");
+            StorageMap::with_entries(vec![(
+                StorageMapKey::new(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, admin_symbol])),
+                Word::from([Felt::from(member_count), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            )])
+            .expect("seeded role config map should be valid")
+        };
+
         let role_config_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_config_slot().clone(),
-            StorageMap::with_entries(vec![]).expect("empty role config map should be valid"),
+            role_config_map,
         );
         let role_membership_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_membership_slot().clone(),
-            StorageMap::with_entries(vec![]).expect("empty role membership map should be valid"),
+            role_membership_map,
         );
 
         AccountComponent::new(
@@ -202,5 +278,20 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             RoleBasedAccessControl::component_metadata(),
         )
         .expect("RBAC component should satisfy the requirements of a valid account component")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_role_encoding_matches_masm_constant() {
+        // Must stay in sync with `const ADMIN_ROLE` in asm/standards/access/rbac.masm.
+        const MASM_ADMIN_ROLE: u64 = 1836707;
+        assert_eq!(
+            RoleBasedAccessControl::admin_role().as_element().as_canonical_u64(),
+            MASM_ADMIN_ROLE,
+        );
     }
 }
