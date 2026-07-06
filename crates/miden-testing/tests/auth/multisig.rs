@@ -1566,6 +1566,10 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
 /// component getters, so the getter is exercised through the 16-felt `call` ABI (a getter that
 /// returns at any operand-stack depth other than 16 aborts in `restore_context` with
 /// `InvalidStackDepthOnReturn`).
+///
+/// The getter's inputs are supplied through `tx_script_args` (`make_args`), which fills the
+/// 16-element `call` frame directly; pushing a full input word in the script instead would grow the
+/// operand stack past 16 and break the getters' fixed output truncation.
 async fn execute_multisig_getter_call<F>(script_code: &str, make_args: F) -> anyhow::Result<()>
 where
     F: FnOnce(&[PublicKey]) -> Word,
@@ -1638,7 +1642,8 @@ where
 #[tokio::test]
 async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
     let script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::get_threshold_and_num_approvers
             # => [default_threshold, num_approvers, pad(14)]
             push.2 eq assert
@@ -1653,24 +1658,28 @@ async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
 
 /// Regression test for the `call` ABI of `get_signer_at`.
 ///
-/// The index `0` is supplied via `tx_script_args`. The script asserts the returned scheme id is
-/// `1` (`EcdsaK256Keccak`), exercising the getter's five-felt output through the 16-felt `call`
+/// The index `0` is supplied via `tx_script_args`. The script asserts the returned scheme id
+/// matches `EcdsaK256Keccak`, exercising the getter's five-felt output through the 16-felt `call`
 /// ABI.
 #[tokio::test]
 async fn test_get_signer_at_call_abi() -> anyhow::Result<()> {
-    let script_code = "
-        begin
+    let expected_scheme_id = AuthScheme::EcdsaK256Keccak.as_u8();
+    let script_code = format!(
+        r#"
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::get_signer_at
             # => [PUB_KEY, scheme_id, pad(11)]
-            movup.4 push.1 eq assert
+            movup.4 eq.{expected_scheme_id} assert.err="expected scheme ID {expected_scheme_id}"
             # => [PUB_KEY, pad(11)]
             dropw
             # => [pad(12)]
         end
-    ";
+        "#
+    );
 
     // Index 0 as the sole input felt; the remaining felts of the word are ignored padding.
-    execute_multisig_getter_call(script_code, |_| Word::empty()).await
+    execute_multisig_getter_call(&script_code, |_| Word::empty()).await
 }
 
 /// Regression test for the `call` ABI of `is_signer` when the queried key is a signer.
@@ -1680,7 +1689,8 @@ async fn test_get_signer_at_call_abi() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
     let script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::is_signer
             # => [is_signer, pad(15)]
             assert
@@ -1688,8 +1698,10 @@ async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
         end
     ";
 
-    execute_multisig_getter_call(script_code, |public_keys| public_keys[0].to_commitment().into())
-        .await
+    execute_multisig_getter_call(script_code, |public_keys| {
+        public_keys[0].to_commitment().into()
+    })
+    .await
 }
 
 /// Regression test for the `call` ABI of `is_signer` when the queried key is not a signer.
@@ -1699,7 +1711,8 @@ async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_is_signer_false_call_abi() -> anyhow::Result<()> {
     let script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::is_signer
             # => [is_signer, pad(15)]
             assertz

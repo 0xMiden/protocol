@@ -85,7 +85,7 @@ const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and pro
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
-const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedure root that is not one of the account's procedures"
 
 #! Remove old approver public keys and the corresponding scheme ids 
 #! from the approver public key and scheme id mappings.
@@ -206,7 +206,15 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
 end
 
 #! Update threshold config, add & remove approvers, and update the approver scheme ids
-#! 
+#!
+#! Note: per-procedure threshold overrides in `PROC_THRESHOLD_ROOTS_SLOT` are NOT re-scaled by this
+#! procedure. They are absolute signature counts, not ratios, and the only cross-check is
+#! `assert_proc_thresholds_lte_num_approvers`, which enforces `override <= num_approvers`. Growing
+#! the signer set therefore leaves every override unchanged and silently lowers its effective signing
+#! ratio (e.g. a 2-of-2 override becomes 2-of-N). To preserve the intended security level, operators
+#! must re-evaluate and, where appropriate, raise the affected overrides via `set_procedure_threshold`
+#! in the same transaction that grows the signer set; this procedure neither performs nor prompts it.
+#!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
 #!   Advice map: {
@@ -223,19 +231,11 @@ end
 #!   Operand stack: []
 #!
 #! Where:
-#! - MULTISIG_CONFIG_HASH is the hash of the threshold, 
+#! - MULTISIG_CONFIG_HASH is the hash of the threshold,
 #!   new public key vector, and the corresponding scheme identifiers
 #! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
 #! - PUB_KEY_i is the public key of the i-th signer
 #! - SCHEME_ID_i is the signature scheme id of the i-th signer
-#!
-#! Note: per-procedure threshold overrides in `PROC_THRESHOLD_ROOTS_SLOT` are NOT re-scaled by this
-#! procedure. They are absolute signature counts, not ratios, and the only cross-check is
-#! `assert_proc_thresholds_lte_num_approvers`, which enforces `override <= num_approvers`. Growing
-#! the signer set therefore leaves every override unchanged and silently lowers its effective signing
-#! ratio (e.g. a 2-of-2 override becomes 2-of-N). To preserve the intended security level, operators
-#! must re-evaluate and, where appropriate, raise the affected overrides via `set_procedure_threshold`
-#! in the same transaction that grows the signer set; this procedure neither performs nor prompts it.
 #!
 #! Locals:
 #! 0: new_num_of_approvers
@@ -517,7 +517,7 @@ pub proc get_threshold_and_num_approvers
     exec.get_current_threshold_and_num_approvers
     # => [default_threshold, num_approvers, pad(16)]
 
-    # restore the call ABI stack depth of 16
+    # truncate the stack
     movup.2 drop movup.2 drop
     # => [default_threshold, num_approvers, pad(14)]
 end
@@ -619,13 +619,13 @@ pub proc get_signer_at
     # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
 
     exec.active_account::get_initial_map_item
-    # => [SCHEME_ID_WORD, PUB_KEY]
+    # => [[scheme_id, 0, 0, 0], PUB_KEY]
 
     # move scheme_id below the whole PUB_KEY word in one step, then drop the zero padding
     movdn.7 drop drop drop
     # => [PUB_KEY, scheme_id, pad(15)]
 
-    # restore the call ABI stack depth of 16
+    # truncate the stack
     movup.5 drop movup.5 drop movup.5 drop movup.5 drop
     # => [PUB_KEY, scheme_id, pad(11)]
 end
@@ -700,7 +700,7 @@ pub proc is_signer(pub_key: word) -> felt
     loc_load.IS_SIGNER_FOUND_LOC
     # => [is_signer, pad(16)]
 
-    # restore the call ABI stack depth of 16
+    # truncate the stack
     swap drop
     # => [is_signer, pad(15)]
 end
