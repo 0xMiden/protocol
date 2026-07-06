@@ -217,14 +217,14 @@ end
 #! WARNING: the foreign account state read here reflects the transaction reference block, which is
 #! chosen by the executor (prover). The foreign account commitment is not a transaction public input
 #! and is not revalidated against the foreign account's current on-chain state at inclusion, so the
-#! returned values may be outdated. Callers must not rely on them for decisions that require the
-#! foreign account's present value, unless recency is separately enforced.
+#! returned values may be outdated.
 #!
-#! One countermeasure is for the foreign account's procedures to set a transaction expiration delta,
-#! which bounds how old the reference block can be relative to the block the transaction is included
-#! in. For example, if the current block is 40 and the foreign account sets a delta of 5, the
-#! reference block must be block 35 or newer, so a value from block 20 could not be read. Authors of
-#! foreign account procedures should set a delta when the use case requires recent reads.
+#! If a foreign account holds time-sensitive data, it is the responsibility of that account to set a
+#! transaction expiration delta according to how time-sensitive the data is. The delta bounds how old
+#! the reference block can be relative to the block the transaction is included in. For example, if an
+#! oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 (or
+#! smaller): if the current block is 40 and the delta is 5, the reference block must be block 35 or
+#! newer, so a value from block 20 could not be read.
 #!
 #! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
 #! Outputs: [foreign_procedure_outputs(16)]
