@@ -262,20 +262,20 @@ pub proc register_faucet
     if.true
         loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
         exec.get_faucet_conversion_info
-        # => [prev_addr(5), prev_network, prev_scale, addr0..4, pad(8)]
+        # => [prev_addr(5), prev_network, prev_scale, addr(5), pad(11)]
 
         movup.6 drop
-        # => [prev_addr(5), prev_network, addr0..4, pad(8)]
+        # => [prev_addr(5), prev_network, addr(5), pad(11)]
 
         # Byte-swap prev_network so the hash input matches register_faucet's Step 4 convention.
         movup.5 exec.utils::swap_u32_bytes movdn.5
-        # => [prev_addr(5), prev_network_swapped, addr0..4, pad(8)]
+        # => [prev_addr(5), prev_network_swapped, addr(5), pad(11)]
 
         exec.hash_token_address
-        # => [PREV_TOKEN_HASH, addr0..4, pad(8)]
+        # => [PREV_TOKEN_HASH, addr(5), pad(11)]
 
         padw swapw
-        # => [PREV_TOKEN_HASH, 0, 0, 0, 0, addr0..4, pad(8)]
+        # => [PREV_TOKEN_HASH, 0, 0, 0, 0, addr(5), pad(11)]
 
         push.TOKEN_REGISTRY_MAP_SLOT[0..2]
         exec.native_account::set_map_item
@@ -427,20 +427,20 @@ pub proc deregister_faucet
     # Read the faucet's registered (origin_token_addr, origin_network) from faucet_metadata. Drop the scale we don't need.
     loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
     exec.get_faucet_conversion_info
-    # => [origin_token_addr(5), origin_network, scale, pad(9)]
+    # => [origin_token_addr(5), origin_network, scale, pad(16)]
 
     movup.6 drop
-    # => [origin_token_addr(5), origin_network, pad(10)]
+    # => [origin_token_addr(5), origin_network, pad(16)]
 
     # Byte-swap origin_network so the hash input matches register_faucet's convention.
     movup.5 exec.utils::swap_u32_bytes movdn.5
-    # => [origin_token_addr(5), origin_network_swapped, pad(10)]
+    # => [origin_token_addr(5), origin_network_swapped, pad(16)]
 
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, pad(12)]
+    # => [TOKEN_ADDR_HASH, pad(16)]
 
     padw swapw
-    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(8)]
+    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(16)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -450,7 +450,7 @@ pub proc deregister_faucet
     # --- 3. Clear faucet_registry: KEY=[0,0,suffix,prefix], VALUE=[0,0,0,0] ---
     padw
     loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.0
-    # => [[0, 0, suffix, prefix], [0, 0, 0, 0], pad(8)]
+    # => [[0, 0, suffix, prefix], [0, 0, 0, 0], pad(16)]
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
     dropw
@@ -458,18 +458,18 @@ pub proc deregister_faucet
 
     # --- 4. Clear all four faucet_metadata sub-keys (0..3) to [0; 4]; KEY = [sub_key, 0, suffix, prefix] ---
     push.FAUCET_METADATA_SUBKEY_ADDR_LO
-    # => [sub_key, pad(15)]
+    # => [sub_key, pad(16)]
 
     repeat.4
         padw
         loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
         push.0 dup.7
-        # => [[sub_key, 0, suffix, prefix], [0, 0, 0, 0], sub_key, pad(7)]
+        # => [[sub_key, 0, suffix, prefix], [0, 0, 0, 0], sub_key, pad(16)]
 
         push.FAUCET_METADATA_MAP_SLOT[0..2]
         exec.native_account::set_map_item
         dropw
-        # => [sub_key, pad(15)]
+        # => [sub_key, pad(16)]
 
         add.1
     end
