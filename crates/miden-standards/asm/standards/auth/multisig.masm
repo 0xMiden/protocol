@@ -87,11 +87,15 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds ne
 
 const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedure root that is not one of the account's procedures"
 
-#! Remove old approver public keys and the corresponding scheme ids 
-#! from the approver public key and scheme id mappings.
+const ERR_CLEANUP_THRESHOLD_CONFIG_NOT_RECONCILED = "threshold config must be reconciled with the new approver count before cleaning up approver mappings"
+
+#! Remove old approver public keys and the corresponding scheme ids from the approver public key and
+#! scheme id mappings.
 #!
-#! This procedure cleans up the storage by removing public keys and signature scheme ids of approvers 
-#! that are no longer part of the multisig configuration.
+#! This procedure clears the approver entries in the range [new_num_of_approvers,
+#! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
+#! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
+#!
 #!
 #! Inputs: [init_num_of_approvers, new_num_of_approvers]
 #! Outputs: []
@@ -101,9 +105,27 @@ const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedu
 #! - new_num_of_approvers is the new number of approvers after the update
 #!
 #! Panics if:
-#! - init_num_of_approvers is not a u32 value.
-#! - new_num_of_approvers is not a u32 value.
+#! - init_num_of_approvers or new_num_of_approvers is not a u32 value.
+#! - the stored threshold config has not been reconciled with new_num_of_approvers.
 pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+    # Guard against callers that shrink the approver maps without reconciling THRESHOLD_CONFIG_SLOT.
+    exec.get_current_threshold_and_num_approvers
+    # => [threshold, num_approvers, init_num_of_approvers, new_num_of_approvers]
+
+    # assert the stored threshold is reachable with the new signer count (threshold <= new count)
+    dup dup.4
+    # => [new_num_of_approvers, threshold, threshold, num_approvers, init, new]
+    u32assert2.err=ERR_CLEANUP_THRESHOLD_CONFIG_NOT_RECONCILED
+    u32gt assertz.err=ERR_CLEANUP_THRESHOLD_CONFIG_NOT_RECONCILED
+    # => [threshold, num_approvers, init, new]
+
+    # assert the stored approver count already reflects the reduced signer set
+    dup.1 dup.4 eq assert.err=ERR_CLEANUP_THRESHOLD_CONFIG_NOT_RECONCILED
+    # => [threshold, num_approvers, init, new]
+
+    drop drop
+    # => [init_num_of_approvers, new_num_of_approvers]
+
     dup.1 dup.1
     u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
     u32lt
