@@ -7,7 +7,7 @@ use crate::code_builder::CodeBuilder;
 const MOCK_FAUCET_CODE: &str = "
     use miden::protocol::faucet
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc mint
@@ -15,7 +15,7 @@ const MOCK_FAUCET_CODE: &str = "
         # => [pad(16)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc burn
@@ -158,31 +158,31 @@ const MOCK_ACCOUNT_CODE: &str = "
         exec.active_account::get_vault_root exec.sys::truncate_stack
     end
 
-    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc get_asset
         exec.active_account::get_asset exec.sys::truncate_stack
     end
 
-    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_asset
         exec.active_account::get_initial_asset exec.sys::truncate_stack
     end
 
-    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [balance, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [balance, pad(15)]
     @account_procedure
     pub proc get_balance
         exec.active_account::get_balance exec.sys::truncate_stack
     end
 
-    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [init_balance, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [init_balance, pad(15)]
     @account_procedure
     pub proc get_initial_balance
         exec.active_account::get_initial_balance exec.sys::truncate_stack
     end
 
-    #! Inputs:  [ASSET_KEY, pad(12)]  Outputs: [has_asset, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [has_asset, pad(15)]
     @account_procedure
     pub proc has_non_fungible_asset
         exec.active_account::has_non_fungible_asset exec.sys::truncate_stack
@@ -229,7 +229,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [STORAGE_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc add_asset
@@ -237,7 +237,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [FINAL_ASSET_VALUE, pad(12)]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc remove_asset
@@ -267,15 +267,15 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Creates a default note and adds the provided asset to it from the account context.
     #!
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc create_default_note_with_asset
         exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+        # => [note_idx, ASSET_ID, ASSET_VALUE, pad(7)]
 
         movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         exec.output_note::add_asset
         # => [pad(16)]
@@ -283,15 +283,15 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     #! Creates a default note and moves the provided asset to it from the account context.
     #!
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc create_default_note_with_moved_asset
         exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+        # => [note_idx, ASSET_ID, ASSET_VALUE, pad(7)]
 
         movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
         # => [pad(16)]

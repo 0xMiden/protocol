@@ -267,7 +267,7 @@ async fn test_guarded_multisig_signature_required(
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 

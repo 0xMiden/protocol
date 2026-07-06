@@ -175,7 +175,7 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
 
     assert_matches!(account_update.details(), AccountUpdateDetails::Public(patch) => {
         assert_eq!(patch.vault().num_assets(), 1);
-        assert_eq!(patch.vault().as_map().get(&asset.vault_key()), Some(&expected_asset.to_value_word()));
+        assert_eq!(patch.vault().as_map().get(&asset.id()), Some(&expected_asset.to_value_word()));
     });
 
     Ok(())

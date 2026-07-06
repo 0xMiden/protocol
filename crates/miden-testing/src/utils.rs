@@ -149,10 +149,10 @@ pub fn create_p2any_note(
                 # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw movup.8 mem_loadw_le
-                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw padw swapdw
-                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, pad(12), dest_ptr]
 
                 call.wallet::receive_asset
                 # => [pad(16), dest_ptr]
@@ -307,12 +307,12 @@ fn note_script_that_creates_notes<'note>(
             out.push_str(&format!(
                 " dup
                   push.{ASSET_VALUE}
-                  push.{ASSET_KEY}
-                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  push.{ASSET_ID}
+                  # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
                   call.::miden::standards::wallets::basic::move_asset_to_note
                   # => [note_idx]
                 ",
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }

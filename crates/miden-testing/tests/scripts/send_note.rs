@@ -114,13 +114,13 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     // Assert that the non-fungible asset was removed
     let vault_patch = executed_transaction.account_patch().vault();
     assert_eq!(
-        vault_patch.removed_asset_keys().count(),
+        vault_patch.removed_asset_ids().count(),
         1,
         "the non-fungible asset should have been completely removed"
     );
     assert_eq!(
-        vault_patch.removed_asset_keys().next().unwrap(),
-        &sent_asset0.vault_key(),
+        vault_patch.removed_asset_ids().next().unwrap(),
+        &sent_asset0.id(),
         "the non-fungible asset should have been completely removed"
     );
 

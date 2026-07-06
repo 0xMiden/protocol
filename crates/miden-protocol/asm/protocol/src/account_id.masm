@@ -9,4 +9,5 @@ pub use {
     is_equal,
     shape_suffix,
     validate,
+    validate_structure,
 } from miden::protocol_utils::account_id

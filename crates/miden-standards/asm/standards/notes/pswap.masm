@@ -292,11 +292,11 @@ proc create_p2id_note
         # => [faucet_suffix, faucet_prefix, amt_account_fill]
 
         exec.asset::create_fungible_asset
-        # => [ASSET_KEY, ASSET_VALUE]
+        # => [ASSET_ID, ASSET_VALUE]
 
         # pad the stack for the call
         padw push.0.0.0 loc_load.P2ID_NOTE_IDX swapdw
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
         # => [pad(16)]
@@ -321,7 +321,7 @@ proc create_p2id_note
         # => [faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
         exec.asset::create_fungible_asset
-        # => [ASSET_KEY, ASSET_VALUE, note_idx]
+        # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
         # => []
@@ -432,7 +432,7 @@ proc create_remainder_note
     # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
 
     exec.asset::create_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
     # => []
@@ -454,7 +454,7 @@ end
 #! Loads the offered asset from the active note and validates there is exactly one asset.
 #!
 #! Inputs: []
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
 @locals(8)
 proc load_offered_asset
@@ -468,7 +468,7 @@ proc load_offered_asset
     # => [dest_ptr]
 
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 end
 
 #! Reclaims all assets from the note back to the creator's vault.
@@ -480,11 +480,11 @@ end
 #!
 proc handle_reclaim
     exec.load_offered_asset
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
-    # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # Build 16-element call frame: [ASSET_ID, ASSET_VALUE, pad(8)]
     padw padw swapdw
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     call.wallet::receive_asset
     # => [pad(16)]
@@ -590,17 +590,17 @@ proc execute_pswap
     # => []
 
     exec.load_offered_asset
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
     exec.asset::fungible_to_amount
-    # => [amount, ASSET_KEY, ASSET_VALUE]
+    # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
-    # Extract and store offered faucet info from ASSET_KEY
-    exec.asset::key_into_faucet_id
+    # Extract and store offered faucet info from ASSET_ID
+    exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
 
     loc_store.EXEC_OFFERED_FAUCET_SUFFIX loc_store.EXEC_OFFERED_FAUCET_PREFIX
@@ -704,7 +704,7 @@ proc execute_pswap
         # => [faucet_suffix, faucet_prefix, amt_payout_account_fill, pad(8)]
 
         exec.asset::create_fungible_asset
-        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+        # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
         call.wallet::receive_asset
         # => [pad(16)]

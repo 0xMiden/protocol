@@ -74,7 +74,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
             # move the asset to the note
             dup
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [note_idx]
 
@@ -85,7 +85,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
         RECIPIENT = output_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note.metadata().tag(),
-        ASSET_KEY = fungible_asset.to_key_word(),
+        ASSET_ID = fungible_asset.to_id_word(),
         ASSET_VALUE = fungible_asset.to_value_word(),
     );
 
