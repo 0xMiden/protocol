@@ -38,7 +38,7 @@ use crate::account::access::{AccessControl, Authority, Pausable, PausableManager
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
 use crate::account::policies::TokenPolicyManager;
-use crate::note::{NonFungibleBurnNote, NonFungibleMintNote};
+use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -435,7 +435,7 @@ pub fn create_user_non_fungible_faucet(
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
 /// The factory builds the [`AuthNetworkAccount`] auth component internally with a note allowlist
-/// covering the faucet's own [`NonFungibleMintNote`] and [`NonFungibleBurnNote`] scripts, plus a
+/// covering the faucet's own [`MintNote`] and [`BurnNote`] scripts, plus a
 /// tx-script allowlist covering the canonical expiration setter
 /// ([`ExpirationTransactionScript`]) so the network can bound its own transactions' expiry.
 pub fn create_network_non_fungible_faucet(
@@ -444,12 +444,11 @@ pub fn create_network_non_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
-    let note_allowlist = [NonFungibleMintNote::script_root(), NonFungibleBurnNote::script_root()]
-        .into_iter()
-        .collect();
+    let note_allowlist =
+        [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
     let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
-        .expect("non-fungible MintNote + BurnNote allowlist is non-empty")
+        .expect("MintNote + BurnNote allowlist is non-empty")
         .with_allowed_tx_scripts(tx_script_allowlist);
 
     AccountBuilder::new(init_seed)

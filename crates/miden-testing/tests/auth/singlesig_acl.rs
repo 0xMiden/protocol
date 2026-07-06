@@ -383,7 +383,6 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
-        .faucet_id(faucet_account.id())
         .asset(asset)
         .generate_serial_number(&mut rng)
         .build()?

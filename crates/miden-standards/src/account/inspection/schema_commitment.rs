@@ -32,11 +32,11 @@ use crate::account::account_component_code;
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(SCHEMA_COMMITMENT_CODE, "miden-standards-metadata-schema-commitment.masp");
+account_component_code!(SCHEMA_COMMITMENT_CODE, "miden-standards-inspection-schema-commitment.masp");
 
 /// Schema commitment slot name.
 static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::storage_schema::commitment")
+    StorageSlotName::new("miden::standards::inspection::storage_schema::commitment")
         .expect("storage slot name should be valid")
 });
 
@@ -50,7 +50,7 @@ static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// [`AccountSchemaCommitment::schema_commitment_slot()`].
 ///
 /// It reexports the `get_schema_commitment` procedure from
-/// `miden::standards::metadata::storage_schema`.
+/// `miden::standards::inspection::storage_schema`.
 ///
 /// ## Storage Layout
 ///
@@ -62,7 +62,7 @@ pub struct AccountSchemaCommitment {
 impl AccountSchemaCommitment {
     /// Name of the component is set to match the path of the corresponding module in the standards
     /// library.
-    const NAME: &str = "miden::standards::metadata::storage_schema";
+    const NAME: &str = "miden::standards::inspection::storage_schema";
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.

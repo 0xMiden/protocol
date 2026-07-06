@@ -1631,7 +1631,6 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note: Note = BurnNote::builder()
         .sender(faucet_owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -1703,7 +1702,6 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     let mut rng = RandomCoin::new([Felt::from(501u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(non_owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -1758,7 +1756,6 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let mut rng = RandomCoin::new([Felt::from(511u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -1842,7 +1839,6 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -1882,7 +1878,6 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -1938,7 +1933,6 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let mut rng = RandomCoin::new([Felt::from(611u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
-        .faucet_id(faucet.id())
         .asset(fungible_asset)
         .generate_serial_number(&mut rng)
         .build()?

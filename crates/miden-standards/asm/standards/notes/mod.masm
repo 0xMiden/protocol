@@ -1,7 +1,5 @@
 pub mod burn
-pub mod burn_nft
 pub mod mint
-pub mod mint_nft
 pub mod p2id
 pub mod p2ide
 pub mod pswap

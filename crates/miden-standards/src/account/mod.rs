@@ -3,11 +3,11 @@ pub mod auth;
 pub mod components;
 pub mod faucets;
 pub mod interface;
-pub mod metadata;
+pub mod inspection;
 pub mod policies;
 pub mod wallets;
 
-pub use metadata::AccountBuilderSchemaCommitmentExt;
+pub use inspection::AccountBuilderSchemaCommitmentExt;
 
 /// Macro to simplify the creation of static procedure root constants.
 ///

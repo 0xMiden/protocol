@@ -23,7 +23,7 @@ use miden_standards::errors::standards::{
     ERR_NFT_ALREADY_ISSUED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{NonFungibleBurnNote, NonFungibleMintNote, NonFungibleMintNoteStorage};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
 use miden_testing::{
     AccountState,
     Auth,
@@ -178,7 +178,7 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
 /// Full mint -> burn flow: mint an NFT (status ISSUED), then consume a BURN note carrying that
 /// NFT against the faucet. A successful burn proves the status transitioned ISSUED -> BURNED,
 /// since `receive_and_burn` asserts the prior status was ISSUED. Uses the production
-/// `NonFungibleBurnNote` script.
+/// `BurnNote` script.
 #[tokio::test]
 async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -200,7 +200,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([6; 32]);
     let mut rng = RandomCoin::new([Felt::from(11u32); 4].into());
-    let burn_note: Note = NonFungibleBurnNote::builder()
+    let burn_note: Note = BurnNote::builder()
         .sender(sender)
         .asset(asset)
         .generate_serial_number(&mut rng)
@@ -219,7 +219,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 }
 
 /// Minting via the production MINT note (private mode) succeeds: the note's storage carries the
-/// recipient, commitment and tag, and the `mint_nft` script calls `mint_and_send`, producing one
+/// recipient, commitment and tag, and the `mint` script calls `mint_and_send`, producing one
 /// output note. This exercises the MINT note script end-to-end.
 #[tokio::test]
 async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
@@ -235,12 +235,15 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-    let storage =
-        NonFungibleMintNoteStorage::new_private(recipient_digest, commitment, NoteTag::default());
+    let storage = MintNoteStorage::new_non_fungible_private(
+        faucet.id(),
+        recipient_digest,
+        commitment,
+        NoteTag::default(),
+    );
     let mut rng = RandomCoin::new([Felt::from(33u32); 4].into());
-    let mint_note: Note = NonFungibleMintNote::builder()
+    let mint_note: Note = MintNote::builder()
         .sender(sender)
-        .faucet_id(faucet.id())
         .mint_storage(storage)
         .generate_serial_number(&mut rng)
         .build()?
@@ -285,12 +288,15 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .account_type(AccountType::Private)
         .build_with_seed([11; 32]);
 
-    let storage =
-        NonFungibleMintNoteStorage::new_private(recipient_digest, commitment, NoteTag::default());
+    let storage = MintNoteStorage::new_non_fungible_private(
+        faucet.id(),
+        recipient_digest,
+        commitment,
+        NoteTag::default(),
+    );
     let mut rng = RandomCoin::new([Felt::from(44u32); 4].into());
-    let mint_note: Note = NonFungibleMintNote::builder()
+    let mint_note: Note = MintNote::builder()
         .sender(non_owner)
-        .faucet_id(faucet.id())
         .mint_storage(storage)
         .generate_serial_number(&mut rng)
         .build()?
