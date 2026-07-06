@@ -85,7 +85,6 @@ pub struct MockTransactionBuilder<'chain> {
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
     is_lazy_loading_enabled: bool,
-    is_debug_mode_enabled: bool,
 }
 
 impl<'chain> MockTransactionBuilder<'chain> {
@@ -117,7 +116,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             note_scripts: BTreeMap::new(),
             source_manager: None,
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
     }
 
@@ -279,15 +277,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Disables debug mode.
-    ///
-    /// For performance-sensitive applications, debug mode should be disabled because executing in
-    /// debug mode may be up to 100x slower.
-    pub fn disable_debug_mode(mut self) -> Self {
-        self.is_debug_mode_enabled = false;
-        self
-    }
-
     /// Builds the [`TransactionContext`].
     ///
     /// The configured account and input notes are resolved into [`TransactionInputs`] against the
@@ -353,7 +342,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             source_manager,
             note_scripts: self.note_scripts,
             is_lazy_loading_enabled: self.is_lazy_loading_enabled,
-            is_debug_mode_enabled: self.is_debug_mode_enabled,
         })
     }
 }
