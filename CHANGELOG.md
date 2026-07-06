@@ -120,6 +120,7 @@
 - [BREAKING] Removed `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 - Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [agglayer] Added faucet deregistration, letting the bridge admin revoke a registered faucet ([#2838](https://github.com/0xMiden/protocol/pull/2838)).
 
 ### Changes
 
