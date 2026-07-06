@@ -444,8 +444,7 @@ pub fn create_network_non_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
-    let note_allowlist =
-        [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
     let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
         .expect("MintNote + BurnNote allowlist is non-empty")

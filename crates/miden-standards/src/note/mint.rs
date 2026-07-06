@@ -277,7 +277,12 @@ impl MintNoteStorage {
         commitment: Word,
         tag: NoteTag,
     ) -> Self {
-        Self::NonFungiblePrivate { faucet_id, recipient_digest, commitment, tag }
+        Self::NonFungiblePrivate {
+            faucet_id,
+            recipient_digest,
+            commitment,
+            tag,
+        }
     }
 
     /// Builds non-fungible public-mode storage (creates a public output note).

@@ -32,7 +32,10 @@ use crate::account::account_component_code;
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(SCHEMA_COMMITMENT_CODE, "miden-standards-inspection-schema-commitment.masp");
+account_component_code!(
+    SCHEMA_COMMITMENT_CODE,
+    "miden-standards-inspection-schema-commitment.masp"
+);
 
 /// Schema commitment slot name.
 static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
