@@ -14,7 +14,6 @@ use miden_protocol::assembly::{
     Module,
     ModuleKind,
     ModuleParser,
-    Parse,
     Path,
     SourceFile,
     SourceManager,
@@ -29,6 +28,7 @@ use crate::errors::CodeBuilderError;
 use crate::standards_lib::StandardsLib;
 
 const NOTE_SCRIPT_MODULE_PATH: &str = "::note_script";
+const TX_SCRIPT_MODULE_PATH: &str = "::tx_script";
 
 /// A value that can provide a compiled Miden library to the code builder.
 pub trait CodeBuilderLibrary {
@@ -62,113 +62,124 @@ impl CodeBuilderLibrary for AccountComponentCode {
     }
 }
 
-/// A source value that can be compiled into a note script.
-pub trait CodeBuilderNoteScriptSource {
-    fn parse_note_script(
+/// A source value that can be compiled into a note or transaction script.
+pub trait CodeBuilderScriptSource {
+    /// Parses this source into a library module, assigning `default_path` as the module path
+    /// when the source does not provide one.
+    fn parse_script(
         self,
+        default_path: &Path,
         warnings_as_errors: bool,
         source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report>;
 }
 
-fn parse_note_script_str(
+fn parse_script_str(
     source: impl AsRef<str>,
+    default_path: &Path,
     warnings_as_errors: bool,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<Box<Module>, Report> {
     let mut parser = ModuleParser::new(Some(ModuleKind::Library));
     parser.set_warnings_as_errors(warnings_as_errors);
-    parser.parse_str(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), source.as_ref(), source_manager)
+    parser.parse_str(Some(default_path), source.as_ref(), source_manager)
 }
 
-fn set_default_note_script_path(mut module: Box<Module>) -> Box<Module> {
+fn set_default_module_path(mut module: Box<Module>, default_path: &Path) -> Box<Module> {
     if module.path().is_empty() {
-        module.set_path(Path::new(NOTE_SCRIPT_MODULE_PATH));
+        module.set_path(default_path);
     }
     module
 }
 
-macro_rules! impl_note_script_source_for_str {
+macro_rules! impl_script_source_for_str {
     ($($source:ty),* $(,)?) => {
         $(
-            impl CodeBuilderNoteScriptSource for $source {
-                fn parse_note_script(
+            impl CodeBuilderScriptSource for $source {
+                fn parse_script(
                     self,
+                    default_path: &Path,
                     warnings_as_errors: bool,
                     source_manager: Arc<dyn SourceManager>,
                 ) -> Result<Box<Module>, Report> {
-                    parse_note_script_str(self, warnings_as_errors, source_manager)
+                    parse_script_str(self, default_path, warnings_as_errors, source_manager)
                 }
             }
         )*
     };
 }
 
-impl_note_script_source_for_str!(&str, &String, String, Box<str>, Cow<'_, str>);
+impl_script_source_for_str!(&str, &String, String, Box<str>, Cow<'_, str>);
 
-impl CodeBuilderNoteScriptSource for Arc<SourceFile> {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for Arc<SourceFile> {
+    fn parse_script(
         self,
+        default_path: &Path,
         warnings_as_errors: bool,
         source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
         let mut parser = ModuleParser::new(Some(ModuleKind::Library));
         parser.set_warnings_as_errors(warnings_as_errors);
-        parser.parse(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), self, source_manager)
+        parser.parse(Some(default_path), self, source_manager)
     }
 }
 
-impl CodeBuilderNoteScriptSource for Module {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for Module {
+    fn parse_script(
         self,
+        default_path: &Path,
         _warnings_as_errors: bool,
         _source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
-        Ok(set_default_note_script_path(Box::new(self)))
+        Ok(set_default_module_path(Box::new(self), default_path))
     }
 }
 
-impl CodeBuilderNoteScriptSource for Box<Module> {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for Box<Module> {
+    fn parse_script(
         self,
+        default_path: &Path,
         _warnings_as_errors: bool,
         _source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
-        Ok(set_default_note_script_path(self))
+        Ok(set_default_module_path(self, default_path))
     }
 }
 
-impl CodeBuilderNoteScriptSource for Arc<Module> {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for Arc<Module> {
+    fn parse_script(
         self,
+        default_path: &Path,
         _warnings_as_errors: bool,
         _source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
-        Ok(set_default_note_script_path(Box::new(Arc::unwrap_or_clone(self))))
+        Ok(set_default_module_path(Box::new(Arc::unwrap_or_clone(self)), default_path))
     }
 }
 
 #[cfg(feature = "std")]
-impl CodeBuilderNoteScriptSource for &std::path::Path {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for &std::path::Path {
+    fn parse_script(
         self,
+        default_path: &Path,
         warnings_as_errors: bool,
         source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
         let mut parser = ModuleParser::new(Some(ModuleKind::Library));
         parser.set_warnings_as_errors(warnings_as_errors);
-        parser.parse_file(Some(Path::new(NOTE_SCRIPT_MODULE_PATH)), self, source_manager)
+        parser.parse_file(Some(default_path), self, source_manager)
     }
 }
 
 #[cfg(feature = "std")]
-impl CodeBuilderNoteScriptSource for std::path::PathBuf {
-    fn parse_note_script(
+impl CodeBuilderScriptSource for std::path::PathBuf {
+    fn parse_script(
         self,
+        default_path: &Path,
         warnings_as_errors: bool,
         source_manager: Arc<dyn SourceManager>,
     ) -> Result<Box<Module>, Report> {
-        self.as_path().parse_note_script(warnings_as_errors, source_manager)
+        self.as_path().parse_script(default_path, warnings_as_errors, source_manager)
     }
 }
 
@@ -217,7 +228,7 @@ impl CodeBuilderNoteScriptSource for std::path::PathBuf {
 /// # use miden_protocol::ProtocolLib;
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
-/// # let script_code = "begin nop end";
+/// # let script_code = "@transaction_script pub proc main nop end";
 /// # // Create sample libraries for the example
 /// # let my_lib: Library = StandardsLib::default().into();
 /// # let fpi_lib: Library = ProtocolLib::default().into();
@@ -507,30 +518,48 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `tx_script` - The transaction script source code
+    /// - `tx_script` - the transaction script source code which is expected to have a single public
+    ///   procedure marked with the @transaction_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The transaction script compiling fails
     pub fn compile_tx_script(
         self,
-        tx_script: impl Parse,
+        tx_script: impl CodeBuilderScriptSource,
     ) -> Result<TransactionScript, CodeBuilderError> {
-        let CodeBuilder { assembler, advice_map, .. } = self;
+        let CodeBuilder { assembler, source_manager, advice_map } = self;
 
-        let package =
-            assembler.assemble_program("transaction-script", tx_script).map_err(|err| {
-                CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
-            })?;
-
-        TransactionScript::from_package(&package)
-            .map(|script| script.with_advice_map(advice_map))
+        let module = tx_script
+            .parse_script(
+                Path::new(TX_SCRIPT_MODULE_PATH),
+                assembler.warnings_as_errors(),
+                source_manager,
+            )
             .map_err(|err| {
-                CodeBuilderError::build_error_with_source(
-                    "failed to create transaction script from package",
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse transaction script library",
                     err,
                 )
-            })
+            })?;
+
+        let tx_script_lib = assembler
+            .assemble_library("transaction-script", module, None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse transaction script library",
+                    err,
+                )
+            })?;
+
+        let tx_script = TransactionScript::from_library(&tx_script_lib).map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create transaction script from library",
+                err,
+            )
+        })?;
+
+        Ok(tx_script.with_advice_map(advice_map))
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].
@@ -546,12 +575,16 @@ impl CodeBuilder {
     /// - The note script compiling fails
     pub fn compile_note_script(
         self,
-        source: impl CodeBuilderNoteScriptSource,
+        source: impl CodeBuilderScriptSource,
     ) -> Result<NoteScript, CodeBuilderError> {
         let CodeBuilder { assembler, source_manager, advice_map } = self;
 
         let module = source
-            .parse_note_script(assembler.warnings_as_errors(), source_manager)
+            .parse_script(
+                Path::new(NOTE_SCRIPT_MODULE_PATH),
+                assembler.warnings_as_errors(),
+                source_manager,
+            )
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
                     "failed to parse note script library",
@@ -568,13 +601,14 @@ impl CodeBuilder {
                 )
             })?;
 
-        NoteScript::from_library(&Self::apply_advice_map_to_library(advice_map, *note_script_lib))
-            .map_err(|err| {
-                CodeBuilderError::build_error_with_source(
-                    "failed to create note script from library",
-                    err,
-                )
-            })
+        let note_script = NoteScript::from_library(&note_script_lib).map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create note script from library",
+                err,
+            )
+        })?;
+
+        Ok(note_script.with_advice_map(advice_map))
     }
 
     // ACCESSORS
@@ -685,7 +719,7 @@ mod tests {
     fn test_code_builder_basic_script_compiling() -> anyhow::Result<()> {
         let builder = CodeBuilder::default();
         builder
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to parse basic tx script")?;
         Ok(())
     }
@@ -695,7 +729,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -733,7 +768,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -784,7 +820,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -816,8 +853,16 @@ mod tests {
 
     #[test]
     fn test_multiple_chained_modules() -> anyhow::Result<()> {
-        let script_code =
-            "use test::lib1 use test::lib2 begin exec.lib1::test1 exec.lib2::test2 end";
+        let script_code = "
+            use test::lib1
+            use test::lib2
+
+            @transaction_script
+            pub proc main
+                exec.lib1::test1
+                exec.lib2::test2
+            end
+        ";
 
         // Test chaining multiple modules
         let builder = CodeBuilder::default()
@@ -836,7 +881,8 @@ mod tests {
         let script_code = "
             use contracts::static_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.static_contract::increment_1
             end
         ";
@@ -908,7 +954,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script with advice map")?;
 
         let mast = script.mast();
@@ -929,7 +975,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_extended_advice_map(advice_map)
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script")?;
 
         let mast = script.mast();
