@@ -4,7 +4,9 @@
 #
 # Provides per-role membership tracking with delegated role admins. Members are tracked
 # with a boolean flag and a per-role member count. Role administration is fully role-based:
-# the built-in `ADMIN` role is the default administrator of every role.
+# the built-in `ADMIN` role is the default administrator of every role, mirroring the
+# OpenZeppelin AccessControl `DEFAULT_ADMIN_ROLE`. There is no external super-admin above
+# the role graph.
 #
 # Storage layout (2 slots):
 #
@@ -51,9 +53,9 @@ const ROLE_CONFIG_SLOT = word("miden::standards::access::rbac::role_config")
 # Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
 const ROLE_MEMBERSHIP_SLOT = word("miden::standards::access::rbac::role_membership")
 
-# Membership map values: the first felt is the membership flag, remaining felts are 0.
-const SET_MEMBERSHIP = [1, 0, 0, 0]
-const CLEAR_MEMBERSHIP = [0, 0, 0, 0]
+# Procedure-local slots used by `set_membership_internal`.
+const MEMBERSHIP_FLAG_LOC = 0
+const ROLE_SYMBOL_LOC = 1
 
 # The built-in default admin role. A role whose `admin_role_symbol` is unset (0) is
 # administered by members of this role. Encodes the role symbol "ADMIN".
@@ -223,7 +225,16 @@ pub proc grant_role
     dup exec.assert_sender_is_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    exec.grant_role_internal
+    # Validate the account ID. This is the only membership-mutating path that validates:
+    # grant is the sole writer of the membership map, so every stored key is already valid
+    # and revoke/renounce need not re-check (an invalid ID cannot match a stored key).
+    dup.2 dup.2 exec.account_id::validate_structure
+    # => [role_symbol, account_suffix, account_prefix, pad(13)]
+
+    push.1
+    # => [is_member=1, role_symbol, account_suffix, account_prefix, pad(13)]
+
+    exec.set_membership_internal
     # => [pad(16)]
 end
 
@@ -243,7 +254,6 @@ end
 #! - role_symbol is zero.
 #! - the note sender does not hold the role's effective admin role.
 #! - the account does not hold the role.
-#! - the account ID is invalid.
 #!
 #! Invocation: call
 @account_procedure
@@ -254,7 +264,10 @@ pub proc revoke_role
     dup exec.assert_sender_is_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    exec.revoke_role_internal
+    push.0
+    # => [is_member=0, role_symbol, account_suffix, account_prefix, pad(13)]
+
+    exec.set_membership_internal
     # => [pad(16)]
 end
 
@@ -269,7 +282,6 @@ end
 #! Panics if:
 #! - role_symbol is zero.
 #! - the note sender does not hold the role.
-#! - the note sender account ID fails validation.
 #!
 #! Invocation: call
 @account_procedure
@@ -283,7 +295,10 @@ pub proc renounce_role
     movup.2
     # => [role_symbol, sender_suffix, sender_prefix, pad(13)]
 
-    exec.revoke_role_internal
+    push.0
+    # => [is_member=0, role_symbol, sender_suffix, sender_prefix, pad(13)]
+
+    exec.set_membership_internal
     # => [pad(16)]
 end
 
@@ -414,7 +429,8 @@ end
 #! Asserts that the note sender holds the role's effective admin role.
 #!
 #! The effective admin is the role's configured delegated admin, or the built-in `ADMIN`
-#! role when none is configured.
+#! role when none is configured. There is no owner override: role administration is fully
+#! role-based.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
@@ -464,120 +480,80 @@ proc set_role_config
     # => []
 end
 
-#! Internal helper used by `grant_role` to assign a role to an account.
+#! Internal helper shared by `grant_role`, `revoke_role`, and `renounce_role` to set or clear
+#! an account's membership of a role and adjust the role's member count.
 #!
-#! Validates the account ID, sets the membership flag, and increments the role's
-#! member count only when the account did not already hold the role.
+#! The account ID is not validated here: `grant_role` (the only caller that adds a membership)
+#! validates before calling, so every stored membership key is already valid, and a revoke of
+#! an unknown key fails the membership assertion below regardless.
 #!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
+#! Inputs:  [is_member, role_symbol, account_suffix, account_prefix]
 #! Outputs: []
 #!
+#! Where:
+#! - is_member is 1 to grant the role (the membership assertion is a no-op) or 0 to revoke it
+#!   (the account must currently hold the role).
+#!
+#! Panics if:
+#! - is_member is 0 and the account does not currently hold the role.
+#! - granting overflows the role's u32 member count.
+#!
 #! Invocation: exec
-proc grant_role_internal
-    # Validate the account ID structure.
-    dup.2 dup.2 exec.account_id::validate_structure
+@locals(2)
+proc set_membership_internal
+    # => [is_member, role_symbol, account_suffix, account_prefix]
+
+    # Stash the membership flag and role_symbol; both are needed after the map write.
+    dup loc_store.MEMBERSHIP_FLAG_LOC
+    # => [is_member, role_symbol, account_suffix, account_prefix]
+
+    dup.1 loc_store.ROLE_SYMBOL_LOC
+    # => [is_member, role_symbol, account_suffix, account_prefix]
+
+    drop
     # => [role_symbol, account_suffix, account_prefix]
 
-    # Save a copy of role_symbol at the bottom of the stack so it survives the
-    # membership map write and is available for the role-config update.
-    dup movdn.3
-    # => [role_symbol, account_suffix, account_prefix, role_symbol]
-
     push.0
-    # => [0, role_symbol, account_suffix, account_prefix, role_symbol]
+    # => [0, role_symbol, account_suffix, account_prefix]
 
-    push.SET_MEMBERSHIP
-    # => [1, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+    # Build the value word [is_member, 0, 0, 0] on top of the key word.
+    push.0.0.0 loc_load.MEMBERSHIP_FLAG_LOC
+    # => [is_member, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix]
 
     swapw
-    # => [0, role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
+    # => [0, role_symbol, account_suffix, account_prefix, is_member, 0, 0, 0]
 
     push.ROLE_MEMBERSHIP_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
-    #     1, 0, 0, 0, role_symbol]
+    #     is_member, 0, 0, 0]
 
     exec.native_account::set_map_item
-    # => [OLD_MEMBERSHIP_WORD, role_symbol]
+    # => [OLD_MEMBERSHIP_WORD]
 
     # Reduce OLD_MEMBERSHIP_WORD to its first element, the previous membership flag.
     movdn.3 drop drop drop
-    # => [old_is_member, role_symbol]
+    # => [old_is_member]
 
-    if.true
-        # Role was already held — the write above was idempotent, count unchanged.
-        drop
-        # => []
-    else
-        # New grant — increment the role's member count.
-        dup exec.get_role_config
-        # => [member_count, admin_role_symbol, role_symbol]
-
-        add.1 u32assert.err=ERR_MEMBER_COUNT_OVERFLOW
-        # => [member_count + 1, admin_role_symbol, role_symbol]
-
-        movup.2
-        # => [role_symbol, member_count + 1, admin_role_symbol]
-
-        exec.set_role_config
-        # => []
-    end
-end
-
-#! Internal helper used by `revoke_role` and `renounce_role` to remove a role from
-#! an account.
-#!
-#! Validates the account ID, clears the membership flag, asserts that the account
-#! previously held the role, and decrements the role's member count.
-#!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: []
-#!
-#! Panics if:
-#! - the account ID is invalid.
-#! - the account does not hold the role.
-#!
-#! Invocation: exec
-proc revoke_role_internal
-    # Validate the account ID structure.
-    dup.2 dup.2 exec.account_id::validate_structure
-    # => [role_symbol, account_suffix, account_prefix]
-
-    # Save a copy of role_symbol at the bottom of the stack so it survives the
-    # membership map write and is available for the role-config update.
-    dup movdn.3
-    # => [role_symbol, account_suffix, account_prefix, role_symbol]
-
-    push.0
-    # => [0, role_symbol, account_suffix, account_prefix, role_symbol]
-
-    push.CLEAR_MEMBERSHIP
-    # => [0, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
-
-    swapw
-    # => [0, role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
-
-    push.ROLE_MEMBERSHIP_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
-    #     0, 0, 0, 0, role_symbol]
-
-    exec.native_account::set_map_item
-    # => [OLD_MEMBERSHIP_WORD, role_symbol]
-
-    movdn.3 drop drop drop
-    # => [old_is_member, role_symbol]
-
+    # Branchless membership assertion: a no-op when granting (is_member = 1); when revoking
+    # (is_member = 0) it requires that the account previously held the role.
+    dup loc_load.MEMBERSHIP_FLAG_LOC or
     assert.err=ERR_ACCOUNT_NOT_IN_ROLE
-    # => [role_symbol]
+    # => [old_is_member]
 
-    # Decrement the role's member count.
-    dup exec.get_role_config
-    # => [member_count, admin_role_symbol, role_symbol]
+    # Membership delta = is_member - old_is_member: +1 on a fresh grant, 0 on a redundant
+    # grant, -1 on a revoke. Computing the delta first means the redundant-grant case adds 0
+    # and cannot spuriously trip the overflow assertion.
+    neg loc_load.MEMBERSHIP_FLAG_LOC add
+    # => [delta]
 
-    sub.1
-    # => [member_count - 1, admin_role_symbol, role_symbol]
+    loc_load.ROLE_SYMBOL_LOC exec.get_role_config
+    # => [member_count, admin_role_symbol, delta]
 
-    movup.2
-    # => [role_symbol, member_count - 1, admin_role_symbol]
+    movup.2 add u32assert.err=ERR_MEMBER_COUNT_OVERFLOW
+    # => [new_member_count, admin_role_symbol]
+
+    loc_load.ROLE_SYMBOL_LOC
+    # => [role_symbol, new_member_count, admin_role_symbol]
 
     exec.set_role_config
     # => []
