@@ -265,7 +265,8 @@ async fn epilogue_fails_when_assets_arent_preserved(
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           # create a note with the output asset
           push.{OUTPUT_ASSET_VALUE}
           push.{OUTPUT_ASSET_KEY}
@@ -453,7 +454,8 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.91.92.93.94
             push.MOCK_VALUE_SLOT0[0..2]
             repeat.5 movup.5 drop end

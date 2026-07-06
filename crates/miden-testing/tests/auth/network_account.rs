@@ -66,7 +66,8 @@ fn expiration_tx_script(delta: u16) -> TransactionScript {
         "
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             push.{delta}
             exec.tx::update_expiration_block_delta
         end
@@ -92,7 +93,8 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -187,7 +189,8 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    let other_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let other_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
     assert_ne!(
         other_script.root(),
         allowed_script.root(),
