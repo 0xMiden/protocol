@@ -603,7 +603,7 @@ fn generate_updates(
 
     entries
         .iter()
-        .choose_multiple(&mut rng, num_updates)
+        .sample(&mut rng, num_updates)
         .into_iter()
         .map(|(key, _)| (*key, (rand_value::<Word>(), rand_value::<Word>())))
         .collect()

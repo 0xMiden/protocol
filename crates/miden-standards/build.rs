@@ -2,9 +2,15 @@ use std::env;
 use std::path::Path;
 use std::sync::Arc;
 
-use fs_err as fs;
-use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::{Assembler, Library};
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
+use miden_assembly::{Assembler, ProjectTargetSelector};
+use miden_core_lib::CoreLibrary;
+use miden_mast_package::{Package, PackageId, TargetType, Version};
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_project::ast::MidenProject;
+use miden_project::{VersionRequirement, Workspace, semver};
+use miden_protocol::ProtocolLib;
 use miden_protocol::transaction::TransactionKernel;
 
 // CONSTANTS
@@ -13,10 +19,13 @@ use miden_protocol::transaction::TransactionKernel;
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
-const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
+const ASM_COMPONENTS_DIR: &str = "components";
 
-const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
-const ACCOUNT_COMPONENTS_LIB_NAMESPACE: &str = "miden::standards::components";
+/// Name of the manifest file defining a Miden project.
+const PROJECT_MANIFEST: &str = "miden-project.toml";
+
+/// The build profile used when assembling the Miden projects.
+const BUILD_PROFILE: &str = "release";
 
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
@@ -25,9 +34,9 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/standards directory into a Miden library file (.masl) under
-///   standards namespace. Note scripts are included in this library.
-/// - Compiles the contents of asm/account_components directory into individual .masl files.
+/// - Compiles the contents of asm/standards directory into a package. Note scripts are included in
+///   this library.
+/// - Compiles the contents of asm/components directory into individual packages.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -42,17 +51,22 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    let mut assembler = TransactionKernel::assembler().with_warnings_as_errors(true);
-    // compile standards library (includes note scripts)
-    let standards_lib = compile_standards_lib(&source_dir, &target_dir, assembler.clone())?;
+    // The miden-core library is provided through an in-memory registry
+    let mut registry = build_registry()?;
 
-    assembler.link_static_library(standards_lib)?;
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
+
+    // compile standards library (includes note scripts) and seed it into the registry
+    compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
 
     // compile account components
     compile_account_components(
-        &source_dir.join(ASM_ACCOUNT_COMPONENTS_DIR),
-        &target_dir.join(ASM_ACCOUNT_COMPONENTS_DIR),
-        assembler,
+        &source_dir.join(ASM_COMPONENTS_DIR),
+        &target_dir.join(ASM_COMPONENTS_DIR),
+        &assembler,
+        &mut registry,
+        source_manager,
     )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
@@ -60,85 +74,147 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// COMPILE PROTOCOL LIB
+// ASSEMBLER & REGISTRY
 // ================================================================================================
 
-/// Reads the MASM files from "{source_dir}/standards" directory, compiles them into a Miden
-/// assembly library, saves the library into "{target_dir}/standards.masl", and returns the compiled
-/// library.
+/// Builds a package registry seeded with the protocol library and its transitive `miden-tx-kernel`
+/// and `miden-core` dependencies, so that the `miden-protocol` dependency declared by the standards
+/// projects can be resolved during project assembly.
+fn build_registry() -> Result<InMemoryPackageRegistry> {
+    let mut registry = InMemoryPackageRegistry::default();
+
+    let core_package = CoreLibrary::default().package();
+    let core_package_version = dependency_package_version(
+        Path::new(ASM_DIR).join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST),
+        "miden-core",
+    )?;
+    let core_package = Package::create_with_modules(
+        PackageId::from("miden-core"),
+        core_package_version,
+        TargetType::Library,
+        core_package.mast_forest().clone(),
+        core_package.manifest.exports().cloned(),
+        core_package.manifest.modules().cloned(),
+        core_package.manifest.dependencies().cloned(),
+    )
+    .into_diagnostic()?;
+
+    // The protocol package declares dependencies on the kernel and core packages, so all three
+    // must be available in the registry for project dependency resolution to succeed.
+    for package in [
+        Arc::new(core_package),
+        Arc::new(Package::from(ProtocolLib::default())),
+        TransactionKernel::package(),
+    ] {
+        registry.cache_package(package).into_diagnostic()?;
+    }
+
+    Ok(registry)
+}
+
+fn dependency_package_version(
+    manifest_path: impl AsRef<Path>,
+    dependency_name: &str,
+) -> Result<Version> {
+    let source_manager = DefaultSourceManager::default();
+    let source_file = source_manager
+        .load_file(manifest_path.as_ref())
+        .map_err(|err| miette::miette!("{err}"))?;
+    let project = MidenProject::parse(source_file).map_err(|err| miette::miette!("{err}"))?;
+    let dependencies = match &project {
+        MidenProject::Workspace(workspace) => &workspace.workspace.config.dependencies,
+        MidenProject::Package(package) => &package.config.dependencies,
+    };
+    let dependency = dependencies
+        .iter()
+        .find(|(name, _)| name.inner().as_ref() == dependency_name)
+        .map(|(_, dependency)| dependency.inner())
+        .ok_or_else(|| miette::miette!("manifest does not depend on `{dependency_name}`"))?;
+
+    match dependency.version() {
+        Some(VersionRequirement::Semantic(version_req)) => {
+            semantic_requirement_lower_bound(dependency_name, version_req.inner())
+        },
+        Some(VersionRequirement::Exact(version)) => Ok(version.version.clone()),
+        Some(VersionRequirement::Digest(_)) | None => Err(miette::miette!(
+            "dependency `{dependency_name}` must use a semantic version requirement"
+        )),
+    }
+}
+
+fn semantic_requirement_lower_bound(
+    dependency_name: &str,
+    version_req: &semver::VersionReq,
+) -> Result<Version> {
+    let [comparator] = version_req.comparators.as_slice() else {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a single semantic version requirement"
+        ));
+    };
+
+    if !matches!(comparator.op, semver::Op::Caret | semver::Op::Exact)
+        || comparator.pre != semver::Prerelease::EMPTY
+    {
+        return Err(miette::miette!(
+            "dependency `{dependency_name}` must use a simple semantic version requirement"
+        ));
+    }
+
+    Ok(Version::new(
+        comparator.major,
+        comparator.minor.unwrap_or_default(),
+        comparator.patch.unwrap_or_default(),
+    ))
+}
+
+// COMPILE STANDARDS LIB
+// ================================================================================================
+
+/// Assembles the standards library project in "{source_dir}/standards" into a package, saves it to
+/// the `target_dir`, and seeds it into the `registry`.
 fn compile_standards_lib(
     source_dir: &Path,
     target_dir: &Path,
     assembler: Assembler,
-) -> Result<Library> {
-    let source_dir = source_dir.join(ASM_STANDARDS_DIR);
+    registry: &mut InMemoryPackageRegistry,
+) -> Result<()> {
+    let manifest_path = source_dir.join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST);
 
-    let standards_lib = assembler.assemble_library_from_dir(source_dir, STANDARDS_LIB_NAMESPACE)?;
+    let package = assembler
+        .for_project_at_path(manifest_path, registry)?
+        .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-    let output_file = target_dir.join("standards").with_extension(Library::LIBRARY_EXTENSION);
-    standards_lib.write_to_file(output_file).into_diagnostic()?;
+    package.write_masp_file(target_dir).into_diagnostic()?;
+    registry.cache_package(package).into_diagnostic()?;
 
-    Ok(Arc::unwrap_or_clone(standards_lib))
+    Ok(())
 }
 
 // COMPILE ACCOUNT COMPONENTS
 // ================================================================================================
 
-/// Compiles the account components in `source_dir` into MASL libraries and stores the compiled
-/// files in `target_dir`, preserving the subdirectory structure.
+/// Assembles each member of the account-components workspace in `source_dir` into a package and
+/// saves it to `target_dir`. Each file is named after its package (e.g.
+/// `miden-standards-auth-singlesig.masp`), so the include path used by `account_component_code!`
+/// is the package name.
 fn compile_account_components(
     source_dir: &Path,
     target_dir: &Path,
-    assembler: Assembler,
+    assembler: &Assembler,
+    registry: &mut InMemoryPackageRegistry,
+    source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
-    if !target_dir.exists() {
-        fs::create_dir_all(target_dir).unwrap();
-    }
+    let manifest =
+        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
+    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
 
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        let component_name = masm_file_path
-            .file_stem()
-            .expect("masm file should have a file stem")
-            .to_str()
-            .expect("file stem should be valid UTF-8")
-            .to_owned();
-
-        let component_source_code = fs::read_to_string(&masm_file_path)
-            .expect("reading the component's MASM source code should succeed");
-
-        // Build full library path from directory structure:
-        // e.g. faucets/fungible_faucet.masm ->
-        // miden::standards::components::faucets::fungible_faucet
-        let relative_path = masm_file_path
-            .strip_prefix(source_dir)
-            .expect("masm file should be inside source dir");
-        let mut library_path = ACCOUNT_COMPONENTS_LIB_NAMESPACE.to_owned();
-        for component in relative_path.with_extension("").components() {
-            let part = component.as_os_str().to_str().expect("valid UTF-8");
-            library_path.push_str("::");
-            library_path.push_str(part);
-        }
-        let named_source = NamedSource::new(library_path, component_source_code);
-
-        let component_library = assembler
+    for component in workspace.members() {
+        let package = assembler
             .clone()
-            .assemble_library([named_source])
-            .expect("library assembly should succeed");
+            .for_project(component.clone(), registry)?
+            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-        // Preserve the subdirectory structure: compute relative path from source_dir
-        let relative_dir = masm_file_path
-            .parent()
-            .and_then(|p| p.strip_prefix(source_dir).ok())
-            .unwrap_or(Path::new(""));
-
-        let output_dir = target_dir.join(relative_dir);
-        if !output_dir.exists() {
-            fs::create_dir_all(&output_dir).unwrap();
-        }
-
-        let component_file_path =
-            output_dir.join(component_name).with_extension(Library::LIBRARY_EXTENSION);
-        component_library.write_to_file(component_file_path).into_diagnostic()?;
+        package.write_masp_file(target_dir).into_diagnostic()?;
     }
 
     Ok(())
@@ -201,29 +277,6 @@ mod shared {
     use miden_assembly::diagnostics::{IntoDiagnostic, Result};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Returns a vector with paths to all MASM files in the specified directory and its
-    /// subdirectories.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            for entry in WalkDir::new(path) {
-                let entry = entry.into_diagnostic()?;
-                let file_path = entry.path().to_path_buf();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
-    }
 
     /// Returns true if the provided path resolves to a file with `.masm` extension.
     ///

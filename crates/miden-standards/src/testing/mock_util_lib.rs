@@ -1,7 +1,13 @@
 use alloc::sync::Arc;
 
-use miden_protocol::assembly::Library;
-use miden_protocol::assembly::diagnostics::NamedSource;
+use miden_protocol::assembly::{
+    DefaultSourceManager,
+    Library,
+    Linkage,
+    ModuleKind,
+    ModuleParser,
+    Path,
+};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -9,8 +15,8 @@ use crate::StandardsLib;
 
 const MOCK_UTIL_LIBRARY_CODE: &str = "
     use miden::protocol::output_note
-    use miden::protocol::note::NOTE_TYPE_PRIVATE
-    use miden::standards::wallets::basic->wallet
+    use {NOTE_TYPE_PRIVATE} from miden::protocol::note
+    use miden::standards::wallets::basic as wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
@@ -63,13 +69,17 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
 ";
 
 static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Arc::unwrap_or_clone(
-        TransactionKernel::assembler()
-            .with_dynamic_library(StandardsLib::default())
-            .expect("dynamically linking standards library should work")
-            .assemble_library([NamedSource::new("mock::util", MOCK_UTIL_LIBRARY_CODE)])
-            .expect("mock util library should be valid"),
-    )
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let root = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(Path::new("mock::util")), MOCK_UTIL_LIBRARY_CODE, source_manager.clone())
+        .expect("mock util library should parse");
+    let mut assembler = TransactionKernel::assembler_with_source_manager(source_manager);
+    assembler
+        .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
+        .expect("dynamically linking standards library should work");
+    *assembler
+        .assemble_library("mock-util", root, None::<&str>)
+        .expect("mock util library should be valid")
 });
 
 /// Returns the mock test [`Library`] under the `mock::util` namespace.

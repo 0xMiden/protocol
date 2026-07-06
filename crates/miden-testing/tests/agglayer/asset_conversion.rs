@@ -13,7 +13,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
 use primitive_types::U256;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::test_utils::{assert_execution_fails_with, execute_masm_script};
 
@@ -110,7 +110,7 @@ async fn test_scale_up_exceeds_max_scale() {
         end
     ";
 
-    assert_execution_fails_with(script_code, "maximum scaling factor is 18").await;
+    assert_execution_fails_with(script_code, &ERR_SCALE_AMOUNT_EXCEEDED_LIMIT).await;
 }
 
 // ================================================================================================
@@ -156,7 +156,7 @@ async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
 /// Assert that scaling down fails with the given y and expected error
 async fn assert_scale_down_fails(x: EthAmount, scale: u32, y: u64, expected_error: MasmError) {
     let script = build_scale_down_script(x, scale, y);
-    assert_execution_fails_with(&script, expected_error.message()).await;
+    assert_execution_fails_with(&script, &expected_error).await;
 }
 
 /// Test that y-1 and y+1 both fail appropriately

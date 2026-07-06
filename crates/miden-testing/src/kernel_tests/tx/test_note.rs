@@ -454,7 +454,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     let lock_timestamp = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
+    let timelock_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())

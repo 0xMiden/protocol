@@ -24,7 +24,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
-use rand::Rng;
+use rand::RngExt;
 
 // P2ID NOTE SETUPS
 // ================================================================================================
@@ -59,7 +59,8 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with fungible asset
             push.{RECIPIENT}
             push.{note_type}
@@ -92,7 +93,6 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .tx_script(tx_script)
-        .disable_debug_mode()
         .build()
 }
 
@@ -128,10 +128,7 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Tran
     let mock_chain = builder.build()?;
 
     // construct the transaction context
-    mock_chain
-        .build_tx_context(target_account.clone(), &[note.id()], &[])?
-        .disable_debug_mode()
-        .build()
+    mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
 }
 
 pub fn tx_consume_two_p2id_notes_falcon() -> Result<TransactionContext> {
@@ -169,7 +166,6 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
     // construct the transaction context
     mock_chain
         .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
-        .disable_debug_mode()
         .build()
 }
 
@@ -314,7 +310,6 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     let claim_tx_context = mock_chain
         .build_tx_context(bridge_account.id(), &[], &[claim_note])?
         .foreign_accounts(vec![faucet_foreign_inputs])
-        .disable_debug_mode()
         .build()?;
 
     Ok(claim_tx_context)
@@ -505,7 +500,6 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
         .add_note_script(burn_note_script)
         .foreign_accounts(vec![foreign_account_inputs])
-        .disable_debug_mode()
         .build()?;
 
     Ok(b2agg_tx_context)

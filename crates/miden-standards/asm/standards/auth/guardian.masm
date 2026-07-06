@@ -4,7 +4,7 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
-use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth::tx_policy
 use miden::standards::auth::signature

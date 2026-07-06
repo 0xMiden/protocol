@@ -65,7 +65,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// # use anyhow::Result;
 /// # use miden_protocol::{
 /// #    account::auth::AuthScheme,
-/// #    asset::{Asset, AssetCallbackFlag, FungibleAsset},
+/// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType,
 /// # };
 /// # use miden_testing::{Auth, MockChain};

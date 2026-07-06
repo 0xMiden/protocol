@@ -9,7 +9,7 @@ use miden_agglayer::errors::{
     ERR_ROLLUP_INDEX_NON_ZERO,
 };
 use miden_agglayer::{GlobalIndex, agglayer_library};
-use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::Program;
 use miden_testing::{ExecError, assert_execution_error};
@@ -35,11 +35,13 @@ fn assemble_process_global_index_program(global_index: GlobalIndex, proc_name: &
     );
 
     Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
+        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_dynamic_library(agglayer_library())
+        .with_package(Arc::new(agglayer_library()), Linkage::Dynamic)
         .unwrap()
-        .assemble_program(&script_code)
+        .assemble_program("agglayer-test-script", &script_code)
+        .unwrap()
+        .try_into_program()
         .unwrap()
 }
 

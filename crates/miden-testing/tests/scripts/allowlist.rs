@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -41,7 +41,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::with_basic_allowlist`] on both send and receive,
@@ -75,6 +75,7 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
@@ -172,7 +173,7 @@ async fn allow_receive_asset_succeeds_when_account_pre_allowed() -> anyhow::Resu
         [target_account.id()],
     )?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -202,7 +203,7 @@ async fn allow_receive_asset_fails_when_recipient_not_allowed() -> anyhow::Resul
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -232,7 +233,7 @@ async fn allow_then_receive_succeeds() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -267,7 +268,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
 
     let mock_chain = builder.build()?;
 
@@ -276,7 +277,8 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
@@ -323,8 +325,7 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
     )?;
 
     let amount: u64 = 50;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -407,8 +408,7 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
     let amount: u64 = 25;
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         other_account.id(),
@@ -466,7 +466,8 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0 push.0
 
             push.{recipient}

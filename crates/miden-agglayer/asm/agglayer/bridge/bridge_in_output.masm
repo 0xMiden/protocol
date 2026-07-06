@@ -1,15 +1,15 @@
-use agglayer::bridge::bridge_in::CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-use agglayer::bridge::bridge_in::CLAIM_PROOF_DATA_KEY_MEM_ADDR
+use {CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT} from agglayer::bridge::bridge_in
+use {CLAIM_PROOF_DATA_KEY_MEM_ADDR} from agglayer::bridge::bridge_in
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
-use miden::protocol::note::NOTE_TYPE_PUBLIC
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::note_tag
-use miden::standards::note_tag::DEFAULT_TAG
+use {DEFAULT_TAG} from miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
-use miden::standards::note::execution_hint::ALWAYS
+use {ALWAYS} from miden::standards::note::execution_hint
 
 # CONSTANTS
 # =================================================================================================
@@ -108,12 +108,6 @@ pub proc unlock_and_send
     # Miden claim amount. `asset::create_fungible_asset` is pure MASM (no FPI).
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, amount]
-
-    # TODO(#2963): callbacks bit is hardcoded to 0. If a bridge-owned faucet enables
-    # callbacks, the ASSET_KEY derived here will not match the asset the bridge actually
-    # holds, and `native_account::remove_asset` will panic on a legitimate withdrawal.
-    push.0 # enable_callbacks = 0
-    # => [0, faucet_id_suffix, faucet_id_prefix, amount]
 
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE]
@@ -214,12 +208,9 @@ proc write_mint_note_storage
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [native_amount, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # prepare stack for asset::create_fungible_asset: [enable_callbacks, suffix, prefix, amount]
-    # TODO(#2963): callbacks bit is hardcoded to 1 to match AggLayer faucets configured with
-    #  `AllowAll` transfer policies). We need to support the registration of both types of agglayer 
-    # faucets, with & without callbacks.
-    movdn.2 push.1
-    # => [1, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
+    # prepare stack for asset::create_fungible_asset: [suffix, prefix, amount]
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]

@@ -13,6 +13,7 @@ pub mod batch;
 pub mod block;
 pub mod errors;
 pub mod note;
+pub mod package;
 mod protocol;
 pub mod transaction;
 
@@ -37,14 +38,11 @@ pub use protocol::ProtocolLib;
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
     pub use miden_assembly::debuginfo::SourceManagerSync;
-    pub use miden_assembly::library::LibraryExport;
     pub use miden_assembly::{
         Assembler,
         DefaultSourceManager,
-        KernelLibrary,
-        Library,
-        Parse,
-        ParseOptions,
+        Linkage,
+        ModuleParser,
         Path,
         SourceFile,
         SourceId,
@@ -53,6 +51,13 @@ pub mod assembly {
         debuginfo,
         diagnostics,
         mast,
+    };
+    pub use miden_assembly_syntax::Parse;
+    pub use miden_mast_package::{
+        Package as KernelLibrary,
+        Package as Library,
+        PackageExport as LibraryExport,
+        ProcedureExport,
     };
 }
 
@@ -67,8 +72,10 @@ pub mod vm {
     pub use miden_core::advice::{AdviceInputs, AdviceMap};
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
+    pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};
     pub use miden_mast_package::{
         Package,
+        PackageDebugInfoError,
         PackageExport,
         PackageManifest,
         ProcedureExport,

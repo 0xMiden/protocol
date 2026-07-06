@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-policies-transfer-basic-allowlist"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::transfer::basic_allowlist"
+path      = "basic_allowlist.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

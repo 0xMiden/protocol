@@ -198,7 +198,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::tx_kernel_core::constants::MAX_OUTPUT_NOTES_PER_TX
+        use {{MAX_OUTPUT_NOTES_PER_TX}} from miden::tx_kernel_core::constants
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
 
@@ -910,7 +910,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with fungible asset 0
             push.{RECIPIENT}
             push.{note_type}
@@ -1031,7 +1032,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with one asset
             {output_note} drop
             # => []
@@ -1160,7 +1162,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             {create_note_0}
             {check_note_0}
 
@@ -1220,7 +1223,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1253,7 +1256,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {DEFAULT_TAG} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1286,7 +1289,8 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             exec.util::create_default_note
             # => [note_idx]
 
@@ -1344,7 +1348,8 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1414,7 +1419,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1592,7 +1598,8 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
 
         const DEST_PTR = 0x1000
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1703,7 +1710,8 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
 
         const ATTACHMENT_DEST_PTR = 2048
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1839,7 +1847,8 @@ async fn test_find_attachment(
 
         const DEST_PTR = 0x1000
 
-        begin
+        @transaction_script
+        pub proc main
             # the spawn note creates output note at index 0;
             # search for the target scheme on that note
             push.0
@@ -1923,7 +1932,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 

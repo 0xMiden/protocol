@@ -1,0 +1,32 @@
+# The MASM code of the Non-Fungible (NFT) Faucet Account Component.
+#
+# See the `NonFungibleFaucet` Rust type's documentation for more details. This component bundles
+# the non-fungible-faucet asset minting/burning procedures, the asset-status registry accessor,
+# and the token metadata accessors (name, description, logo URI, contract URI, mutability config)
+# into a single component.
+
+# Non-fungible token minting and burning
+pub use {
+    mint_and_send,
+    receive_and_burn,
+} from miden::standards::faucets::non_fungible
+
+# Non-fungible token symbol and asset status
+pub use {
+    get_asset_status,
+    get_symbol,
+} from miden::standards::faucets::non_fungible
+
+# Token metadata: mandatory name + optional description, logo, contract URI.
+# The shared `external_link` field is surfaced under the NFT-specific name `contract_uri`
+# (the OpenSea-style collection metadata pointer); it reuses the shared external_link storage.
+pub use {
+    get_mutability_config,
+    get_name,
+    is_description_mutable,
+    is_external_link_mutable as is_contract_uri_mutable,
+    is_logo_uri_mutable,
+    set_description,
+    set_external_link as set_contract_uri,
+    set_logo_uri,
+} from miden::standards::faucets

@@ -2,7 +2,6 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
-    AssetCallbackFlag,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -36,7 +35,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
@@ -71,7 +70,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
 
     let code = format!(
         r#"

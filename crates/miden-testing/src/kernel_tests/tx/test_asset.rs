@@ -1,6 +1,5 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
-    AssetCallbackFlag,
     AssetComposition,
     AssetId,
     AssetVaultKey,
@@ -256,14 +255,14 @@ async fn test_validate_fungible_asset(
 #[case::valid_none(0, None)]
 // Valid: composition=Fungible, callbacks=disabled.
 #[case::valid_fungible(METADATA_BYTE_FUNGIBLE, None)]
-// Valid: composition=Custom, callbacks=disabled.
+// Valid: composition=Custom.
 #[case::valid_custom(AssetComposition::Custom as u64, None)]
-// Valid: composition=None, callbacks=enabled (bit 2 set).
-#[case::valid_callbacks_enabled((AssetCallbackFlag::Enabled as u64) << 2, None)]
 // Metadata is not a valid u32 (does not fit in 32 bits).
 #[case::not_u32(u32::MAX as u64 + 1, Some(ERR_VAULT_ASSET_METADATA_NOT_U32))]
 // Metadata is not a valid byte.
 #[case::not_u8(u16::MAX as u64, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
+// Reserved bit 2 is set.
+#[case::reserved_bit_2_set(0b100, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Reserved bit 3 is set.
 #[case::reserved_bits_set(0b1000, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Composition value 3 is the unused bit pattern within the 2-bit field.
@@ -297,15 +296,14 @@ async fn test_validate_asset_metadata(
 }
 
 #[rstest::rstest]
-#[case::fungible_without_callbacks(AssetComposition::Fungible, AssetCallbackFlag::Disabled)]
-#[case::non_fungible_with_callbacks(AssetComposition::None, AssetCallbackFlag::Enabled)]
+#[case::fungible(AssetComposition::Fungible)]
+#[case::non_fungible(AssetComposition::None)]
 #[tokio::test]
-async fn test_key_to_asset_metadata(
+async fn test_key_to_callbacks_and_composition(
     #[case] composition: AssetComposition,
-    #[case] callbacks: AssetCallbackFlag,
 ) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition, callbacks)?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition)?;
 
     let code = format!(
         "
@@ -313,19 +311,17 @@ async fn test_key_to_asset_metadata(
 
         begin
             push.{ASSET_KEY}
-            exec.asset::key_to_callbacks_enabled
-            # => [callbacks_enabled, ASSET_KEY]
-
+            exec.asset::key_to_has_callbacks
+            # => [has_callbacks, ASSET_KEY]
             movdn.4
+            # => [ASSET_KEY, has_callbacks]
+
             exec.asset::key_to_composition
-            # => [asset_composition, ASSET_KEY, callbacks_enabled]
+            # => [asset_composition, ASSET_KEY, has_callbacks]
 
-            movdn.4 dropw
-            # => [asset_composition, callbacks_enabled]
-
-            # truncate stack
-            swapw dropw
-            # => [asset_composition, callbacks_enabled]
+            # drop the ASSET_KEY and one padding element to keep the stack within 16 elements
+            movdn.4 dropw swap drop swap drop
+            # => [asset_composition, has_callbacks]
         end
         ",
         ASSET_KEY = vault_key.to_word(),
@@ -340,8 +336,9 @@ async fn test_key_to_asset_metadata(
     );
     assert_eq!(
         exec_output.get_stack_element(1).as_canonical_u64(),
-        callbacks.as_u8() as u64,
-        "MASM asset::key_to_callbacks_enabled returned wrong value for {callbacks:?}"
+        vault_key.faucet_id().asset_callback_flag().as_u8() as u64,
+        "MASM asset::key_to_has_callbacks returned wrong value for {:?}",
+        vault_key.faucet_id().asset_callback_flag()
     );
 
     Ok(())

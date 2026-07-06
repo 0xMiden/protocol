@@ -17,6 +17,7 @@ use miden_protocol::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
+    AssetCallbackFlag,
     StorageSlot,
     StorageSlotName,
 };
@@ -65,7 +66,7 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(FUNGIBLE_FAUCET_CODE, "faucets/fungible_faucet.masl");
+account_component_code!(FUNGIBLE_FAUCET_CODE, "miden-standards-faucets-fungible-faucet.masp");
 
 // Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
 procedure_root!(
@@ -574,8 +575,10 @@ pub fn create_singlesig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
+    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(account_type)
+        .with_asset_callbacks(asset_callbacks)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
@@ -645,8 +648,10 @@ pub fn create_network_fungible_faucet(
         .expect("MintNote + BurnNote allowlist is non-empty")
         .with_allowed_tx_scripts(tx_script_allowlist);
 
+    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
+        .with_asset_callbacks(asset_callbacks)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
