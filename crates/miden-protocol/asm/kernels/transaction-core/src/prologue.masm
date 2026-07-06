@@ -655,7 +655,7 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [num_assets, ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N]
+#!   Advice stack: [num_assets, ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_N, ASSET_VALUE_N]
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack: []
@@ -663,7 +663,7 @@ end
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - num_assets is the number of note assets.
-#! - ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N are the note's assets.
+#! - ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_N, ASSET_VALUE_N are the note's assets.
 proc process_note_assets
     # Validate num_assets and setup commitment computation.
     # ---------------------------------------------------------------------------------------------
@@ -734,9 +734,9 @@ proc add_input_note_assets_to_vault
         dup.2
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        # load asset key and value
+        # load asset ID and value
         dup.1 exec.asset::load
-        # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
@@ -1156,8 +1156,6 @@ end
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
-#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.

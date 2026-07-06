@@ -3,7 +3,10 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
+- [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
+- [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - Added a non-fungible (NFT) faucet (`NonFungibleFaucet`): the asset value is an off-chain salted commitment `hash(user_data, salt)`, and an on-chain asset-status registry keyed by `[hash0, hash1, 0, 0]` enforces per-commitment uniqueness and permanent burn. Added `create_user_non_fungible_faucet` / `create_network_non_fungible_faucet` APIs, the `mint_nft` / `burn_nft` note scripts (`NonFungibleMintNote` / `NonFungibleBurnNote`), a `compute_commitment` helper, and reuses `TokenMetadata` (with `external_link` surfaced as `contract_uri`) and `TokenPolicyManager` for mint/burn/transfer policies ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Updated Miden VM dependencies to v0.24, Miden crypto dependencies to v0.27, and the MSRV to 1.96 ([#3064](https://github.com/0xMiden/protocol/issues/3064), [#3146](https://github.com/0xMiden/protocol/pull/3146)).
@@ -79,6 +82,7 @@
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
 - Optimized the multisig auth component MASM (unconditional loop entry where the counter is guaranteed non-zero, single-step `scheme_id` extraction in `get_signer_at`, and a stack read instead of a local reload in `update_signers_and_threshold`), and documented that growing the signer set does not re-scale existing per-procedure threshold overrides ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
+- Renamed the `Authority` config value slot, expressed the authority kind as a MASM `enum Authority : u8`, and enforced the canonical config-word encoding on read ([#3209](https://github.com/0xMiden/protocol/pull/3209)).
 - Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
 
 ### Fixes

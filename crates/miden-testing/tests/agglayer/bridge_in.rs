@@ -416,7 +416,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let mut destination_account = destination_account;
     destination_account.apply_patch(consume_executed_transaction.account_patch())?;
 
-    let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
+    let balance = destination_account.vault().get_balance(expected_asset.id())?;
     assert_eq!(
         balance.as_u64(),
         miden_claim_amount.as_canonical_u64(),
@@ -430,10 +430,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 ///
 /// Both faucets are registered in the bridge, so the only thing preventing faucet B from
 /// consuming faucet A's MINT note is the faucet bind itself. The MINT note embeds the full
-/// `ASSET` (`ASSET_KEY` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
+/// `ASSET` (`ASSET_ID` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
 /// asset for the consuming faucet and rejects it with
 /// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
-/// `ASSET_KEY`. Before this fix the MINT note carried only the amount, so faucet B would mint its
+/// `ASSET_ID`. Before this fix the MINT note carried only the amount, so faucet B would mint its
 /// own token and the cross-faucet consumption would succeed.
 #[tokio::test]
 async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()> {
@@ -607,7 +607,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // ATTACK: try to consume the MINT note against faucet_B (wrong faucet).
     //
-    // The MINT note's stored `ASSET_KEY` carries faucet_A's ID. faucet_B's `mint_and_send`
+    // The MINT note's stored `ASSET_ID` carries faucet_A's ID. faucet_B's `mint_and_send`
     // derives the asset for faucet_B, finds its key differs from the stored one, and rejects
     // the consumption.
     let attack_tx_context = mock_chain
@@ -1253,7 +1253,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     );
     bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
-        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
+        bridge_account.vault().get_balance(bridge_asset.id())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Bridge vault should hold the locked native asset before the claim"
     );
@@ -1341,7 +1341,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // Bridge vault is drained after the unlock.
     bridge_account.apply_patch(claim_executed.account_patch())?;
     assert_eq!(
-        bridge_account.vault().get_balance(expected_asset.vault_key())?,
+        bridge_account.vault().get_balance(expected_asset.id())?,
         AssetAmount::ZERO,
         "Bridge vault should be empty after the unlock"
     );
@@ -1364,7 +1364,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let mut destination_account = destination_account;
     destination_account.apply_patch(consume_executed.account_patch())?;
     assert_eq!(
-        destination_account.vault().get_balance(expected_asset.vault_key())?,
+        destination_account.vault().get_balance(expected_asset.id())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Destination account should receive the unlocked asset from the P2ID"
     );
@@ -1537,7 +1537,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .await?;
     bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
-        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
+        bridge_account.vault().get_balance(bridge_asset.id())?,
         AssetAmount::new(miden_claim_amount_u64.saturating_mul(2))?,
     );
     mock_chain.add_pending_executed_transaction(&lock_executed)?;
@@ -1566,7 +1566,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
     bridge_account.apply_patch(claim_executed_1.account_patch())?;
     assert_eq!(
-        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
+        bridge_account.vault().get_balance(bridge_asset.id())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Bridge vault should hold exactly the remaining half after the first unlock"
     );

@@ -43,7 +43,7 @@ use crate::errors::CodeBuilderError;
 ///
 ///     push.{note information}
 ///
-///     push.{ASSET_VALUE} push.{ASSET_KEY}
+///     push.{ASSET_VALUE} push.{ASSET_ID}
 ///     call.::miden::standards::faucets::fungible::mint_and_send
 ///     swapdw dropw dropw swapdw dropw dropw
 /// end
@@ -175,8 +175,8 @@ fn move_asset_to_note_body(
                 # => [note_idx, pad(7), note_idx, pad(16)]
 
                 push.{ASSET_VALUE}
-                push.{ASSET_KEY}
-                # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+                push.{ASSET_ID}
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
 
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 # => [pad(16), note_idx, pad(16)]
@@ -184,7 +184,7 @@ fn move_asset_to_note_body(
                 dropw dropw dropw dropw
                 # => [note_idx, pad(16)]\n
                 ",
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }
@@ -214,8 +214,8 @@ fn mint_and_send_note_body(
         body.push_str(&format!(
             "
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
 
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(29)]
@@ -223,7 +223,7 @@ fn mint_and_send_note_body(
             swapdw dropw dropw swapdw dropw dropw
             # => [note_idx, pad(13)]\n
             ",
-            ASSET_KEY = asset.to_key_word(),
+            ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
 

@@ -409,15 +409,15 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         for asset in note.assets().iter() {
             code += &format!(
                 r#"
-                dup padw movup.4 mem_loadw_le push.{ASSET_KEY}
-                assert_eqw.err="asset key mismatch"
+                dup padw movup.4 mem_loadw_le push.{ASSET_ID}
+                assert_eqw.err="asset ID mismatch"
 
                 dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le push.{ASSET_VALUE}
                 assert_eqw.err="asset value mismatch"
 
                 add.{ASSET_SIZE}
                 "#,
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             );
         }

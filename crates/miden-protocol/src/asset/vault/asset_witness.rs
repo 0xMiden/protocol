@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtProof;
 
-use super::vault_key::AssetVaultKey;
+use super::asset_id::AssetId;
 use crate::Word;
 use crate::asset::Asset;
 use crate::errors::AssetError;
@@ -24,72 +24,72 @@ use crate::utils::serde::{
 ///
 /// ## Guarantees
 ///
-/// This type guarantees that the raw key-value pairs it contains are all present in the
+/// This type guarantees that the raw ID-value pairs it contains are all present in the
 /// contained SMT proof (under their hashed form). Note that the inverse is not necessarily true:
 /// the proof may contain more entries than the witness because to prove inclusion of a given raw
-/// key A an [`SmtLeaf::Multiple`](miden_crypto::merkle::smt::SmtLeaf::Multiple) may be present
-/// that contains both keys hash(A) and hash(B). However, B may not be present in the key-value
+/// ID A an [`SmtLeaf::Multiple`](miden_crypto::merkle::smt::SmtLeaf::Multiple) may be present
+/// that contains both SMT keys hash(A) and hash(B). However, B may not be present in the ID-value
 /// pairs and this is a valid state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetWitness {
     proof: SmtProof,
-    /// Raw [`AssetVaultKey`]s -> asset value words, kept consistent with the proof's leaf entries.
-    entries: BTreeMap<AssetVaultKey, Word>,
+    /// Raw [`AssetId`]s -> asset value words, kept consistent with the proof's leaf entries.
+    entries: BTreeMap<AssetId, Word>,
 }
 
 impl AssetWitness {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AssetWitness`] from an SMT proof and a set of raw vault keys.
+    /// Creates a new [`AssetWitness`] from an SMT proof and a set of raw asset IDs.
     ///
-    /// For each key, looks up its hashed form in the proof and records the resulting value.
+    /// For each ID, looks up its hashed form in the proof and records the resulting value.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - any key's hashed form is not present in the proof.
-    /// - any of the resulting `(vault_key, value)` pairs do not form a valid asset.
+    /// - any ID's hashed form is not present in the proof.
+    /// - any of the resulting `(asset_id, value)` pairs do not form a valid asset.
     pub fn new(
         proof: SmtProof,
-        keys: impl IntoIterator<Item = AssetVaultKey>,
+        ids: impl IntoIterator<Item = AssetId>,
     ) -> Result<Self, AssetError> {
         let mut entries = BTreeMap::new();
 
-        for key in keys {
+        for id in ids {
             let value = proof
-                .get(&key.hash().as_word())
-                .ok_or(AssetError::AssetWitnessMissingKey { key })?;
+                .get(&id.hash().as_word())
+                .ok_or(AssetError::AssetWitnessMissingId { id })?;
 
-            // Validate that the (key, value) pair forms a valid asset (and skip empty entries).
+            // Validate that the (id, value) pair forms a valid asset (and skip empty entries).
             if !value.is_empty() {
-                Asset::from_key_value(key, value)
+                Asset::from_id_and_value(id, value)
                     .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
             }
 
-            entries.insert(key, value);
+            entries.insert(id, value);
         }
 
         Ok(Self { proof, entries })
     }
 
-    /// Creates a new [`AssetWitness`] from an SMT proof and a set of key-value pairs without
+    /// Creates a new [`AssetWitness`] from an SMT proof and a set of ID-value pairs without
     /// validating that the pairs form valid assets.
     ///
     /// Prefer [`AssetWitness::new`] whenever possible. See the type-level docs for the invariants
     /// callers must uphold.
     pub fn new_unchecked(
         proof: SmtProof,
-        key_values: impl IntoIterator<Item = (AssetVaultKey, Word)>,
+        id_values: impl IntoIterator<Item = (AssetId, Word)>,
     ) -> Self {
-        let entries: BTreeMap<AssetVaultKey, Word> = key_values.into_iter().collect();
+        let entries: BTreeMap<AssetId, Word> = id_values.into_iter().collect();
 
         #[cfg(debug_assertions)]
-        for (key, value) in &entries {
+        for (id, value) in &entries {
             debug_assert_eq!(
-                proof.get(&key.hash().as_word()),
+                proof.get(&id.hash().as_word()),
                 Some(*value),
-                "AssetWitness::new_unchecked: (key, value) pair does not match the proof",
+                "AssetWitness::new_unchecked: (id, value) pair does not match the proof",
             );
         }
 
@@ -104,20 +104,20 @@ impl AssetWitness {
         &self.proof
     }
 
-    /// Returns `true` if this [`AssetWitness`] authenticates the provided [`AssetVaultKey`], i.e.
+    /// Returns `true` if this [`AssetWitness`] authenticates the provided [`AssetId`], i.e.
     /// if its leaf index matches, `false` otherwise.
-    pub fn authenticates_asset_vault_key(&self, vault_key: AssetVaultKey) -> bool {
-        self.proof.leaf().index() == vault_key.hash().to_leaf_index()
+    pub fn authenticates_asset_id(&self, asset_id: AssetId) -> bool {
+        self.proof.leaf().index() == asset_id.hash().to_leaf_index()
     }
 
-    /// Searches for an [`Asset`] in the witness with the given `vault_key`.
-    pub fn find(&self, vault_key: AssetVaultKey) -> Option<Asset> {
-        let value = self.entries.get(&vault_key).copied()?;
+    /// Searches for an [`Asset`] in the witness with the given `asset_id`.
+    pub fn find(&self, asset_id: AssetId) -> Option<Asset> {
+        let value = self.entries.get(&asset_id).copied()?;
         if value.is_empty() {
             None
         } else {
             Some(
-                Asset::from_key_value(vault_key, value)
+                Asset::from_id_and_value(asset_id, value)
                     .expect("asset witness should track valid assets"),
             )
         }
@@ -125,26 +125,26 @@ impl AssetWitness {
 
     /// Returns an iterator over the [`Asset`]s in this witness.
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
-        self.entries.iter().filter_map(|(key, value)| {
+        self.entries.iter().filter_map(|(id, value)| {
             if value.is_empty() {
                 None
             } else {
                 Some(
-                    Asset::from_key_value(*key, *value)
+                    Asset::from_id_and_value(*id, *value)
                         .expect("asset witness should track valid assets"),
                 )
             }
         })
     }
 
-    /// Returns an iterator over the raw `(vault_key, value)` pairs tracked by this witness.
-    pub(super) fn entries(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
+    /// Returns an iterator over the raw `(asset_id, value)` pairs tracked by this witness.
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&AssetId, &Word)> {
         self.entries.iter()
     }
 
-    /// Decomposes the witness into its underlying [`SmtProof`] and the raw `(vault_key, value)`
+    /// Decomposes the witness into its underlying [`SmtProof`] and the raw `(asset_id, value)`
     /// entries it tracks.
-    pub(super) fn into_parts(self) -> (SmtProof, BTreeMap<AssetVaultKey, Word>) {
+    pub(super) fn into_parts(self) -> (SmtProof, BTreeMap<AssetId, Word>) {
         (self.proof, self.entries)
     }
 
@@ -174,12 +174,10 @@ impl Serializable for AssetWitness {
 impl Deserializable for AssetWitness {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let proof: SmtProof = source.read()?;
-        let num_keys: usize = source.read()?;
-        let keys = source
-            .read_many_iter::<AssetVaultKey>(num_keys)?
-            .collect::<Result<Vec<_>, _>>()?;
+        let num_ids: usize = source.read()?;
+        let ids = source.read_many_iter::<AssetId>(num_ids)?.collect::<Result<Vec<_>, _>>()?;
 
-        Self::new(proof, keys).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Self::new(proof, ids).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -198,22 +196,22 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
     };
 
-    /// Tests that constructing an asset witness fails if the (vault_key, value) pair stored in the
-    /// proof is inconsistent (here: a non-fungible value under a fungible vault key).
+    /// Tests that constructing an asset witness fails if the (asset_id, value) pair stored in the
+    /// proof is inconsistent (here: a non-fungible value under a fungible asset ID).
     #[test]
-    fn create_asset_witness_fails_on_vault_key_mismatch() -> anyhow::Result<()> {
+    fn create_asset_witness_fails_on_asset_id_mismatch() -> anyhow::Result<()> {
         let fungible_asset = FungibleAsset::mock(500);
         let non_fungible_asset = NonFungibleAsset::mock(&[1]);
 
-        // Manually build a proof at the fungible asset's hashed key but with a non-fungible value.
-        let fungible_key = fungible_asset.vault_key();
+        // Manually build a proof at the fungible asset's hashed ID but with a non-fungible value.
+        let fungible_id = fungible_asset.id();
         let inconsistent_smt = Smt::with_entries([(
-            fungible_key.hash().as_word(),
+            fungible_id.hash().as_word(),
             non_fungible_asset.to_value_word(),
         )])?;
-        let proof = inconsistent_smt.open(&fungible_key.hash().as_word());
+        let proof = inconsistent_smt.open(&fungible_id.hash().as_word());
 
-        let err = AssetWitness::new(proof, [fungible_key]).unwrap_err();
+        let err = AssetWitness::new(proof, [fungible_id]).unwrap_err();
 
         assert_matches!(err, AssetError::AssetWitnessInvalid(source) => {
             assert_matches!(*source, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
@@ -222,40 +220,40 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that constructing an asset witness fails if the provided raw key is not actually
+    /// Tests that constructing an asset witness fails if the provided raw asset ID is not actually
     /// present (in hashed form) in the SMT proof.
     #[test]
-    fn create_asset_witness_fails_on_missing_key() -> anyhow::Result<()> {
+    fn create_asset_witness_fails_on_missing_id() -> anyhow::Result<()> {
         let asset_in_vault =
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?, 200)?;
-        let other_key =
-            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?.vault_key();
+        let other_id =
+            FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?.id();
 
         let vault = AssetVault::new(&[asset_in_vault.into()])?;
-        let proof = vault.open(asset_in_vault.vault_key()).proof().clone();
+        let proof = vault.open(asset_in_vault.id()).proof().clone();
 
-        // The proof was opened at `asset_in_vault`'s hashed key, so a separate `other_key` won't
+        // The proof was opened at `asset_in_vault`'s hashed ID, so a separate `other_id` won't
         // be found in it.
-        let err = AssetWitness::new(proof, [other_key]).unwrap_err();
-        assert_matches!(err, AssetError::AssetWitnessMissingKey { key } => {
-            assert_eq!(key, other_key);
+        let err = AssetWitness::new(proof, [other_id]).unwrap_err();
+        assert_matches!(err, AssetError::AssetWitnessMissingId { id } => {
+            assert_eq!(id, other_id);
         });
 
         Ok(())
     }
 
     #[test]
-    fn asset_witness_authenticates_asset_vault_key() -> anyhow::Result<()> {
+    fn asset_witness_authenticates_asset_id() -> anyhow::Result<()> {
         let fungible_asset0 =
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?, 200)?;
         let fungible_asset1 =
             FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?;
 
         let vault = AssetVault::new(&[fungible_asset0.into()])?;
-        let witness0 = vault.open(fungible_asset0.vault_key());
+        let witness0 = vault.open(fungible_asset0.id());
 
-        assert!(witness0.authenticates_asset_vault_key(fungible_asset0.vault_key()));
-        assert!(!witness0.authenticates_asset_vault_key(fungible_asset1.vault_key()));
+        assert!(witness0.authenticates_asset_id(fungible_asset0.id()));
+        assert!(!witness0.authenticates_asset_id(fungible_asset1.id()));
 
         Ok(())
     }

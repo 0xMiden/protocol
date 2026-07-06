@@ -151,7 +151,7 @@ proc build_output_vault
 
             # read the output note asset from memory
             dup.1 exec.asset::load
-            # => [ASSET_KEY, ASSET_VALUE, output_vault_root_ptr, assets_start_ptr, assets_end_ptr,
+            # => [ASSET_ID, ASSET_VALUE, output_vault_root_ptr, assets_start_ptr, assets_end_ptr,
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
             # insert output note asset into output vault
