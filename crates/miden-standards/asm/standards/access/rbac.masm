@@ -507,11 +507,9 @@ proc set_membership_internal
     dup loc_store.ROLE_SYMBOL_LOC
     # => [role_symbol, account_suffix, account_prefix]
 
-    push.0
-    # => [0, role_symbol, account_suffix, account_prefix]
-
-    # Build the value word [is_member, 0, 0, 0] on top of the key word.
-    push.0.0.0 loc_load.MEMBERSHIP_FLAG_LOC
+    # padw supplies the value word's three trailing zeros and the key word's leading zero in a
+    # single instruction; loc_load then tops it with is_member to form the value word.
+    padw loc_load.MEMBERSHIP_FLAG_LOC
     # => [[is_member, 0, 0, 0], 0, role_symbol, account_suffix, account_prefix]
 
     swapw
