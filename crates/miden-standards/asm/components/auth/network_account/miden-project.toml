@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-network-account"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::network_account"
+path      = "network_account.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

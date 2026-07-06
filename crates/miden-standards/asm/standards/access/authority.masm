@@ -9,6 +9,17 @@ use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
 
+# TYPE ALIASES
+# =================================================================================================
+
+# Authority kind stored in the first element of `AUTHORITY_SLOT`, dispatched on by
+# `assert_authorized`. Mirrors the Rust `Authority` enum.
+enum Authority : u8 {
+    AUTH_CONTROLLED = 0,
+    OWNER_CONTROLLED = 1,
+    RBAC_CONTROLLED = 2,
+}
+
 # CONSTANTS
 # =================================================================================================
 
@@ -16,15 +27,11 @@ use miden::standards::access::rbac
 # authority is the discriminator (0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled).
 # is_frozen is the global emergency switch (0 = not frozen, 1 = frozen). While frozen,
 # `assert_authorized` panics for every gated procedure regardless of role or owner membership.
-pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
+pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_config")
 
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
-
-const AUTH_CONTROLLED = 0
-const OWNER_CONTROLLED = 1
-const RBAC_CONTROLLED = 2
 
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
 const UNFROZEN = 0
@@ -119,6 +126,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc freeze
     exec.ownable2step::assert_sender_is_owner
     # => [pad(16)]
@@ -141,6 +149,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call
+@account_procedure
 pub proc unfreeze
     exec.ownable2step::assert_sender_is_owner
     # => [pad(16)]

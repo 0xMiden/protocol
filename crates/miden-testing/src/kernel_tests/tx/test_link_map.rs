@@ -32,7 +32,7 @@ async fn insertion() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-      use $kernel::link_map
+      use miden::tx_kernel_core::link_map
 
       const MAP_PTR={map_ptr}
 
@@ -524,7 +524,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
 
     let code = format!(
         r#"
-      use $kernel::link_map
+      use miden::tx_kernel_core::link_map
       begin
           {test_code}
       end
@@ -603,7 +603,7 @@ fn generate_updates(
 
     entries
         .iter()
-        .choose_multiple(&mut rng, num_updates)
+        .sample(&mut rng, num_updates)
         .into_iter()
         .map(|(key, _)| (*key, (rand_value::<Word>(), rand_value::<Word>())))
         .collect()

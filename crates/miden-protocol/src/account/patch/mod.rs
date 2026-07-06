@@ -323,8 +323,8 @@ impl AccountPatch {
     ///   which uses `domain = 1`).
     /// - Asset Patch
     ///   - For each asset whose value has changed compared to the initial state of the transaction,
-    ///     including if it was removed, sorted by its vault key:
-    ///     - Append `[ASSET_KEY, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
+    ///     including if it was removed, sorted by its asset ID:
+    ///     - Append `[ASSET_ID, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
     ///       of the asset (for updates) or the empty word (for removals).
     ///     - Append `[[domain = 4, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
     ///       `num_changed_assets` is the number of assets that were appended. Note that this is a
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(account.code(), &code);
         assert_eq!(account.nonce(), Felt::ONE);
         assert_eq!(account.storage().get_item(&slot_name)?, slot_value);
-        assert_eq!(account.vault().get(asset.vault_key()), Some(asset));
+        assert_eq!(account.vault().get(asset.id()), Some(asset));
 
         // Roundtrip back to a patch should reproduce the original.
         let roundtripped_patch = AccountPatch::try_from(account)?;
@@ -895,7 +895,7 @@ mod tests {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let asset_initial: Asset = FungibleAsset::mock(100);
         let asset_updated: Asset = FungibleAsset::mock(250);
-        assert_eq!(asset_initial.vault_key(), asset_updated.vault_key());
+        assert_eq!(asset_initial.id(), asset_updated.id());
 
         let mut patch = AccountPatch::new(
             account_id,
@@ -916,7 +916,7 @@ mod tests {
 
         assert_eq!(patch.vault().num_assets(), 1);
         assert_eq!(
-            patch.vault().as_map().get(&asset_updated.vault_key()).copied(),
+            patch.vault().as_map().get(&asset_updated.id()).copied(),
             Some(asset_updated.to_value_word())
         );
 

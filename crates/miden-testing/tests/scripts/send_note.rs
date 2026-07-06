@@ -3,7 +3,7 @@ use core::slice;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
     Note,
@@ -114,13 +114,13 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     // Assert that the non-fungible asset was removed
     let vault_patch = executed_transaction.account_patch().vault();
     assert_eq!(
-        vault_patch.removed_asset_keys().count(),
+        vault_patch.removed_asset_ids().count(),
         1,
         "the non-fungible asset should have been completely removed"
     );
     assert_eq!(
-        vault_patch.removed_asset_keys().next().unwrap(),
-        &sent_asset0.vault_key(),
+        vault_patch.removed_asset_ids().next().unwrap(),
+        &sent_asset0.id(),
         "the non-fungible asset should have been completely removed"
     );
 
@@ -170,9 +170,7 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
         .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(
-        FungibleAsset::new(sender_fungible_faucet_account.id(), 10)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled),
+        FungibleAsset::new(sender_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();

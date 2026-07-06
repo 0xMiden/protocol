@@ -54,7 +54,7 @@ pub(crate) static SYMBOL_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-/// Storage slot holding the asset-status registry map (`[asset_id_suffix, asset_id_prefix, 0, 0]`
+/// Storage slot holding the asset-status registry map (`[token_id_suffix, token_id_prefix, 0, 0]`
 /// -> `[status, 0, 0, 0]`) for a [`NonFungibleFaucet`].
 pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
@@ -64,7 +64,10 @@ pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(NON_FUNGIBLE_FAUCET_CODE, "faucets/non_fungible_faucet.masl");
+account_component_code!(
+    NON_FUNGIBLE_FAUCET_CODE,
+    "miden-standards-faucets-non-fungible-faucet.masp"
+);
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_MINT_AND_SEND,
@@ -103,10 +106,11 @@ procedure_root!(
 
 /// An [`AccountComponent`] implementing a non-fungible (NFT) faucet.
 ///
-/// The asset value is the off-chain commitment `hash(user_data, salt)`; the asset identity is
-/// `(hash0, hash1)`. Uniqueness is enforced on-chain by an asset-status registry keyed by
-/// `[hash0, hash1, 0, 0]`: a commitment can be issued at most once, and once burned it is
-/// permanently consumed.
+/// The asset value is the off-chain commitment `hash(user_data, salt)`; the NFT's token ID is
+/// `(hash0, hash1)` - the asset class the protocol derives from those first two elements, which
+/// uniquely identifies each NFT within the faucet. Uniqueness is enforced on-chain by an
+/// asset-status registry keyed by `[hash0, hash1, 0, 0]`: a commitment can be issued at most once,
+/// and once burned it is permanently consumed.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::non_fungible` plus the shared
 /// token metadata accessors. The procedures are:
@@ -285,8 +289,8 @@ impl NonFungibleFaucet {
         (
             Self::asset_status_slot().clone(),
             StorageSlotSchema::map(
-                "Asset status registry. Key is the asset id padded to a word \
-                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status (0 = not issued, \
+                "Asset status registry. Key is the token ID padded to a word \
+                 `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, \
                  1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
                 SchemaType::native_word(),
                 SchemaType::native_felt(),
@@ -402,9 +406,11 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The caller passes a fully-configured [`AuthSingleSigAcl`]; its trigger procedure list must
-/// cover every authority-gated setter (`mint_and_send`, the metadata setters, the policy setters,
-/// and `pause` / `unpause`).
+/// The caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list
+/// semantics, every authority-gated setter (`mint_and_send`, the metadata setters, the policy
+/// setters, and `pause` / `unpause`) requires a signature by default. A setter only becomes
+/// callable without a signature if its root is explicitly added to the exempt set, so
+/// authority-gated setters must never be exempted.
 pub fn create_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,

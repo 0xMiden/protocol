@@ -91,7 +91,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -171,7 +171,7 @@ fn note_creation_script(tag: Felt) -> String {
     format!(
         "
             use miden::protocol::output_note
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -198,9 +198,9 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
-        use $kernel::memory
-        use $kernel::prologue
+        use {{MAX_OUTPUT_NOTES_PER_TX}} from miden::tx_kernel_core::constants
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             push.MAX_OUTPUT_NOTES_PER_TX
@@ -288,7 +288,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         use miden::protocol::tx
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         #! Since we execute in the kernel context, we write to local memory rather than to global
         #! kernel memory to avoid accidental overwrites.
@@ -353,11 +353,11 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         recipient_1 = output_note_1.recipient().digest(),
         tag_1 = output_note_1.metadata().tag(),
-        ASSET_1_KEY = asset_1.to_key_word(),
+        ASSET_1_KEY = asset_1.to_id_word(),
         ASSET_1_VALUE = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         tag_2 = output_note_2.metadata().tag(),
-        ASSET_2_KEY = asset_2.to_key_word(),
+        ASSET_2_KEY = asset_2.to_id_word(),
         ASSET_2_VALUE = asset_2.to_value_word(),
         store_attachment_words = store_attachment_words,
         num_attachment_words = num_attachment_words,
@@ -434,7 +434,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -451,8 +451,8 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, ASSET_VALUE, note_idx]
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE, note_idx]
 
             call.output_note::add_asset
             # => []
@@ -464,7 +464,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         recipient = recipient,
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -472,8 +472,8 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset.to_key_word(),
-        "asset key must be stored at the correct memory location",
+        asset.to_id_word(),
+        "asset ID must be stored at the correct memory location",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 4),
@@ -504,7 +504,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::protocol::output_note
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -521,7 +521,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
 
             dup
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.output_note::add_asset
             # => [note_idx]
 
@@ -549,13 +549,13 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         recipient = recipient,
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
-        ASSET2_KEY = asset_2.to_key_word(),
+        ASSET2_KEY = asset_2.to_id_word(),
         ASSET2_VALUE = asset_2.to_value_word(),
-        ASSET3_KEY = asset_3.to_key_word(),
+        ASSET3_KEY = asset_3.to_id_word(),
         ASSET3_VALUE = asset_3.to_value_word(),
-        ASSET4_KEY = non_fungible_asset.to_key_word(),
+        ASSET4_KEY = non_fungible_asset.to_id_word(),
         ASSET4_VALUE = non_fungible_asset.to_value_word(),
     );
 
@@ -571,8 +571,8 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset.to_key_word(),
-        "asset key must be stored at the correct memory location",
+        asset.to_id_word(),
+        "asset ID must be stored at the correct memory location",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -586,8 +586,8 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         exec_output.get_kernel_mem_word(
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE
         ),
-        asset_2_plus_3.to_key_word(),
-        "asset key must be stored at the correct memory location",
+        asset_2_plus_3.to_id_word(),
+        "asset ID must be stored at the correct memory location",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -604,8 +604,8 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         exec_output.get_kernel_mem_word(
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE * 2
         ),
-        non_fungible_asset.to_key_word(),
-        "asset key must be stored at the correct memory location",
+        non_fungible_asset.to_id_word(),
+        "asset ID must be stored at the correct memory location",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -631,7 +631,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
 
         begin
@@ -646,14 +646,14 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
 
             dup
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
             exec.output_note::add_asset
             # => [note_idx]
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.output_note::add_asset
             # => []
         end
@@ -661,7 +661,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
         recipient = recipient,
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
-        ASSET_KEY = non_fungible_asset.to_key_word(),
+        ASSET_ID = non_fungible_asset.to_id_word(),
         ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
@@ -706,15 +706,15 @@ async fn test_add_assets_around_max_per_note(
             add_assets_code.push_str("dup\n");
         }
         add_assets_code.push_str(&format!(
-            "push.{ASSET_VALUE}\npush.{ASSET_KEY}\nexec.output_note::add_asset\n",
-            ASSET_KEY = asset.to_key_word(),
+            "push.{ASSET_VALUE}\npush.{ASSET_ID}\nexec.output_note::add_asset\n",
+            ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
     }
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
 
         begin
@@ -793,7 +793,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
     let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
         use miden::protocol::note
         use miden::core::sys
@@ -910,7 +910,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with fungible asset 0
             push.{RECIPIENT}
             push.{note_type}
@@ -978,13 +979,13 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         note_type = NoteType::Public as u8,
         tag = output_note_1.metadata().tag(),
         ASSET_0_VALUE = fungible_asset_0.to_value_word(),
-        ASSET_0_KEY = fungible_asset_0.to_key_word(),
+        ASSET_0_KEY = fungible_asset_0.to_id_word(),
         // first data request
         COMPUTED_ASSETS_COMMITMENT_0 = output_note_0.assets().commitment(),
         assets_number_0 = output_note_0.assets().num_assets(),
         // second data request
         ASSET_1_VALUE = fungible_asset_1.to_value_word(),
-        ASSET_1_KEY = fungible_asset_1.to_key_word(),
+        ASSET_1_KEY = fungible_asset_1.to_id_word(),
         COMPUTED_ASSETS_COMMITMENT_1 = output_note_1.assets().commitment(),
         assets_number_1 = output_note_1.assets().num_assets(),
     );
@@ -1031,7 +1032,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with one asset
             {output_note} drop
             # => []
@@ -1120,12 +1122,12 @@ async fn test_get_assets() -> anyhow::Result<()> {
                 r#"
                     # load the asset stored in memory
                     padw dup.4 mem_loadw_le
-                    # => [STORED_ASSET_KEY, dest_ptr]
+                    # => [STORED_ASSET_ID, dest_ptr]
 
-                    # assert the asset key matches
-                    push.{NOTE_ASSET_KEY}
-                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
-                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # assert the asset ID matches
+                    push.{NOTE_ASSET_ID}
+                    assert_eqw.err="expected asset ID at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_ID}"
                     # => [dest_ptr]
 
                     # load the asset stored in memory
@@ -1142,7 +1144,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
                     add.{ASSET_SIZE}
                     # => [dest_ptr+ASSET_SIZE]
                 "#,
-                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_ID = asset.to_id_word(),
                 NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
@@ -1160,7 +1162,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             {create_note_0}
             {check_note_0}
 
@@ -1220,8 +1223,8 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -1253,8 +1256,8 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use {DEFAULT_TAG} from miden::standards::note_tag
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -1286,7 +1289,8 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             exec.util::create_default_note
             # => [note_idx]
 
@@ -1344,7 +1348,8 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1414,7 +1419,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
         "
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1592,7 +1598,8 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
 
         const DEST_PTR = 0x1000
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1703,7 +1710,8 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
 
         const ATTACHMENT_DEST_PTR = 2048
 
-        begin
+        @transaction_script
+        pub proc main
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
@@ -1839,7 +1847,8 @@ async fn test_find_attachment(
 
         const DEST_PTR = 0x1000
 
-        begin
+        @transaction_script
+        pub proc main
             # the spawn note creates output note at index 0;
             # search for the target scheme on that note
             push.0
@@ -1923,8 +1932,8 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
+        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use miden::tx_kernel_core::prologue
         use mock::util
 
         begin
@@ -2001,7 +2010,7 @@ async fn test_output_note_index_out_of_bounds(
         use miden::protocol::output_note
         use mock::util
 
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -2058,12 +2067,12 @@ fn create_output_note(note: &Note) -> String {
             # move the asset to the note
             dup
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [note_idx]
         ",
-            ASSET_KEY = asset.to_key_word(),
+            ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word()
         ));
     }

@@ -5,8 +5,7 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
@@ -19,7 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
@@ -289,7 +288,7 @@ where
         &self,
         active_account_id: AccountId,
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let asset_witnesses = self
             .base_host
@@ -297,12 +296,12 @@ where
             .get_vault_asset_witnesses(
                 active_account_id,
                 vault_root,
-                BTreeSet::from_iter([asset_key]),
+                BTreeSet::from_iter([asset_id]),
             )
             .await
             .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
                 vault_root,
-                asset_key,
+                asset_id,
                 source: err,
             })?;
 
@@ -439,7 +438,10 @@ where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
     }
@@ -508,12 +510,12 @@ where
                 TransactionEvent::AccountVaultBeforeAssetAccess {
                     active_account_id,
                     vault_root,
-                    asset_key,
+                    asset_id,
                 } => {
                     self.on_account_vault_asset_witness_requested(
                         active_account_id,
                         vault_root,
-                        asset_key,
+                        asset_id,
                     )
                     .await
                 },

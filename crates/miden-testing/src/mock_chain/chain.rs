@@ -63,7 +63,7 @@ use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder}
 /// # use anyhow::Result;
 /// # use miden_protocol::{
 /// #    account::auth::AuthScheme,
-/// #    asset::{Asset, AssetCallbackFlag, FungibleAsset},
+/// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType,
 /// # };
 /// # use miden_testing::{Auth, MockChain};
@@ -119,7 +119,7 @@ use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder}
 ///     mock_chain
 ///         .committed_account(receiver.id())?
 ///         .vault()
-///         .get_balance(fungible_asset.vault_key())?,
+///         .get_balance(fungible_asset.id())?,
 ///     fungible_asset.amount()
 /// );
 /// # Ok(())

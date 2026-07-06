@@ -6,7 +6,6 @@ use miden_core::prettier::PrettyPrint;
 use miden_crypto_derive::WordWrapper;
 use miden_processor::mast::{MastNode, MastNodeExt, MastNodeId};
 
-use super::Felt;
 use crate::Word;
 use crate::utils::serde::{
     ByteReader,

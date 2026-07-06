@@ -40,6 +40,22 @@ pub enum AuthScheme {
     Falcon512Poseidon2 = FALCON512_POSEIDON2,
 
     /// ECDSA signature scheme over secp256k1 curve using Keccak to hash the messages when signing.
+    ///
+    /// # Privacy
+    ///
+    /// Unlike [`Falcon512Poseidon2`](Self::Falcon512Poseidon2), which is verified entirely
+    /// in-circuit, this scheme is verified via a precompile. Under the current native
+    /// re-verification model, the precompile calldata - the raw 33-byte compressed secp256k1 public
+    /// key and the 65-byte signature - must be carried inside the transaction proof for it to
+    /// verify: the verifier recomputes the precompile transcript from that calldata and binds it
+    /// into the proof's public inputs, so it cannot be stripped or withheld. As a result the public
+    /// key and signature are disclosed to the node operator and to any party on the transaction
+    /// submission or gossip path, even though the account commits on-chain only to `Poseidon2(pk)`.
+    ///
+    /// This means `EcdsaK256Keccak` does not provide the public-key privacy that commitment-based
+    /// storage otherwise implies. Integrators requiring signer-key privacy should select
+    /// [`Falcon512Poseidon2`](Self::Falcon512Poseidon2) instead, which emits no public-key or
+    /// signature calldata.
     EcdsaK256Keccak = ECDSA_K256_KECCAK,
 }
 
@@ -127,18 +143,26 @@ impl AuthSecretKey {
 
     /// Generates an Falcon512Poseidon2 secrete key using the provided random number generator.
     pub fn new_falcon512_poseidon2_with_rng<R: Rng>(rng: &mut R) -> Self {
-        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng(rng))
+        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng::<R>(rng))
     }
 
     /// Generates an EcdsaK256Keccak secret key from the OS-provided randomness.
+    ///
+    /// Note: the EcdsaK256Keccak scheme discloses the signer's public key and signature at proving
+    /// time and therefore does not provide public-key privacy. See
+    /// [`AuthScheme::EcdsaK256Keccak`] for details.
     #[cfg(feature = "std")]
     pub fn new_ecdsa_k256_keccak() -> Self {
         Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::new())
     }
 
     /// Generates an EcdsaK256Keccak secret key using the provided random number generator.
+    ///
+    /// Note: the EcdsaK256Keccak scheme discloses the signer's public key and signature at proving
+    /// time and therefore does not provide public-key privacy. See
+    /// [`AuthScheme::EcdsaK256Keccak`] for details.
     pub fn new_ecdsa_k256_keccak_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
-        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng(rng))
+        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng::<R>(rng))
     }
 
     /// Generates a new secret key for the specified authentication scheme using the provided

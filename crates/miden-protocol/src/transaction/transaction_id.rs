@@ -3,7 +3,7 @@ use core::fmt::{Debug, Display};
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
+use super::{Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

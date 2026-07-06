@@ -7,7 +7,7 @@ use crate::procedure_root;
 // CODE INSPECTION
 // ================================================================================================
 
-account_component_code!(CODE_INSPECTION_CODE, "metadata/code_inspection.masl");
+account_component_code!(CODE_INSPECTION_CODE, "miden-standards-metadata-code-inspection.masp");
 
 // Initialize the procedure root of the `has_procedure` procedure only once.
 procedure_root!(

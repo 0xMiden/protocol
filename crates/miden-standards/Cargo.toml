@@ -29,12 +29,15 @@ rand      = { optional = true, workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-fs-err         = { workspace = true }
-miden-assembly = { workspace = true }
-miden-core-lib = { workspace = true }
-miden-protocol = { workspace = true }
-regex          = { workspace = true }
-walkdir        = { workspace = true }
+fs-err                 = { workspace = true }
+miden-assembly         = { features = ["std"], workspace = true }
+miden-core-lib         = { workspace = true }
+miden-mast-package     = { features = ["std"], workspace = true }
+miden-package-registry = { features = ["resolver", "std"], workspace = true }
+miden-project          = { features = ["serde", "std"], workspace = true }
+miden-protocol         = { workspace = true }
+regex                  = { workspace = true }
+walkdir                = { workspace = true }
 
 [dev-dependencies]
 anyhow         = { workspace = true }
@@ -45,6 +48,3 @@ miden-protocol = { features = ["testing"], workspace = true }
 # enable the `testing` feature. This is a workaround for Cargo's lack of test-specific features.
 # See: https://github.com/rust-lang/cargo/issues/2911#issuecomment-1483256987
 miden-standards = { features = ["testing"], path = "." }
-
-[package.metadata.cargo-shear]
-ignored = ["miden-core-lib"]

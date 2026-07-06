@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-policies-mint-owner-controlled-owner-only"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::mint::owner_controlled::owner_only"
+path      = "owner_only.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

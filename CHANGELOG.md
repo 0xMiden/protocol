@@ -3,8 +3,13 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
+- Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
+- [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
+- [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - Added a non-fungible (NFT) faucet (`NonFungibleFaucet`): the asset value is an off-chain salted commitment `hash(user_data, salt)`, and an on-chain asset-status registry keyed by `[hash0, hash1, 0, 0]` enforces per-commitment uniqueness and permanent burn. Added `create_user_non_fungible_faucet` / `create_network_non_fungible_faucet` APIs, the `mint_nft` / `burn_nft` note scripts (`NonFungibleMintNote` / `NonFungibleBurnNote`), a `compute_commitment` helper, and reuses `TokenMetadata` (with `external_link` surfaced as `contract_uri`) and `TokenPolicyManager` for mint/burn/transfer policies ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
+- [BREAKING] Updated Miden VM dependencies to v0.24, Miden crypto dependencies to v0.27, and the MSRV to 1.96 ([#3064](https://github.com/0xMiden/protocol/issues/3064), [#3146](https://github.com/0xMiden/protocol/pull/3146)).
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `MintNote` marker type and its `MintNote::create` factory with a struct built via a `bon` typestate builder (`MintNote::builder()`); a `MintNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `BurnNote` marker type and its `BurnNote::create` factory with a struct built via a `bon` typestate builder (`BurnNote::builder()`); a `BurnNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
@@ -16,6 +21,7 @@
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
@@ -38,6 +44,7 @@
 - Optimized `rbac::grant_role_internal` and `rbac::revoke_role_internal` by removing the redundant membership read and rearranging the stack ([#3090](https://github.com/0xMiden/protocol/pull/3090)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Flipped `AuthSingleSigAcl` ACL to an exempt list: every called procedure now requires a signature unless its root is in `exempt_procedures` [#3065](https://github.com/0xMiden/protocol/pull/3065).
+- [BREAKING] Removed the redundant `all_authority_gated_setter_roots` helper and the per-procedure threshold wiring it in `user_faucet_multisig` / `user_faucet_guarded`, and corrected the fungible and non-fungible faucet factory documents to describe `AuthSingleSigAcl`'s exempt-list ([#3180](https://github.com/0xMiden/protocol/pull/3180)).
 - [BREAKING] Changed `asset_vault::peek_asset` to accept a pre-hashed `ASSET_KEY_HASH` instead of a raw `ASSET_KEY`; fungible add/remove now hash the vault key once internally, eliminating a redundant `poseidon2::hash` per operation ([#3073](https://github.com/0xMiden/protocol/pull/3073)).
 - Added regression tests ensuring a `TokenPolicyManager` with only reserved send/receive policies installs the protocol reserved asset callback slots, so `has_callbacks` is correct from creation and minted assets carry the callback flag ([#3091](https://github.com/0xMiden/protocol/pull/3091)).
 - Fixed the `TokenPolicyManager` `get_mint_policy` / `get_burn_policy` / `get_send_policy` / `get_receive_policy` getters to align the 16-felt `call` ABI. ([#3114](https://github.com/0xMiden/protocol/pull/3114)).
@@ -47,6 +54,8 @@
 - [BREAKING] Added GER removal mechanism with a dedicated `ger_remover` role, `remove_ger` MASM procedure, `REMOVE_GER` note script, `RemoveGerNote` Rust helper, and a running keccak256 removed-GER hash chain; `AggLayerBridge::new`, `create_bridge_account`, and `create_existing_bridge_account` now take a `ger_remover_id` argument ([#2837](https://github.com/0xMiden/protocol/pull/2837)).
 - [BREAKING] Unified the fungible and non-fungible asset vault deltas into a single asset delta, changing the on-chain account delta commitment layout ([#3038](https://github.com/0xMiden/protocol/pull/3038)).
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
+- [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
+- [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
@@ -68,6 +77,13 @@
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
 - Introduced `MockTransactionBuilder`, created via `MockChain::build_transaction` ([#3172](https://github.com/0xMiden/protocol/pull/3172)).
+- [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
+- Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
+- [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
+- [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
+- Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
+- Renamed the `Authority` config value slot, expressed the authority kind as a MASM `enum Authority : u8`, and enforced the canonical config-word encoding on read ([#3209](https://github.com/0xMiden/protocol/pull/3209)).
+- Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
 
 ### Fixes
 
@@ -75,6 +91,8 @@
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
+- Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
+- Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
 
 ## v0.15.2 (2026-06-05)
 

@@ -24,7 +24,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
 
-account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
+account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -116,6 +116,15 @@ impl AuthMultisigConfig {
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
+///
+/// # Privacy
+///
+/// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
+/// at proving time and therefore do not get public-key privacy; approvers using
+/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
+///
+/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
+/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
 ///
 /// # Security: private accounts and state withholding
 ///

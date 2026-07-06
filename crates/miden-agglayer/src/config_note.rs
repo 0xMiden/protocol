@@ -9,10 +9,9 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -27,6 +26,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use miden_protocol::utils::serde::Deserializable;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
@@ -38,7 +38,7 @@ use crate::{EthAddress, MetadataHash};
 // Initialize the CONFIG_AGG_BRIDGE note script only once
 static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/config_agg_bridge.masl"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/config_agg_bridge.masp"));
     let library = Library::read_from_bytes(bytes)
         .expect("shipped CONFIG_AGG_BRIDGE script library is well-formed");
     NoteScript::from_library(&library).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")

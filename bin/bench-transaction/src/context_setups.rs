@@ -24,22 +24,26 @@ use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
-use rand::Rng;
+use rand::RngExt;
 
 // P2ID NOTE SETUPS
 // ================================================================================================
 
+pub fn tx_create_single_p2id_note_falcon() -> Result<TransactionContext> {
+    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+}
+
+pub fn tx_create_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+    tx_create_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
+}
+
 /// Returns the transaction context which could be used to run the transaction which creates a
 /// single P2ID note.
-pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
+fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        [fungible_asset],
-    )?;
+    let account = builder
+        .add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme }, [fungible_asset])?;
 
     let output_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -55,7 +59,8 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         use miden::protocol::output_note
         use miden::core::sys
 
-        begin
+        @transaction_script
+        pub proc main
             # create an output note with fungible asset
             push.{RECIPIENT}
             push.{note_type}
@@ -66,7 +71,7 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
             # move the asset to the note
             dup
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [note_idx]
 
@@ -77,7 +82,7 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         RECIPIENT = output_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note.metadata().tag(),
-        ASSET_KEY = fungible_asset.to_key_word(),
+        ASSET_ID = fungible_asset.to_id_word(),
         ASSET_VALUE = fungible_asset.to_value_word(),
     );
 
@@ -88,7 +93,6 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .tx_script(tx_script)
-        .disable_debug_mode()
         .build()
 }
 
@@ -124,20 +128,23 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Tran
     let mock_chain = builder.build()?;
 
     // construct the transaction context
-    mock_chain
-        .build_tx_context(target_account.clone(), &[note.id()], &[])?
-        .disable_debug_mode()
-        .build()
+    mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
+}
+
+pub fn tx_consume_two_p2id_notes_falcon() -> Result<TransactionContext> {
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
+}
+
+pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<TransactionContext> {
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
 /// Returns the transaction context which could be used to run the transaction which consumes two
 /// P2ID notes into an existing basic wallet.
-pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
+fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme })?;
     let fungible_asset_1: Asset = FungibleAsset::mock(100);
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
@@ -159,7 +166,6 @@ pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
     // construct the transaction context
     mock_chain
         .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
-        .disable_debug_mode()
         .build()
 }
 
@@ -304,7 +310,6 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     let claim_tx_context = mock_chain
         .build_tx_context(bridge_account.id(), &[], &[claim_note])?
         .foreign_accounts(vec![faucet_foreign_inputs])
-        .disable_debug_mode()
         .build()?;
 
     Ok(claim_tx_context)
@@ -495,7 +500,6 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
         .add_note_script(burn_note_script)
         .foreign_accounts(vec![foreign_account_inputs])
-        .disable_debug_mode()
         .build()?;
 
     Ok(b2agg_tx_context)

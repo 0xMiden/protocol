@@ -100,7 +100,7 @@ Define every item from Inputs and Outputs:
 #! Where:
 #! - note_index is the index of the input note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID.
-#! - ASSET_KEY is the vault key of the asset [0, 0, faucet_id_suffix, faucet_id_prefix].
+#! - ASSET_ID is the asset ID of the asset [0, 0, faucet_id_suffix, faucet_id_prefix].
 #! - balance is the fungible asset balance in the vault.
 ```
 
@@ -129,7 +129,7 @@ pub proc get_max_supply
 
 No `Where:` is needed: the single named output `max_supply` is already identified by the Description. If you would otherwise write `#! - max_supply is the maximum supply.`, skip it.
 
-Add `Where:` whenever any item needs description beyond what the Description line conveys — different name, additional constraint, composition (`ASSET_KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`), or anything non-obvious.
+Add `Where:` whenever any item needs description beyond what the Description line conveys — different name, additional constraint, composition (`ASSET_ID = [0, 0, faucet_id_suffix, faucet_id_prefix]`), or anything non-obvious.
 
 ## Panics Section
 

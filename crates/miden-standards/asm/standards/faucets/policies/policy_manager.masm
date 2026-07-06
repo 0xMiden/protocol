@@ -303,6 +303,7 @@ end
 #! Outputs: [MINT_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_mint_policy
     exec.get_mint_policy_root
     # => [MINT_POLICY_ROOT, pad(16)]
@@ -323,6 +324,7 @@ end
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
+@account_procedure
 pub proc set_mint_policy
     exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
@@ -342,7 +344,7 @@ end
 
 #! Executes active burn policy for the provided asset by dynamic execution.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Panics if:
@@ -354,20 +356,20 @@ end
 @locals(4)
 pub proc execute_burn_policy
     exec.pausable::assert_not_paused
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     exec.get_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
+    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE]
 
     exec.word::testz
     assertz.err=ERR_ACTIVE_BURN_POLICY_NOT_SET
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
+    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_KEY, ASSET_VALUE]
+    # => [policy_root_ptr, ASSET_ID, ASSET_VALUE]
 
     dynexec
     # => []
@@ -379,6 +381,7 @@ end
 #! Outputs: [BURN_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_burn_policy
     exec.get_burn_policy_root
     # => [BURN_POLICY_ROOT, pad(16)]
@@ -399,6 +402,7 @@ end
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
+@account_procedure
 pub proc set_burn_policy
     exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
@@ -425,7 +429,7 @@ end
 #! callback slot holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op
 #! when the [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
 #!
 #! Where:
@@ -442,25 +446,25 @@ end
 @locals(4)
 proc invoke_transfer_policy
     exec.active_account::get_item
-    # => [POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+    # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.word::testz
-    # => [is_empty, POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+    # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     if.true
-        # No policy configured: drop the empty root and asset key, return the asset value
+        # No policy configured: drop the empty root and asset ID, return the asset value
         # unchanged. `movup.4 drop` removes custom_data so only ASSET_VALUE is returned.
         dropw dropw movup.4 drop
         # => [ASSET_VALUE, pad(7)]
     else
         exec.pausable::assert_not_paused
-        # => [POLICY_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-        # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         locaddr.POLICY_PROC_ROOT_PTR
-        # => [policy_root_ptr, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+        # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         dyncall
         # => [PROCESSED_ASSET_VALUE, pad(12)]
@@ -477,7 +481,7 @@ end
 #! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
 #! applies the pause check and invokes the active send policy.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
 #!
 #! Where:
@@ -489,9 +493,10 @@ end
 #! - the active send policy predicate fails.
 #!
 #! Invocation: call
+@account_procedure
 pub proc invoke_send_policy
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.invoke_transfer_policy
     # => [PROCESSED_ASSET_VALUE, pad(12)]
@@ -503,6 +508,7 @@ end
 #! Outputs: [SEND_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_send_policy
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [SEND_POLICY_ROOT, pad(16)]
@@ -525,6 +531,7 @@ end
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
+@account_procedure
 pub proc set_send_policy
     exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
@@ -550,7 +557,7 @@ end
 #! which applies the pause check and invokes the active receive policy (skipping both when no
 #! receive policy is configured).
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
 #!
 #! Where:
@@ -563,9 +570,10 @@ end
 #! - the active receive policy predicate fails.
 #!
 #! Invocation: call
+@account_procedure
 pub proc invoke_receive_policy
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.invoke_transfer_policy
     # => [PROCESSED_ASSET_VALUE, pad(12)]
@@ -577,6 +585,7 @@ end
 #! Outputs: [RECEIVE_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_receive_policy
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [RECEIVE_POLICY_ROOT, pad(16)]
@@ -599,6 +608,7 @@ end
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
+@account_procedure
 pub proc set_receive_policy
     exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]

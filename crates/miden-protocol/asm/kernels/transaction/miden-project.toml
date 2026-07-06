@@ -1,0 +1,20 @@
+[package]
+name              = "miden-tx-kernel"
+version.workspace = true
+
+[lib]
+kind = "kernel"
+path = "lib/api.masm"
+
+[[bin]]
+name = "main"
+path = "bin/main.masm"
+
+[[bin]]
+name = "tx-script-main"
+path = "bin/tx_script_main.masm"
+
+[dependencies]
+miden-core.workspace           = true
+miden-protocol-utils.workspace = true
+miden-tx-kernel-core.workspace = true

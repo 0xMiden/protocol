@@ -186,7 +186,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
@@ -358,7 +358,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
@@ -626,7 +627,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Create transaction script
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -842,7 +843,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
