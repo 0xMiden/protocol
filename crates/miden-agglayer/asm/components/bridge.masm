@@ -5,6 +5,7 @@
 # The bridge exposes:
 # - `register_faucet` from the bridge_config module
 # - `store_faucet_metadata_hash` from the bridge_config module
+# - `deregister_faucet` from the bridge_config module
 # - `update_ger` from the bridge_config module
 # - `remove_ger` from the bridge_config module
 # - `claim` for bridge-in
@@ -12,6 +13,7 @@
 
 pub use {register_faucet} from agglayer::bridge::bridge_config
 pub use {store_faucet_metadata_hash} from agglayer::bridge::bridge_config
+pub use {deregister_faucet} from agglayer::bridge::bridge_config
 pub use {update_ger} from agglayer::bridge::bridge_config
 pub use {remove_ger} from agglayer::bridge::bridge_config
 pub use {claim} from agglayer::bridge::bridge_in

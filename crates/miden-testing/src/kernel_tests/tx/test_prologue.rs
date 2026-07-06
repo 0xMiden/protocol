@@ -504,16 +504,16 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let asset_key = asset.to_key_word();
+            let asset_id = asset.to_id_word();
             let asset_value = asset.to_value_word();
 
-            let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
-            let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;
+            let asset_id_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
+            let asset_value_addr = asset_id_addr + ASSET_VALUE_OFFSET;
 
             assert_eq!(
-                exec_output.get_note_mem_word(note_idx, asset_key_addr),
-                asset_key,
-                "asset key should be stored at the correct offset"
+                exec_output.get_note_mem_word(note_idx, asset_id_addr),
+                asset_id,
+                "asset ID should be stored at the correct offset"
             );
 
             assert_eq!(

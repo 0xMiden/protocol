@@ -8,7 +8,7 @@ use miden_processor::serde::DeserializationError;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_protocol::asset::AssetVaultKey;
+use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
@@ -264,11 +264,11 @@ pub enum TransactionKernelError {
         source: DataStoreError,
     },
     #[error(
-        "failed to get vault asset witness from data store for vault root {vault_root} and vault_key {asset_key}"
+        "failed to get vault asset witness from data store for vault root {vault_root} and asset_id {asset_id}"
     )]
     GetVaultAssetWitness {
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },

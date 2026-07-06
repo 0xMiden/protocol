@@ -55,7 +55,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -80,7 +81,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
 
     // Execute the transaction and get the result
     let executed_transaction_2 = mock_chain
-        .build_tx_context(malicious_account.id(), &[], &[note])?
+        .build_transaction(malicious_account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await;
@@ -121,7 +123,8 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
 
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(target_account.clone(), &[note.id()], &[])?
+        .build_transaction(target_account.clone())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -170,7 +173,8 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_notes([note_1.id(), note_2.id()])
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
@@ -251,7 +255,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 exec.output_note::create
 
                 push.{ASSET_VALUE_1}
-                push.{ASSET_KEY_1}
+                push.{ASSET_ID_1}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
 
@@ -261,7 +265,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 exec.output_note::create
 
                 push.{ASSET_VALUE_2}
-                push.{ASSET_KEY_2}
+                push.{ASSET_ID_2}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
             end
@@ -269,12 +273,12 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         recipient_1 = output_note_1.recipient().digest(),
         note_type_1 = NoteType::Public as u8,
         tag_1 = Felt::from(output_note_1.metadata().tag()),
-        ASSET_KEY_1 = asset_1.to_key_word(),
+        ASSET_ID_1 = asset_1.to_id_word(),
         ASSET_VALUE_1 = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         note_type_2 = NoteType::Public as u8,
         tag_2 = Felt::from(output_note_2.metadata().tag()),
-        ASSET_KEY_2 = asset_2.to_key_word(),
+        ASSET_ID_2 = asset_2.to_id_word(),
         ASSET_VALUE_2 = asset_2.to_value_word(),
     );
 
@@ -295,8 +299,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     account.apply_patch(executed_transaction.account_patch())?;
 
-    assert_eq!(account.vault().get_balance(input_note_asset_1.vault_key())?.as_u64(), 111);
-    assert_eq!(account.vault().get_balance(asset_1.vault_key())?.as_u64(), 5);
+    assert_eq!(account.vault().get_balance(input_note_asset_1.id())?.as_u64(), 111);
+    assert_eq!(account.vault().get_balance(asset_1.id())?.as_u64(), 5);
 
     Ok(())
 }
@@ -349,7 +353,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
 
             # Add an asset to the created note
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
 
             # Clean up stack
@@ -361,7 +365,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         tag = Felt::from(tag),
         note_type = NoteType::Public as u8,
         serial_num = serial_num,
-        ASSET_KEY = FungibleAsset::mock(50).to_key_word(),
+        ASSET_ID = FungibleAsset::mock(50).to_id_word(),
         ASSET_VALUE = FungibleAsset::mock(50).to_value_word(),
     );
 
