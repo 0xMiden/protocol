@@ -73,7 +73,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.output_note::add_asset
             # => []
 
@@ -86,7 +86,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -188,14 +188,14 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         # => [note_idx]
 
         push.{ASSET_VALUE}
-        push.{ASSET_KEY}
+        push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
         # => []
         ",
             recipient = note.recipient().digest(),
             note_type = Felt::from(note.metadata().note_type()),
             tag = Felt::from(note.metadata().tag()),
-            ASSET_KEY = asset.to_key_word(),
+            ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
     }
@@ -269,12 +269,12 @@ async fn epilogue_fails_when_assets_arent_preserved(
       pub proc main
           # create a note with the output asset
           push.{OUTPUT_ASSET_VALUE}
-          push.{OUTPUT_ASSET_KEY}
+          push.{OUTPUT_ASSET_ID}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET_KEY = output_asset.to_key_word(),
+        OUTPUT_ASSET_ID = output_asset.to_id_word(),
         OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 

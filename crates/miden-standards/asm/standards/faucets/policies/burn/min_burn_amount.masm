@@ -29,7 +29,7 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must exceed s
 #!
 #! WARNING: The policy assumes the asset is fungible.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:

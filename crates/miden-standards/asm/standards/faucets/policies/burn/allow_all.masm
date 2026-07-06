@@ -5,7 +5,7 @@
 
 #! Burn policy that accepts every burn request.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #! Invocation: dynexec
 # TODO(call invocation)

@@ -37,7 +37,7 @@ use miden_protocol::assembly::{
     ModuleParser,
     Path,
 };
-use miden_protocol::asset::{Asset, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -912,7 +912,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
 
             # add an asset to the account
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_account::add_asset
             dropw dropw
             # => []
@@ -924,7 +924,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         end
         "#,
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
         expected_vault_root = &account.vault().root(),
     );
     tx_context.execute_code(&code).await?;
@@ -987,8 +987,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 1: existing asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_existing_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let add_existing_source = format!(
         r#"
@@ -997,7 +997,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # get the current asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_balance
             # => [final_balance]
 
@@ -1007,7 +1007,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1016,7 +1016,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
@@ -1037,8 +1037,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 2: new asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_new_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let add_new_source = format!(
         r#"
@@ -1047,7 +1047,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # get the current asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_balance
             # => [final_balance]
 
@@ -1057,7 +1057,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1066,7 +1066,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
@@ -1112,8 +1112,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_existing_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
@@ -1131,12 +1131,12 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE}
-            push.{REMOVED_ASSET_KEY}
+            push.{REMOVED_ASSET_ID}
             exec.util::move_asset_to_note
             # => []
 
             # get the current asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_balance
             # => [final_balance]
 
@@ -1146,7 +1146,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1155,9 +1155,9 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
@@ -1224,12 +1224,12 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.util::move_asset_to_note
             # => []
 
             # get the current asset
-            push.{ASSET_KEY} exec.active_account::get_asset
+            push.{ASSET_ID} exec.active_account::get_asset
             # => [ASSET_VALUE]
 
             push.{FINAL_ASSET}
@@ -1237,14 +1237,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset
-            push.{ASSET_KEY} exec.active_account::get_initial_asset
+            push.{ASSET_ID} exec.active_account::get_initial_asset
             # => [INITIAL_ASSET]
 
             push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
         FINAL_ASSET = final_asset.to_value_word(),
