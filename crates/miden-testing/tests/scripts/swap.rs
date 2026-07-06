@@ -34,14 +34,15 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
         use miden::protocol::output_note
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
             exec.output_note::create
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             dropw dropw dropw dropw
         end
@@ -49,7 +50,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         recipient = swap_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = Felt::from(swap_note.metadata().tag()),
-        ASSET_KEY = offered_asset.to_key_word(),
+        ASSET_ID = offered_asset.to_id_word(),
         ASSET_VALUE = offered_asset.to_value_word(),
     );
 
