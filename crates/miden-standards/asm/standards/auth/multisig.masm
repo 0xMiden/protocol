@@ -245,6 +245,11 @@ end
 @locals(2)
 @account_procedure
 pub proc update_signers_and_threshold(multisig_config_hash: word)
+    # The signer configuration is read from the advice provider without an inline hash check. Every
+    # value written below via set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which is part of
+    # the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration produces a
+    # different delta commitment and thus a summary the current signers never signed. The same
+    # applies to the per-signer loads in the loop below.
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
