@@ -411,8 +411,7 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
 /// outside the typed `AuthSingleSigAcl` API (which always writes the canonical `[1, 0, 0, 0]`
 /// presence marker). Such a marker must degrade safely: the called procedure is treated as
 /// non-exempt and authentication is required, rather than the marker check aborting mid-execution
-/// and permanently bricking the account. This pins the `neq.1` marker check in `auth_tx_acl`; the
-/// former `not` would abort on any operand other than 0 or 1.
+/// and permanently bricking the account.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
