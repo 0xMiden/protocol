@@ -19,7 +19,12 @@ pub use mock_chain::{
 mod tx_context;
 #[cfg(test)]
 pub(crate) use tx_context::TestTransactionBuilder;
-pub use tx_context::{ExecError, TransactionContext, TransactionContextBuilder};
+pub use tx_context::{
+    ExecError,
+    MockTransactionBuilder,
+    TransactionContext,
+    TransactionContextBuilder,
+};
 
 pub mod asserts;
 

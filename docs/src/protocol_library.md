@@ -173,6 +173,8 @@ Transaction procedures manage transaction-level operations including note creati
 | `update_expiration_block_delta` | Updates the transaction expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                    | Any     |
 | `compute_fee`                   | Computes the fee required for the current transaction.<br/><br/>**Inputs:** `[num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]`<br/>**Outputs:** `[fee_amount]`                                                                                                    | Any     |
 
+Note on `execute_foreign_procedure`: the values it reads reflect the foreign account's state at the transaction reference block, which is chosen by the executor. The foreign account commitment is not a transaction public input and is not revalidated against the foreign account's current on-chain state at inclusion, so a foreign read may be outdated. If a foreign account holds time-sensitive data, it is the responsibility of that account to set the transaction expiration delta according to how time-sensitive the data is, so that the FPI interface cannot be used in unintended ways.
+
 ## Faucet Procedures (`miden::protocol::faucet`)
 
 Faucet procedures allow reading and writing to faucet accounts to mint and burn assets.
