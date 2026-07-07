@@ -95,6 +95,20 @@ pub proc assert_sender_has_role
     # => []
 end
 
+#! Asserts the note sender holds the built-in ADMIN role.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender does not hold the ADMIN role.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_admin
+    push.ADMIN_ROLE exec.assert_sender_has_role
+    # => []
+end
+
 #! Returns whether an account holds a role.
 #!
 #! Returns `0` if the role does not exist or the account is not a member.
