@@ -2,7 +2,6 @@
 members = [
   "bin/bench-note-checker",
   "bin/bench-transaction",
-  "bin/generate-packages",
   "crates/miden-agglayer",
   "crates/miden-block-prover",
   "crates/miden-protocol",
