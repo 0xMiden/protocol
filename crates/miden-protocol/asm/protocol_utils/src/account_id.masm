@@ -7,6 +7,8 @@ const ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO="most significant 
 
 const ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO="least significant byte of the account ID suffix must be zero"
 
+const ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO="account ID version must be non-zero"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -59,7 +61,8 @@ end
 #! Validates the structural requirements of an account ID, independent of its version.
 #!
 #! Note that this does not validate anything about the account type, since any 1-bit pattern is a
-#! valid account type, nor does it constrain the account ID version.
+#! valid account type, and it does not constrain the account ID version beyond requiring it to be
+#! non-zero so that the zero account ID remains invalid.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
@@ -68,9 +71,18 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
+#! - account_id_prefix has a zero version.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
 pub proc validate_structure
+    # Validate the version is non-zero, so that the zero account ID remains invalid.
+    # ---------------------------------------------------------------------------------------------
+
+    dup.1 exec.id_version neq.0
+    # => [is_version_nonzero, account_id_suffix, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
+    # => [account_id_suffix, account_id_prefix]
+
     # Validate lower 8 bits of suffix are zero.
     # ---------------------------------------------------------------------------------------------
 
