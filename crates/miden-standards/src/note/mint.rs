@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -212,9 +212,9 @@ impl From<MintNote> for Note {
 ///
 /// The MINT note serves both fungible and non-fungible faucets. The fungible variants embed a
 /// [`FungibleAsset`] (`ASSET_ID` + `ASSET_VALUE`, 8 felts) so the faucet executing the note can be
-/// checked against the asset's faucet ID at mint time. The non-fungible variants embed only the
-/// asset commitment (`ASSET_VALUE`, 4 felts) plus the target `faucet_id` (used only to route the
-/// note, since it is not derivable from the commitment).
+/// checked against the asset's faucet ID at mint time. The non-fungible variants embed a
+/// [`NonFungibleAsset`], whose value word (`ASSET_VALUE`, 4 felts) is the asset commitment and
+/// whose faucet ID routes the note.
 ///
 /// - Fungible private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
 /// - Fungible public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag +
@@ -235,27 +235,25 @@ pub enum MintNoteStorage {
         tag: Felt,
     },
     NonFungiblePrivate {
-        faucet_id: AccountId,
         recipient_digest: Word,
-        commitment: Word,
+        asset: NonFungibleAsset,
         tag: NoteTag,
     },
     NonFungiblePublic {
-        faucet_id: AccountId,
         recipient: NoteRecipient,
-        commitment: Word,
+        asset: NonFungibleAsset,
         tag: NoteTag,
     },
 }
 
 impl MintNoteStorage {
     /// Builds fungible private-mode storage (creates a private output note).
-    pub fn new_private(recipient_digest: Word, asset: FungibleAsset, tag: Felt) -> Self {
+    pub fn new_fungible_private(recipient_digest: Word, asset: FungibleAsset, tag: Felt) -> Self {
         Self::FungiblePrivate { recipient_digest, asset, tag }
     }
 
     /// Builds fungible public-mode storage (creates a public output note).
-    pub fn new_public(
+    pub fn new_fungible_public(
         recipient: NoteRecipient,
         asset: FungibleAsset,
         tag: Felt,
@@ -272,24 +270,17 @@ impl MintNoteStorage {
 
     /// Builds non-fungible private-mode storage (creates a private output note).
     pub fn new_non_fungible_private(
-        faucet_id: AccountId,
         recipient_digest: Word,
-        commitment: Word,
+        asset: NonFungibleAsset,
         tag: NoteTag,
     ) -> Self {
-        Self::NonFungiblePrivate {
-            faucet_id,
-            recipient_digest,
-            commitment,
-            tag,
-        }
+        Self::NonFungiblePrivate { recipient_digest, asset, tag }
     }
 
     /// Builds non-fungible public-mode storage (creates a public output note).
     pub fn new_non_fungible_public(
-        faucet_id: AccountId,
         recipient: NoteRecipient,
-        commitment: Word,
+        asset: NonFungibleAsset,
         tag: NoteTag,
     ) -> Result<Self, NoteError> {
         let total_storage_items = MintNote::NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC
@@ -299,7 +290,7 @@ impl MintNoteStorage {
             return Err(NoteError::TooManyStorageItems(total_storage_items));
         }
 
-        Ok(Self::NonFungiblePublic { faucet_id, recipient, commitment, tag })
+        Ok(Self::NonFungiblePublic { recipient, asset, tag })
     }
 
     /// Returns the account ID of the faucet that will mint the asset.
@@ -311,8 +302,9 @@ impl MintNoteStorage {
             Self::FungiblePrivate { asset, .. } | Self::FungiblePublic { asset, .. } => {
                 asset.faucet_id()
             },
-            Self::NonFungiblePrivate { faucet_id, .. }
-            | Self::NonFungiblePublic { faucet_id, .. } => *faucet_id,
+            Self::NonFungiblePrivate { asset, .. } | Self::NonFungiblePublic { asset, .. } => {
+                asset.faucet_id()
+            },
         }
     }
 }
@@ -340,20 +332,20 @@ impl From<MintNoteStorage> for NoteStorage {
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
-            MintNoteStorage::NonFungiblePrivate { recipient_digest, commitment, tag, .. } => {
+            MintNoteStorage::NonFungiblePrivate { recipient_digest, asset, tag } => {
                 let mut storage_values =
                     Vec::with_capacity(MintNote::NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(commitment.as_elements());
+                storage_values.extend_from_slice(asset.to_value_word().as_elements());
                 storage_values.push(tag.into());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
-            MintNoteStorage::NonFungiblePublic { recipient, commitment, tag, .. } => {
+            MintNoteStorage::NonFungiblePublic { recipient, asset, tag } => {
                 let mut storage_values = Vec::new();
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(commitment.as_elements());
+                storage_values.extend_from_slice(asset.to_value_word().as_elements());
                 // tag followed by 3 padding felts so the variable storage that follows starts at
                 // a word-aligned offset (16).
                 storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
@@ -388,7 +380,7 @@ mod tests {
     fn builder_builds_public_mint_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let asset = FungibleAsset::new(faucet(), 50).unwrap();
-        let mint_storage = MintNoteStorage::new_private(Word::empty(), asset, Felt::ZERO);
+        let mint_storage = MintNoteStorage::new_fungible_private(Word::empty(), asset, Felt::ZERO);
         let mint_note = MintNote::builder()
             .sender(owner())
             .mint_storage(mint_storage)

@@ -255,9 +255,8 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
     let storage = MintNoteStorage::new_non_fungible_private(
-        faucet.id(),
         recipient_digest,
-        commitment,
+        NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
     );
     let mut rng = RandomCoin::new([Felt::from(33u32); 4].into());
@@ -308,9 +307,8 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .build_with_seed([11; 32]);
 
     let storage = MintNoteStorage::new_non_fungible_private(
-        faucet.id(),
         recipient_digest,
-        commitment,
+        NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
     );
     let mut rng = RandomCoin::new([Felt::from(44u32); 4].into());

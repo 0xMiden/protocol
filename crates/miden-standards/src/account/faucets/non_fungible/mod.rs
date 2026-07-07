@@ -67,8 +67,8 @@ pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
 
 // On-chain status codes stored at element 0 of the asset-status registry value. These must match
 // the `STATUS_ISSUED` / `STATUS_BURNED` constants in the non-fungible faucet MASM.
-const STATUS_ISSUED: u64 = 1;
-const STATUS_BURNED: u64 = 2;
+const STATUS_ISSUED: u8 = 1;
+const STATUS_BURNED: u8 = 2;
 
 /// The issuance status of a non-fungible asset within a [`NonFungibleFaucet`].
 ///
@@ -86,15 +86,17 @@ pub enum AssetStatus {
     Burned,
 }
 
-impl AssetStatus {
+impl TryFrom<u8> for AssetStatus {
+    type Error = NonFungibleFaucetError;
+
     /// Builds an [`AssetStatus`] from the raw status code held in element 0 of the registry value
     /// word (0 = not issued, 1 = issued, 2 = burned).
-    fn from_status_code(status: Felt) -> Result<Self, NonFungibleFaucetError> {
-        match status.as_canonical_u64() {
+    fn try_from(status: u8) -> Result<Self, Self::Error> {
+        match status {
             0 => Ok(Self::NotIssued),
             STATUS_ISSUED => Ok(Self::Issued),
             STATUS_BURNED => Ok(Self::Burned),
-            other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other }),
+            other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other.into() }),
         }
     }
 }
@@ -330,7 +332,10 @@ impl NonFungibleFaucet {
             }
         })?;
 
-        AssetStatus::from_status_code(status_word[0])
+        let raw_status = status_word[0].as_canonical_u64();
+        let status_code = u8::try_from(raw_status)
+            .map_err(|_| NonFungibleFaucetError::InvalidAssetStatus { status: raw_status })?;
+        AssetStatus::try_from(status_code)
     }
 
     /// Returns the storage slot schema for the token symbol slot.
