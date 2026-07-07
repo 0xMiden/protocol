@@ -5,6 +5,7 @@
 ### Changes
 - Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
+- Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
@@ -77,6 +78,7 @@
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- Introduced `MockTransactionBuilder`, created via `MockChain::build_transaction` ([#3172](https://github.com/0xMiden/protocol/pull/3172)).
 - [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
 - Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
@@ -120,6 +122,7 @@
 - [BREAKING] Removed `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 - Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [agglayer] Added faucet deregistration, letting the bridge admin revoke a registered faucet ([#2838](https://github.com/0xMiden/protocol/pull/2838)).
 
 ### Changes
 
