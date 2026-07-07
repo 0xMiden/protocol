@@ -217,19 +217,7 @@ end
 
 ### ACCOUNT COMMITMENT ###################################################
 
-#! Returns the commitment of the native account at the beginning of the transaction.
-#!
-#! This procedure is assumed to be invoked after asserting the active account is native.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_COMMITMENT]
-#!
-#! Where:
-#! - INIT_COMMITMENT is the initial account commitment.
-pub proc get_initial_commitment
-    exec.memory::get_init_account_commitment
-    # => [INIT_COMMITMENT]
-end
+pub use {get_init_account_commitment as get_initial_commitment} from miden::tx_kernel_core::memory
 
 #! Computes commitment to the state of the active account.
 #!
@@ -275,20 +263,7 @@ pub use {get_account_code_commitment as get_code_commitment} from miden::tx_kern
 
 ### STORAGE COMMITMENT ###################################################
 
-#! Returns the storage commitment of the native account at the beginning of the transaction.
-#!
-#! This procedure is assumed to be invoked after asserting the active account is native.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_ACCOUNT_STORAGE_COMMITMENT]
-#!
-#! Where:
-#! - INIT_ACCOUNT_STORAGE_COMMITMENT is the initial account storage commitment.
-pub proc get_initial_storage_commitment
-    # get the initial storage commitment of the native account
-    exec.memory::get_init_account_storage_commitment
-    # => [INIT_ACCOUNT_STORAGE_COMMITMENT]
-end
+pub use {get_init_account_storage_commitment as get_initial_storage_commitment} from miden::tx_kernel_core::memory
 
 #! Computes the storage commitment of the active account.
 #!
@@ -308,20 +283,7 @@ end
 
 ### VAULT ROOT ###########################################################
 
-#! Returns the vault root of the native account at the beginning of the transaction.
-#!
-#! This procedure is assumed to be invoked after asserting the active account is native.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_ACCOUNT_VAULT_ROOT]
-#!
-#! Where:
-#! - INIT_ACCOUNT_VAULT_ROOT is the initial account vault root.
-pub proc get_initial_vault_root
-    # get the initial vault root of the native account
-    exec.memory::get_init_native_account_vault_root
-    # => [INIT_ACCOUNT_VAULT_ROOT]
-end
+pub use {get_init_native_account_vault_root as get_initial_vault_root} from miden::tx_kernel_core::memory
 
 # STORAGE
 # -------------------------------------------------------------------------------------------------
@@ -442,8 +404,6 @@ end
 
 #! Gets an item from the native account storage at its initial state (beginning of transaction).
 #!
-#! This procedure is assumed to be invoked after asserting the active account is native.
-#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [INIT_VALUE]
 #!
@@ -541,8 +501,6 @@ end
 
 #! Returns the VALUE located under the specified KEY within the map contained in the given
 #! native account storage slot at its initial state (beginning of transaction).
-#!
-#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [INIT_VALUE]
@@ -748,8 +706,6 @@ end
 
 #! Returns the ASSET_VALUE associated with the provided asset ID in the native account's vault at
 #! the beginning of the transaction.
-#!
-#! This procedure is assumed to be invoked after asserting the active account is native.
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [ASSET_VALUE]

@@ -60,7 +60,7 @@ Active account procedures can be used to read from storage, fetch or compute com
 
 ## Native account Procedures (`miden::protocol::native_account`)
 
-Native account procedures can be used to write to storage, add or remove assets from the vault and compute delta commitment of the native account. They also expose the initial (beginning-of-transaction) state of the native account. The initial-state getters can only be executed against the native account: invoking them from a foreign procedure invocation (FPI) context panics. 
+Native account procedures can be used to write to storage, add or remove assets from the vault and compute delta commitment of the native account. They also expose the initial (beginning-of-transaction) state of the native account. The initial-state getters can only be executed against the native account: invoking them from a foreign procedure invocation (FPI) context panics. Foreign accounts are immutable, so their initial state always equals their current state; to read a foreign account's (initial) values, use the corresponding getters from the `active_account` module (e.g. `active_account::get_item`, `active_account::get_map_item`, `active_account::get_balance`).
 
 | Procedure                      | Description                    | Context                        |
 | ------------------------------ | ------------------------------ | ------------------------------ |
