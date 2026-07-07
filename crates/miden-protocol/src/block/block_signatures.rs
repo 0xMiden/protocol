@@ -28,6 +28,20 @@ pub enum SignatureVerificationError {
     InvalidSignatureAtPosition { position: usize },
 }
 
+// BLOCK SIGNATURES ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid [`BlockSignatures`] set.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum BlockSignaturesError {
+    #[error(
+        "block signature set contains {count} signatures but must contain at most {max}",
+        max = ValidatorKeys::MAX,
+    )]
+    TooManySignatures { count: usize },
+}
+
 // BLOCK SIGNATURES
 // ================================================================================================
 
@@ -53,11 +67,15 @@ impl BlockSignatures {
 
     /// Returns a new [`BlockSignatures`] from the provided signatures, ordered positionally.
     ///
-    /// This performs no validation: the caller is responsible for ordering `signatures` to align
+    /// This performs no validation beyond checking that the number of signatures does not exceed
+    /// [`ValidatorKeys::MAX`]: the caller is responsible for ordering `signatures` to align
     /// with the validator set it is meant to be checked against. Call
     /// [`BlockSignatures::verify_against`] to establish that the signatures are valid.
-    pub fn new(signatures: Vec<Signature>) -> Self {
-        Self { signatures }
+    pub fn new(signatures: Vec<Signature>) -> Result<Self, BlockSignaturesError> {
+        if signatures.len() > ValidatorKeys::MAX {
+            return Err(BlockSignaturesError::TooManySignatures { count: signatures.len() });
+        }
+        Ok(Self { signatures })
     }
 
     // PUBLIC ACCESSORS
@@ -81,7 +99,7 @@ impl BlockSignatures {
     // VERIFICATION
     // --------------------------------------------------------------------------------------------
 
-    /// Verifies the signatures positionally against `validator_keys` over `commitment`.
+    /// Verifies the signatures positionally against `validator_keys` over `block_commitment`.
     ///
     /// This is the canonical verification of an ordered signature set, and the only place that
     /// establishes a [`BlockSignatures`] value is valid: the number of signatures must match the
@@ -94,7 +112,7 @@ impl BlockSignatures {
     /// if a signature does not verify against the validator key at its position.
     pub fn verify_against(
         &self,
-        commitment: Word,
+        block_commitment: Word,
         validator_keys: &ValidatorKeys,
     ) -> Result<(), SignatureVerificationError> {
         if self.signatures.len() != validator_keys.len() {
@@ -107,7 +125,7 @@ impl BlockSignatures {
         for (position, (signature, validator_key)) in
             self.signatures.iter().zip(validator_keys.as_keys()).enumerate()
         {
-            if !signature.verify(commitment, validator_key) {
+            if !signature.verify(block_commitment, validator_key) {
                 return Err(SignatureVerificationError::InvalidSignatureAtPosition { position });
             }
         }
@@ -161,7 +179,7 @@ mod tests {
         // Position 1 holds a signature that does not verify against the key committed there.
         let mut signatures = sign_all(&keys, &signers, commitment).as_signatures().to_vec();
         signatures[1] = outsider.sign(commitment);
-        let signatures = BlockSignatures::new(signatures);
+        let signatures = BlockSignatures::new(signatures).unwrap();
 
         assert!(matches!(
             signatures.verify_against(commitment, &keys),

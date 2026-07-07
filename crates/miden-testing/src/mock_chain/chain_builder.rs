@@ -291,7 +291,8 @@ impl MockChainBuilder {
                     signer.sign(header.commitment())
                 })
                 .collect(),
-        );
+        )
+        .expect("signature count same as validator key count");
         let block_proof = BlockProof::new_dummy();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 

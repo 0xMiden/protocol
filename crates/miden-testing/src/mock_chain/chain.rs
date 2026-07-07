@@ -439,7 +439,7 @@ impl MockChain {
                 signer.sign(commitment)
             })
             .collect();
-        BlockSignatures::new(signatures)
+        BlockSignatures::new(signatures).expect("signature count same as validator key count")
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.

@@ -582,7 +582,8 @@ mod tests {
         // Only one of three validators signs, so the resulting set is too short to align
         // positionally with the parent's validator keys. `BlockSignatures::new` does not check
         // this -- only `verify_against` (called by `validate_against_parent`) does.
-        let signatures = BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]);
+        let signatures =
+            BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]).unwrap();
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(

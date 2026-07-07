@@ -29,5 +29,5 @@ pub fn sign_all(keys: &ValidatorKeys, signers: &[SigningKey], commitment: Word) 
             signer.sign(commitment)
         })
         .collect();
-    BlockSignatures::new(signatures)
+    BlockSignatures::new(signatures).expect("signature count same as validator key count")
 }
