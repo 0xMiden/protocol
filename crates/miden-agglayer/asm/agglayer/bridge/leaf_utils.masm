@@ -1,6 +1,6 @@
 use miden::core::crypto::hashes::keccak256
-use miden::protocol::types::DoubleWord
-use miden::protocol::types::MemoryAddress
+use {DoubleWord} from miden::protocol::types
+use {MemoryAddress} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================

@@ -4,10 +4,9 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    AssetCallbackFlag,
+    AssetClass,
     AssetComposition,
     AssetId,
-    AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
 };
@@ -49,24 +48,24 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # mint asset
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_faucet::mint
             # => []
 
             # assert the input vault has been updated
             push.{INPUT_VAULT_ROOT_PTR}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             exec.asset_vault::get_asset
             # => [ASSET_VALUE]
 
@@ -80,7 +79,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             dropw dropw
         end
         "#,
-        FUNGIBLE_ASSET_KEY = asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = asset.to_id_word(),
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -102,13 +101,14 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
-          push.{ASSET_KEY}
+          push.{ASSET_ID}
           call.faucet::mint
       end
       ",
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
@@ -132,17 +132,17 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
     let asset = FungibleAsset::mock(5);
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             exec.prologue::prepare_transaction
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.faucet::mint
         end
         ",
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -158,23 +158,23 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result<()> {
     let asset = FungibleAsset::mock(50);
 
-    let mut vault_key_word = asset.to_key_word();
-    vault_key_word[2] = Felt::try_from(vault_key_word[2].as_canonical_u64() | 1 << 7)?;
+    let mut asset_id_word = asset.to_id_word();
+    asset_id_word[2] = Felt::try_from(asset_id_word[2].as_canonical_u64() | 1 << 7)?;
 
     let code = format!(
         "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
       use mock::faucet
 
       begin
           exec.prologue::prepare_transaction
           push.{ASSET_VALUE}
-          push.{ASSET_KEY}
+          push.{ASSET_ID}
           call.faucet::mint
           dropw dropw
       end
       ",
-        ASSET_KEY = vault_key_word,
+        ASSET_ID = asset_id_word,
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -195,21 +195,22 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         "
         use mock::faucet
 
-        begin
+        @transaction_script
+        pub proc main
             push.0
             push.0
             push.0
             push.{max_amount_plus_1}
             # => [ASSET_VALUE]
 
-            push.{ASSET_KEY}
-            # => [ASSET_KEY, ASSET_VALUE]
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE]
 
             call.faucet::mint
             dropw dropw
         end
     ",
-        ASSET_KEY = FungibleAsset::mock(0).to_key_word(),
+        ASSET_ID = FungibleAsset::mock(0).to_id_word(),
         max_amount_plus_1 = FungibleAsset::MAX_AMOUNT.as_u64() + 1,
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
@@ -238,23 +239,23 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         r#"
         use miden::core::collections::smt
 
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
-        use mock::faucet->mock_faucet
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+        use mock::faucet as mock_faucet
 
         begin
             # mint asset
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.mock_faucet::mint
             # => []
 
             # assert the input vault has been updated.
             push.{INPUT_VAULT_ROOT_PTR}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="vault should contain asset"
@@ -263,7 +264,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             dropw dropw
         end
         "#,
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
@@ -281,17 +282,17 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             exec.prologue::prepare_transaction
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
             call.faucet::mint
         end
         ",
-        asset_key = non_fungible_asset.to_key_word(),
+        asset_id = non_fungible_asset.to_id_word(),
         asset_value = non_fungible_asset.to_value_word(),
     );
 
@@ -311,13 +312,14 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
-          push.{ASSET_KEY}
+          push.{ASSET_ID}
           call.faucet::mint
       end
       ",
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
@@ -338,30 +340,25 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
-    // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(
-        AssetId::default(),
-        faucet_id,
-        AssetComposition::Fungible,
-        AssetCallbackFlag::Enabled,
-    )?;
+    // Build a asset ID with callbacks enabled.
+    let asset_id = AssetId::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
-        use $kernel::prologue
+        use mock::faucet as mock_faucet
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_faucet::mint
 
             dropw dropw
         end
         "#,
-        FUNGIBLE_ASSET_KEY = vault_key.to_word(),
+        FUNGIBLE_ASSET_ID = asset_id.to_word(),
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -385,24 +382,24 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use mock::faucet->mock_faucet
+        use mock::faucet as mock_faucet
         use miden::protocol::faucet
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # burn asset
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_faucet::burn
 
             # assert the input vault has been updated
             push.{INPUT_VAULT_ROOT_PTR}
 
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             exec.asset_vault::get_asset
             # => [ASSET_VALUE]
 
@@ -417,7 +414,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
         end
         "#,
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = asset.to_id_word(),
         final_input_vault_asset_amount = CONSUMED_ASSET_1_AMOUNT - FUNGIBLE_ASSET_AMOUNT,
     );
 
@@ -436,14 +433,15 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE}
-          push.{FUNGIBLE_ASSET_KEY}
+          push.{FUNGIBLE_ASSET_ID}
           call.faucet::burn
       end
       ",
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = asset.to_id_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -467,18 +465,18 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.faucet::burn
         end
         ",
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -498,18 +496,18 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             exec.prologue::prepare_transaction
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.faucet::burn
         end
         ",
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -533,11 +531,11 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::asset_vault
-        use $kernel::memory
-        use $kernel::prologue
-        use mock::faucet->mock_faucet
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+        use mock::faucet as mock_faucet
 
         begin
             exec.prologue::prepare_transaction
@@ -545,25 +543,25 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             # add non-fungible asset to the vault
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.asset_vault::add_non_fungible_asset dropw dropw
 
             # check that the non-fungible asset is presented in the input vault
             push.{INPUT_VAULT_ROOT_PTR}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="input vault should contain the asset"
 
             # burn the non-fungible asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.mock_faucet::burn
             dropw
 
             # assert the input vault has been updated and does not have the burnt asset
             push.{INPUT_VAULT_ROOT_PTR}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             exec.asset_vault::get_asset
             # the returned word should be empty, indicating the asset is absent
             padw assert_eqw.err="input vault should not contain burned asset"
@@ -571,7 +569,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             dropw
         end
         "#,
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset_burnt.to_id_word(),
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
     );
 
@@ -589,19 +587,19 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             # burn asset
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.faucet::burn
         end
         ",
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset_burnt.to_id_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -620,14 +618,15 @@ async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         "
       use mock::faucet
 
-      begin
+      @transaction_script
+      pub proc main
           push.{ASSET_VALUE}
-          push.{ASSET_KEY}
+          push.{ASSET_ID}
           call.faucet::burn
       end
       ",
         ASSET_VALUE = asset.to_value_word(),
-        ASSET_KEY = asset.to_key_word(),
+        ASSET_ID = asset.to_id_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -652,19 +651,19 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let code = format!(
         "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
         use mock::faucet
 
         begin
             # burn asset
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_VALUE}
-            push.{NON_FUNGIBLE_ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.faucet::burn
         end
         ",
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
-        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset_burnt.to_id_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -688,8 +687,17 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     ))
     .compile_component_code(
         "test::non_faucet_component",
-        "pub use ::miden::protocol::faucet::mint
-         pub use ::miden::protocol::faucet::burn",
+        "use miden::protocol::faucet
+
+         @account_procedure
+         pub proc mint
+             exec.faucet::mint
+         end
+
+         @account_procedure
+         pub proc burn
+             exec.faucet::burn
+         end",
     )?;
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;

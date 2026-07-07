@@ -5,7 +5,7 @@ use crate::account::account_component_code;
 
 account_component_code!(
     ALLOWLIST_OWNER_CONTROLLED_CODE,
-    "faucets/policies/transfer/allowlist/owner_controlled.masl"
+    "miden-standards-faucets-policies-transfer-allowlist-owner-controlled.masp"
 );
 
 /// Account component that exposes `allow_account` and `disallow_account` admin procedures gated

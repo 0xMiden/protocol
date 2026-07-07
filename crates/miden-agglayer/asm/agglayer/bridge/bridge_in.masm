@@ -1,7 +1,7 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
-use agglayer::common::constants::MIDEN_NETWORK_ID
+use {MIDEN_NETWORK_ID} from agglayer::common::constants
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
@@ -11,8 +11,8 @@ use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::types::DoubleWord
-use miden::protocol::types::MemoryAddress
+use {DoubleWord} from miden::protocol::types
+use {MemoryAddress} from miden::protocol::types
 
 # ERRORS
 # =================================================================================================
@@ -172,6 +172,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Invocation: call
 @locals(2) # 0: dest_prefix, 1: dest_suffix
+@account_procedure
 pub proc claim
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
@@ -210,6 +211,12 @@ pub proc claim
     # => [origin_token_addr(5), origin_network, pad(16)]
 
     exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Defense-in-depth: the token lookup only proves a token route exists, so re-check the faucet
+    # registry to guarantee a claim only ever mints through a currently-registered faucet. This keeps
+    # deregistration an unconditional revocation even if a token_registry entry ever outlived it.
+    dup.1 dup.1 exec.bridge_config::assert_faucet_registered
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     dup.1 dup.1

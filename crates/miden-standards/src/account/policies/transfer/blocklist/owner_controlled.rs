@@ -5,7 +5,7 @@ use crate::account::account_component_code;
 
 account_component_code!(
     BLOCKLIST_OWNER_CONTROLLED_CODE,
-    "faucets/policies/transfer/blocklist/owner_controlled.masl"
+    "miden-standards-faucets-policies-transfer-blocklist-owner-controlled.masp"
 );
 
 /// Account component that exposes `block_account` and `unblock_account` admin procedures gated

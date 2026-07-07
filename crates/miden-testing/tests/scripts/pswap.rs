@@ -3,7 +3,7 @@ use std::slice;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultPatch};
-use miden_protocol::asset::{Asset, AssetAmount, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachments, NoteType};
@@ -73,17 +73,17 @@ fn assert_vault_patch(
     expected_assets: impl IntoIterator<Item = FungibleAsset>,
 ) {
     let updated: Vec<Asset> = vault_patch.updated_assets().collect();
-    let removed: Vec<AssetVaultKey> = vault_patch.removed_asset_keys().copied().collect();
+    let removed: Vec<AssetId> = vault_patch.removed_asset_ids().copied().collect();
     let expected_assets = expected_assets.into_iter().collect::<Vec<_>>();
     assert_eq!(vault_patch.num_assets(), expected_assets.len());
 
     for expected in expected_assets {
         if expected.amount().as_u64() == 0 {
-            assert!(removed.contains(&expected.vault_key()));
+            assert!(removed.contains(&expected.id()));
         } else {
             let actual = updated
                 .iter()
-                .find(|asset| asset.vault_key() == expected.vault_key())
+                .find(|asset| asset.id() == expected.id())
                 .expect("updated asset should be present");
             assert_eq!(actual, &Asset::Fungible(expected));
         }
@@ -1129,7 +1129,7 @@ async fn pswap_partial_fill_ratio_test(
 #[tokio::test]
 async fn pswap_partial_fill_ratio_fuzz(#[case] seed: u64) -> anyhow::Result<()> {
     use rand::rngs::SmallRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     const FUZZ_ITERATIONS: usize = 30;
 

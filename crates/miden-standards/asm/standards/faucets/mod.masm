@@ -13,6 +13,10 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
 
+pub mod fungible
+pub mod non_fungible
+pub mod policies
+
 # =================================================================================================
 # CONSTANTS — slot names
 # =================================================================================================
@@ -115,6 +119,7 @@ end
 #! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_name
     exec.get_name_chunk_1
     exec.get_name_chunk_0
@@ -132,6 +137,7 @@ end
 #! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc get_mutability_config
     exec.get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
@@ -191,6 +197,7 @@ end
 #! Outputs: [is_description_mutable, pad(15)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc is_description_mutable
     exec.is_description_mutable_internal
     # => [is_description_mutable, pad(16)]
@@ -204,6 +211,7 @@ end
 #! Outputs: [is_logo_uri_mutable, pad(15)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc is_logo_uri_mutable
     exec.is_logo_uri_mutable_internal
     # => [is_logo_uri_mutable, pad(16)]
@@ -217,6 +225,7 @@ end
 #! Outputs: [is_external_link_mutable, pad(15)]
 #!
 #! Invocation: call
+@account_procedure
 pub proc is_external_link_mutable
     exec.is_external_link_mutable_internal
     # => [is_external_link_mutable, pad(16)]
@@ -253,6 +262,7 @@ end
 #!
 #! Invocation: call
 @locals(28)
+@account_procedure
 pub proc set_description
     # Check mutability; verify owner.
     # => [DESCRIPTION_HASH, pad(12)]
@@ -333,6 +343,7 @@ end
 #!
 #! Invocation: call
 @locals(28)
+@account_procedure
 pub proc set_logo_uri
     # Check mutability; verify owner.
     # => [LOGO_URI_HASH, pad(12)]
@@ -412,6 +423,7 @@ end
 #!
 #! Invocation: call
 @locals(28)
+@account_procedure
 pub proc set_external_link
     # Check mutability; verify owner.
     # => [EXTERNAL_LINK_HASH, pad(12)]

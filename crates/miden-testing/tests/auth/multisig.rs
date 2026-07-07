@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountType,
     StorageMapKey,
 };
-use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -229,10 +229,9 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AssetVaultKey::new_fungible(
-                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
-                AssetCallbackFlag::Disabled,
-            ))?
+            .get_balance(AssetId::new_fungible(AccountId::try_from(
+                ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+            )?))?
             .as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
@@ -482,7 +481,8 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
@@ -737,7 +737,7 @@ async fn test_multisig_update_signers_remove_owner(
     // Create transaction script
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -919,7 +919,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
 
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
     let salt = Word::from([Felt::new_unchecked(8); 4]);
@@ -1002,7 +1002,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
@@ -1226,7 +1227,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(asset.vault_key())?.as_u64(), 6);
+    assert_eq!(multisig_account.vault().get_balance(asset.id())?.as_u64(), 6);
 
     Ok(())
 }
@@ -1268,7 +1269,8 @@ async fn test_multisig_set_procedure_threshold(
 
     let set_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.{proc_root}
             push.1
             call.::miden::standards::components::auth::multisig::set_procedure_threshold
@@ -1347,7 +1349,8 @@ async fn test_multisig_set_procedure_threshold(
     // 3) Clear override by setting threshold to zero.
     let clear_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.{proc_root}
             push.0
             call.::miden::standards::components::auth::multisig::set_procedure_threshold
@@ -1447,7 +1450,8 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
 
     let script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.{proc_root}
             push.3
             call.::miden::standards::components::auth::multisig::set_procedure_threshold
@@ -1522,7 +1526,8 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
     // override of 2 — which exceeds the *current* num_approvers and must be rejected.
     let script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig::update_signers_and_threshold
             push.{proc_root}
             push.2

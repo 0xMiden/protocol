@@ -4,7 +4,7 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::standards::attachments::network_account_target
-use miden::standards::wallets::basic->basic_wallet
+use miden::standards::wallets::basic as basic_wallet
 
 # CONSTANTS
 # =================================================================================================
@@ -99,7 +99,7 @@ pub proc main
 
         # Load asset onto the stack from B2AGG_NOTE_ASSETS_PTR
         push.B2AGG_NOTE_ASSETS_PTR exec.asset::load
-        # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
+        # => [ASSET_ID, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out
         # => [pad(24)]

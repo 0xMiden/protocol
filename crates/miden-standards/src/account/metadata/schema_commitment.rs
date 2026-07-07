@@ -10,6 +10,7 @@ use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -23,22 +24,15 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
+
+use crate::account::account_component_code;
 
 // CONSTANTS
 // ================================================================================================
 
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
-});
+account_component_code!(SCHEMA_COMMITMENT_CODE, "miden-standards-metadata-schema-commitment.masp");
 
 /// Schema commitment slot name.
 static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -94,6 +88,11 @@ impl AccountSchemaCommitment {
         &SCHEMA_COMMITMENT_SLOT_NAME
     }
 
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &SCHEMA_COMMITMENT_CODE
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new([(
@@ -119,7 +118,7 @@ impl From<AccountSchemaCommitment> for AccountComponent {
             schema_commitment.schema_commitment,
         )];
 
-        AccountComponent::new(STORAGE_SCHEMA_LIBRARY.clone(), storage, metadata)
+        AccountComponent::new(AccountSchemaCommitment::code().clone(), storage, metadata)
             .expect("AccountSchemaCommitment is a valid account component")
     }
 }

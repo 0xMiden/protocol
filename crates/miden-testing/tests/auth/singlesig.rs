@@ -79,7 +79,8 @@ async fn test_singlesig_auth_uses_initial_public_key(
 
         const PUB_KEY_SLOT = word("{pub_key_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.99.98.97.96
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -90,7 +91,8 @@ async fn test_singlesig_auth_uses_initial_public_key(
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .authenticator(authenticator)
         .tx_script(tx_script)
         .build()?;
@@ -138,7 +140,8 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         const PUB_KEY_SLOT = word("{pub_key_slot}")
         const NEW_PUB_KEY = word("{new_pub_key}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.NEW_PUB_KEY
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item

@@ -11,6 +11,7 @@ use crate::account::{
     AccountIdVersion,
     AccountStorage,
     AccountType,
+    AssetCallbackFlag,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;
@@ -54,6 +55,7 @@ pub struct AccountBuilder {
     components: Vec<AccountComponent>,
     auth_component: Option<AccountComponent>,
     account_type: AccountType,
+    asset_callbacks: AssetCallbackFlag,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
 }
@@ -73,6 +75,7 @@ impl AccountBuilder {
             auth_component: None,
             init_seed,
             account_type: AccountType::Private,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             id_version: AccountIdVersion::Version1,
         }
     }
@@ -86,6 +89,17 @@ impl AccountBuilder {
     /// Sets the account type of the account.
     pub fn account_type(mut self, account_type: AccountType) -> Self {
         self.account_type = account_type;
+        self
+    }
+
+    /// Sets the immutable [`AssetCallbackFlag`] of the account.
+    ///
+    /// This determines whether assets issued by the account (if any) trigger callbacks. It must be
+    /// set to [`AssetCallbackFlag::Enabled`] for faucets that configure a transfer policy, and
+    /// is encoded into the resulting [`AccountId`] at creation. Defaults to
+    /// [`AssetCallbackFlag::Disabled`].
+    pub fn with_asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
+        self.asset_callbacks = asset_callbacks;
         self
     }
 
@@ -178,6 +192,7 @@ impl AccountBuilder {
         let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
+            self.asset_callbacks,
             version,
             code_commitment,
             storage_commitment,
@@ -232,6 +247,7 @@ impl AccountBuilder {
         .expect("get_account_seed should provide a suitable seed");
 
         debug_assert_eq!(account_id.account_type(), self.account_type);
+        debug_assert_eq!(account_id.asset_callback_flag(), self.asset_callbacks);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe
         // to bypass the checks of `Account::new`.
@@ -273,7 +289,12 @@ impl AccountBuilder {
         let account_id = {
             let bytes = <[u8; 15]>::try_from(&self.init_seed[0..15])
                 .expect("we should have sliced exactly 15 bytes off");
-            AccountId::dummy(bytes, AccountIdVersion::Version1, self.account_type)
+            AccountId::dummy(
+                bytes,
+                AccountIdVersion::Version1,
+                self.account_type,
+                self.asset_callbacks,
+            )
         };
 
         // Use the nonce value set by the Self::nonce method or Felt::ONE as a default.
@@ -288,41 +309,36 @@ impl AccountBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, LazyLock};
+    use std::sync::LazyLock;
 
     use assert_matches::assert_matches;
-    use miden_assembly::{Assembler, Library};
     use miden_core::mast::MastNodeExt;
+    use miden_mast_package::Package;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
+    use crate::testing::assembler::assemble_test_library;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
+          @account_procedure
           pub proc foo
             push.2.2 add eq.4
           end
         ";
     const CUSTOM_CODE2: &str = "
+            @account_procedure
             pub proc bar
               push.4.4 add eq.8
             end
           ";
 
-    static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE1])
-                .expect("code should be valid"),
-        )
+    static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
     });
-    static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
-        Arc::unwrap_or_clone(
-            Assembler::default()
-                .assemble_library([CUSTOM_CODE2])
-                .expect("code should be valid"),
-        )
+    static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -411,11 +427,11 @@ mod tests {
         // The merged code should have one procedure from each library.
         assert_eq!(account.code.procedure_roots().count(), 3);
 
-        let foo_root = CUSTOM_LIBRARY1.mast_forest()
-            [CUSTOM_LIBRARY1.get_export_node_id(CUSTOM_LIBRARY1.exports().next().unwrap().path())]
+        let foo_root = CUSTOM_LIBRARY1.mast_forest()[CUSTOM_LIBRARY1
+            .get_export_node_id(CUSTOM_LIBRARY1.manifest.exports().next().unwrap().path())]
         .digest();
-        let bar_root = CUSTOM_LIBRARY2.mast_forest()
-            [CUSTOM_LIBRARY2.get_export_node_id(CUSTOM_LIBRARY2.exports().next().unwrap().path())]
+        let bar_root = CUSTOM_LIBRARY2.mast_forest()[CUSTOM_LIBRARY2
+            .get_export_node_id(CUSTOM_LIBRARY2.manifest.exports().next().unwrap().path())]
         .digest();
 
         assert!(account.code().procedures().contains(&AccountProcedureRoot::from_raw(foo_root)));

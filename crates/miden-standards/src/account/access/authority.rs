@@ -31,7 +31,7 @@ use crate::procedure_root;
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(AUTHORITY_CODE, "access/authority.masl");
+account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
 
 procedure_root!(
     AUTHORITY_FREEZE,
@@ -48,7 +48,7 @@ procedure_root!(
 );
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::authority")
+    StorageSlotName::new("miden::standards::access::authority::authority_config")
         .expect("storage slot name should be valid")
 });
 
@@ -168,9 +168,7 @@ impl Authority {
 
     /// Reads the authority configuration from account storage.
     pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, AuthorityError> {
-        let word = storage
-            .get_item(Self::authority_slot())
-            .map_err(AuthorityError::MissingStorageSlot)?;
+        let word = Self::read_config_word(storage)?;
 
         let discriminant: u8 = word[0]
             .as_canonical_u64()
@@ -193,9 +191,7 @@ impl Authority {
     /// Returns `true` if the account's authority-gated surface is currently frozen (every
     /// procedure that calls `assert_authorized` panics until it is unfrozen).
     pub fn try_read_frozen(storage: &AccountStorage) -> Result<bool, AuthorityError> {
-        let word = storage
-            .get_item(Self::authority_slot())
-            .map_err(AuthorityError::MissingStorageSlot)?;
+        let word = Self::read_config_word(storage)?;
 
         Ok(word[1] != Felt::ZERO)
     }
@@ -251,6 +247,23 @@ impl Authority {
     /// Encodes the authority configuration value slot word: `[authority, is_frozen, 0, 0]`.
     fn to_word(&self) -> Word {
         Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+    }
+
+    /// Reads and validates the authority value-slot word `[authority, is_frozen, 0, 0]`.
+    ///
+    /// Enforces the canonical encoding on read: the reserved felts `word[2]` and `word[3]` must be
+    /// zero, and `is_frozen` (`word[1]`) must be a boolean (`0` or `1`) - the exact form the write
+    /// path (`to_word` plus the MASM freeze/unfreeze switch) always produces.
+    fn read_config_word(storage: &AccountStorage) -> Result<Word, AuthorityError> {
+        let word = storage
+            .get_item(Self::authority_slot())
+            .map_err(AuthorityError::MissingStorageSlot)?;
+
+        if word[2] != Felt::ZERO || word[3] != Felt::ZERO || word[1].as_canonical_u64() > 1 {
+            return Err(AuthorityError::NonCanonicalConfig);
+        }
+
+        Ok(word)
     }
 
     /// Reconstructs the per-procedure role map from the procedure-roles storage slot.
@@ -317,10 +330,71 @@ fn role_value_word(role: &RoleSymbol) -> Word {
 pub enum AuthorityError {
     #[error("invalid authority value: {0}")]
     InvalidAuthority(u64),
+    #[error("authority configuration word is not in canonical form")]
+    NonCanonicalConfig,
     #[error("invalid role symbol in authority storage")]
     InvalidRoleSymbol(#[source] RoleSymbolError),
     #[error("failed to read authority slot from storage")]
     MissingStorageSlot(#[source] AccountError),
     #[error("authority procedure-roles slot is missing or not a map")]
     MissingProcedureRolesSlot,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds account storage whose authority value slot holds `word`.
+    fn storage_with_config(word: Word) -> AccountStorage {
+        let slot = StorageSlot::with_value(Authority::authority_slot().clone(), word);
+        AccountStorage::new(vec![slot]).expect("storage should be valid")
+    }
+
+    #[test]
+    fn canonical_config_is_accepted() {
+        // AuthControlled, not frozen.
+        let storage = storage_with_config(Word::from([u32::from(AUTH_CONTROLLED), 0, 0, 0]));
+        assert_eq!(Authority::try_from_storage(&storage).unwrap(), Authority::AuthControlled);
+        assert!(!Authority::try_read_frozen(&storage).unwrap());
+
+        // OwnerControlled, frozen.
+        let storage = storage_with_config(Word::from([u32::from(OWNER_CONTROLLED), 1, 0, 0]));
+        assert_eq!(Authority::try_from_storage(&storage).unwrap(), Authority::OwnerControlled);
+        assert!(Authority::try_read_frozen(&storage).unwrap());
+    }
+
+    #[test]
+    fn non_zero_reserved_felt_is_rejected() {
+        // word[3] carries unexpected trailing data.
+        let storage = storage_with_config(Word::from([u32::from(OWNER_CONTROLLED), 0, 0, 7]));
+        assert!(matches!(
+            Authority::try_from_storage(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        ));
+        assert!(matches!(
+            Authority::try_read_frozen(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        ));
+
+        // word[2] carries unexpected trailing data.
+        let storage = storage_with_config(Word::from([u32::from(OWNER_CONTROLLED), 0, 5, 0]));
+        assert!(matches!(
+            Authority::try_from_storage(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        ));
+    }
+
+    #[test]
+    fn non_boolean_frozen_flag_is_rejected() {
+        // is_frozen (word[1]) must be 0 or 1; 2 is non-canonical.
+        let storage = storage_with_config(Word::from([u32::from(AUTH_CONTROLLED), 2, 0, 0]));
+        assert!(matches!(
+            Authority::try_from_storage(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        ));
+        assert!(matches!(
+            Authority::try_read_frozen(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        ));
+    }
 }

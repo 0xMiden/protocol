@@ -1,0 +1,11 @@
+# The MASM code of the RoleBasedAccessControl Account Component.
+#
+# See the `RoleBasedAccessControl` Rust type's documentation for more details.
+
+pub use {has_role} from miden::standards::access::rbac
+pub use {get_role_admin} from miden::standards::access::rbac
+pub use {get_role_member_count} from miden::standards::access::rbac
+pub use {set_role_admin} from miden::standards::access::rbac
+pub use {grant_role} from miden::standards::access::rbac
+pub use {revoke_role} from miden::standards::access::rbac
+pub use {renounce_role} from miden::standards::access::rbac

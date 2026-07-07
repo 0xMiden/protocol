@@ -19,7 +19,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::Approver;
 use crate::account::account_component_code;
 
-account_component_code!(SINGLESIG_CODE, "auth/singlesig.masl");
+account_component_code!(SINGLESIG_CODE, "miden-standards-auth-singlesig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -81,6 +81,13 @@ impl AuthSingleSig {
     /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
     ///
     /// The public key commitment is derived from the provided ECDSA K256 public key.
+    ///
+    /// Note: this scheme discloses the signer's public key and signature at proving time and
+    /// therefore does not provide public-key privacy. See
+    /// [`AuthScheme::EcdsaK256Keccak`][scheme] for details, and prefer
+    /// [`falcon512_poseidon2`](Self::falcon512_poseidon2) if signer-key privacy is required.
+    ///
+    /// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
     pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
         Self {
             approver: Approver::new(pub_key.into(), AuthScheme::EcdsaK256Keccak),

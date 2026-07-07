@@ -1,15 +1,15 @@
-use agglayer::bridge::bridge_in::CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-use agglayer::bridge::bridge_in::CLAIM_PROOF_DATA_KEY_MEM_ADDR
+use {CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT} from agglayer::bridge::bridge_in
+use {CLAIM_PROOF_DATA_KEY_MEM_ADDR} from agglayer::bridge::bridge_in
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
-use miden::protocol::note::NOTE_TYPE_PUBLIC
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::note_tag
-use miden::standards::note_tag::DEFAULT_TAG
+use {DEFAULT_TAG} from miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
-use miden::standards::note::execution_hint::ALWAYS
+use {ALWAYS} from miden::standards::note::execution_hint
 
 # CONSTANTS
 # =================================================================================================
@@ -21,7 +21,7 @@ use miden::standards::note::execution_hint::ALWAYS
 # memory zero-init.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
-# - ASSET_KEY         [8..11]  : 4 felts (vault key of asset to mint)
+# - ASSET_ID          [8..11]  : 4 felts (asset ID of asset to mint)
 # - ASSET_VALUE       [12..15] : 4 felts (asset value word; [amount, 0, 0, 0])
 # - tag               [16]     : 1 felt
 # - padding           [17..19] : 3 felts (word-aligns P2ID; explicitly zeroed)
@@ -33,7 +33,7 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 22
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
 const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 800
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 804
-const MINT_NOTE_STORAGE_ASSET_KEY = 808
+const MINT_NOTE_STORAGE_ASSET_ID = 808
 const MINT_NOTE_STORAGE_ASSET_VALUE = 812
 const MINT_NOTE_STORAGE_DEST_TAG = 816
 # padding at 817, 818, 819 so the P2ID storage below stays word-aligned
@@ -41,7 +41,7 @@ const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 820
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 821
 
 # Offsets in the local memory of the `unlock_and_send` procedure
-const UNLOCK_ASSET_KEY_LOC = 0
+const UNLOCK_ASSET_ID_LOC = 0
 const UNLOCK_ASSET_VALUE_LOC = 4
 const UNLOCK_DEST_SUFFIX_LOC = 8
 const UNLOCK_DEST_PREFIX_LOC = 9
@@ -53,7 +53,7 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 #!
 #! Used on the bridge-in claim path for bridge-owned faucets. The MINT note uses public mode (22
 #! storage items) so the AggLayer Faucet creates a PUBLIC P2ID note on consumption. The 22 items
-#! include the fungible asset (`ASSET_KEY` + `ASSET_VALUE`) for the resolved faucet at the
+#! include the fungible asset (`ASSET_ID` + `ASSET_VALUE`) for the resolved faucet at the
 #! resolved native amount, so the faucet's `mint_and_send` can verify the asset's faucet ID
 #! against the active account at consumption time. This procedure orchestrates three steps:
 #! 1. Write all 22 MINT note storage items to global memory.
@@ -104,25 +104,19 @@ pub proc unlock_and_send
     loc_store.UNLOCK_DEST_SUFFIX_LOC loc_store.UNLOCK_DEST_PREFIX_LOC
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    # Build the fungible asset (ASSET_KEY, ASSET_VALUE) from the faucet id and the pre-computed
+    # Build the fungible asset (ASSET_ID, ASSET_VALUE) from the faucet id and the pre-computed
     # Miden claim amount. `asset::create_fungible_asset` is pure MASM (no FPI).
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    # TODO(#2963): callbacks bit is hardcoded to 0. If a bridge-owned faucet enables
-    # callbacks, the ASSET_KEY derived here will not match the asset the bridge actually
-    # holds, and `native_account::remove_asset` will panic on a legitimate withdrawal.
-    push.0 # enable_callbacks = 0
-    # => [0, faucet_id_suffix, faucet_id_prefix, amount]
-
     exec.asset::create_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
     # `native_account::remove_asset` consumes its stack copy.
     dupw.1 loc_storew_le.UNLOCK_ASSET_VALUE_LOC dropw
-    dupw loc_storew_le.UNLOCK_ASSET_KEY_LOC dropw
-    # => [ASSET_KEY, ASSET_VALUE]
+    dupw loc_storew_le.UNLOCK_ASSET_ID_LOC dropw
+    # => [ASSET_ID, ASSET_VALUE]
 
     # Remove the asset from the bridge's vault. Panics if the vault does not contain enough of
     # the asset, which is the desired failure mode for an invalid / double-spent claim.
@@ -156,8 +150,8 @@ pub proc unlock_and_send
     padw loc_loadw_le.UNLOCK_ASSET_VALUE_LOC
     # => [ASSET_VALUE, note_idx]
 
-    padw loc_loadw_le.UNLOCK_ASSET_KEY_LOC
-    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+    padw loc_loadw_le.UNLOCK_ASSET_ID_LOC
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
     # => []
@@ -171,7 +165,7 @@ end
 #! Storage layout:
 #! - [0..3]:   P2ID_SCRIPT_ROOT (script root of the P2ID note)
 #! - [4..7]:   SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
-#! - [8..11]:  ASSET_KEY (vault key of the fungible asset that the AggLayer faucet must mint)
+#! - [8..11]:  ASSET_ID (asset ID of the fungible asset that the AggLayer faucet must mint)
 #! - [12..15]: ASSET_VALUE (value word of the asset: [native_amount, 0, 0, 0])
 #! - [16]:     dest_tag (note tag for the P2ID output note, targeting the destination account)
 #! - [17..19]: padding (so the P2ID storage below stays word-aligned at [20..21])
@@ -205,7 +199,7 @@ proc write_mint_note_storage
     mem_storew_le.MINT_NOTE_STORAGE_DEST_TAG dropw
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    # build ASSET_KEY + ASSET_VALUE for the faucet's fungible asset at the resolved
+    # build ASSET_ID + ASSET_VALUE for the faucet's fungible asset at the resolved
     # native amount. Duplicate faucet_id so the original stays on the stack as
     # `write_mint_note_storage`'s output contract.
     dup.1 dup.1
@@ -214,18 +208,15 @@ proc write_mint_note_storage
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [native_amount, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # prepare stack for asset::create_fungible_asset: [enable_callbacks, suffix, prefix, amount]
-    # TODO(#2963): callbacks bit is hardcoded to 1 to match AggLayer faucets configured with
-    #  `AllowAll` transfer policies). We need to support the registration of both types of agglayer 
-    # faucets, with & without callbacks.
-    movdn.2 push.1
-    # => [1, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
+    # prepare stack for asset::create_fungible_asset: [suffix, prefix, amount]
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
     exec.asset::create_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+    # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
-    # write ASSET_KEY [8..11]
-    mem_storew_le.MINT_NOTE_STORAGE_ASSET_KEY dropw
+    # write ASSET_ID [8..11]
+    mem_storew_le.MINT_NOTE_STORAGE_ASSET_ID dropw
     # => [ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # write ASSET_VALUE [12..15]
@@ -281,7 +272,7 @@ end
 #! Creates a public output note with no assets, and sets the `NetworkAccountTarget` attachment so
 #! the network routes the note to the target faucet. The attachment is for routing only; the
 #! consume-side security bind is `fungible::mint_and_send`, which rejects the MINT note if its
-#! stored `ASSET_KEY` does not belong to the consuming faucet.
+#! stored `ASSET_ID` does not belong to the consuming faucet.
 #!
 #! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []

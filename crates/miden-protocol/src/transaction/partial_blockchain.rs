@@ -294,7 +294,7 @@ mod tests {
     use super::PartialBlockchain;
     use crate::Word;
     use crate::alloc::vec::Vec;
-    use crate::block::{BlockHeader, BlockNumber, FeeParameters};
+    use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorKeys};
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
@@ -479,7 +479,8 @@ mod tests {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let validator_key = SigningKey::with_rng(&mut rng).public_key();
+        let validator_keys =
+            ValidatorKeys::new(alloc::vec![SigningKey::with_rng(&mut rng).public_key()]).unwrap();
 
         BlockHeader::new(
             0,
@@ -491,7 +492,7 @@ mod tests {
             Word::empty(),
             Word::empty(),
             Word::empty(),
-            validator_key,
+            validator_keys,
             fee_parameters,
             0,
         )

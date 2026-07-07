@@ -17,7 +17,7 @@ const SLOT_ID_PREFIX_LOC=0
 const SLOT_ID_SUFFIX_LOC=1
 const INDEX_LOC=2
 
-type DoubleWord = struct {
+pub type DoubleWord = struct {
     a: felt,
     b: felt,
     c: felt,

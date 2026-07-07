@@ -9,6 +9,11 @@ use anyhow::Context;
 /// Default number of decimals for faucets created in tests.
 const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 
+/// Default number of validators committed to by the genesis block of a mock chain.
+///
+/// This is purely a test default -- the protocol does not fix the size of a validator set.
+const DEFAULT_VALIDATOR_COUNT: usize = 3;
+
 // IMPORTS
 // ================================================================================================
 
@@ -22,6 +27,7 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
+    AssetCallbackFlag,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -34,11 +40,14 @@ use miden_protocol::block::{
     BlockNoteTree,
     BlockNumber,
     BlockProof,
+    BlockSignatures,
     Blockchain,
     FeeParameters,
     OutputNoteBatch,
     ProvenBlock,
+    ValidatorKeys,
 };
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
@@ -57,7 +66,7 @@ use miden_standards::account::policies::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
-use rand::Rng;
+use rand::RngExt;
 
 use crate::mock_chain::chain::AccountAuthenticator;
 use crate::utils::{create_p2any_note, create_spawn_note};
@@ -240,8 +249,11 @@ impl MockChainBuilder {
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
-        let validator_secret_key = random_secret_key();
-        let validator_public_key = validator_secret_key.public_key();
+        let validator_secret_keys: Vec<SigningKey> =
+            (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
+        let validator_keys =
+            ValidatorKeys::new(validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
+                .expect("randomly generated genesis validator keys should be distinct");
 
         let header = BlockHeader::new(
             version,
@@ -253,7 +265,7 @@ impl MockChainBuilder {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_public_key,
+            validator_keys.clone(),
             fee_parameters,
             timestamp,
         );
@@ -265,15 +277,30 @@ impl MockChainBuilder {
             transactions,
         );
 
-        let signature = validator_secret_key.sign(header.commitment());
+        // The genesis block is the trust root: it is self-signed by the validator set it commits
+        // as the signer of block 1.
+        let signatures = BlockSignatures::new(
+            validator_keys
+                .as_keys()
+                .iter()
+                .map(|key| {
+                    let signer = validator_secret_keys
+                        .iter()
+                        .find(|sk| &sk.public_key() == key)
+                        .expect("a signer should exist for every validator key");
+                    signer.sign(header.commitment())
+                })
+                .collect(),
+        )
+        .expect("signature count same as validator key count");
         let block_proof = BlockProof::new_dummy();
-        let genesis_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
+        let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
             genesis_block,
             account_tree,
             self.account_authenticators,
-            validator_secret_key,
+            validator_secret_keys,
             full_notes,
         )
     }
@@ -329,6 +356,9 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
+            .with_asset_callbacks(AssetCallbackFlag::from(
+                token_policy_manager.has_transfer_policy(),
+            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -340,8 +370,11 @@ impl MockChainBuilder {
     /// using default decimals and `AllowAll` policies, then adds it as an existing account with
     /// [`Authority::AuthControlled`].
     ///
-    /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and use [`AccountBuilder`] directly.
+    /// The faucet installs only `AllowAll` mint and burn policies and no transfer policy, so its
+    /// account ID has asset callbacks disabled and its assets transfer freely without triggering a
+    /// faucet callback. For a faucet with transfer policies (and thus callbacks), construct a
+    /// [`FungibleFaucet`] with a [`TokenPolicyManager`] manually and use [`AccountBuilder`]
+    /// directly.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -367,14 +400,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -477,7 +509,8 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a new (uncreated) basic auth-controlled fungible faucet from a
-    /// token-symbol shorthand using default decimals and `AllowAll` policies.
+    /// token-symbol shorthand using default decimals and `AllowAll` mint/burn policies (no transfer
+    /// policy, so asset callbacks are disabled).
     pub fn create_new_faucet(
         &mut self,
         auth_method: Auth,
@@ -499,14 +532,13 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);

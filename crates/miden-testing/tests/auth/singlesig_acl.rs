@@ -10,10 +10,12 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountIdVersion,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
@@ -174,7 +176,8 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
@@ -241,7 +244,8 @@ async fn test_acl_auth_uses_initial_public_key(
 
         const PUB_KEY_SLOT = word("{pub_key_slot}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.99.98.97.96
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -294,7 +298,8 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         const PUB_KEY_SLOT = word("{pub_key_slot}")
         const NEW_PUB_KEY = word("{new_pub_key}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.NEW_PUB_KEY
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -376,7 +381,7 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
         .with_component(PausableManager)
         .build_existing()?;
 
-    let sender = AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
+    let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let asset = FungibleAsset::new(faucet_account.id(), 10)?;
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()
@@ -398,6 +403,81 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// A non-binary exempt-map marker is only constructible by building the component's storage
+/// outside the typed `AuthSingleSigAcl` API (which always writes the canonical `[1, 0, 0, 0]`
+/// presence marker). Such a marker must degrade safely: the called procedure is treated as
+/// non-exempt and authentication is required, rather than the marker check aborting mid-execution
+/// and permanently bricking the account.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_non_binary_exempt_marker_requires_auth_instead_of_bricking(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (get_item, ..) = mock_component_proc_roots();
+
+    // Derive a valid public key / scheme id so the auth path is well-formed up to the point where
+    // the missing authenticator is detected.
+    let mut rng = ChaCha20Rng::from_seed(Default::default());
+    let pub_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)?
+        .public_key()
+        .to_commitment();
+
+    // Build the ACL auth component by hand, planting a NON-BINARY marker (`[5, 0, 0, 0]`) for the
+    // `get_item` root instead of the canonical `[1, 0, 0, 0]`. `AccountComponent::new` does not
+    // validate storage values against the schema, so this mirrors storage authored outside the
+    // typed `AuthSingleSigAcl` API.
+    let storage_slots = vec![
+        StorageSlot::with_value(AuthSingleSigAcl::public_key_slot().clone(), pub_key.into()),
+        StorageSlot::with_value(
+            AuthSingleSigAcl::scheme_id_slot().clone(),
+            Word::from([auth_scheme.as_u8(), 0, 0, 0]),
+        ),
+        StorageSlot::with_map(
+            AuthSingleSigAcl::exempt_procedure_roots_slot().clone(),
+            StorageMap::with_entries([(
+                StorageMapKey::from_raw(get_item.as_word()),
+                Word::from([5u32, 0, 0, 0]),
+            )])?,
+        ),
+    ];
+    let auth_component = AccountComponent::new(
+        AuthSingleSigAcl::code().clone(),
+        storage_slots,
+        AuthSingleSigAcl::component_metadata(),
+    )?;
+
+    let mock_component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let account = AccountBuilder::new([0; 32])
+        .with_auth_component(auth_component)
+        .with_component(mock_component)
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let input_note = NoteBuilder::new(account.id(), &mut rand::rng()).build()?;
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let mock_chain = builder.build()?;
+
+    // `get_item` is kernel-detected as called; the non-binary marker must be treated as "not
+    // exempt", so authentication is required. Without an authenticator this surfaces as
+    // MissingAuthenticator - not a mid-execution assertion abort from the marker check.
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(compile_call_get_item_script()?)
+        .build()?
+        .execute()
+        .await;
+    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
 
     Ok(())
 }
@@ -484,7 +564,8 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
@@ -504,7 +585,8 @@ fn compile_call_set_item_script() -> anyhow::Result<TransactionScript> {
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        begin
+        @transaction_script
+        pub proc main
             push.1.2.3.4
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::set_item

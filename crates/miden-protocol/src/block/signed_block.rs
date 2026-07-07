@@ -1,8 +1,7 @@
 use miden_core::Word;
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber};
+use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -17,9 +16,13 @@ use crate::utils::serde::{
 #[derive(Debug, thiserror::Error)]
 pub enum SignedBlockError {
     #[error(
-        "ECDSA signature verification failed based on the signed block's header commitment, the parent block's validator public key and signature"
+        "signed block has {actual} signatures but its parent's validator set has {expected} keys"
     )]
-    InvalidSignature,
+    SignatureCountMismatch { expected: usize, actual: usize },
+    #[error(
+        "signed block signature at position {position} does not verify against the parent's validator key at that position"
+    )]
+    InvalidSignatureAtPosition { position: usize },
     #[error(
         "header tx commitment ({header_tx_commitment}) does not match body tx commitment ({body_tx_commitment})"
     )]
@@ -47,7 +50,12 @@ pub enum SignedBlockError {
 impl From<ParentValidationError> for SignedBlockError {
     fn from(err: ParentValidationError) -> Self {
         match err {
-            ParentValidationError::InvalidSignature => Self::InvalidSignature,
+            ParentValidationError::SignatureCountMismatch { expected, actual } => {
+                Self::SignatureCountMismatch { expected, actual }
+            },
+            ParentValidationError::InvalidSignatureAtPosition { position } => {
+                Self::InvalidSignatureAtPosition { position }
+            },
             ParentValidationError::ParentNumberMismatch { expected, parent } => {
                 Self::ParentNumberMismatch { expected, parent }
             },
@@ -64,7 +72,7 @@ impl From<ParentValidationError> for SignedBlockError {
 // SIGNED BLOCK
 // ================================================================================================
 
-/// Represents a block in the Miden blockchain that has been signed by the Validator.
+/// Represents a block in the Miden blockchain that has been signed by the validators.
 ///
 /// Signed blocks are applied to the chain's state before they are proven.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,16 +83,16 @@ pub struct SignedBlock {
     /// The body of the Signed block.
     body: BlockBody,
 
-    /// The Validator's signature over the block header.
-    signature: Signature,
+    /// The validators' positional signatures over the block header.
+    signatures: BlockSignatures,
 }
 
 impl SignedBlock {
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
     ///
     /// Validates that the header and body correspond by checking the transaction commitment and
-    /// note root. This does NOT verify the validator signature, which can only be checked against
-    /// the parent block's validator key; call [`Self::validate`] with the parent header to
+    /// note root. This does NOT verify the validator signatures, which can only be checked against
+    /// the parent block's validator keys; call [`Self::validate`] with the parent header to
     /// authenticate the block.
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
@@ -92,9 +100,9 @@ impl SignedBlock {
     pub fn new(
         header: BlockHeader,
         body: BlockBody,
-        signature: Signature,
+        signatures: BlockSignatures,
     ) -> Result<Self, SignedBlockError> {
-        let signed_block = Self { header, body, signature };
+        let signed_block = Self { header, body, signatures };
 
         signed_block.validate(None)?;
 
@@ -107,8 +115,12 @@ impl SignedBlock {
     ///
     /// This constructor does not do any validation as to whether the arguments correctly correspond
     /// to each other, which could cause errors downstream.
-    pub fn new_unchecked(header: BlockHeader, body: BlockBody, signature: Signature) -> Self {
-        Self { header, signature, body }
+    pub fn new_unchecked(
+        header: BlockHeader,
+        body: BlockBody,
+        signatures: BlockSignatures,
+    ) -> Self {
+        Self { header, signatures, body }
     }
 
     /// Returns the header of the block.
@@ -121,14 +133,14 @@ impl SignedBlock {
         &self.body
     }
 
-    /// Returns the Validator's signature over the block header.
-    pub fn signature(&self) -> &Signature {
-        &self.signature
+    /// Returns the validators' positional signatures over the block header.
+    pub fn signatures(&self) -> &BlockSignatures {
+        &self.signatures
     }
 
     /// Destructures this signed block into individual parts.
-    pub fn into_parts(self) -> (BlockHeader, BlockBody, Signature) {
-        (self.header, self.body, self.signature)
+    pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures) {
+        (self.header, self.body, self.signatures)
     }
 
     /// Validates that the header and body correspond by checking the transaction commitment and
@@ -148,7 +160,7 @@ impl SignedBlock {
     ///   body; or
     /// - a `parent` is provided and the block is not authorized by it: the block is the genesis
     ///   block (which has no parent), the parent's number or commitment do not match, or the
-    ///   signature does not verify against the parent's validator key.
+    ///   signatures do not verify against the parent's validator keys.
     pub fn validate(&self, parent: Option<&BlockHeader>) -> Result<(), SignedBlockError> {
         // Validate that header / body transaction commitments match.
         self.validate_tx_commitment()?;
@@ -158,7 +170,7 @@ impl SignedBlock {
 
         // When a trusted parent is provided, authenticate the block against it.
         if let Some(parent) = parent {
-            self.header.validate_against_parent(parent, &self.signature)?;
+            self.header.validate_against_parent(parent, &self.signatures)?;
         }
 
         Ok(())
@@ -199,7 +211,7 @@ impl Serializable for SignedBlock {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.header.write_into(target);
         self.body.write_into(target);
-        self.signature.write_into(target);
+        self.signatures.write_into(target);
     }
 }
 
@@ -208,7 +220,7 @@ impl Deserializable for SignedBlock {
         let block = Self {
             header: BlockHeader::read_from(source)?,
             body: BlockBody::read_from(source)?,
-            signature: Signature::read_from(source)?,
+            signatures: BlockSignatures::read_from(source)?,
         };
 
         Ok(block)
@@ -226,37 +238,58 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::testing::random_secret_key::random_secret_key;
+    use crate::block::ValidatorKeys;
+    use crate::testing::validator_keys::{random_validator_set as validator_set, sign_all};
     use crate::transaction::OrderedTransactionHeaders;
 
-    /// Builds block 1 signed by `signer` and linked to `parent`. The exhaustive matrix of failure
-    /// modes lives in `block::validation`; here we only confirm `SignedBlock::validate` wires the
-    /// signature and parent header through to the shared check.
-    fn block_one(parent: &BlockHeader, signer: &SigningKey) -> SignedBlock {
-        let header =
-            BlockHeader::new_dummy(1, parent.commitment(), random_secret_key().public_key());
-        let signature = signer.sign(header.commitment());
-        let body = BlockBody::new_unchecked(
+    fn empty_body() -> BlockBody {
+        BlockBody::new_unchecked(
             Vec::new(),
             Vec::new(),
             Vec::new(),
             OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        );
-        SignedBlock::new_unchecked(header, body, signature)
+        )
+    }
+
+    fn block_one(
+        parent: &BlockHeader,
+        parent_keys: &ValidatorKeys,
+        signers: &[SigningKey],
+    ) -> SignedBlock {
+        let next_keys = validator_set(3).1;
+        let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
+        let signatures = sign_all(parent_keys, signers, header.commitment());
+        SignedBlock::new_unchecked(header, empty_body(), signatures)
     }
 
     #[test]
-    fn validate_accepts_committed_signer() {
-        let validator = random_secret_key();
-        let parent = BlockHeader::new_dummy(0, Word::empty(), validator.public_key());
-        block_one(&parent, &validator).validate(Some(&parent)).unwrap();
+    fn validate_accepts_committed_signers() {
+        let (signers, keys) = validator_set(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
-    fn validate_rejects_uncommitted_signer() {
-        let parent = BlockHeader::new_dummy(0, Word::empty(), random_secret_key().public_key());
-        let impostor = random_secret_key();
-        let result = block_one(&parent, &impostor).validate(Some(&parent));
-        assert!(matches!(result, Err(SignedBlockError::InvalidSignature)));
+    fn validate_accepts_single_validator() {
+        let (signers, keys) = validator_set(1);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_uncommitted_signers() {
+        let (_, keys) = validator_set(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let next_keys = validator_set(3).1;
+        let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
+
+        // The block is signed by a full, valid validator set of the same size the parent never
+        // committed.
+        let (impostor_signers, impostor_keys) = validator_set(3);
+        let signatures = sign_all(&impostor_keys, &impostor_signers, header.commitment());
+        let block = SignedBlock::new_unchecked(header, empty_body(), signatures);
+
+        let result = block.validate(Some(&parent));
+        assert!(matches!(result, Err(SignedBlockError::InvalidSignatureAtPosition { .. })));
     }
 }

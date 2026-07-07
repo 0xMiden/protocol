@@ -71,8 +71,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
     };
 
     let code = "
-        use $kernel::prologue
-        use $kernel::note
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note
 
         begin
             exec.prologue::prepare_transaction
@@ -127,9 +127,9 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     };
 
     let code =  "
-        use $kernel::prologue
-        use $kernel::memory
-        use $kernel::note
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::note
 
         begin
             exec.prologue::prepare_transaction
@@ -384,8 +384,8 @@ async fn test_build_metadata() -> anyhow::Result<()> {
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
             "
-        use $kernel::prologue
-        use $kernel::output_note
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::output_note
 
         begin
           exec.prologue::prepare_transaction
@@ -454,7 +454,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     let lock_timestamp = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
+    let timelock_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())
