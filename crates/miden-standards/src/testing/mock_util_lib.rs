@@ -30,37 +30,37 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
         # => [note_idx]
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_asset
         exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE]
+        # => [note_idx, ASSET_ID, ASSET_VALUE]
 
         movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx]
+        # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
         # => []
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_moved_asset
         exec.create_default_note
-        # => [note_idx, ASSET_KEY, ASSET_VALUE]
+        # => [note_idx, ASSET_ID, ASSET_VALUE]
 
         movdn.8
-        # => [ASSET_KEY, ASSET_VALUE, note_idx]
+        # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.move_asset_to_note
         # => []
     end
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
     #! Outputs: []
     pub proc move_asset_to_note
         repeat.7 push.0 movdn.9 end
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
 

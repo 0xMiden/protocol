@@ -82,7 +82,7 @@ pub proc auth_tx_acl(auth_args: word)
             # => [is_exempt, i, auth_required, pad(16)]
 
             # If the called procedure is not exempt, auth is required.
-            not
+            neq.1
             # => [is_not_exempt, i, auth_required, pad(16)]
 
             movup.2 or

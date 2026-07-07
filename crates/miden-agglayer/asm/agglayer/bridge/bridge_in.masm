@@ -213,6 +213,12 @@ pub proc claim
     exec.bridge_config::lookup_faucet_by_token_address
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
+    # Defense-in-depth: the token lookup only proves a token route exists, so re-check the faucet
+    # registry to guarantee a claim only ever mints through a currently-registered faucet. This keeps
+    # deregistration an unconditional revocation even if a token_registry entry ever outlived it.
+    dup.1 dup.1 exec.bridge_config::assert_faucet_registered
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
     dup.1 dup.1
     # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 

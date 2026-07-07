@@ -19,33 +19,33 @@ const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-exi
 # ACCESSORS
 # =================================================================================================
 
-#! Returns the ASSET_VALUE associated with the provided asset vault key.
+#! Returns the ASSET_VALUE associated with the provided asset ID.
 #!
-#! Inputs:  [ASSET_KEY, vault_root_ptr]
+#! Inputs:  [ASSET_ID, vault_root_ptr]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 pub proc get_asset
-    # hash the asset vault key before using it as the SMT key
-    exec.hash_asset_key
-    # => [ASSET_KEY_HASH, vault_root_ptr]
+    # hash the asset ID before using it as the SMT key
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, vault_root_ptr]
 
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, ASSET_KEY_HASH]
+    # => [ASSET_VAULT_ROOT, ASSET_ID_HASH]
 
     swapw
-    # => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
+    # => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::get swapw dropw
     # => [ASSET_VALUE]
 end
 
-#! Returns the _peeked_ asset associated with the provided hashed asset vault key.
+#! Returns the _peeked_ asset associated with the provided hashed asset ID.
 #!
 #! WARNING: Peeked means the asset is loaded from the advice provider, which is susceptible to
 #! manipulation from a malicious host. Therefore this should only be used when the inclusion of the
@@ -61,24 +61,24 @@ end
 #! merkle paths from the merkle store, since this is only possible for the account vault. Ensure
 #! that the merkle paths are present prior to calling.
 #!
-#! Inputs:  [ASSET_KEY_HASH, vault_root_ptr]
+#! Inputs:  [ASSET_ID_HASH, vault_root_ptr]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET_KEY_HASH is the hashed asset vault key of the asset to fetch (see hash_asset_key).
+#! - ASSET_ID_HASH is the hashed asset ID of the asset to fetch (see hash_asset_id).
 #! - ASSET_VALUE is the retrieved asset.
 pub proc peek_asset
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, ASSET_KEY_HASH]
+    # => [ASSET_VAULT_ROOT, ASSET_ID_HASH]
 
     swapw
-    # => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
+    # => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::peek
-    # OS => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
+    # OS => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
     # AS => [ASSET_VALUE]
 
     dropw
@@ -100,14 +100,14 @@ end
 #! If the amount to be added is zero and the asset does not already exist in the vault, the vault
 #! remains unchanged.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET_KEY is the vault key of the fungible asset to add to the vault.
+#! - ASSET_ID is the asset ID of the fungible asset to add to the vault.
 #! - ASSET_VALUE is the fungible asset to add to the vault.
-#! - INITIAL_ASSET_VALUE is the fungible asset associated with ASSET_KEY in the vault prior to the
+#! - INITIAL_ASSET_VALUE is the fungible asset associated with ASSET_ID in the vault prior to the
 #!   merge, or EMPTY_WORD if not present.
 #! - FINAL_ASSET_VALUE is the total fungible asset in the account vault after ASSET_VALUE was added
 #!   to it.
@@ -124,44 +124,44 @@ pub proc add_fungible_asset
 
     # store the vault_root_ptr
     movup.8 loc_store.0
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
-    # hash the asset vault key once; it is used as the SMT key for both the peek and the set below
-    exec.hash_asset_key
-    # => [ASSET_KEY_HASH, ASSET_VALUE]
+    # hash the asset ID once; it is used as the SMT key for both the peek and the set below
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE]
 
     dupw loc_load.0 movdn.4
-    # => [ASSET_KEY_HASH, vault_root_ptr, ASSET_KEY_HASH, ASSET_VALUE]
+    # => [ASSET_ID_HASH, vault_root_ptr, ASSET_ID_HASH, ASSET_VALUE]
 
     exec.peek_asset
-    # => [INITIAL_ASSET_VALUE, ASSET_KEY_HASH, ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, ASSET_VALUE]
 
     # since we have peeked the value, we need to later assert that the actual value matches this
     # one, so we'll keep a copy for later
     swapw dupw.1
-    # => [INITIAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, ASSET_VALUE]
 
     movupw.3
-    # => [ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE]
+    # => [ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
 
     # Merge the assets.
     # ---------------------------------------------------------------------------------------------
 
     exec.fungible_asset::merge
-    # => [FINAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE]
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
 
     swapw
-    # => [ASSET_KEY_HASH, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+    # => [ASSET_ID_HASH, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     # Insert the merged asset.
     # ---------------------------------------------------------------------------------------------
 
     # load the vault root
     padw loc_load.0 mem_loadw_le
-    # => [VAULT_ROOT, ASSET_KEY_HASH, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+    # => [VAULT_ROOT, ASSET_ID_HASH, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     swapw dupw.2
-    # => [FINAL_ASSET_VALUE, ASSET_KEY_HASH, VAULT_ROOT, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, VAULT_ROOT, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     # update the asset in the vault
     exec.smt::set
@@ -181,12 +181,12 @@ end
 
 #! Add the specified non-fungible asset to the vault.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET_KEY is the vault key of the non-fungible asset that is added to the vault.
+#! - ASSET_ID is the asset ID of the non-fungible asset that is added to the vault.
 #! - ASSET_VALUE is the non-fungible asset that is added to the vault.
 #! - INITIAL_ASSET_VALUE is always EMPTY_WORD since the proc asserts the asset is not yet present.
 #! - FINAL_ASSET_VALUE is the same as ASSET_VALUE, the non-fungible asset now in the vault.
@@ -194,21 +194,21 @@ end
 #! Panics if:
 #! - the vault already contains the same non-fungible asset.
 pub proc add_non_fungible_asset
-    # hash the asset vault key before using it as the SMT key
-    exec.hash_asset_key
-    # => [ASSET_KEY_HASH, ASSET_VALUE, vault_root_ptr]
+    # hash the asset ID before using it as the SMT key
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE, vault_root_ptr]
 
     # Load VAULT_ROOT and insert asset.
     # ---------------------------------------------------------------------------------------------
 
     padw dup.12
-    # => [vault_root_ptr, pad(4), ASSET_KEY_HASH, ASSET_VALUE, vault_root_ptr]
+    # => [vault_root_ptr, pad(4), ASSET_ID_HASH, ASSET_VALUE, vault_root_ptr]
 
     mem_loadw_le swapw
-    # => [ASSET_KEY_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_ID_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
     dupw.2
-    # => [ASSET_VALUE, ASSET_KEY_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_VALUE, ASSET_ID_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
     # insert the asset into the vault
     exec.smt::set
@@ -229,16 +229,16 @@ end
 
 #! Add the specified asset to the vault.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset that is added to the vault.
+#! - ASSET_ID is the asset ID of the asset that is added to the vault.
 #! - ASSET_VALUE is the value of the asset that is added to the vault.
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - INITIAL_ASSET_VALUE is the value associated with ASSET_KEY in the vault prior to the
+#! - INITIAL_ASSET_VALUE is the value associated with ASSET_ID in the vault prior to the
 #!   operation; EMPTY_WORD if the asset was not present (always EMPTY_WORD for non-fungible assets).
-#! - FINAL_ASSET_VALUE is the final value associated with ASSET_KEY in the vault, defined as:
+#! - FINAL_ASSET_VALUE is the final value associated with ASSET_ID in the vault, defined as:
 #!   - If ASSET_VALUE is a non-fungible asset, FINAL_ASSET_VALUE is the same as ASSET_VALUE.
 #!   - If ASSET_VALUE is a fungible asset, FINAL_ASSET_VALUE is the total fungible asset in the
 #!     account vault after ASSET_VALUE was added to it.
@@ -250,24 +250,24 @@ end
 pub proc add_asset
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
-    # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+    exec.asset::is_fungible_asset_id
+    # => [is_fungible_asset, ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
     # add the asset to the asset vault
     if.true
         # validate the fungible asset
         exec.fungible_asset::validate
-        # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+        # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
         exec.add_fungible_asset
         # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
     else
         # validate the non-fungible asset
         exec.non_fungible_asset::validate
-        # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+        # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
         exec.add_non_fungible_asset
         # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
@@ -277,18 +277,18 @@ end
 # REMOVE ASSET
 # =================================================================================================
 
-#! Splits ASSET_VALUE off the existing asset in the vault associated with the ASSET_KEY
+#! Splits ASSET_VALUE off the existing asset in the vault associated with the ASSET_ID
 #! and returns the initial and remaining asset values.
 #!
-#! For instance, if ASSET_KEY points to a fungible asset with amount 100, and ASSET_VALUE has
+#! For instance, if ASSET_ID points to a fungible asset with amount 100, and ASSET_VALUE has
 #! amount 30, then INITIAL_ASSET_VALUE has amount 100 and FINAL_ASSET_VALUE has amount 70.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the asset vault key of the fungible asset to remove from the vault.
-#! - INITIAL_ASSET_VALUE is the fungible asset associated with ASSET_KEY in the vault prior to the
+#! - ASSET_ID is the asset ID of the fungible asset to remove from the vault.
+#! - INITIAL_ASSET_VALUE is the fungible asset associated with ASSET_ID in the vault prior to the
 #!   split.
 #! - FINAL_ASSET_VALUE is the value of the fungible asset remaining in the vault after the split.
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
@@ -300,38 +300,38 @@ end
 #! - the amount of the asset in the vault is less than the amount to be removed.
 @locals(4)
 pub proc remove_fungible_asset
-    # hash the asset vault key once; it is used as the SMT key for both the peek and the set below
-    exec.hash_asset_key
-    # => [ASSET_KEY_HASH, ASSET_VALUE, vault_root_ptr]
+    # hash the asset ID once; it is used as the SMT key for both the peek and the set below
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE, vault_root_ptr]
 
     dupw movdnw.2
-    # => [ASSET_KEY_HASH, ASSET_VALUE, ASSET_KEY_HASH, vault_root_ptr]
+    # => [ASSET_ID_HASH, ASSET_VALUE, ASSET_ID_HASH, vault_root_ptr]
 
     dup.12 movdn.4
-    # => [ASSET_KEY_HASH, vault_root_ptr, ASSET_VALUE, ASSET_KEY_HASH, vault_root_ptr]
+    # => [ASSET_ID_HASH, vault_root_ptr, ASSET_VALUE, ASSET_ID_HASH, vault_root_ptr]
 
     exec.peek_asset
-    # => [INITIAL_ASSET_VALUE, ASSET_VALUE, ASSET_KEY_HASH, vault_root_ptr]
+    # => [INITIAL_ASSET_VALUE, ASSET_VALUE, ASSET_ID_HASH, vault_root_ptr]
 
     movdnw.2
-    # => [ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     dupw.2 swapw
-    # => [ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     # compute FINAL_ASSET_VALUE = INITIAL_ASSET_VALUE - ASSET_VALUE
     exec.fungible_asset::split
-    # => [FINAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     # store FINAL_ASSET_VALUE so we can return it at the end
     loc_storew_le.0
-    # => [FINAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     dup.12 padw movup.4 mem_loadw_le
-    # => [VAULT_ROOT, FINAL_ASSET_VALUE, ASSET_KEY_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [VAULT_ROOT, FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     movdnw.2
-    # => [FINAL_ASSET_VALUE, ASSET_KEY_HASH, VAULT_ROOT, INITIAL_ASSET_VALUE, vault_root_ptr]
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, VAULT_ROOT, INITIAL_ASSET_VALUE, vault_root_ptr]
 
     # update the asset in the vault; the old value is asserted below to be equivalent to the
     # peeked value provided via peek_asset
@@ -366,11 +366,11 @@ end
 #! Note that the ASSET_VALUE is only needed to check against the asset that was removed from the
 #! vault.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the asset vault key of the non-fungible asset to remove from the vault.
+#! - ASSET_ID is the asset ID of the non-fungible asset to remove from the vault.
 #! - INITIAL_ASSET_VALUE equals ASSET_VALUE since the proc asserts the asset is present with that
 #!   exact value.
 #! - FINAL_ASSET_VALUE is always EMPTY_WORD (nothing remains after removing a non-fungible asset).
@@ -379,17 +379,17 @@ end
 #! Panics if:
 #! - the non-fungible asset is not found in the vault.
 pub proc remove_non_fungible_asset
-    # hash the asset vault key before using it as the SMT key
-    exec.hash_asset_key
-    # => [ASSET_KEY_HASH, ASSET_VALUE, vault_root_ptr]
+    # hash the asset ID before using it as the SMT key
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE, vault_root_ptr]
 
     # load vault root
     padw dup.12 mem_loadw_le
-    # => [VAULT_ROOT, ASSET_KEY_HASH, ASSET_VALUE, vault_root_ptr]
+    # => [VAULT_ROOT, ASSET_ID_HASH, ASSET_VALUE, vault_root_ptr]
 
-    # prepare insertion of an EMPTY_WORD into the vault at the hashed asset key to remove the asset
+    # prepare insertion of an EMPTY_WORD into the vault at the hashed asset ID to remove the asset
     swapw padw
-    # => [EMPTY_WORD, ASSET_KEY_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+    # => [EMPTY_WORD, ASSET_ID_HASH, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
     # insert the empty word into the vault to remove the asset
     exec.smt::set
@@ -414,13 +414,13 @@ end
 
 #! Remove the specified asset from the vault and return the initial and remaining asset values.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 #! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the asset vault key of the asset to remove from the vault.
+#! - ASSET_ID is the asset ID of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
-#! - INITIAL_ASSET_VALUE is the value associated with ASSET_KEY in the vault prior to the
+#! - INITIAL_ASSET_VALUE is the value associated with ASSET_ID in the vault prior to the
 #!   operation. For non-fungible assets this equals ASSET_VALUE; for fungible assets this is the
 #!   pre-split balance.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal; EMPTY_WORD
@@ -434,11 +434,11 @@ end
 pub proc remove_asset
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
-    # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+    exec.asset::is_fungible_asset_id
+    # => [is_fungible_asset, ASSET_ID, ASSET_VALUE, vault_root_ptr]
 
     # remove the asset from the asset vault
     if.true
@@ -453,13 +453,13 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Hashes the raw asset vault key into the key used by the asset vault SMT.
+#! Hashes the raw asset ID into the key used by the asset vault SMT.
 #!
-#! See [`AssetVaultKey::hash`] in Rust for the rationale.
+#! See [`AssetId::hash`] in Rust for the rationale.
 #!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET_KEY_HASH]
-proc hash_asset_key
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID_HASH]
+proc hash_asset_id
     exec.poseidon2::hash
-    # => [ASSET_KEY_HASH]
+    # => [ASSET_ID_HASH]
 end

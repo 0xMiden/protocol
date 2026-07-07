@@ -392,7 +392,7 @@ async fn nft_public_getters() -> anyhow::Result<()> {
         "
         @transaction_script
         pub proc main
-            # status of an unissued asset id is 0 (not issued)
+            # status of an unissued asset class is 0 (not issued)
             push.42.123
             call.::miden::standards::faucets::non_fungible::get_asset_status
             eq.0 assert.err=\"expected asset status to be unissued\"
