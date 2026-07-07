@@ -17,12 +17,17 @@ const EXPIRY_UPPER_LIMIT=0xFFFF+1
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM=0xFFFFFFFF
 
+#! The maximum number of VM cycles a program is allowed to take (see ExecutionOptions::MAX_CYCLES).
+const MAX_CYCLES = 0x20000000
+
 # ERRORS
 # =================================================================================================
 
 const ERR_TX_INVALID_EXPIRATION_DELTA="transaction expiration block delta must be within 0x1 and 0xFFFF"
 
 const ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32="the number of extra cycles passed to compute_fee must be a u32"
+
+const ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX = "the number of estimated cycles exceeds the maximum possible cycles"
 
 const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX="the number of excluded output notes exceeds the maximum number of output notes per transaction"
 
@@ -237,6 +242,11 @@ pub proc compute_fee
     # get the number of cycles the transaction has taken to execute up to this point and add the
     # estimated number of extra cycles
     clk add
+    # => [num_estimated_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # assert the estimated cycles do not exceed the max possible cycles
+    u32assert.err=ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX
+    dup u32lte.MAX_CYCLES assert.err=ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX
     # => [num_estimated_cycles, EXCLUDE_NOTES_COMMITMENT]
 
     # ilog2 rounds down, but we need to round up, so we add 1 afterwards. Technically we don't need
