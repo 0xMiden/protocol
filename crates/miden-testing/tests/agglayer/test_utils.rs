@@ -23,9 +23,11 @@ use miden_processor::{
     Program,
     StackInputs,
 };
+use miden_protocol::ProtocolLib;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::StandardsLib;
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
@@ -62,6 +64,15 @@ pub async fn execute_program_with_default_host(
     for (event_name, handler) in std_lib.handlers() {
         host.register_handler(event_name, handler)?;
     }
+
+    // Load the protocol and standards libraries so agglayer procedures that call into them
+    // (e.g. `account_id::validate`) resolve at runtime, mirroring
+    // `CodeExecutor::with_default_host`.
+    let protocol_lib = ProtocolLib::default();
+    host.load_library(protocol_lib.mast_forest()).unwrap();
+
+    let standards_lib = StandardsLib::default();
+    host.load_library(standards_lib.mast_forest()).unwrap();
 
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();
