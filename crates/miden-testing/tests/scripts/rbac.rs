@@ -29,20 +29,6 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 // HELPERS
 // ================================================================================================
 
-fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
-    let account = AccountBuilder::new([9; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac {
-            owner,
-            roles: BTreeMap::new(),
-            members: BTreeMap::new(),
-        })
-        .build_existing()?;
-
-    Ok(account)
-}
-
 fn create_rbac_account_with_members(
     owner: AccountId,
     members: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
@@ -57,7 +43,7 @@ fn create_rbac_account_with_members(
 }
 
 fn create_rbac_chain(owner: AccountId) -> anyhow::Result<(Account, MockChain)> {
-    let account = create_rbac_account_with_owner(owner)?;
+    let account = create_rbac_account_with_members(owner, BTreeMap::new())?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -371,7 +357,7 @@ async fn test_rbac_with_roles_matches_runtime_grants() -> anyhow::Result<()> {
     )?;
 
     // Account built empty, then granted the same two members at runtime.
-    let empty = create_rbac_account_with_owner(owner)?;
+    let empty = create_rbac_account_with_members(owner, BTreeMap::new())?;
     let mut builder = MockChain::builder();
     builder.add_account(empty.clone())?;
     let mock_chain = builder.build()?;
