@@ -1,11 +1,8 @@
-//! Tests for `agglayer::common::eth_address::to_account_id`, focused on the `AccountId`
-//! structural invariants the bridge-in claim relies on.
+//! Tests for `AccountId` validation in `eth_address::to_account_id`.
 //!
-//! The claim path decodes a deposit leaf's `destinationAddress` into a Miden `AccountId` via
-//! `to_account_id` and routes bridged value to it by emitting a P2ID (native faucet) or MINT
-//! (non-native faucet) output. If the decoded id is not a structurally valid `AccountId`, the
-//! resulting output can never be consumed, permanently locking the assets. These tests pin the
-//! two failure modes and the fix that closes the gap.
+//! The bridge-in claim decodes a deposit's `destinationAddress` into an `AccountId` and routes
+//! bridged value to it via a P2ID/MINT output. If the decoded id is not a valid `AccountId`, that
+//! output can never be consumed and the assets are locked.
 
 extern crate alloc;
 
@@ -22,20 +19,15 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUT
 
 use super::test_utils::assert_execution_fails_with;
 
-/// The exact message of `ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO` in
-/// `crates/miden-protocol/asm/protocol_utils/src/account_id.masm`. `account_id::validate` panics
-/// with this when the suffix's least-significant byte is non-zero. It has no exported Rust
-/// constant, so we mirror the string here (matched by error code, see
-/// [`MasmError::matches_execution_error`]).
+/// Message of `ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO` from the protocol
+/// `account_id.masm`. It has no exported Rust constant, so we mirror the string (matched by code).
 const ERR_SUFFIX_LSB_NONZERO: MasmError =
     MasmError::from_static_str("least significant byte of the account ID suffix must be zero");
 
-/// Builds a MASM script that pushes the 5 address limbs and runs `eth_address::to_account_id`.
+/// Builds a script that pushes the 5 address limbs (`limb0` on top) and runs `to_account_id`.
 ///
-/// `to_account_id` expects `[limb0, limb1, limb2, limb3, limb4]` with `limb0` on top, so the limbs
-/// (returned by [`EthAddress::to_elements`] in ascending order) are pushed in reverse. On success
-/// the stack holds `[suffix, prefix]`; `truncate_stack` lets a run that does *not* revert terminate
-/// cleanly, so a missing revert is observable as a successful execution rather than a stack error.
+/// `truncate_stack` lets a non-reverting run finish cleanly, so a missing revert surfaces as a
+/// successful execution rather than a stack error.
 fn to_account_id_script(addr: &EthAddress) -> String {
     let limbs: Vec<u64> = addr.to_elements().iter().map(|f| f.as_canonical_u64()).collect();
     format!(
@@ -51,13 +43,9 @@ end",
     )
 }
 
-/// Returns an embedded-form destination address whose decoded suffix violates the `AccountId`
-/// "least-significant byte must be zero" invariant, along with its decoded `(suffix, prefix)` field
-/// elements.
-///
-/// Built by encoding a valid `AccountId` as an embedded address and flipping the suffix's
-/// least-significant byte from `0` to `1`. Version and suffix most-significant bit stay valid, so
-/// `account_id::validate` fails specifically on the suffix least-significant-byte check.
+/// Returns an embedded-form address that decodes into a structurally invalid `AccountId` (suffix
+/// least-significant byte non-zero), plus its decoded `(suffix, prefix)`. Built from a valid
+/// `AccountId` with only the suffix LSB flipped, so `account_id::validate` fails on that check.
 fn crafted_invalid_embedded_address() -> (EthAddress, Felt, Felt) {
     let valid_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let mut bytes = EthEmbeddedAccountId::from_account_id(valid_id).to_bytes();
@@ -75,10 +63,8 @@ fn crafted_invalid_embedded_address() -> (EthAddress, Felt, Felt) {
     (EthAddress::new(bytes), suffix, prefix)
 }
 
-/// Case A (unclaimable): a committed destination address whose most-significant 4 bytes are
-/// non-zero - i.e. a real, non-embedded Ethereum address - hard-traps in `to_account_id`. Because
-/// the destination is committed into the deposit leaf, such a claim is deterministically
-/// unclaimable. Behaviour is unchanged by the fix.
+/// Case A: a non-embedded destination (non-zero most-significant 4 bytes) hard-traps in
+/// `to_account_id`, so the committed claim is deterministically unclaimable. Unchanged by the fix.
 #[tokio::test]
 async fn to_account_id_rejects_non_embedded_address() {
     // A real-looking EVM address: the top 4 bytes are non-zero, so it is not an embedded AccountId.
@@ -86,10 +72,8 @@ async fn to_account_id_rejects_non_embedded_address() {
     assert_execution_fails_with(&to_account_id_script(&addr), &ERR_MSB_NONZERO).await;
 }
 
-/// Evidence (fix-independent): the crafted destination used by
-/// [`to_account_id_rejects_structurally_invalid_account_id`] really is an invalid `AccountId` - the
-/// Rust reference conversion rejects it. This is what makes the missing MASM check a bug: the
-/// on-chain path is strictly more permissive than the Rust reference.
+/// Evidence that the crafted destination really is an invalid `AccountId`: the Rust reference
+/// conversion rejects it, so the on-chain path accepting it is a genuine gap.
 #[test]
 fn crafted_invalid_account_id_is_rejected_by_rust() {
     let (bad_addr, suffix, prefix) = crafted_invalid_embedded_address();
@@ -104,14 +88,9 @@ fn crafted_invalid_account_id_is_rejected_by_rust() {
     assert!(AccountId::try_from_elements(suffix, prefix).is_err());
 }
 
-/// Case B (unspendable output) - the core bug.
-///
-/// A destination address that is embedded-form (top 4 bytes zero) but decodes into a structurally
-/// invalid `AccountId` (here: suffix least-significant byte non-zero) must be rejected by
-/// `to_account_id`. Before the fix, `to_account_id` accepts it and returns the invalid
-/// `(suffix, prefix)`, which the claim would route into an unspendable P2ID/MINT output (this test
-/// fails, reproducing the bug). After the fix, `to_account_id` validates the decoded id and reverts
-/// with the suffix least-significant-byte error.
+/// Case B (the core bug): an embedded destination that decodes into a structurally invalid
+/// `AccountId` must be rejected. Before the fix `to_account_id` accepts it (this test fails,
+/// reproducing the bug); after the fix it reverts with the suffix least-significant-byte error.
 #[tokio::test]
 async fn to_account_id_rejects_structurally_invalid_account_id() {
     let (bad_addr, _suffix, _prefix) = crafted_invalid_embedded_address();

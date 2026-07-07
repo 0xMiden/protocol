@@ -65,9 +65,6 @@ pub async fn execute_program_with_default_host(
         host.register_handler(event_name, handler)?;
     }
 
-    // Load the protocol and standards libraries so agglayer procedures that call into them
-    // (e.g. `account_id::validate`) resolve at runtime, mirroring
-    // `CodeExecutor::with_default_host`.
     let protocol_lib = ProtocolLib::default();
     host.load_library(protocol_lib.mast_forest()).unwrap();
 

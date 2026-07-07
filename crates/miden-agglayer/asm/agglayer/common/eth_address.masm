@@ -79,11 +79,10 @@ pub proc to_account_id
     swap
     # => [suffix, prefix]
 
-    # Validate the decoded id is a structurally valid AccountId before it is used as an output
-    # target. Without this, a malformed committed destination would decode into an id that no
-    # account can satisfy, producing an unspendable P2ID/MINT output.
+    # Validate the decoded id is a structurally valid AccountId before it is used as an output target.
     dup.1 dup.1
     # => [suffix, prefix, suffix, prefix]
+
     exec.account_id::validate
     # => [suffix, prefix]
 end
