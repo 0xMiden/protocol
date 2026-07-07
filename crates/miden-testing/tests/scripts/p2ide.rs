@@ -1,5 +1,3 @@
-use core::slice;
-
 use anyhow::Context;
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
@@ -32,7 +30,8 @@ async fn p2ide_script_success_without_reclaim_or_timelock() -> anyhow::Result<()
 
     // CONSTRUCT AND EXECUTE TX (Failure - Malicious Account)
     let executed_transaction_1 = mock_chain
-        .build_tx_context(malicious_account.id(), &[], slice::from_ref(&p2ide_note))?
+        .build_transaction(malicious_account.id())
+        .unauthenticated_input_note(p2ide_note.clone())
         .build()?
         .execute()
         .await;
@@ -41,7 +40,8 @@ async fn p2ide_script_success_without_reclaim_or_timelock() -> anyhow::Result<()
 
     // CONSTRUCT AND EXECUTE TX (Success - Target Account)
     let executed_transaction_2 = mock_chain
-        .build_tx_context(target_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
@@ -79,7 +79,8 @@ async fn p2ide_script_success_timelock_unlock_before_reclaim_height() -> anyhow:
 
     // CONSTRUCT AND EXECUTE TX (Success - Target Account)
     let executed_transaction_1 = mock_chain
-        .build_tx_context(target_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
@@ -118,12 +119,9 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
 
     // ───────────────────── reclaim attempt (sender) → FAIL ────────────
     let early_reclaim = mock_chain
-        .build_tx_context_at(
-            timelock_height.as_u32() - 1,
-            sender_account.id(),
-            &[p2ide_note.id()],
-            &[],
-        )?
+        .build_transaction(sender_account.id())
+        .reference_block(timelock_height.as_u32() - 1)
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -132,12 +130,9 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
 
     // ───────────────────── early spend attempt (target)  → FAIL ─────────────
     let early_spend = mock_chain
-        .build_tx_context_at(
-            timelock_height.as_u32() - 1,
-            target_account.id(),
-            &[p2ide_note.id()],
-            &[],
-        )?
+        .build_transaction(target_account.id())
+        .reference_block(timelock_height.as_u32() - 1)
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -146,7 +141,8 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
 
     // ───────────────────── reclaim attempt (sender) → FAIL ────────────
     let early_reclaim = mock_chain
-        .build_tx_context(sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -155,7 +151,8 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
 
     // ───────────────────── target spends successfully ───────────────────────
     let final_tx = mock_chain
-        .build_tx_context(target_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
@@ -194,7 +191,9 @@ async fn p2ide_script_reclaim_fails_before_timelock_expiry() -> anyhow::Result<(
 
     // CONSTRUCT AND EXECUTE TX (Failure - sender_account tries to reclaim)
     let executed_transaction_1 = mock_chain
-        .build_tx_context_at(1, sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .reference_block(1u32)
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -206,7 +205,9 @@ async fn p2ide_script_reclaim_fails_before_timelock_expiry() -> anyhow::Result<(
 
     // CONSTRUCT AND EXECUTE TX (Success - sender_account)
     let executed_transaction_2 = mock_chain
-        .build_tx_context_at(timelock_height, sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .reference_block(timelock_height)
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
@@ -245,7 +246,8 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     // ───────────────────── early reclaim attempt (sender) → FAIL ────────────
     let early_reclaim = mock_chain
-        .build_tx_context(sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -254,7 +256,8 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     // ───────────────────── early spend attempt (target)  → FAIL ─────────────
     let early_spend = mock_chain
-        .build_tx_context(target_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -266,7 +269,8 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     // ───────────────────── early reclaim attempt (sender) → FAIL ────────────
     let early_reclaim = mock_chain
-        .build_tx_context(sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -278,7 +282,8 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     // CONSTRUCT AND EXECUTE TX (Failure - Malicious Account)
     let executed_transaction_1 = mock_chain
-        .build_tx_context(malicious_account.id(), &[], slice::from_ref(&p2ide_note))?
+        .build_transaction(malicious_account.id())
+        .unauthenticated_input_note(p2ide_note.clone())
         .build()?
         .execute()
         .await;
@@ -290,7 +295,8 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     // ───────────────────── target spends successfully ───────────────────────
     let final_tx = mock_chain
-        .build_tx_context(target_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
@@ -324,7 +330,8 @@ async fn p2ide_script_reclaim_success_after_timelock() -> anyhow::Result<()> {
 
     // ───────────────────── early reclaim attempt (sender) → FAIL ────────────
     let early_reclaim = mock_chain
-        .build_tx_context(sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await;
@@ -336,7 +343,8 @@ async fn p2ide_script_reclaim_success_after_timelock() -> anyhow::Result<()> {
 
     // ───────────────────── sender reclaims successfully ───────────────────────
     let final_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[p2ide_note.id()], &[])?
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;

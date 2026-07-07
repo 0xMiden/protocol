@@ -49,6 +49,10 @@ const REG_SCALE_LOC = 6
 const REG_ORIGIN_NETWORK_LOC = 7
 const REG_IS_NATIVE_LOC = 8
 
+# Local memory slot offsets used inside the `deregister_faucet` procedure
+const DEREG_FAUCET_ID_SUFFIX_LOC = 0
+const DEREG_FAUCET_ID_PREFIX_LOC = 1
+
 # faucet_metadata_map sub-keys (used as the first element of the 4-felt KEY).
 # Each sub-key indexes a different word of metadata for a given faucet ID.
 const FAUCET_METADATA_SUBKEY_ADDR_LO = 0  # [addr0, addr1, addr2, addr3]
@@ -243,6 +247,38 @@ pub proc register_faucet
     loc_storew_le.REG_TOKEN_HASH_LOC dropw
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
 
+    # --- Clear the potentially populated token_registry key from a prior registration ---
+    # If this faucet is already registered (a re-registration under a different
+    # (origin_token_address, origin_network)), the new token key and metadata written below would
+    # otherwise leave the previous token key pointing at this faucet forever.
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
+    exec.is_faucet_registered
+    # => [is_registered, addr0, addr1, addr2, addr3, addr4, pad(11)]
+    if.true
+        loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
+        exec.get_faucet_conversion_info
+        # => [prev_addr(5), prev_network, prev_scale, addr(5), pad(11)]
+
+        movup.6 drop
+        # => [prev_addr(5), prev_network, addr(5), pad(11)]
+
+        # Byte-swap prev_network so the hash input matches register_faucet's Step 4 convention.
+        movup.5 exec.utils::swap_u32_bytes movdn.5
+        # => [prev_addr(5), prev_network_swapped, addr(5), pad(11)]
+
+        exec.hash_token_address
+        # => [PREV_TOKEN_HASH, addr(5), pad(11)]
+
+        padw swapw
+        # => [PREV_TOKEN_HASH, 0, 0, 0, 0, addr(5), pad(11)]
+
+        push.TOKEN_REGISTRY_MAP_SLOT[0..2]
+        exec.native_account::set_map_item
+        dropw
+        # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
+    end
+    # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
+
     # --- Step 1: Store origin address part 1 in faucet_metadata_map ---
     # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr0, addr1, addr2, addr3]
 
@@ -346,6 +382,94 @@ pub proc store_faucet_metadata_hash
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
     dropw
+    # => [pad(16)]
+end
+
+#! Deregisters a faucet, clearing all of its entries: the
+#! `faucet_registry`, `token_registry`, and all four `faucet_metadata` sub-keys. Asserts the faucet
+#! is currently registered first. Afterwards `assert_faucet_registered` and
+#! `lookup_faucet_by_token_address` fail for the faucet, so in-flight B2AGG / CLAIM notes targeting
+#! it are rejected.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not hold the faucet admin role.
+#! - the faucet is not currently registered in the faucet registry.
+#!
+#! Locals:
+#! - 0: faucet_id_suffix
+#! - 1: faucet_id_prefix
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc deregister_faucet
+    # assert the note sender is authorized for this procedure (holds the faucet admin role).
+    exec.authority::assert_authorized
+    # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
+
+    # Stash the faucet ID; it is needed for every map key below.
+    dup.0 loc_store.DEREG_FAUCET_ID_SUFFIX_LOC
+    dup.1 loc_store.DEREG_FAUCET_ID_PREFIX_LOC
+    # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
+
+    # --- 1. Assert faucet is currently registered (consumes [suffix, prefix]) ---
+    exec.assert_faucet_registered
+    # => [pad(16)]
+
+    # --- 2. Clear token_registry ---
+    # Read the faucet's registered (origin_token_addr, origin_network) from faucet_metadata. Drop the scale we don't need.
+    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
+    exec.get_faucet_conversion_info
+    # => [origin_token_addr(5), origin_network, scale, pad(16)]
+
+    movup.6 drop
+    # => [origin_token_addr(5), origin_network, pad(16)]
+
+    # Byte-swap origin_network so the hash input matches register_faucet's convention.
+    movup.5 exec.utils::swap_u32_bytes movdn.5
+    # => [origin_token_addr(5), origin_network_swapped, pad(16)]
+
+    exec.hash_token_address
+    # => [TOKEN_ADDR_HASH, pad(16)]
+
+    padw swapw
+    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(16)]
+
+    push.TOKEN_REGISTRY_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => [pad(16)]
+
+    # --- 3. Clear faucet_registry: KEY=[0,0,suffix,prefix], VALUE=[0,0,0,0] ---
+    padw
+    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.0
+    # => [[0, 0, suffix, prefix], [0, 0, 0, 0], pad(16)]
+    push.FAUCET_REGISTRY_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => [pad(16)]
+
+    # --- 4. Clear all four faucet_metadata sub-keys (0..3) to [0; 4]; KEY = [sub_key, 0, suffix, prefix] ---
+    push.FAUCET_METADATA_SUBKEY_ADDR_LO
+    # => [sub_key, pad(16)]
+
+    repeat.4
+        padw
+        loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC
+        push.0 dup.7
+        # => [[sub_key, 0, suffix, prefix], [0, 0, 0, 0], sub_key, pad(16)]
+
+        push.FAUCET_METADATA_MAP_SLOT[0..2]
+        exec.native_account::set_map_item
+        dropw
+        # => [sub_key, pad(16)]
+
+        add.1
+    end
+    drop
     # => [pad(16)]
 end
 
@@ -492,6 +616,29 @@ pub proc is_faucet_native
     # Drop element 0 (registration flag), move is_native past the two trailing zeros, drop them.
     drop movdn.2 drop drop
     # => [is_native]
+end
+
+#! Returns whether a faucet is currently registered in the bridge's faucet registry.
+#!
+#! Reads the faucet_registry_map value [is_registered, is_native, 0, 0] and returns the
+#! is_registered flag. An unregistered faucet maps to the empty word [0, 0, 0, 0], so the flag is 0.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [is_registered]
+#!
+#! Invocation: exec
+pub proc is_faucet_registered
+    # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    push.FAUCET_REGISTRY_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [is_registered, is_native, 0, 0]
+
+    # Keep element 0 (registration flag), drop the rest.
+    movdn.3 drop drop drop
+    # => [is_registered]
 end
 
 #! Looks up the faucet account ID for a given (origin_token_address, origin_network) pair.

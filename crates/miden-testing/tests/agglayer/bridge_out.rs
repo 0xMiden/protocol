@@ -814,7 +814,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
-    let initial_balance = user_account.vault().get_balance(bridge_asset.vault_key())?;
+    let initial_balance = user_account.vault().get_balance(bridge_asset.id())?;
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
@@ -840,7 +840,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let final_balance = user_account.vault().get_balance(bridge_asset.vault_key())?;
+    let final_balance = user_account.vault().get_balance(bridge_asset.id())?;
     assert_eq!(
         final_balance,
         (initial_balance + amount).unwrap(),
@@ -1081,7 +1081,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     bridge_account.apply_patch(executed_tx.account_patch())?;
 
     // The asset now lives in the bridge's own vault.
-    let bridge_balance = bridge_account.vault().get_balance(bridge_asset.vault_key())?;
+    let bridge_balance = bridge_account.vault().get_balance(bridge_asset.id())?;
     assert_eq!(
         bridge_balance,
         AssetAmount::new(amount)?,

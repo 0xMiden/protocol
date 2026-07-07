@@ -33,6 +33,7 @@ pub use crate::{
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    DeregisterAggFaucetNote,
     EthAddress,
     EthAmount,
     EthAmountError,
@@ -162,6 +163,12 @@ procedure_root!(
     "remove_ger",
     AggLayerBridge::code()
 );
+procedure_root!(
+    DEREGISTER_FAUCET_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "deregister_faucet",
+    AggLayerBridge::code()
+);
 
 /// The accounts that initially hold each of the bridge's privileged RBAC roles.
 ///
@@ -222,6 +229,8 @@ impl BridgeRoles {
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
+/// - `deregister_faucet`, which clears a previously-registered faucet from both the faucet registry
+///   and token registry maps.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `remove_ger`, which removes a GER from the storage map and folds it into the running
 ///   removed-GER keccak256 hash chain.
@@ -259,7 +268,7 @@ impl BridgeRoles {
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
-/// CONFIG_AGG_BRIDGE notes.
+/// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_FAUCET notes.
 ///
 /// Claim validation compares the leaf's `destination_network` to the global MASM constant
 /// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
@@ -327,6 +336,11 @@ impl AggLayerBridge {
         *REMOVE_GER_ROOT
     }
 
+    /// Returns the procedure root of the bridge's `deregister_faucet` procedure.
+    pub fn deregister_faucet_root() -> AccountProcedureRoot {
+        *DEREGISTER_FAUCET_ROOT
+    }
+
     /// Returns the fixed procedure-to-role map used to configure the account's `Authority`
     /// (`RbacControlled`) component. Each role-gated bridge procedure is mapped to the role
     /// required to invoke it.
@@ -334,6 +348,7 @@ impl AggLayerBridge {
         BTreeMap::from([
             (Self::register_faucet_root(), Self::faucet_admin_role()),
             (Self::store_faucet_metadata_hash_root(), Self::faucet_admin_role()),
+            (Self::deregister_faucet_root(), Self::faucet_admin_role()),
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
         ])
@@ -431,6 +446,7 @@ impl AggLayerBridge {
             ClaimNote::script_root(),
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
+            DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
         ])
