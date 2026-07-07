@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
