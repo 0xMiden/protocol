@@ -14,7 +14,7 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -28,7 +28,7 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
@@ -558,28 +558,25 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
+        "cannot combine fungible assets with different asset IDs: {original_id} and {other_id}"
     )]
-    FungibleAssetInconsistentVaultKeys {
-        original_key: AssetVaultKey,
-        other_key: AssetVaultKey,
-    },
+    FungibleAssetInconsistentIds { original_id: AssetId, other_id: AssetId },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+        "asset class prefix and suffix in a non-fungible asset ID must match indices 0 and 1 in the value, but asset class was {asset_class} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
-    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
-    FungibleAssetIdMustBeZero(AssetId),
+    NonFungibleAssetClassMustMatchValue { asset_class: AssetClass, value: Word },
+    #[error("asset class prefix and suffix in a fungible asset ID must be zero but was {0}")]
+    FungibleAssetClassMustBeZero(AssetClass),
     #[error(
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error("smt proof in asset witness contains invalid key or value")]
+    #[error("smt proof in asset witness contains invalid ID or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("vault key {key} is not present in the provided asset witness SMT proof")]
-    AssetWitnessMissingKey { key: AssetVaultKey },
+    #[error("asset ID {id} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingId { id: AssetId },
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
     #[error("unknown asset delta operation encoding: {0}")]
@@ -704,9 +701,9 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("partial vault contains invalid asset value {value} at key {key}")]
-    InvalidAssetForKey {
-        key: AssetVaultKey,
+    #[error("partial vault contains invalid asset value {value} at ID {id}")]
+    InvalidAssetForId {
+        id: AssetId,
         value: Word,
         #[source]
         source: AssetError,
@@ -875,6 +872,14 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
+    #[error("library does not contain a procedure with @transaction_script attribute")]
+    NoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @transaction_script attribute")]
+    MultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    ProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
+    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR

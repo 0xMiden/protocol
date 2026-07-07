@@ -183,13 +183,13 @@ impl AccountDelta {
     ///   id, `nonce_delta` is the value by which the nonce was incremented, and `domain = 1`
     ///   identifies the header as the start of an account delta commitment.
     /// - Asset Delta
-    ///   - For each **added** asset, sorted by its vault key:
-    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///   - For each **added** asset, sorted by its asset ID:
+    ///     - Append `[ASSET_ID, ASSET_VALUE]`.
     ///   - Append `[domain = 3, delta_op = 1, num_added_assets, 0]` if `num_added_assets != 0`
     ///     where `num_added_assets` is the number of added assets and `delta_op` is set to `1`
     ///     indicating asset addition.
-    ///   - For each **removed** asset, sorted by its vault key:
-    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///   - For each **removed** asset, sorted by its asset ID:
+    ///     - Append `[ASSET_ID, ASSET_VALUE]`.
     ///   - Append `[domain = 3, delta_op = 2, num_removed_assets, 0]` if `num_removed_assets != 0`
     ///     where `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
     ///     indicating asset removal.
@@ -269,7 +269,7 @@ impl AccountDelta {
     /// ```text
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
-    ///   [ASSET_KEY, ASSET_VALUE],
+    ///   [ASSET_ID, ASSET_VALUE],
     ///   [[domain = 3, delta_op = 1, num_added_assets = 1, 0], EMPTY_WORD],
     ///   [/* no removed assets delta */],
     ///   [/* no storage patch */]
@@ -287,7 +287,7 @@ impl AccountDelta {
     ///
     /// - `NEW_VALUE` is user-controlled and can be crafted to match `ASSET_VALUE` or `EMPTY_WORD`.
     /// - Slot IDs are user-controlled and can be crafted to match the two most significant elements
-    ///   in the asset key or `num_added_assets` and the fixed 0.
+    ///   in the asset ID or `num_added_assets` and the fixed 0.
     /// - This leaves only the domain separator and the patch_op to differentiate these two deltas.
     ///
     /// The delta and patch headers further use distinct domain separators (1 and 2 respectively),

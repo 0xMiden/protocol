@@ -90,12 +90,12 @@ impl MintNote {
 
     /// Expected number of storage items of the MINT note (private mode).
     ///
-    /// Layout: RECIPIENT(4) + ASSET_KEY(4) + ASSET_VALUE(4) + tag(1).
+    /// Layout: RECIPIENT(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1).
     pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 13;
 
     /// Minimum number of storage items of the MINT note (public mode).
     ///
-    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + ASSET_KEY(4) + ASSET_VALUE(4) + tag(1) +
+    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1) +
     /// padding(3) + variable output-note storage. The variable portion starts at offset 20
     /// (word-aligned) and may contain zero or more items.
     pub const MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
@@ -198,12 +198,12 @@ impl From<MintNote> for Note {
 /// Represents the different storage formats for MINT notes.
 ///
 /// - Private: Creates a private output note using a precomputed recipient digest (13 MINT note
-///   storage items: RECIPIENT + ASSET_KEY + ASSET_VALUE + tag).
+///   storage items: RECIPIENT + ASSET_ID + ASSET_VALUE + tag).
 /// - Public: Creates a public output note by providing script root, serial number, and
 ///   variable-length storage (20+ MINT note storage items: 20 fixed + variable output note storage
 ///   items, with the variable section word-aligned at offset 20).
 ///
-/// The asset (`ASSET_KEY` + `ASSET_VALUE`, 8 felts) is embedded in storage so that the
+/// The asset (`ASSET_ID` + `ASSET_VALUE`, 8 felts) is embedded in storage so that the
 /// faucet executing the MINT note can be checked against the asset's faucet ID at mint time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {

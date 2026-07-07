@@ -639,7 +639,8 @@ async fn pausable_mint_fails_when_paused() -> anyhow::Result<()> {
     let recipient_word = Word::from([0u32, 1, 2, 3]);
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             padw padw push.0
             push.{recipient}
             push.{note_type}

@@ -103,7 +103,8 @@ fn update_expiration_tx_script(expiration_delta: u16) -> TransactionScript {
         "
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             push.{expiration_delta}
             exec.tx::update_expiration_block_delta
         end

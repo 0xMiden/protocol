@@ -277,14 +277,15 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
             exec.output_note::create
 
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
             exec.output_note::add_asset
         end
         "#,
@@ -292,7 +293,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
         asset_value = Asset::Fungible(asset).to_value_word(),
-        asset_key = Asset::Fungible(asset).to_key_word(),
+        asset_id = Asset::Fungible(asset).to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
@@ -465,7 +466,8 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0 push.0
 
             push.{recipient}
