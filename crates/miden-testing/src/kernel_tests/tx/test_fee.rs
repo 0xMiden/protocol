@@ -22,9 +22,9 @@ const VERIFICATION_BASE_FEE: u32 = 500;
 
 // `num_extra_cycles` is chosen large enough to dominate the live cycle count of the small test
 // program (a few thousand cycles). This makes `ilog2(clk + num_extra_cycles)` deterministically
-// equal to 30, so the fee is `verification_base_fee * (30 + 1)` regardless of the exact `clk`.
-const NUM_EXTRA_CYCLES: u32 = 1 << 30;
-const EXPECTED_VERIFICATION_CYCLES: u32 = 31;
+// equal to 28, so the fee is `verification_base_fee * (28 + 1)` regardless of the exact `clk`.
+const NUM_EXTRA_CYCLES: u32 = 1 << 28;
+const EXPECTED_VERIFICATION_CYCLES: u32 = 29;
 
 /// Builds a mock chain whose block header sets a non-zero verification base fee, together with a
 /// mock account to execute transactions against.
