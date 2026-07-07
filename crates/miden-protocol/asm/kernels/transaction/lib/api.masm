@@ -15,7 +15,7 @@ use {
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 } from miden::tx_kernel_core::memory
 
-pub type AccountId = struct { prefix: felt, suffix: felt }
+pub type AccountId = struct { suffix: felt, prefix: felt }
 
 # Returned by `input_note_get_assets_info` and `output_note_get_assets_info`.
 pub type NoteAssetsInfo = struct { assets_commitment: word, num_assets: felt }
