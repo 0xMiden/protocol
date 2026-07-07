@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Fixed the transaction executor host honoring `AuthRequest` events emitted outside the registered auth procedure, which let untrusted note or transaction scripts force the host to sign; signature production is now restricted to the authentication procedure ([#3233](https://github.com/0xMiden/protocol/pull/3233)).
 - Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
