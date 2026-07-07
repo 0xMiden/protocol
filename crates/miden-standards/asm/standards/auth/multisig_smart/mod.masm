@@ -41,8 +41,6 @@ const NOTE_RESTRICTION_MAX = 3
 # ERRORS
 # =================================================================================================
 
-const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
-
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
 const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selected execution mode"
@@ -667,8 +665,8 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     dup dup.2
     # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
 
-    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
-    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+    # make sure that the threshold is reachable with the number of approvers
+    exec.multisig::assert_threshold_is_reachable
     # => [MULTISIG_CONFIG, pad(12)]
 
     dup dup.2

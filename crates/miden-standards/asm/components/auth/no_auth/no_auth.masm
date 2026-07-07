@@ -11,7 +11,7 @@ use miden::core::word
 #! the account state.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
-#! Outputs: [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @auth_script
