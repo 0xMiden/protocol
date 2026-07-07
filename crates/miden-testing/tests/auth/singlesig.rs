@@ -91,7 +91,8 @@ async fn test_singlesig_auth_uses_initial_public_key(
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .authenticator(authenticator)
         .tx_script(tx_script)
         .build()?;
