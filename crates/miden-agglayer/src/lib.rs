@@ -165,16 +165,6 @@ pub fn create_bridge_account(seed: Word, owner: AccountId, roles: BridgeRoles) -
         .expect("bridge account should be valid")
 }
 
-/// Creates an existing bridge account with the standard configuration.
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(seed: Word, owner: AccountId, roles: BridgeRoles) -> Account {
-    create_bridge_account_builder(seed, owner, roles)
-        .build_existing()
-        .expect("bridge account should be valid")
-}
-
 /// Creates a complete agglayer faucet account builder with the specified configuration.
 ///
 /// The builder includes:

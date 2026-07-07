@@ -35,7 +35,7 @@ use crate::{
     GlobalIndex,
     LeafData,
     MetadataHash,
-    create_existing_bridge_account,
+    create_bridge_account_builder,
 };
 
 // BRIDGE ACCOUNT HELPERS
@@ -66,7 +66,9 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([ger_remover]),
     )
     .expect("single-holder role sets are non-empty");
-    create_existing_bridge_account(seed, bridge_test_owner(), roles)
+    create_bridge_account_builder(seed, bridge_test_owner(), roles)
+        .build_existing()
+        .expect("bridge account should be valid")
 }
 
 // EMBEDDED TEST VECTOR JSON FILES
