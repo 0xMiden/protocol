@@ -276,7 +276,31 @@ impl From<RoleBasedAccessControl> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::{AccountType, StorageSlotContent};
+
     use super::*;
+
+    fn test_admin(seed: u8) -> AccountId {
+        AccountId::builder()
+            .account_type(AccountType::Private)
+            .build_with_seed([seed; 32])
+    }
+
+    /// Returns the map content of the component's storage slot with the given name.
+    fn find_map<'a>(
+        component: &'a AccountComponent,
+        slot_name: &StorageSlotName,
+    ) -> &'a StorageMap {
+        let slot = component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == slot_name)
+            .expect("component should register the slot");
+        match slot.content() {
+            StorageSlotContent::Map(map) => map,
+            _ => panic!("slot {slot_name} should be a map"),
+        }
+    }
 
     #[test]
     fn admin_role_encoding_matches_masm_constant() {
@@ -286,5 +310,52 @@ mod tests {
             RoleBasedAccessControl::admin_role().as_element().as_canonical_u64(),
             MASM_ADMIN_ROLE,
         );
+    }
+
+    #[test]
+    fn with_admins_seeds_every_admin_and_the_member_count() {
+        // `initial_admins` is a `BTreeSet`, so duplicate account IDs collapse before this point
+        // and the member count always matches the number of membership entries.
+        let admins = [test_admin(1), test_admin(2), test_admin(3)];
+        let component: AccountComponent =
+            RoleBasedAccessControl::with_admins(admins.iter().copied().collect()).into();
+
+        let admin_symbol = RoleBasedAccessControl::admin_role().as_element();
+
+        let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());
+        assert_eq!(membership.num_entries(), admins.len());
+        for admin in admins {
+            let key = StorageMapKey::new(Word::from([
+                Felt::ZERO,
+                admin_symbol,
+                admin.suffix(),
+                admin.prefix().as_felt(),
+            ]));
+            assert_eq!(
+                membership.get(&key),
+                Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO])
+            );
+        }
+
+        let config = find_map(&component, RoleBasedAccessControl::role_config_slot());
+        let config_key =
+            StorageMapKey::new(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, admin_symbol]));
+        let member_count = u32::try_from(admins.len()).unwrap();
+        assert_eq!(
+            config.get(&config_key),
+            Word::from([Felt::from(member_count), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        );
+    }
+
+    #[test]
+    fn with_admins_empty_seeds_no_admin() {
+        let component: AccountComponent =
+            RoleBasedAccessControl::with_admins(BTreeSet::new()).into();
+
+        // No membership entries and an empty config: the component starts with no administrator.
+        let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());
+        assert_eq!(membership.num_entries(), 0);
+        let config = find_map(&component, RoleBasedAccessControl::role_config_slot());
+        assert_eq!(config.num_entries(), 0);
     }
 }

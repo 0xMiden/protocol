@@ -849,3 +849,51 @@ async fn test_rbac_admin_seeded_as_initial_member() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// `ADMIN` is renounceable through the standard API. While another admin remains the role stays
+/// manageable; once the last admin renounces, `ADMIN` has no members and the roles it administers
+/// can no longer be managed.
+#[tokio::test]
+async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
+    let admin1 = test_account_id(120);
+    let admin2 = test_account_id(121);
+    let member = test_account_id(122);
+    let orphan = test_account_id(123);
+
+    let admin_role = RoleBasedAccessControl::admin_role();
+    let pauser = role("PAUSER");
+
+    let (account, mock_chain) = create_rbac_chain(admin1)?;
+
+    // admin1 grants ADMIN to admin2, so ADMIN has two members (ADMIN administers itself).
+    let grant_admin2_note = build_note(admin1, grant_role_script(&admin_role, admin2))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &grant_admin2_note).await?;
+    assert!(is_role_member(&updated, &admin_role, admin2)?);
+
+    // admin1 renounces ADMIN while admin2 remains.
+    let renounce_admin1_note = build_note(admin1, renounce_role_script(&admin_role))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_admin1_note).await?;
+    assert!(!is_role_member(&updated, &admin_role, admin1)?);
+
+    // ADMIN is still manageable: the remaining admin can grant a role.
+    let admin2_grant_note = build_note(admin2, grant_role_script(&pauser, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &admin2_grant_note).await?;
+    assert!(is_role_member(&updated, &pauser, member)?);
+
+    // The last admin renounces ADMIN, leaving it with no members.
+    let renounce_admin2_note = build_note(admin2, renounce_role_script(&admin_role))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_admin2_note).await?;
+    assert!(!is_role_member(&updated, &admin_role, admin2)?);
+    assert_eq!(get_role_config(&updated, &admin_role)?.0, Felt::from(0u32));
+
+    // ADMIN is now unmanageable: granting an ADMIN-administered role fails for everyone.
+    let orphan_grant_note = build_note(admin2, grant_role_script(&pauser, orphan))?;
+    let result = mock_chain
+        .build_tx_context(updated.clone(), &[], slice::from_ref(&orphan_grant_note))?
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    Ok(())
+}
