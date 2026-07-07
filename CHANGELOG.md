@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Cleaned up `signature.masm` by removing redundant scheme-id validation and duplication, dropping the `neq.0` double-negation in `assert_supported_scheme_word`, and eliminating the unused `NUM_OF_APPROVERS_LOC` slot; also optimized `verify_signatures` to reuse the signer index and approver public key from the operand stack instead of round-tripping them through local memory ([#3230](https://github.com/0xMiden/protocol/pull/3230)).
 - Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
