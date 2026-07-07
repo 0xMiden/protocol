@@ -1,10 +1,11 @@
 # Changelog
-
 ## v0.16.0 (TBD)
 
 ### Changes
 - [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
+- Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
+- Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
@@ -24,6 +25,7 @@
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
+- Clarified that FPI reads reflect the reference block and may be outdated unless the foreign account sets a transaction expiration delta ([#3208](https://github.com/0xMiden/protocol/pull/3208)).
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
@@ -85,6 +87,7 @@
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
 - Renamed the `Authority` config value slot, expressed the authority kind as a MASM `enum Authority : u8`, and enforced the canonical config-word encoding on read ([#3209](https://github.com/0xMiden/protocol/pull/3209)).
 - Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
+- [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
 
 ### Fixes
 
