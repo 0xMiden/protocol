@@ -170,11 +170,6 @@ procedure_root!(
 /// - `FAUCET_ADMIN` gates `register_faucet` and `store_faucet_metadata_hash`.
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
-///
-/// Construct via [`BridgeRoles::new`], which rejects an empty holder set for any role: naming all
-/// three roles is mandatory, and a bridge cannot be deployed with a role that has no holders (which
-/// could not be repaired until on-chain role management lands, see
-/// [#2706](https://github.com/0xMiden/protocol/issues/2706)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
     faucet_admins: BTreeSet<AccountId>,
