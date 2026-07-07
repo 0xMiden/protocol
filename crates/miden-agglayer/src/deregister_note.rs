@@ -87,7 +87,8 @@ impl DeregisterAggFaucetNote {
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to deregister
-    /// - `sender_account_id`: The account ID of the note creator (must be the bridge admin)
+    /// - `sender_account_id`: The account ID of the note creator (must hold the `FAUCET_ADMIN`
+    ///   role)
     /// - `target_account_id`: The bridge account ID that will consume this note
     /// - `rng`: Random number generator for creating the note serial number
     ///

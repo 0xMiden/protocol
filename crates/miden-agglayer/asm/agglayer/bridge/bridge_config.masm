@@ -206,7 +206,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the bridge admin.
+#! - the note sender does not hold the faucet admin role.
 #!
 #! Invocation: call
 @locals(14)
@@ -354,7 +354,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the bridge admin.
+#! - the note sender does not hold the faucet admin role.
 #!
 #! Invocation: call
 @account_procedure
