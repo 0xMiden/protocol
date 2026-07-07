@@ -19,8 +19,7 @@ const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
 const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
 const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=2
 const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=3
-const CURRENT_PK_LOC=4
-const SUCCESSFUL_VERIFICATIONS_LOC=8
+const SUCCESSFUL_VERIFICATIONS_LOC=4
 
 # ERRORS
 # =================================================================================================
@@ -178,7 +177,7 @@ end
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(9)
+@locals(5)
 pub proc verify_signatures
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
@@ -217,65 +216,62 @@ pub proc verify_signatures
         exec.active_account::get_initial_map_item
         # => [OWNER_PUB_KEY, i-1, MSG]
 
-        loc_storew_le.CURRENT_PK_LOC
-        # => [OWNER_PUB_KEY, i-1, MSG]
-
         # Check if signature exists for this signer.
         # -----------------------------------------------------------------------------------------
 
         movup.4 movdn.8
         # => [OWNER_PUB_KEY, MSG, i-1]
 
-        dupw.1 swapw
-        # => [OWNER_PUB_KEY, MSG, MSG, i-1]
+        # Duplicate the public key and message so that SIG_KEY can be computed by `merge` while a
+        # copy of the public key is kept on the stack for the signature verification below. This
+        # avoids round-tripping the public key through local memory.
+        dupw.1 dupw.1
+        # => [OWNER_PUB_KEY, MSG, OWNER_PUB_KEY, MSG, i-1]
 
         exec.poseidon2::merge
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, OWNER_PUB_KEY, MSG, i-1]
 
         adv.has_mapkey
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, OWNER_PUB_KEY, MSG, i-1]
 
         adv_push
-        # => [has_signature, SIG_KEY, MSG, i-1]
+        # => [has_signature, SIG_KEY, OWNER_PUB_KEY, MSG, i-1]
 
         # if SIG_KEY => SIGNATURE exists in AdviceMap check the signature
         if.true
-            # => [SIG_KEY, MSG, i-1]
+            # => [SIG_KEY, OWNER_PUB_KEY, MSG, i-1]
+
+            # SIG_KEY is no longer needed; drop it and duplicate the message so one copy survives
+            # verification.
+            dropw
+            # => [OWNER_PUB_KEY, MSG, i-1]
 
             dupw.1
-            # => [MSG, SIG_KEY, MSG, i-1]
-
-            swapw
-            # => [SIG_KEY, MSG, MSG, i-1]
+            # => [MSG, OWNER_PUB_KEY, MSG, i-1]
 
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
-            loc_loadw_le.CURRENT_PK_LOC
-            # => [PK, MSG, MSG, i-1]
-
-            swapw
-            # => [MSG, PK, MSG, i-1]
-
             # Emit the authentication request event that pushes a signature for the message to the advice stack.
             emit.AUTH_REQUEST_EVENT
+            # => [MSG, OWNER_PUB_KEY, MSG, i-1]
 
             swapw
-            # => [PUB_KEY, MSG, MSG, i-1]
+            # => [OWNER_PUB_KEY, MSG, MSG, i-1]
 
             # Build map key from the signer index, still held on the stack as the loop counter.
             dup.12 exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
+            # => [APPROVER_MAP_KEY, OWNER_PUB_KEY, MSG, MSG, i-1]
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, OWNER_PUB_KEY, MSG, MSG, i-1]
 
             # Get scheme_id for signer index i-1 from initial storage state.
             exec.active_account::get_initial_map_item
-            # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
+            # => [[scheme_id, 0, 0, 0], OWNER_PUB_KEY, MSG, MSG, i-1]
 
             movdn.3 drop drop drop
-            # OS => [scheme_id, PUB_KEY, MSG, MSG, i-1]
+            # OS => [scheme_id, OWNER_PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 
             exec.verify_signature_by_scheme
@@ -286,7 +282,8 @@ pub proc verify_signatures
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
             # => [MSG, i-1]
         else
-            dropw
+            # Drop SIG_KEY and the unused OWNER_PUB_KEY copy.
+            dropw dropw
             # => [MSG, i-1]
         end
         # => [MSG, i-1]
