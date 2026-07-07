@@ -376,7 +376,7 @@ end
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Invocation: exec
-pub proc compute_fee
+pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: word) -> felt
     push.TX_COMPUTE_FEE_OFFSET
     # => [offset, num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
 
