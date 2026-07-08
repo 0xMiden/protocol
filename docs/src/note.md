@@ -225,13 +225,14 @@ The P2IDE note script extends P2ID with additional features including time-locki
 **Key characteristics:**
 
 - **Purpose:** Advanced asset transfer with time-lock and reclaim capabilities
-- **Storage:** Requires exactly 4 storage items:
-  - Target account ID
-  - Reclaim block height (when sender can reclaim)
+- **Storage:** Requires exactly 6 storage items:
+  - Reclaim authority account ID (the account allowed to reclaim the note; 2 felts)
+  - Target account ID (2 felts)
+  - Reclaim block height (when the reclaim authority can reclaim)
   - Time-lock block height (when target can consume)
 - **Time-lock:** Note cannot be consumed until the specified block height is reached
-- **Reclaim:** Original sender can reclaim the note after the reclaim block height if not consumed by target
-- **Validation:** Complex logic to handle both target consumption and sender reclaim scenarios
+- **Reclaim:** The note's reclaim authority (stored in note storage, defaulting to the sender) can reclaim the note after the reclaim block height if not consumed by target
+- **Validation:** Complex logic to handle both target consumption and reclaim-authority reclaim scenarios
 - **Requirements:** Account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
 **Use cases:**
