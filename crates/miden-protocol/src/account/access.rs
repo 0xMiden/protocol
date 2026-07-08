@@ -1,4 +1,5 @@
 use alloc::fmt;
+use core::cmp::Ordering;
 
 use crate::Felt;
 use crate::errors::RoleSymbolError;
@@ -11,7 +12,12 @@ use crate::utils::ShortCapitalString;
 ///
 /// The label is stored internally as a validated short string (`A`–`Z` and `_`) and can be
 /// converted to a [`Felt`] encoding via [`as_element()`](Self::as_element).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// [`Ord`] and [`PartialOrd`] order role symbols by their encoded [`Felt`] value — the value
+/// actually used as the on-chain role key — rather than lexicographically by their text. The two
+/// orderings diverge (for example `"AB"` encodes above `"B"`), so ordering by the encoded value
+/// keeps in-memory ordering consistent with the on-chain key.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleSymbol(ShortCapitalString);
 
 impl RoleSymbol {
@@ -54,6 +60,18 @@ impl RoleSymbol {
     /// Returns the [`Felt`] encoding of this role symbol.
     pub fn as_element(&self) -> Felt {
         self.0.as_element(Self::ALPHABET).expect("RoleSymbol alphabet is always valid")
+    }
+}
+
+impl Ord for RoleSymbol {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_element().as_canonical_u64().cmp(&other.as_element().as_canonical_u64())
+    }
+}
+
+impl PartialOrd for RoleSymbol {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -127,5 +145,17 @@ mod tests {
             RoleSymbolError::InvalidCharacter
         );
         assert_matches!(RoleSymbol::new("mINTER").unwrap_err(), RoleSymbolError::InvalidCharacter);
+    }
+
+    #[test]
+    fn test_role_symbol_ordering_matches_encoded_felt() {
+        let ab = RoleSymbol::new("AB").unwrap();
+        let b = RoleSymbol::new("B").unwrap();
+
+        // "AB" encodes above "B" (29 vs 28), the opposite of lexicographic order where
+        // "AB" < "B". RoleSymbol must order by the encoded Felt value, not the text.
+        assert!(ab.as_element().as_canonical_u64() > b.as_element().as_canonical_u64());
+        assert!(ab > b);
+        assert!(b < ab);
     }
 }

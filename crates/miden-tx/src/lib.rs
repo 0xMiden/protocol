@@ -46,4 +46,5 @@ pub mod auth;
 
 // RE-EXPORTS
 // ================================================================================================
+pub use miden_processor::LoadedMastForest;
 pub use miden_protocol::utils;
