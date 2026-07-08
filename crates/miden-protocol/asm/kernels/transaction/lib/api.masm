@@ -14,8 +14,7 @@ use {
     UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 } from miden::tx_kernel_core::memory
-
-pub type AccountId = struct { suffix: felt, prefix: felt }
+use { AccountId } from miden::protocol_utils::types
 
 # NOTE
 # =================================================================================================
