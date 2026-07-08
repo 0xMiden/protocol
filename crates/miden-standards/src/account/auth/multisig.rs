@@ -181,8 +181,8 @@ impl AuthMultisigConfig {
 /// default of 1, a single signer can undo any override.
 ///
 /// Updating the signer set shares this weakness. To make a raised override hold, also apply an
-/// equal-or-higher override to the operations that can weaken it (editing overrides and updating the
-/// signer set), so undoing the protection costs as many signatures as the operation it guards.
+/// equal-or-higher override to the operations that can weaken it (editing overrides and updating
+/// the signer set), so undoing the protection costs as many signatures as the operation it guards.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,

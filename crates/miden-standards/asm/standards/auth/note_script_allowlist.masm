@@ -56,7 +56,7 @@ pub proc assert_all_input_notes_allowed
         dup exec.input_note::get_script_root
         # => [NOTE_SCRIPT_ROOT, note_idx, slot_id_suffix, slot_id_prefix]
 
-        # Copy the slot id to the top of the stack to call get_map_item.
+        # Copy the slot id to the top of the stack to call get_initial_map_item.
         dup.6 dup.6
         # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT, note_idx, slot_id_suffix, slot_id_prefix]
 
