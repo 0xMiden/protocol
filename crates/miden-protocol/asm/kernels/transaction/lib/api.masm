@@ -703,6 +703,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
+#! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: dynexec
 pub proc account_was_procedure_called
