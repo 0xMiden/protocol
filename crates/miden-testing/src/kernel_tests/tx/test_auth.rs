@@ -159,3 +159,41 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Regression test: an untrusted script must not be able to forge the epilogue auth-procedure
+/// boundary events that the host uses to gate signature production.
+#[tokio::test]
+async fn test_privileged_event_from_script_is_rejected() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let chain = builder.build()?;
+
+    // A script executes in a non-root `dyncall` context, so it must not be able to emit the
+    // kernel-only auth-procedure boundary event, reconstructed here from its event string.
+    let tx_script_source = "
+        const START_EVENT = event(\"miden::protocol::epilogue::auth_proc_start\")
+
+        @transaction_script
+        pub proc main
+            emit.START_EVENT
+        end
+    ";
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script_source)?;
+
+    let execution_result = chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_matches!(
+        execution_result,
+        Err(TransactionExecutorError::PrivilegedEventFromNonRootContext(_))
+    );
+
+    Ok(())
+}

@@ -476,6 +476,8 @@ fn validate_num_cycles(num_cycles: u32) -> Result<(), TransactionExecutorError> 
 ///   [`TransactionExecutorError::Unauthorized`].
 /// - If the inner error is [`TransactionKernelError::AuthRequestOutsideAuthProcedure`], it is
 ///   remapped to [`TransactionExecutorError::AuthRequestOutsideAuthProcedure`].
+/// - If the inner error is [`TransactionKernelError::PrivilegedEventFromNonRootContext`], it is
+///   remapped to [`TransactionExecutorError::PrivilegedEventFromNonRootContext`].
 /// - Otherwise, the execution error is wrapped in
 ///   [`TransactionExecutorError::TransactionProgramExecutionFailed`].
 fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
@@ -490,6 +492,9 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
                 },
                 Some(TransactionKernelError::AuthRequestOutsideAuthProcedure) => {
                     TransactionExecutorError::AuthRequestOutsideAuthProcedure
+                },
+                Some(TransactionKernelError::PrivilegedEventFromNonRootContext(event_id)) => {
+                    TransactionExecutorError::PrivilegedEventFromNonRootContext(event_id.clone())
                 },
                 _ => TransactionExecutorError::TransactionProgramExecutionFailed(exec_err),
             }
