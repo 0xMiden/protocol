@@ -474,6 +474,8 @@ fn validate_num_cycles(num_cycles: u32) -> Result<(), TransactionExecutorError> 
 ///
 /// - If the inner error is [`TransactionKernelError::Unauthorized`], it is remapped to
 ///   [`TransactionExecutorError::Unauthorized`].
+/// - If the inner error is [`TransactionKernelError::AuthRequestOutsideAuthProcedure`], it is
+///   remapped to [`TransactionExecutorError::AuthRequestOutsideAuthProcedure`].
 /// - Otherwise, the execution error is wrapped in
 ///   [`TransactionExecutorError::TransactionProgramExecutionFailed`].
 fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
@@ -485,6 +487,9 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
                 },
                 Some(TransactionKernelError::MissingAuthenticator) => {
                     TransactionExecutorError::MissingAuthenticator
+                },
+                Some(TransactionKernelError::AuthRequestOutsideAuthProcedure) => {
+                    TransactionExecutorError::AuthRequestOutsideAuthProcedure
                 },
                 _ => TransactionExecutorError::TransactionProgramExecutionFailed(exec_err),
             }

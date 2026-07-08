@@ -133,6 +133,8 @@ pub enum TransactionExecutorError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -208,6 +210,8 @@ pub enum TransactionKernelError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
     #[error("failed to generate signature")]
     SignatureGenerationFailed(#[source] AuthenticationError),
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]
