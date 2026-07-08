@@ -11,6 +11,7 @@ mod p2ide;
 mod pausable;
 mod pswap;
 mod rbac;
+mod role_config;
 mod send_note;
 mod swap;
 mod warden;
