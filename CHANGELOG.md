@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Cleaned up `signature.masm` by removing redundant scheme-id validation and duplication, dropping the `neq.0` double-negation in `assert_supported_scheme_word`, and eliminating the unused `NUM_OF_APPROVERS_LOC` slot; also optimized `verify_signatures` to reuse the signer index and approver public key from the operand stack instead of round-tripping them through local memory ([#3230](https://github.com/0xMiden/protocol/pull/3230)).
 - Fixed the transaction executor host honoring `AuthRequest` events emitted outside the registered auth procedure, which let untrusted note or transaction scripts force the host to sign; signature production is now restricted to the authentication procedure ([#3233](https://github.com/0xMiden/protocol/pull/3233)).
 - Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
 - [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
