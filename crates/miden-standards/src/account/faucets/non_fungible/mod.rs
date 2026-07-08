@@ -308,22 +308,26 @@ impl NonFungibleFaucet {
         Hasher::merge(&[data_digest, salt])
     }
 
-    /// Reads the issuance [`AssetStatus`] of the asset identified by `commitment` from the faucet
-    /// account's `storage`.
+    /// Reads the issuance [`AssetStatus`] of the asset identified by `asset_commitment` (as
+    /// produced by [`compute_asset_commitment`]) from the faucet account's `storage`.
     ///
     /// # Errors
     ///
     /// Returns an error if the asset-status slot cannot be read or holds an invalid status code.
     ///
     /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
-    pub fn asset_status(
+    pub fn get_asset_status(
         storage: &AccountStorage,
-        commitment: Word,
+        asset_commitment: Word,
     ) -> Result<AssetStatus, NonFungibleFaucetError> {
         // The registry key is the token ID (commitment elements 0 and 1) padded to a word, matching
         // the `create_status_key` procedure in the non-fungible faucet MASM.
-        let key =
-            StorageMapKey::new(Word::new([commitment[0], commitment[1], Felt::ZERO, Felt::ZERO]));
+        let key = StorageMapKey::new(Word::new([
+            asset_commitment[0],
+            asset_commitment[1],
+            Felt::ZERO,
+            Felt::ZERO,
+        ]));
 
         let status_word = storage.get_map_item(Self::asset_status_slot(), key).map_err(|err| {
             TokenMetadataError::StorageLookupFailed {

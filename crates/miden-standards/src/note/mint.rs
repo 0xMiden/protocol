@@ -227,12 +227,12 @@ pub enum MintNoteStorage {
     FungiblePrivate {
         recipient_digest: Word,
         asset: FungibleAsset,
-        tag: Felt,
+        tag: NoteTag,
     },
     FungiblePublic {
         recipient: NoteRecipient,
         asset: FungibleAsset,
-        tag: Felt,
+        tag: NoteTag,
     },
     NonFungiblePrivate {
         recipient_digest: Word,
@@ -248,7 +248,11 @@ pub enum MintNoteStorage {
 
 impl MintNoteStorage {
     /// Builds fungible private-mode storage (creates a private output note).
-    pub fn new_fungible_private(recipient_digest: Word, asset: FungibleAsset, tag: Felt) -> Self {
+    pub fn new_fungible_private(
+        recipient_digest: Word,
+        asset: FungibleAsset,
+        tag: NoteTag,
+    ) -> Self {
         Self::FungiblePrivate { recipient_digest, asset, tag }
     }
 
@@ -256,7 +260,7 @@ impl MintNoteStorage {
     pub fn new_fungible_public(
         recipient: NoteRecipient,
         asset: FungibleAsset,
-        tag: Felt,
+        tag: NoteTag,
     ) -> Result<Self, NoteError> {
         let total_storage_items =
             MintNote::MIN_NUM_STORAGE_ITEMS_PUBLIC + recipient.storage().num_items() as usize;
@@ -294,9 +298,6 @@ impl MintNoteStorage {
     }
 
     /// Returns the account ID of the faucet that will mint the asset.
-    ///
-    /// For fungible variants this is derived from the embedded asset; for non-fungible variants it
-    /// is the explicitly provided target faucet ID.
     pub fn faucet_id(&self) -> AccountId {
         match self {
             Self::FungiblePrivate { asset, .. } | Self::FungiblePublic { asset, .. } => {
@@ -316,7 +317,7 @@ impl From<MintNoteStorage> for NoteStorage {
                 let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
                 storage_values.extend_from_slice(&Asset::from(asset).as_elements());
-                storage_values.push(tag);
+                storage_values.push(tag.into());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
@@ -327,7 +328,7 @@ impl From<MintNoteStorage> for NoteStorage {
                 storage_values.extend_from_slice(&Asset::from(asset).as_elements());
                 // tag followed by 3 padding felts so the variable storage that follows starts at
                 // a word-aligned offset (20).
-                storage_values.extend_from_slice(&[tag, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+                storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
@@ -380,7 +381,8 @@ mod tests {
     fn builder_builds_public_mint_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let asset = FungibleAsset::new(faucet(), 50).unwrap();
-        let mint_storage = MintNoteStorage::new_fungible_private(Word::empty(), asset, Felt::ZERO);
+        let mint_storage =
+            MintNoteStorage::new_fungible_private(Word::empty(), asset, NoteTag::default());
         let mint_note = MintNote::builder()
             .sender(owner())
             .mint_storage(mint_storage)

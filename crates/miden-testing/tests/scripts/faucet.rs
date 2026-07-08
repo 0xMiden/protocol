@@ -917,7 +917,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Create the MINT note using the helper function
     let mint_storage =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into());
+        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1011,8 +1011,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1194,8 +1193,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
 
     // Create mint note from NON-OWNER
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
@@ -1322,8 +1320,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
-    let mint_inputs =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -2149,7 +2146,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Private => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = p2id_mint_output_note.recipient().digest();
-            MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into())
+            MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag)
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -2158,7 +2155,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
                 vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
             let note_storage = NoteStorage::new(p2id_storage)?;
             let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
-            MintNoteStorage::new_fungible_public(recipient, mint_asset, output_note_tag.into())?
+            MintNoteStorage::new_fungible_public(recipient, mint_asset, output_note_tag)?
         },
     };
 
@@ -2421,7 +2418,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     let mint_storage =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag.into());
+        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()

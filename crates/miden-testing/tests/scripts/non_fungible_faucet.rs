@@ -192,7 +192,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 
     // before minting, the commitment has never been issued
     assert_eq!(
-        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
         AssetStatus::NotIssued,
     );
 
@@ -204,7 +204,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
 
     // after minting, the status API reports the commitment as ISSUED
     assert_eq!(
-        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
         AssetStatus::Issued,
     );
 
@@ -230,7 +230,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     // after burning, the status API reports the commitment as BURNED
     faucet.apply_patch(burned.account_patch())?;
     assert_eq!(
-        NonFungibleFaucet::asset_status(faucet.storage(), commitment)?,
+        NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
         AssetStatus::Burned,
     );
 
