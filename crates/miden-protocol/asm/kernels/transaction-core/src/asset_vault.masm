@@ -8,11 +8,11 @@ use {COMPOSITION_NONE} from miden::tx_kernel_core::asset
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to add fungible asset to the asset vault due to the initial value being invalid"
+const ERR_VAULT_ADD_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to add asset to the asset vault due to the initial value being invalid"
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS="failed to add non-fungible asset that already exists in the vault"
 
-const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to remove fungible asset from the asset vault due to the initial value being invalid"
+const ERR_VAULT_REMOVE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to remove asset from the asset vault due to the initial value being invalid"
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-existent non-fungible asset from the vault"
 
@@ -212,7 +212,7 @@ pub proc add_asset
     # => [PREV_VAULT_VALUE, NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # assert PREV_VAULT_VALUE = INITIAL_ASSET_VALUE to make sure peek_asset returned the correct asset
-    dupw.2 assert_eqw.err=ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID
+    dupw.2 assert_eqw.err=ERR_VAULT_ADD_ASSET_FAILED_INITIAL_VALUE_INVALID
     # => [NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # update the vault root
@@ -327,7 +327,7 @@ pub proc remove_asset
     # => [PREV_VAULT_VALUE, NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # assert PREV_VAULT_VALUE = INITIAL_ASSET_VALUE to make sure peek_asset returned the correct asset
-    dupw.2 assert_eqw.err=ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID
+    dupw.2 assert_eqw.err=ERR_VAULT_REMOVE_ASSET_FAILED_INITIAL_VALUE_INVALID
     # => [NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # update the vault root
