@@ -19,7 +19,6 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
 const ASM_COMPONENTS_DIR: &str = "components";
-const ASM_TX_SCRIPTS_DIR: &str = "tx_scripts";
 
 /// Name of the manifest file defining a Miden project.
 const PROJECT_MANIFEST: &str = "miden-project.toml";
@@ -34,9 +33,8 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/standards directory into a package. Note scripts are included in
-///   this library.
-/// - Compiles the contents of asm/tx_scripts directory into individual executable packages.
+/// - Compiles the contents of asm/standards directory into a package. Note scripts and transaction
+///   scripts are included in this library.
 /// - Compiles the contents of asm/components directory into individual packages.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
@@ -58,17 +56,9 @@ fn main() -> Result<()> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
     let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
-    // compile standards library (includes note scripts) and seed it into the registry
+    // compile standards library (includes note scripts and transaction scripts) and seed it into
+    // the registry
     compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
-
-    // compile transaction scripts
-    compile_tx_scripts(
-        &source_dir.join(ASM_TX_SCRIPTS_DIR),
-        &target_dir.join(ASM_TX_SCRIPTS_DIR),
-        &assembler,
-        &mut registry,
-        source_manager.clone(),
-    )?;
 
     // compile account components
     compile_account_components(
@@ -154,40 +144,6 @@ fn compile_account_components(
             .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
         package.write_masp_file(target_dir).into_diagnostic()?;
-    }
-
-    Ok(())
-}
-
-// COMPILE TRANSACTION SCRIPTS
-// ================================================================================================
-
-/// Assembles each member of the tx-scripts workspace in `source_dir` into a package and saves it
-/// to `target_dir`. Each file is named after its package (e.g.
-/// `expiration-tx-script:expiration.masp`), so the include path used by the Rust side is the
-/// package name followed by the bin target name.
-fn compile_tx_scripts(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<()> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    for script in workspace.members() {
-        for target in script.executable_targets() {
-            let target_name = target.name.inner().as_ref();
-
-            let package = assembler
-                .clone()
-                .for_project(script.clone(), registry)?
-                .assemble(ProjectTargetSelector::Executable(target_name), BUILD_PROFILE)?;
-
-            package.write_masp_file(target_dir).into_diagnostic()?;
-        }
     }
 
     Ok(())

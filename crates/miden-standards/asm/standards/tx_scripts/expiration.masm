@@ -9,7 +9,8 @@ use miden::protocol::tx
 #! - delta is 0 or not a u32 in the range 1..=0xFFFF (ERR_TX_INVALID_EXPIRATION_DELTA).
 #!
 #! Invocation: call
-begin
+@transaction_script
+pub proc main
     exec.tx::update_expiration_block_delta
     # => [pad(16)]
 end

@@ -1,29 +1,27 @@
 use core::num::NonZeroU16;
 
+use miden_protocol::assembly::Path;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Package;
 use miden_protocol::{Felt, Word};
+
+use crate::StandardsLib;
 
 // CONSTANTS
 // ================================================================================================
 
-/// The canonical expiration transaction script, assembled at build time from
-/// `asm/tx_scripts/expiration/expiration.masm` into an executable package.
-const EXPIRATION_TX_SCRIPT_BYTES: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/assets/tx_scripts/expiration-tx-script:expiration.masp"
-));
+/// Path to the expiration transaction script procedure in the standards library, assembled from
+/// `asm/standards/tx_scripts/expiration.masm`.
+const EXPIRATION_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::expiration::main";
 
 // EXPIRATION TRANSACTION SCRIPT
 // ================================================================================================
 
 static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    let package = Package::read_from_bytes(EXPIRATION_TX_SCRIPT_BYTES)
-        .expect("expiration tx script masp should be well-formed");
-    TransactionScript::from_package(&package)
-        .expect("expiration tx script package should contain an executable program")
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(EXPIRATION_TX_SCRIPT_PATH);
+    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("standards library should contain the expiration tx script procedure")
 });
 
 /// The canonical transaction script that sets the transaction's expiration delta to the value

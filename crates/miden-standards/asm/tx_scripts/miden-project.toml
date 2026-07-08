@@ -1,9 +1,0 @@
-[workspace]
-members = ["expiration"]
-
-[workspace.package]
-version = "0.16.0"
-
-[workspace.dependencies]
-miden-core     = { linkage = "dynamic", version = "0.22" }
-miden-protocol = { linkage = "dynamic", version = "0.16.0" }
