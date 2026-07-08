@@ -1,10 +1,10 @@
 [package]
-name              = "miden-standards-metadata-code-inspection"
+name              = "miden-standards-inspection-code-inspection"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::metadata::code_inspection"
+namespace = "miden::standards::components::inspection::code_inspection"
 path      = "code_inspection.masm"
 
 [dependencies]

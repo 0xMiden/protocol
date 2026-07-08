@@ -402,3 +402,27 @@ pub proc id_to_composition
     exec.metadata_into_composition
     # => [asset_composition, ASSET_ID]
 end
+
+#! Returns the asset composition from an asset ID and consumes it.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [asset_composition]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID from which to extract the composition.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+pub proc id_into_composition
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    drop drop
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    exec.split_suffix_and_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
+
+    movdn.2 drop drop
+    # => [asset_metadata]
+
+    exec.metadata_into_composition
+    # => [asset_composition]
+end

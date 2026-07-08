@@ -40,18 +40,19 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // BURN NOTE
 // ================================================================================================
 
-/// A BURN note: instructs a fungible faucet to burn the asset carried by the note.
+/// A BURN note: instructs a faucet to burn the asset carried by the note.
 ///
-/// When consumed by the `faucet_id` faucet, the note's asset is destroyed via the faucet's
-/// `fungible::receive_and_burn` procedure. BURN notes are always public so they can be executed by
-/// the network.
+/// When consumed by the faucet that issued the asset, the note's asset is destroyed via the
+/// faucet's `receive_and_burn` procedure. The single BURN script works against both fungible and
+/// non-fungible faucets: it detects the faucet kind by reflection (via the `CodeInspection`
+/// component) and calls the matching `receive_and_burn`. BURN notes are always public so they can
+/// be executed by the network.
 ///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct BurnNote {
     sender: AccountId,
-    faucet_id: AccountId,
     serial_number: Word,
     asset: Asset,
     attachments: NoteAttachments,
@@ -59,7 +60,9 @@ pub struct BurnNote {
 
 #[bon::bon]
 impl BurnNote {
-    /// Builds a new [`BurnNote`] instructing `faucet_id` to burn `asset`.
+    /// Builds a new [`BurnNote`] that burns `asset` against the faucet that issued it.
+    ///
+    /// The target faucet is the asset's own issuing faucet; the note is tagged for it.
     ///
     /// # Errors
     ///
@@ -69,7 +72,6 @@ impl BurnNote {
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        faucet_id: AccountId,
         #[builder(into)] asset: Asset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
@@ -77,7 +79,6 @@ impl BurnNote {
 
         Ok(Self {
             sender,
-            faucet_id,
             serial_number,
             asset,
             attachments,
@@ -110,9 +111,9 @@ impl BurnNote {
         self.sender
     }
 
-    /// Returns the account ID of the faucet that will burn the assets.
+    /// Returns the account ID of the faucet that will burn the asset (the asset's own faucet).
     pub fn faucet_id(&self) -> AccountId {
-        self.faucet_id
+        self.asset.faucet_id()
     }
 
     /// Returns the note's serial number.
@@ -169,9 +170,10 @@ where
 
 impl From<BurnNote> for Note {
     fn from(note: BurnNote) -> Self {
-        // BURN notes are always public for network execution and carry no storage.
+        // BURN notes are always public for network execution and carry no storage. The tag routes
+        // the note to the asset's issuing faucet.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.faucet_id));
+            .with_tag(NoteTag::with_account_target(note.asset.faucet_id()));
         let recipient =
             NoteRecipient::new(note.serial_number, BurnNote::script(), NoteStorage::default());
 
@@ -208,7 +210,6 @@ mod tests {
 
         let burn_note = BurnNote::builder()
             .sender(sender())
-            .faucet_id(faucet())
             .asset(asset)
             .generate_serial_number(&mut rng)
             .build()
