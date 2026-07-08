@@ -183,7 +183,7 @@ Faucet procedures allow reading and writing to faucet accounts to mint and burn 
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | `create_fungible_asset`        | Creates a fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[amount]`<br/>**Outputs:** `[ASSET_ID, ASSET_VALUE]`                              | Faucet                    |
 | `create_non_fungible_asset`    | Creates a non-fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[DATA_HASH]`<br/>**Outputs:** `[ASSET_ID, ASSET_VALUE]`                       | Faucet                    |
-| `mint`                         | Mint an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_ID, ASSET_VALUE]`<br/>**Outputs:** `[NEW_ASSET_VALUE]`                                         | Native & Account & Faucet |
+| `mint`                         | Mint an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_ID, ASSET_VALUE]`<br/>**Outputs:** `[]`                                         | Native & Account & Faucet |
 | `burn`                         | Burn an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_ID, ASSET_VALUE]`<br/>**Outputs:** `[]`                                         | Native & Account & Faucet |
 
 ## Asset Procedures (`miden::protocol::asset`)

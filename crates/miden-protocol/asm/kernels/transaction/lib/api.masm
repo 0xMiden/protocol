@@ -776,10 +776,8 @@ end
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
-#! - the transaction is not being executed against a faucet.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the asset being minted is not associated with the faucet the transaction is being executed
-#!   against.
+#! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
 #!   - if the total issuance after minting is greater than the maximum amount allowed.
