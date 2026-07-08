@@ -1,14 +1,14 @@
-//! Tests for the standalone `Warden` component (`get_warden` / `set_warden`).
+//! Tests for the standalone `Sentry` component (`get_sentry` / `set_sentry`).
 //!
-//! `set_warden` is gated through `authority::assert_authorized`, so on an `Ownable2Step`
-//! (`OwnerControlled`) account only the owner can set or clear the warden.
+//! `set_sentry` is gated through `authority::assert_authorized`, so on an `Ownable2Step`
+//! (`OwnerControlled`) account only the owner can set or clear the sentry.
 
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::access::{AccessControl, Warden};
+use miden_standards::account::access::{AccessControl, Sentry};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::ERR_SENDER_NOT_OWNER;
 use miden_testing::{
@@ -30,13 +30,13 @@ use super::pausable::{
 // FAUCET BUILDER
 // ================================================================================================
 
-/// Builds a fungible faucet with `Warden + Ownable2Step(owner)`. `set_warden` is gated by the
+/// Builds a fungible faucet with `Sentry + Ownable2Step(owner)`. `set_sentry` is gated by the
 /// owner via `Authority::OwnerControlled` (installed automatically by
 /// `AccessControl::Ownable2Step`).
-fn add_warden_faucet(
+fn add_sentry_faucet(
     builder: &mut MockChainBuilder,
     owner: AccountId,
-    warden: Option<AccountId>,
+    sentry: Option<AccountId>,
     seed: u8,
 ) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
@@ -46,16 +46,16 @@ fn add_warden_faucet(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let warden_component = match warden {
-        Some(id) => Warden::new(id),
-        None => Warden::unassigned(),
+    let sentry_component = match sentry {
+        Some(id) => Sentry::new(id),
+        None => Sentry::unassigned(),
     };
 
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(warden_component);
+        .with_component(sentry_component);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
@@ -63,24 +63,24 @@ fn add_warden_faucet(
 // NOTE BUILDERS
 // ================================================================================================
 
-/// Builds a note that calls `warden::set_warden` with the given account ID felts.
-fn build_set_warden_note(
+/// Builds a note that calls `sentry::set_sentry` with the given account ID felts.
+fn build_set_sentry_note(
     sender: AccountId,
-    new_warden_suffix: Felt,
-    new_warden_prefix: Felt,
+    new_sentry_suffix: Felt,
+    new_sentry_prefix: Felt,
 ) -> anyhow::Result<Note> {
     build_note(
         sender,
         format!(
             r#"
-        use miden::standards::access::warden
+        use miden::standards::access::sentry
 
         @note_script
         pub proc main
             repeat.14 push.0 end
-            push.{new_warden_prefix}
-            push.{new_warden_suffix}
-            call.warden::set_warden
+            push.{new_sentry_prefix}
+            push.{new_sentry_suffix}
+            call.sentry::set_sentry
             dropw dropw dropw dropw
         end
         "#
@@ -91,38 +91,38 @@ fn build_set_warden_note(
 // HELPERS
 // ================================================================================================
 
-/// Reads the configured warden from the faucet's storage.
-fn read_warden(mock_chain: &MockChain, faucet_id: AccountId) -> anyhow::Result<Option<AccountId>> {
+/// Reads the configured sentry from the faucet's storage.
+fn read_sentry(mock_chain: &MockChain, faucet_id: AccountId) -> anyhow::Result<Option<AccountId>> {
     let account = mock_chain.committed_account(faucet_id)?;
-    Ok(Warden::try_from_storage(account.storage())?.account_id())
+    Ok(Sentry::try_from_storage(account.storage())?.account_id())
 }
 
 // TESTS
 // ================================================================================================
 
 #[tokio::test]
-async fn warden_installs_with_initial_value() -> anyhow::Result<()> {
-    let initial_warden = test_account_id(30);
+async fn sentry_installs_with_initial_value() -> anyhow::Result<()> {
+    let initial_sentry = test_account_id(30);
 
     let mut builder = MockChain::builder();
-    let faucet = add_warden_faucet(&mut builder, *OWNER_ID, Some(initial_warden), 70)?;
+    let faucet = add_sentry_faucet(&mut builder, *OWNER_ID, Some(initial_sentry), 70)?;
 
     let mock_chain = builder.build()?;
 
-    assert_eq!(read_warden(&mock_chain, faucet.id())?, Some(initial_warden));
+    assert_eq!(read_sentry(&mock_chain, faucet.id())?, Some(initial_sentry));
 
     Ok(())
 }
 
 #[tokio::test]
-async fn owner_sets_warden() -> anyhow::Result<()> {
-    let new_warden = test_account_id(31);
+async fn owner_sets_sentry() -> anyhow::Result<()> {
+    let new_sentry = test_account_id(31);
 
     let mut builder = MockChain::builder();
-    let faucet = add_warden_faucet(&mut builder, *OWNER_ID, None, 71)?;
+    let faucet = add_sentry_faucet(&mut builder, *OWNER_ID, None, 71)?;
 
     let set_note =
-        build_set_warden_note(*OWNER_ID, new_warden.suffix(), new_warden.prefix().as_felt())?;
+        build_set_sentry_note(*OWNER_ID, new_sentry.suffix(), new_sentry.prefix().as_felt())?;
     builder.add_output_note(RawOutputNote::Full(set_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -130,20 +130,20 @@ async fn owner_sets_warden() -> anyhow::Result<()> {
 
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &set_note).await?;
 
-    assert_eq!(read_warden(&mock_chain, faucet.id())?, Some(new_warden));
+    assert_eq!(read_sentry(&mock_chain, faucet.id())?, Some(new_sentry));
 
     Ok(())
 }
 
 #[tokio::test]
-async fn non_owner_cannot_set_warden() -> anyhow::Result<()> {
-    let new_warden = test_account_id(32);
+async fn non_owner_cannot_set_sentry() -> anyhow::Result<()> {
+    let new_sentry = test_account_id(32);
 
     let mut builder = MockChain::builder();
-    let faucet = add_warden_faucet(&mut builder, *OWNER_ID, None, 72)?;
+    let faucet = add_sentry_faucet(&mut builder, *OWNER_ID, None, 72)?;
 
     let attacker_note =
-        build_set_warden_note(*NON_OWNER_ID, new_warden.suffix(), new_warden.prefix().as_felt())?;
+        build_set_sentry_note(*NON_OWNER_ID, new_sentry.suffix(), new_sentry.prefix().as_felt())?;
     builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -161,14 +161,14 @@ async fn non_owner_cannot_set_warden() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn owner_clears_warden() -> anyhow::Result<()> {
-    let initial_warden = test_account_id(33);
+async fn owner_clears_sentry() -> anyhow::Result<()> {
+    let initial_sentry = test_account_id(33);
 
     let mut builder = MockChain::builder();
-    let faucet = add_warden_faucet(&mut builder, *OWNER_ID, Some(initial_warden), 73)?;
+    let faucet = add_sentry_faucet(&mut builder, *OWNER_ID, Some(initial_sentry), 73)?;
 
     // Clearing is done by setting the zero address `(0, 0)`.
-    let clear_note = build_set_warden_note(*OWNER_ID, Felt::ZERO, Felt::ZERO)?;
+    let clear_note = build_set_sentry_note(*OWNER_ID, Felt::ZERO, Felt::ZERO)?;
     builder.add_output_note(RawOutputNote::Full(clear_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -176,7 +176,7 @@ async fn owner_clears_warden() -> anyhow::Result<()> {
 
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &clear_note).await?;
 
-    assert_eq!(read_warden(&mock_chain, faucet.id())?, None);
+    assert_eq!(read_sentry(&mock_chain, faucet.id())?, None);
 
     Ok(())
 }

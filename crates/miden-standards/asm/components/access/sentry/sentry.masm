@@ -1,0 +1,6 @@
+# The MASM code of the Sentry Account Component.
+#
+# See the `Sentry` Rust type's documentation for more details.
+
+pub use {get_sentry} from miden::standards::access::sentry
+pub use {set_sentry} from miden::standards::access::sentry

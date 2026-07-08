@@ -9,7 +9,7 @@ pub mod authority;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
-pub mod warden;
+pub mod sentry;
 
 /// Access control configuration for network-style accounts whose authority-gated setters are
 /// gated by an owner / role check rather than by the account's auth component.
@@ -92,13 +92,13 @@ pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::RoleBasedAccessControl;
-pub use warden::{Warden, WardenError};
+pub use sentry::{Sentry, SentryError};
 
 // HELPERS
 // ================================================================================================
 
 /// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
-/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination / no warden).
+/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination / no sentry).
 pub(crate) fn account_id_from_felt_pair(
     suffix: Felt,
     prefix: Felt,

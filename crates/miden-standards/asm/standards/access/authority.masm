@@ -6,6 +6,7 @@
 
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::standards::access::sentry
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
 
@@ -42,6 +43,7 @@ const FROZEN = 1
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
+const ERR_SENDER_NOT_EMERGENCY_AUTHORITY = "note sender is not the emergency authority"
 
 # PUBLIC PROCEDURES
 # =================================================================================================
@@ -113,16 +115,37 @@ end
 
 #! Freezes the account's authority-gated surface as an emergency switch.
 #!
+#! Authorized for the emergency authority OR the sentry. The sentry can freeze
+#! but never unfreeze, acting purely as a safety brake so an incident can be contained without
+#! waiting on the owner.
+#!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the account's emergency authority.
+#! - the note sender is neither the emergency authority nor the sentry.
 #!
 #! Invocation: call
 @account_procedure
 pub proc freeze
-    exec.assert_sender_is_emergency_authority
+    exec.is_sender_emergency_authority
+    # => [is_sender_emergency_authority, pad(16)]
+
+    if.true
+        # The emergency authority can always freeze.
+    else
+        # Only the Sentry may trigger a freeze other than an emergency authority.
+        exec.sentry::has_sentry_slot
+        # => [has_sentry_slot]
+
+        if.true
+            exec.sentry::assert_sender_is_sentry
+            # => []
+        else
+            # No sentry installed, so only the emergency authority could have frozen.
+            push.0 assert.err=ERR_SENDER_NOT_EMERGENCY_AUTHORITY
+        end
+    end
     # => [pad(16)]
 
     push.FROZEN exec.write_frozen_flag
@@ -130,6 +153,9 @@ pub proc freeze
 end
 
 #! Unfreezes the account's authority-gated surface, clearing the emergency switch.
+#!
+#! Authorized for the emergency authority only. Unlike `freeze`, the sentry may NOT
+#! unfreeze. Re-opening is restricted to the emergency authority.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
@@ -150,26 +176,37 @@ end
 # PRIVATE PROCEDURES
 # =================================================================================================
 
-#! Asserts the sender may toggle the emergency switch.
-#!
-#! Reads only the authority discriminant, so it bypasses the frozen flag and the authority can
-#! always toggle it. Dispatch:
-#! - OwnerControlled → the Ownable2Step owner.
-#! - RbacControlled  → the caller procedure's configured role in the procedure-roles map (freeze
-#!   and unfreeze may carry distinct roles, e.g. FREEZER / UNFREEZER), or ADMIN when unmapped.
-#! - AuthControlled  → panics (no owner slot and no role graph).
+#! Asserts the note sender may toggle the emergency switch.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the authority is OwnerControlled and the sender is not the owner.
-#! - the authority is RbacControlled and the sender does not hold the caller's role (or ADMIN when
-#!   the caller is unmapped).
-#! - the authority is AuthControlled or an unknown value.
+#! - the note sender is not the emergency authority (see `is_sender_emergency_authority`).
 #!
 #! Invocation: exec
 proc assert_sender_is_emergency_authority
+    exec.is_sender_emergency_authority
+    # => [is_sender_emergency_authority]
+
+    assert.err=ERR_SENDER_NOT_EMERGENCY_AUTHORITY
+    # => []
+end
+
+#! Returns whether the note sender may toggle the emergency switch.
+#!
+#! Reads only the authority discriminant, so it bypasses the frozen flag and the emergency
+#! authority can always toggle the switch. Dispatch:
+#! - OwnerControlled → the Ownable2Step owner.
+#! - RbacControlled  → the caller procedure's configured role in the procedure-roles map (freeze
+#!   and unfreeze may carry distinct roles, e.g. FREEZER / UNFREEZER), or ADMIN when unmapped.
+#! - AuthControlled / unknown → 0 (no emergency authority exists).
+#!
+#! Inputs:  []
+#! Outputs: [is_sender_emergency_authority]
+#!
+#! Invocation: exec
+proc is_sender_emergency_authority
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, is_frozen, 0, 0]
 
@@ -181,18 +218,19 @@ proc assert_sender_is_emergency_authority
         drop
         # => []
 
-        exec.ownable2step::assert_sender_is_owner
-        # => []
+        exec.ownable2step::is_sender_owner
+        # => [is_sender_owner]
     else
         eq.RBAC_CONTROLLED
         if.true
             # => []
 
-            exec.assert_authorized_rbac
-            # => []
+            exec.is_sender_authorized_rbac
+            # => [is_authorized]
         else
             # No emergency authority exists.
-            push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
+            push.0
+            # => [0]
         end
     end
 end
@@ -223,21 +261,19 @@ proc write_frozen_flag
     # => []
 end
 
-#! Asserts the sender is authorized under the RbacControlled authority.
+#! Resolves the calling procedure's configured role from the procedure-roles map.
 #!
-#! Resolves the calling procedure's root via `caller` and looks up its assigned role in the
-#! procedure-roles map. If a role is configured, asserts the sender holds it; otherwise falls back
-#! to the ADMIN role check.
+#! The calling procedure is identified via `caller`, so this must be reached through the `exec`
+#! chain of an authority-gated `call` entrypoint.
 #!
 #! Inputs:  []
-#! Outputs: []
+#! Outputs: [mapped_role]
 #!
-#! Panics if:
-#! - a role is configured for the procedure and the sender does not hold it.
-#! - no role is configured for the procedure and the sender does not hold ADMIN.
+#! Where:
+#! - mapped_role is the role configured for the calling procedure, or 0 if none is configured.
 #!
 #! Invocation: exec
-proc assert_authorized_rbac
+proc get_caller_role
     # Resolve the calling procedure's root and look up its assigned role in the map.
     padw caller
     # => [CALLER_ROOT]
@@ -249,6 +285,21 @@ proc assert_authorized_rbac
     # => [mapped_role, 0, 0, 0]
 
     movdn.3 drop drop drop
+    # => [mapped_role]
+end
+
+#! Asserts the sender is authorized under the RbacControlled authority.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a role is configured for the procedure and the sender does not hold it.
+#! - no role is configured for the procedure and the sender does not hold ADMIN.
+#!
+#! Invocation: exec
+proc assert_authorized_rbac
+    exec.get_caller_role
     # => [mapped_role]
 
     dup eq.0
@@ -267,5 +318,34 @@ proc assert_authorized_rbac
 
         exec.rbac::assert_sender_has_role
         # => []
+    end
+end
+
+#! Returns whether the sender is authorized under the RbacControlled authority.
+#!
+#! Inputs:  []
+#! Outputs: [is_authorized]
+#!
+#! Invocation: exec
+proc is_sender_authorized_rbac
+    exec.get_caller_role
+    # => [mapped_role]
+
+    dup eq.0
+    # => [has_no_mapped_role, mapped_role]
+
+    if.true
+        # No role configured for this procedure, check ADMIN.
+        drop
+        # => []
+
+        exec.rbac::is_sender_admin
+        # => [is_authorized]
+    else
+        # Check whether the sender holds the configured role.
+        # => [mapped_role]
+
+        exec.rbac::is_sender_in_role
+        # => [is_authorized]
     end
 end

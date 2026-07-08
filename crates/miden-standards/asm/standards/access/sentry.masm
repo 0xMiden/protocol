@@ -1,0 +1,201 @@
+# miden::standards::access::sentry
+#
+# Provides a standalone "sentry" actor for account components: a single sentry
+# account ID stored in one value slot, and account-ID equality authorization primitives.
+#
+# The sentry is a second privileged actor, distinct from the owner, intended as a safety
+# brake: other components consult `assert_sender_is_sentry` / `is_sender_sentry`
+# to authorize some actions (e.g. an emergency freeze, or cancelling a scheduled operation). The
+# sentry can never grant roles, move assets, or perform owner-only actions. It is purely
+# an authorization subject checked by the procedures that opt into it.
+#
+# Authorization is a plain account-ID equality check, so this component needs no RBAC
+# infrastructure and behaves the same across all authority modes. If no sentry is assigned
+# the stored ID is the zero address `(0, 0)`, and the equality check returns 0 for every real
+# sender, yielding "no sentry => nobody passes the sentry check" for free.
+#
+# Storage layout (single slot):
+#   Word:  [sentry_suffix, sentry_prefix, 0, 0]
+
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::protocol::active_note
+use miden::protocol::native_account
+use miden::standards::access::authority
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot in this component's storage layout where the sentry account ID is stored.
+const SENTRY_SLOT = word("miden::standards::access::sentry::sentry_id")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SENDER_NOT_SENTRY = "note sender is not the sentry"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the sentry account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [sentry_suffix, sentry_prefix]
+#!
+#! Where:
+#! - sentry_{suffix, prefix} are the suffix and prefix felts of the sentry account ID. Both
+#!   are zero if no sentry is assigned.
+proc get_sentry_internal
+    push.SENTRY_SLOT[0..2] exec.active_account::get_item
+    # => [sentry_suffix, sentry_prefix, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [sentry_suffix, sentry_prefix]
+end
+
+#! Builds the sentry word, writes it to storage and drops the old value.
+#!
+#! Inputs:  [sentry_suffix, sentry_prefix]
+#! Outputs: []
+proc save_sentry_info
+    push.0.0 movup.3 movup.3
+    # => [sentry_suffix, sentry_prefix, 0, 0]
+
+    push.SENTRY_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, sentry_suffix, sentry_prefix, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_SENTRY_WORD]
+
+    dropw
+    # => []
+end
+
+#! Checks if the given account ID is the sentry.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_sentry]
+#!
+#! Where:
+#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
+#! - is_sentry is 1 if the account is the sentry, 0 otherwise.
+proc is_sentry_internal
+    exec.get_sentry_internal
+    # => [sentry_suffix, sentry_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_sentry]
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns whether the Sentry component's storage slot exists on the active account.
+#!
+#! Lets consumers such as `authority::freeze` guard the sender check so they stay well-behaved on
+#! accounts that do not install this component (where the storage slot is absent).
+#!
+#! Inputs:  []
+#! Outputs: [has_sentry_slot]
+#!
+#! Where:
+#! - has_sentry_slot is 1 if the sentry storage slot exists, otherwise 0.
+#!
+#! Invocation: exec
+pub proc has_sentry_slot
+    push.SENTRY_SLOT[0..2] exec.active_account::has_storage_slot
+    # => [has_sentry_slot]
+end
+
+#! Returns 1 if the note sender is the sentry, otherwise 0.
+#!
+#! Inputs:  []
+#! Outputs: [is_sender_sentry]
+#!
+#! Where:
+#! - is_sender_sentry is 1 if the note sender is the sentry, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_sender_sentry
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix]
+
+    exec.is_sentry_internal
+    # => [is_sender_sentry]
+end
+
+#! Asserts that the note sender is the sentry.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the sentry.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_sentry
+    exec.is_sender_sentry
+    # => [is_sender_sentry]
+
+    assert.err=ERR_SENDER_NOT_SENTRY
+    # => []
+end
+
+#! Returns the sentry account ID.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [sentry_suffix, sentry_prefix, pad(14)]
+#!
+#! Where:
+#! - sentry_{suffix, prefix} are the suffix and prefix felts of the sentry account ID. Both
+#!   are zero if no sentry is assigned.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_sentry
+    exec.get_sentry_internal
+    # => [sentry_suffix, sentry_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [sentry_suffix, sentry_prefix, pad(14)]
+end
+
+#! Sets or clears the sentry account ID.
+#!
+#! Authorized through `authority::assert_authorized`, so the gate is mode-aware. The owner under
+#! `OwnerControlled`, the configured role (or the owner fallback) under `RbacControlled`, and the
+#! account's auth component under `AuthControlled`. Requires the [`Authority`] component to be
+#! installed on the account.
+#!
+#! Clearing behaviour:
+#! - If `new_sentry` is the zero address `(0, 0)`, the sentry is cleared. The zero address is
+#!   treated as a clear value and is not validated as an account ID.
+#! - Otherwise, `new_sentry` is validated and stored as the sentry.
+#!
+#! Inputs:  [new_sentry_suffix, new_sentry_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not authorized.
+#! - new_sentry is non-zero and the account ID is invalid.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_sentry
+    exec.authority::assert_authorized
+    # => [new_sentry_suffix, new_sentry_prefix, pad(14)]
+
+    # Detect explicit clear via the zero address. The zero address is not a valid account ID, so
+    # we must check for it before validating.
+    exec.account_id::testz
+    # => [is_zero_address, new_sentry_suffix, new_sentry_prefix, pad(14)]
+
+    if.false
+        # Non-zero new sentry: validate before storing.
+        dup.1 dup.1 exec.account_id::validate
+    end
+    # => [new_sentry_suffix, new_sentry_prefix, pad(14)]
+
+    exec.save_sentry_info
+    # => [pad(16)]
+end

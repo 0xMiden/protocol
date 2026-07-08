@@ -5,7 +5,7 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
-  "access/warden",
+  "access/sentry",
   "auth/guarded_multisig",
   "auth/multisig",
   "auth/multisig_smart",

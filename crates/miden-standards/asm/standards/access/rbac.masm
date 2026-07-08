@@ -109,6 +109,20 @@ pub proc assert_sender_is_admin
     # => []
 end
 
+#! Returns whether the note sender holds the built-in ADMIN role.
+#!
+#! Inputs:  []
+#! Outputs: [is_admin]
+#!
+#! Where:
+#! - is_admin is 1 if the note sender holds the ADMIN role, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_sender_admin
+    push.ADMIN_ROLE exec.is_sender_in_role
+    # => [is_admin]
+end
+
 #! Returns whether an account holds a role.
 #!
 #! Returns `0` if the role does not exist or the account is not a member.
@@ -404,7 +418,7 @@ end
 #! Outputs: [has_role]
 #!
 #! Invocation: exec
-proc is_sender_in_role
+pub proc is_sender_in_role
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, role_symbol]
 

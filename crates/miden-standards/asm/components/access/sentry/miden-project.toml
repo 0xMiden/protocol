@@ -1,11 +1,11 @@
 [package]
-name              = "miden-standards-access-warden"
+name              = "miden-standards-access-sentry"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::access::warden"
-path      = "warden.masm"
+namespace = "miden::standards::components::access::sentry"
+path      = "sentry.masm"
 
 [dependencies]
 miden-core.workspace      = true

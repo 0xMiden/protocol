@@ -12,5 +12,5 @@ mod pausable;
 mod pswap;
 mod rbac;
 mod send_note;
+mod sentry;
 mod swap;
-mod warden;

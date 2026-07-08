@@ -14,12 +14,12 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::pausable::{Pausable, PausableManager};
-use miden_standards::account::access::{AccessControl, Authority};
+use miden_standards::account::access::{AccessControl, Authority, Sentry};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::{
     ERR_AUTHORITY_FROZEN,
-    ERR_SENDER_LACKS_ROLE,
-    ERR_SENDER_NOT_OWNER,
+    ERR_SENDER_NOT_EMERGENCY_AUTHORITY,
+    ERR_SENDER_NOT_SENTRY,
 };
 use miden_testing::{
     AccountState,
@@ -90,6 +90,37 @@ fn add_rbac_faucet(
         .with_components(AccessControl::Rbac { admin, roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds an owner-controlled faucet that also installs the `Sentry` component with the
+/// given guard (or unassigned). The guard may freeze but never unfreeze.
+fn add_guarded_owner_faucet(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+    guard: Option<AccountId>,
+    seed: u8,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let guard_component = match guard {
+        Some(id) => Sentry::new(id),
+        None => Sentry::unassigned(),
+    };
+
+    let account_builder = AccountBuilder::new([seed; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .with_component(guard_component);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
@@ -215,7 +246,7 @@ async fn non_owner_cannot_freeze() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_EMERGENCY_AUTHORITY);
 
     Ok(())
 }
@@ -291,7 +322,7 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(pauser_freeze_result, ERR_SENDER_LACKS_ROLE);
+    assert_transaction_executor_error!(pauser_freeze_result, ERR_SENDER_NOT_EMERGENCY_AUTHORITY);
 
     // The ADMIN freezes the surface.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_freeze_note).await?;
@@ -351,7 +382,7 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(admin_freeze_result, ERR_SENDER_LACKS_ROLE);
+    assert_transaction_executor_error!(admin_freeze_result, ERR_SENDER_NOT_EMERGENCY_AUTHORITY);
 
     // The FREEZER freezes the surface.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &freezer_freeze_note).await?;
@@ -360,6 +391,89 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
     // The UNFREEZER unfreezes it again.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &unfreezer_unfreeze_note).await?;
     assert!(!is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+// TESTS — SENTRY FREEZE
+// ================================================================================================
+
+#[tokio::test]
+async fn sentry_can_freeze() -> anyhow::Result<()> {
+    let guard = test_account_id(25);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_guarded_owner_faucet(&mut builder, *OWNER_ID, Some(guard), 66)?;
+
+    let guard_freeze_note = build_freeze_note(guard)?;
+    builder.add_output_note(RawOutputNote::Full(guard_freeze_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The sentry, though not the owner, can freeze the surface.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &guard_freeze_note).await?;
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sentry_cannot_unfreeze() -> anyhow::Result<()> {
+    let guard = test_account_id(26);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_guarded_owner_faucet(&mut builder, *OWNER_ID, Some(guard), 67)?;
+
+    let guard_freeze_note = build_freeze_note(guard)?;
+    let guard_unfreeze_note = build_unfreeze_note(guard)?;
+    let owner_unfreeze_note = build_unfreeze_note(*OWNER_ID)?;
+    for note in [&guard_freeze_note, &guard_unfreeze_note, &owner_unfreeze_note] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The guard freezes the surface...
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &guard_freeze_note).await?;
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // ...but may NOT unfreeze; re-opening is restricted to the emergency authority.
+    let guard_unfreeze_result = mock_chain
+        .build_tx_context(faucet.id(), &[guard_unfreeze_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(guard_unfreeze_result, ERR_SENDER_NOT_EMERGENCY_AUTHORITY);
+
+    // The owner can always unfreeze.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_unfreeze_note).await?;
+    assert!(!is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn non_guard_non_owner_cannot_freeze_guarded_account() -> anyhow::Result<()> {
+    let guard = test_account_id(27);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_guarded_owner_faucet(&mut builder, *OWNER_ID, Some(guard), 68)?;
+
+    // A sender that is neither the emergency authority (owner) nor the guard cannot freeze.
+    let attacker_note = build_freeze_note(*NON_OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_SENTRY);
 
     Ok(())
 }
