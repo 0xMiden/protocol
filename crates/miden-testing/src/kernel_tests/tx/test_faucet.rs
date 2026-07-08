@@ -13,8 +13,6 @@ use miden_protocol::asset::{
 use miden_protocol::errors::tx_kernel::{
     ERR_FAUCET_IS_NOT_ASSET_ORIGIN,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
-    ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
-    ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -451,7 +449,7 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
 
     Ok(())
 }
@@ -482,7 +480,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
     let exec_output = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_output, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
 }
 
@@ -636,7 +634,7 @@ async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
 
     Ok(())
 }
@@ -669,7 +667,7 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 
     let exec_output = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_output, ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
 }
 
