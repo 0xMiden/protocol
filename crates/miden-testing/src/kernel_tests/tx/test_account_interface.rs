@@ -433,8 +433,6 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let p2ide_wrong_inputs_number =
         create_p2ide_note_with_storage([1, 2, 3, 4, 5], sender_account_id);
 
-    // valid reclaim authority (storage items [0..2]) but an invalid target account id encoding
-    // ([2..4])
     let p2ide_invalid_target_id = create_p2ide_note_with_storage(
         [
             sender_account_id.suffix().as_canonical_u64(),
