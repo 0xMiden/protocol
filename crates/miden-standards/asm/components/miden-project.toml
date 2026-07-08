@@ -5,6 +5,7 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
+  "access/warden",
   "auth/guarded_multisig",
   "auth/multisig",
   "auth/multisig_smart",
@@ -25,8 +26,8 @@ members = [
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
   "faucets/policies/transfer/blocklist/owner_controlled",
-  "metadata/code_inspection",
-  "metadata/schema_commitment",
+  "inspection/code_inspection",
+  "inspection/schema_commitment",
   "wallets/basic_wallet",
 ]
 

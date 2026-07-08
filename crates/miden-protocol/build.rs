@@ -30,6 +30,14 @@ const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
+///
+/// With the `testing` feature enabled the projects are built with the `dev` profile so that the
+/// assembled packages retain their debug info.
+/// Otherwise the projects are built with the `release` profile, which strips debug info to keep the
+/// embedded packages small.
+#[cfg(any(feature = "testing", test))]
+const BUILD_PROFILE: &str = "dev";
+#[cfg(not(any(feature = "testing", test)))]
 const BUILD_PROFILE: &str = "release";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.

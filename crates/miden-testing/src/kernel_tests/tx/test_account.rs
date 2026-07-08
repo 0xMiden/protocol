@@ -97,6 +97,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         use miden::core::word
 
         use miden::protocol::active_account
+        use miden::protocol::native_account
         use mock::account as mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -1033,7 +1034,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_balance`
+/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
 /// procedure in two cases:
 /// - when a note adds the asset which already exists in the account vault.
 /// - when a note adds the asset which doesn't exist in the account vault.
@@ -1192,7 +1193,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_balance`
+/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
 /// procedure in case when we create a note which removes an asset from the account vault.
 ///  
 /// As part of the test pipeline it also checks the correctness of the
@@ -1231,6 +1232,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
         use miden::protocol::active_account
+        use miden::protocol::native_account
         use miden::standards::wallets::basic as wallet
         use mock::account as mock_account
         use mock::util
@@ -1289,7 +1291,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_asset`
+/// This test checks the correctness of the `miden::protocol::native_account::get_initial_asset`
 /// procedure creating a note which removes an asset from the account vault.
 ///
 /// As part of the test pipeline it also checks the correctness of the
@@ -1329,6 +1331,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         r#"
         use miden::core::sys
         use miden::protocol::active_account
+        use miden::protocol::native_account
         use miden::standards::wallets::basic as wallet
         use mock::account as mock_account
         use mock::util

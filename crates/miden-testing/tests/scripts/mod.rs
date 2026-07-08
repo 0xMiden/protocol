@@ -13,3 +13,4 @@ mod pswap;
 mod rbac;
 mod send_note;
 mod swap;
+mod warden;

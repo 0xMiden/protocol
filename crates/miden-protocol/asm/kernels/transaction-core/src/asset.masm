@@ -14,6 +14,8 @@ const ERR_VAULT_SPLIT_COMPOSITION_NONE="assets with composition none cannot be s
 
 const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be compared"
 
+const ERR_FAUCET_IS_NOT_ASSET_ORIGIN="the faucet is not the origin of the asset"
+
 # CONSTANT ACCESSORS
 # =================================================================================================
 
@@ -29,6 +31,7 @@ pub use {
     id_to_asset_class,
     id_into_asset_class,
     id_to_composition,
+    id_into_composition,
     load,
     store,
     validate_metadata,
@@ -184,16 +187,48 @@ pub proc validate
     # => [ASSET_ID, ASSET_VALUE]
 end
 
+#! Validates that an asset is well formed and originates from the provided faucet_id.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix of the faucet's account ID.
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset is not well formed (see validate).
+#! - the asset's faucet ID does not match the provided faucet_id.
+pub proc validate_origin
+    movdn.9 movdn.9
+    # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the asset ID and value are valid
+    exec.validate
+    # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the origin of the asset is the faucet_id provided via the stack
+    exec.id_to_faucet_id
+    # => [asset_faucet_id_suffix, asset_faucet_id_prefix, ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    movup.11 movup.11
+    # => [faucet_id_suffix, faucet_id_prefix, asset_faucet_id_suffix, asset_faucet_id_prefix, ASSET_ID, ASSET_VALUE]
+
+    exec.account_id::is_equal assert.err=ERR_FAUCET_IS_NOT_ASSET_ORIGIN
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
 #! Merges two values for the same asset and returns the combined value.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
-#! and have already been validated.
+#! WARNING: This procedure assumes both asset values have the same asset ID and have already been
+#! validated. The `asset_composition` must be taken from the asset ID.
 #!
-#! Inputs:  [ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Inputs:  [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [MERGED_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_ID is the asset ID of the asset whose values are being merged.
+#! - asset_composition is the asset composition of the asset whose values are being merged.
 #! - CURRENT_ASSET_VALUE and OTHER_ASSET_VALUE are the two asset values to merge.
 #! - MERGED_ASSET_VALUE is the combined value.
 #!
@@ -202,19 +237,13 @@ end
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying merge operation panics (see fungible_asset::merge).
 pub proc merge
-    exec.id_to_composition
-    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
-
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_MERGE_COMPOSITION_NONE
-    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [is_fungible_asset, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     if.true
-        dropw
-        # => [CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
-
         exec.fungible_asset::merge
         # => [MERGED_ASSET_VALUE]
     else
@@ -223,16 +252,16 @@ pub proc merge
     # => [MERGED_ASSET_VALUE]
 end
 
-#! Computes OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE for the asset identified by ASSET_ID.
+#! Computes OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE for the asset with the given composition.
 #!
-#! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_ID
-#! and have already been validated.
+#! WARNING: This procedure assumes both asset values belong to the same asset and have already been
+#! validated. The `asset_composition` must be taken from the asset ID.
 #!
-#! Inputs:  [ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+#! Inputs:  [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [SPLIT_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_ID is the asset ID of the asset whose values are being split.
+#! - asset_composition is the asset composition of the asset whose values are being split.
 #! - CURRENT_ASSET_VALUE is the value subtracted from OTHER_ASSET_VALUE.
 #! - OTHER_ASSET_VALUE is the value being subtracted from.
 #! - SPLIT_ASSET_VALUE is OTHER_ASSET_VALUE - CURRENT_ASSET_VALUE.
@@ -242,19 +271,13 @@ end
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying split operation panics (see fungible_asset::split).
 pub proc split
-    exec.id_to_composition
-    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
-
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_SPLIT_COMPOSITION_NONE
-    # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible_asset, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
+    # => [is_fungible_asset, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
     if.true
-        dropw
-        # => [CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
-
         exec.fungible_asset::split
         # => [SPLIT_ASSET_VALUE]
     else

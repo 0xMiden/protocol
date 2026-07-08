@@ -72,7 +72,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_item
-        exec.active_account::get_initial_item
+        exec.native_account::get_initial_item
         # => [VALUE, pad(14)]
 
         # truncate the stack
@@ -100,7 +100,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [INIT_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_map_item
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [INIT_VALUE, pad(12)]
     end
 
@@ -125,7 +125,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [pad(16)]  Outputs: [INIT_COMMITMENT, pad(12)]
     @account_procedure
     pub proc get_initial_commitment
-        exec.active_account::get_initial_commitment exec.sys::truncate_stack
+        exec.native_account::get_initial_commitment exec.sys::truncate_stack
     end
 
     #! Inputs:  [pad(16)]  Outputs: [ACCOUNT_COMMITMENT, pad(12)]
@@ -143,13 +143,13 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [pad(16)]  Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
     @account_procedure
     pub proc get_initial_storage_commitment
-        exec.active_account::get_initial_storage_commitment exec.sys::truncate_stack
+        exec.native_account::get_initial_storage_commitment exec.sys::truncate_stack
     end
 
     #! Inputs:  [pad(16)]  Outputs: [INIT_VAULT_ROOT, pad(12)]
     @account_procedure
     pub proc get_initial_vault_root
-        exec.active_account::get_initial_vault_root exec.sys::truncate_stack
+        exec.native_account::get_initial_vault_root exec.sys::truncate_stack
     end
 
     #! Inputs:  [pad(16)]  Outputs: [VAULT_ROOT, pad(12)]
@@ -167,7 +167,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_asset
-        exec.active_account::get_initial_asset exec.sys::truncate_stack
+        exec.native_account::get_initial_asset exec.sys::truncate_stack
     end
 
     #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [balance, pad(15)]
@@ -179,7 +179,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [init_balance, pad(15)]
     @account_procedure
     pub proc get_initial_balance
-        exec.active_account::get_initial_balance exec.sys::truncate_stack
+        exec.native_account::get_initial_balance exec.sys::truncate_stack
     end
 
     #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [has_asset, pad(15)]

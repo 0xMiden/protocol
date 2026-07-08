@@ -32,6 +32,6 @@ pub proc auth_tx_guarded_multisig(salt: word)
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]
 
-    exec.multisig::assert_new_tx
+    exec.multisig::record_and_assert_new_tx
     # => []
 end
