@@ -1,6 +1,29 @@
 # TYPE ALIASES
 # =================================================================================================
+# Semantic aliases for values that protocol procedures move on the operand stack. Names mirror the
+# corresponding Rust types (e.g. `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) so signatures
+# read as the Rust API does. Values that are a bare `Word`/`Felt` in Rust (commitments, roots,
+# nonces, counts) stay `word`/`felt`. Struct fields flatten field[0]-on-top, matching the stack.
 
+# Two-felt identifiers (suffix on top of the stack, prefix below).
 pub type AccountId = struct { suffix: felt, prefix: felt }
+pub type StorageSlotId = struct { suffix: felt, prefix: felt }
+
+# Word-sized domain values that wrap a `Word` in Rust.
+pub type AssetId = word
+pub type Asset = word
+pub type AccountProcedureRoot = word
+pub type StorageMapKey = word
+pub type NoteRecipient = word
+pub type NoteMetadata = word
+pub type NoteScriptRoot = word
+pub type TransactionScriptRoot = word
+
+# Scalar domain values.
+pub type AssetAmount = felt
+pub type NoteTag = u32
+pub type NoteType = u8
+pub type BlockNumber = u32
+
 pub type DoubleWord = struct { word_lo: word, word_hi: word }
 pub type MemoryAddress = u32

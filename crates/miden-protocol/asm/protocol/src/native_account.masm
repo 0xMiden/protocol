@@ -8,6 +8,7 @@ use {
     ACCOUNT_SET_MAP_ITEM_OFFSET,
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
+use { AccountId, AccountProcedureRoot, Asset, AssetId, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -25,7 +26,7 @@ use {
 #!   transaction.
 #!
 #! Invocation: exec
-pub proc get_id
+pub proc get_id() -> AccountId
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -61,7 +62,7 @@ end
 #! - the nonce has already been incremented.
 #!
 #! Invocation: exec
-pub proc incr_nonce
+pub proc incr_nonce() -> felt
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -102,7 +103,7 @@ end
 #!
 #! Panics if:
 #! - the vault or storage patch is not empty but the nonce increment is zero.
-pub proc compute_delta_commitment
+pub proc compute_delta_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -137,7 +138,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_item
+pub proc set_item(slot_id: StorageSlotId, value: word) -> word
     push.ACCOUNT_SET_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, VALUE]
 
@@ -173,7 +174,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_map_item
+pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, value: word) -> word
     push.ACCOUNT_SET_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
@@ -217,7 +218,7 @@ end
 #! - the vault already contains the same non-fungible asset.
 #!
 #! Invocation: exec
-pub proc add_asset
+pub proc add_asset(asset_id: AssetId, asset_value: Asset) -> Asset
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -250,7 +251,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: exec
-pub proc remove_asset
+pub proc remove_asset(asset_id: AssetId, asset_value: Asset) -> Asset
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -283,7 +284,7 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc was_procedure_called
+pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> felt
     push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
     # => [offset, PROC_ROOT]
 

@@ -1,4 +1,5 @@
 use miden::protocol_utils::asset
+use { AccountId, Asset, AssetAmount, AssetId } from miden::protocol::types
 
 # RE-EXPORTS
 # =================================================================================================
@@ -51,7 +52,7 @@ const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT="fungible asset build
 #! - the provided amount exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
 #!
 #! Invocation: exec
-pub proc create_fungible_asset
+pub proc create_fungible_asset(faucet_id: AccountId, amount: AssetAmount) -> (AssetId, Asset)
     # assert the amount is valid
     dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
