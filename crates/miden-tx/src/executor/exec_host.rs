@@ -599,9 +599,7 @@ where
                     // is executing. An `AuthRequest` emitted from any other context (e.g. an
                     // untrusted note or transaction script) must not force the host to sign.
                     if !self.in_auth_procedure {
-                        Err(TransactionKernelError::other(
-                            "AuthRequest event emitted outside the authentication procedure",
-                        ))
+                        Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
                     } else {
                         match tx_summary_or_signature {
                             TxSummaryOrSignature::Signature(signature) => {
