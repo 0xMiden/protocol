@@ -20,6 +20,7 @@ pub use {
     id_into_asset_class,
     non_fungible_value_into_asset_class,
     id_to_composition,
+    id_into_composition,
     load,
     store,
 } from miden::protocol_utils::asset

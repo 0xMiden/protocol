@@ -9,4 +9,4 @@ pub use {
     get_num_procedures,
     get_procedure_root,
     has_procedure,
-} from miden::standards::metadata::code_inspection
+} from miden::standards::inspection::code_inspection
