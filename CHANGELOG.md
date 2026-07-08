@@ -57,6 +57,7 @@
 - [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
 - [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
 - Added `ExpirationTransactionScript` to standards package and assemble it at build-time ([#3111](https://github.com/0xMiden/protocol/pull/3111)).
+- [BREAKING] Added `SendNotesTransactionScript` to standards package and assemble it at build-time. Note data now flows through tx script args and the advice map ([#3111](https://github.com/0xMiden/protocol/pull/3111)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).

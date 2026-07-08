@@ -1,55 +1,80 @@
-use alloc::string::String;
+use alloc::vec::Vec;
 use core::num::NonZeroU16;
 
-use miden_protocol::Felt;
 use miden_protocol::account::{AccountCodeInterface, AccountId};
+use miden_protocol::assembly::Path;
 use miden_protocol::note::PartialNote;
-use miden_protocol::transaction::{TRANSACTION_SCRIPT_ATTRIBUTE, TransactionScript};
+use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Hasher, Word, ZERO};
 use thiserror::Error;
 
+use crate::StandardsLib;
 use crate::account::access::Ownable2Step;
 use crate::account::faucets::FungibleFaucet;
 use crate::account::wallets::BasicWallet;
-use crate::code_builder::CodeBuilder;
-use crate::errors::CodeBuilderError;
+
+// CONSTANTS
+// ================================================================================================
+
+/// Path to the `send_notes` wallet transaction script procedure in the standards library,
+/// assembled at build time from `asm/standards/tx_scripts/send_notes_wallet.masm`.
+const SEND_NOTES_WALLET_TX_SCRIPT_PATH: &str =
+    "::miden::standards::tx_scripts::send_notes_wallet::main";
+
+/// Path to the `send_notes` faucet transaction script procedure in the standards library,
+/// assembled at build time from `asm/standards/tx_scripts/send_notes_faucet.masm`.
+const SEND_NOTES_FAUCET_TX_SCRIPT_PATH: &str =
+    "::miden::standards::tx_scripts::send_notes_faucet::main";
 
 // SEND NOTES TRANSACTION SCRIPT
 // ================================================================================================
 
+static SEND_NOTES_WALLET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(SEND_NOTES_WALLET_TX_SCRIPT_PATH);
+    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("standards library should contain the send_notes wallet tx script procedure")
+});
+
+static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(SEND_NOTES_FAUCET_TX_SCRIPT_PATH);
+    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("standards library should contain the send_notes faucet tx script procedure")
+});
+
 /// A [`TransactionScript`] that sends the specified notes from an account whose code interface
 /// exposes either the [`BasicWallet`] or [`FungibleFaucet`] procedures.
 ///
-/// Construction is fallible (see [`SendNotesTransactionScriptError`]); converting the wrapper into
-/// the underlying [`TransactionScript`] via the [`From`] impl is infallible.
+/// Callers must pass [`Self::tx_script_args`] as the transaction script argument and extend
+/// the transaction's advice map with [`Self::advice_entries`].
 ///
 /// Provided `expiration_delta` specifies how close to the transaction's reference block the
 /// transaction must be included into the chain. For example, with a reference block of 100 and a
-/// delta of 10, the transaction must be included by block 110.
+/// delta of 10, the transaction must be included by block 110. The delta is part of the payload,
+/// so it does not affect the script root.
 ///
 /// When the account exposes both [`BasicWallet`] and [`FungibleFaucet`] procedures, the faucet
-/// branch is preferred. Owner-controlled faucets (those exposing [`Ownable2Step`]) mint
+/// script is preferred. Owner-controlled faucets (those exposing [`Ownable2Step`]) mint
 /// exclusively via MINT notes, so the standard `send_note` flow is rejected at script-build time
 /// to avoid runtime failures under the OwnerOnly mint policy.
 ///
 /// # Example
 ///
-/// Example of the generated script with one output note and an expiration delta against a
-/// [`FungibleFaucet`]:
-///
-/// ```masm
-/// @transaction_script
-/// pub proc main
-///     push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta
-///
-///     push.{note information}
-///
-///     push.{ASSET_VALUE} push.{ASSET_ID}
-///     call.::miden::standards::faucets::fungible::mint_and_send
-///     swapdw dropw dropw swapdw dropw dropw
-/// end
+/// ```ignore
+/// let script = SendNotesTransactionScript::new(&interface, &notes)?;
+/// let context = build_tx_context(/* .. */)
+///     .tx_script(script.clone().into())
+///     .tx_script_args(script.tx_script_args())
+///     .extend_advice_map(script.advice_entries().to_vec());
 /// ```
 #[derive(Debug, Clone)]
-pub struct SendNotesTransactionScript(TransactionScript);
+pub struct SendNotesTransactionScript {
+    script: TransactionScript,
+    tx_script_args: Word,
+    advice_entries: Vec<(Word, Vec<Felt>)>,
+}
 
 impl SendNotesTransactionScript {
     /// Builds a `send_notes` transaction script for the account described by `interface`,
@@ -62,7 +87,7 @@ impl SendNotesTransactionScript {
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
     ) -> Result<Self, SendNotesTransactionScriptError> {
-        Self::build(interface, output_notes, "")
+        Self::build(interface, output_notes, 0)
     }
 
     /// Builds a `send_notes` transaction script for the account described by `interface`,
@@ -74,16 +99,39 @@ impl SendNotesTransactionScript {
         output_notes: &[PartialNote],
         expiration_delta: NonZeroU16,
     ) -> Result<Self, SendNotesTransactionScriptError> {
-        let prelude = format!(
-            "push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta\n"
-        );
-        Self::build(interface, output_notes, &prelude)
+        Self::build(interface, output_notes, expiration_delta.get())
+    }
+
+    /// The transaction script argument the script reads its payload commitment from.
+    ///
+    /// Pass this as the transaction's `TX_SCRIPT_ARGS`, together with the advice map entries
+    /// from [`Self::advice_entries`].
+    pub fn tx_script_args(&self) -> Word {
+        self.tx_script_args
+    }
+
+    /// The advice map entries the script requires at execution: the payload keyed by its
+    /// commitment, plus each attachment's content keyed by the attachment commitment.
+    pub fn advice_entries(&self) -> &[(Word, Vec<Felt>)] {
+        &self.advice_entries
+    }
+
+    /// The [`TransactionScriptRoot`] of the canonical wallet script, to be allowlisted on a
+    /// network account exposing the [`BasicWallet`] interface.
+    pub fn wallet_script_root() -> TransactionScriptRoot {
+        SEND_NOTES_WALLET_TX_SCRIPT.root()
+    }
+
+    /// The [`TransactionScriptRoot`] of the canonical faucet script, to be allowlisted on a
+    /// network account exposing the [`FungibleFaucet`] interface.
+    pub fn faucet_script_root() -> TransactionScriptRoot {
+        SEND_NOTES_FAUCET_TX_SCRIPT.root()
     }
 
     fn build(
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
-        expiration_prelude: &str,
+        expiration_delta: u16,
     ) -> Result<Self, SendNotesTransactionScriptError> {
         let sender = interface.id();
 
@@ -91,40 +139,37 @@ impl SendNotesTransactionScript {
         let has_move_asset_to_note = interface.contains([BasicWallet::move_asset_to_note_root()]);
         let is_owner_controlled = interface.contains(Ownable2Step::code().procedure_roots());
 
-        let body = if has_mint_and_send {
+        let script = if has_mint_and_send {
             if is_owner_controlled {
                 return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
             }
-            mint_and_send_note_body(sender, output_notes)?
+            validate_faucet_notes(sender, output_notes)?;
+            SEND_NOTES_FAUCET_TX_SCRIPT.clone()
         } else if has_move_asset_to_note {
-            move_asset_to_note_body(sender, output_notes)?
+            validate_wallet_notes(sender, output_notes)?;
+            SEND_NOTES_WALLET_TX_SCRIPT.clone()
         } else {
             return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
         };
 
-        let script = format!(
-            "@{TRANSACTION_SCRIPT_ATTRIBUTE}\npub proc main\n{expiration_prelude}\n{body}\nend"
-        );
+        let payload = encode_payload(output_notes, expiration_delta);
+        let tx_script_args = Hasher::hash_elements(&payload);
 
-        let mut code_builder = CodeBuilder::new();
+        let mut advice_entries = Vec::with_capacity(1 + output_notes.len());
+        advice_entries.push((tx_script_args, payload));
         for note in output_notes {
             for attachment in note.attachments().iter() {
-                code_builder
-                    .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
+                advice_entries.push((attachment.to_commitment(), attachment.to_elements()));
             }
         }
 
-        let tx_script = code_builder
-            .compile_tx_script(script)
-            .map_err(SendNotesTransactionScriptError::InvalidTransactionScript)?;
-
-        Ok(Self(tx_script))
+        Ok(Self { script, tx_script_args, advice_entries })
     }
 }
 
 impl From<SendNotesTransactionScript> for TransactionScript {
     fn from(value: SendNotesTransactionScript) -> Self {
-        value.0
+        value.script
     }
 }
 
@@ -138,8 +183,6 @@ pub enum SendNotesTransactionScriptError {
     IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
     FaucetNoteWithoutAsset,
-    #[error("invalid transaction script")]
-    InvalidTransactionScript(#[source] CodeBuilderError),
     #[error("invalid sender account: {0}")]
     InvalidSenderAccount(AccountId),
     #[error(
@@ -152,56 +195,24 @@ pub enum SendNotesTransactionScriptError {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-fn move_asset_to_note_body(
+/// Validates that every note is sent by `sender`.
+fn validate_wallet_notes(
     sender: AccountId,
     notes: &[PartialNote],
-) -> Result<String, SendNotesTransactionScriptError> {
-    let mut body = String::new();
+) -> Result<(), SendNotesTransactionScriptError> {
     for note in notes {
-        push_note_header(&mut body, sender, note)?;
-
-        body.push_str(
-            "
-            exec.::miden::protocol::output_note::create
-            # => [note_idx, pad(16)]\n
-            ",
-        );
-
-        for asset in note.assets().iter() {
-            body.push_str(&format!(
-                "
-                # duplicate note index
-                padw push.0 push.0 push.0 dup.7
-                # => [note_idx, pad(7), note_idx, pad(16)]
-
-                push.{ASSET_VALUE}
-                push.{ASSET_ID}
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
-
-                call.::miden::standards::wallets::basic::move_asset_to_note
-                # => [pad(16), note_idx, pad(16)]
-
-                dropw dropw dropw dropw
-                # => [note_idx, pad(16)]\n
-                ",
-                ASSET_ID = asset.to_id_word(),
-                ASSET_VALUE = asset.to_value_word(),
-            ));
-        }
-
-        push_attachments(&mut body, note);
-        finalize_note(&mut body);
+        validate_note_sender(sender, note)?;
     }
-    Ok(body)
+    Ok(())
 }
 
-fn mint_and_send_note_body(
+/// Validates that every note is sent by `sender` and contains exactly one asset issued by it.
+fn validate_faucet_notes(
     sender: AccountId,
     notes: &[PartialNote],
-) -> Result<String, SendNotesTransactionScriptError> {
-    let mut body = String::new();
+) -> Result<(), SendNotesTransactionScriptError> {
     for note in notes {
-        push_note_header(&mut body, sender, note)?;
+        validate_note_sender(sender, note)?;
 
         if note.assets().num_assets() != 1 {
             return Err(SendNotesTransactionScriptError::FaucetNoteWithoutAsset);
@@ -210,31 +221,11 @@ fn mint_and_send_note_body(
         if asset.faucet_id() != sender {
             return Err(SendNotesTransactionScriptError::IssuanceFaucetMismatch(asset.faucet_id()));
         }
-
-        body.push_str(&format!(
-            "
-            push.{ASSET_VALUE}
-            push.{ASSET_ID}
-            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
-
-            call.::miden::standards::faucets::fungible::mint_and_send
-            # => [note_idx, pad(29)]
-
-            swapdw dropw dropw swapdw dropw dropw
-            # => [note_idx, pad(13)]\n
-            ",
-            ASSET_ID = asset.to_id_word(),
-            ASSET_VALUE = asset.to_value_word(),
-        ));
-
-        push_attachments(&mut body, note);
-        finalize_note(&mut body);
     }
-    Ok(body)
+    Ok(())
 }
 
-fn push_note_header(
-    body: &mut String,
+fn validate_note_sender(
     sender: AccountId,
     note: &PartialNote,
 ) -> Result<(), SendNotesTransactionScriptError> {
@@ -243,46 +234,52 @@ fn push_note_header(
             note.metadata().sender(),
         ));
     }
-
-    body.push_str(&format!(
-        "
-        push.{recipient}
-        push.{note_type}
-        push.{tag}
-        # => [tag, note_type, RECIPIENT, pad(16)]
-        ",
-        recipient = note.recipient_digest(),
-        note_type = Felt::from(note.metadata().note_type()),
-        tag = Felt::from(note.metadata().tag()),
-    ));
-
     Ok(())
 }
 
-fn push_attachments(body: &mut String, note: &PartialNote) {
-    for attachment in note.attachments().iter() {
-        let attachment_scheme = attachment.attachment_scheme().as_u16();
-        let attachment_commitment = attachment.content().to_commitment();
+/// Encodes the notes and expiration delta into the payload element stream expected by the
+/// `send_notes` MASM scripts:
+///
+/// ```text
+/// word 0 (header):             [num_notes, expiration_delta, 0, 0]
+/// per note record:
+///   word 0:                    RECIPIENT
+///   word 1:                    [tag, note_type, num_assets, num_attachments]
+///   num_assets * 2 words:      ASSET_ID, ASSET_VALUE
+///   num_attachments * 2 words: [attachment_scheme, 0, 0, 0], ATTACHMENT_COMMITMENT
+/// ```
+///
+/// The scripts load this stream into memory verbatim and validate it against its sequential
+/// hash, which [`SendNotesTransactionScript::tx_script_args`] carries as the transaction script
+/// argument.
+fn encode_payload(notes: &[PartialNote], expiration_delta: u16) -> Vec<Felt> {
+    // The kernel caps output notes at 1024 and assets per note at 256, both far below u32::MAX,
+    // so these conversions cannot truncate for any executable transaction.
+    let num_notes = u32::try_from(notes.len()).expect("note count should fit in a u32");
 
-        body.push_str(&format!(
-            "
-            dup
-            push.{attachment_commitment}
-            push.{attachment_scheme}
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx, pad(16)]
-            exec.::miden::protocol::output_note::add_attachment
-            # => [note_idx, pad(16)]
-        ",
-        ));
+    let mut payload = alloc::vec![Felt::from(num_notes), Felt::from(expiration_delta), ZERO, ZERO];
+
+    for note in notes {
+        let num_assets =
+            u32::try_from(note.assets().num_assets()).expect("asset count should fit in a u32");
+
+        payload.extend(note.recipient_digest().iter());
+        payload.push(Felt::from(note.metadata().tag()));
+        payload.push(Felt::from(note.metadata().note_type()));
+        payload.push(Felt::from(num_assets));
+        payload.push(Felt::from(note.attachments().num_attachments()));
+
+        for asset in note.assets().iter() {
+            payload.extend(asset.to_id_word().iter());
+            payload.extend(asset.to_value_word().iter());
+        }
+
+        for attachment in note.attachments().iter() {
+            payload.push(Felt::from(attachment.attachment_scheme().as_u16()));
+            payload.extend([ZERO; 3]);
+            payload.extend(attachment.to_commitment().iter());
+        }
     }
-}
 
-fn finalize_note(body: &mut String) {
-    body.push_str(
-        "
-        # drop the note idx
-        drop
-        # => [pad(16)]
-    ",
-    );
+    payload
 }

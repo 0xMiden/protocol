@@ -56,7 +56,6 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionArgs,
     TransactionKernel,
-    TransactionScript,
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
@@ -966,15 +965,17 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
-    let script = TransactionScript::from(SendNotesTransactionScript::new(
+    let script = SendNotesTransactionScript::new(
         &account.code_interface(),
         &[PartialNote::from(note_x.clone())],
-    )?);
+    )?;
 
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain
         .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
-        .tx_script(script)
+        .tx_script(script.clone().into())
+        .tx_script_args(script.tx_script_args())
+        .extend_advice_map(script.advice_entries().to_vec())
         .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
         .build()?
         .execute()

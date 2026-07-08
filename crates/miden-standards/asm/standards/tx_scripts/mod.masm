@@ -1,1 +1,3 @@
 pub mod expiration
+pub mod send_notes_faucet
+pub mod send_notes_wallet

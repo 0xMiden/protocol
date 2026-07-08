@@ -1,0 +1,301 @@
+# The canonical `send_notes` transaction script for accounts exposing the basic wallet
+# interface.
+#
+# The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
+# parameters (the payload) from the advice map, so a single script root covers every possible
+# set of output notes. This lets network accounts allowlist the root while the transaction
+# author authenticates the concrete notes through the commitment.
+#
+# The payload is a word-aligned element stream with the following layout:
+#
+#   word 0 (header):            [num_notes, expiration_delta, 0, 0]
+#   per note record:
+#     word 0:                   RECIPIENT
+#     word 1:                   [tag, note_type, num_assets, num_attachments]
+#     num_assets * 2 words:     ASSET_ID, ASSET_VALUE
+#     num_attachments * 2 words: [attachment_scheme, 0, 0, 0], ATTACHMENT_COMMITMENT
+#
+# An `expiration_delta` of 0 means the transaction's expiration delta is left unchanged.
+
+use miden::core::mem
+use miden::protocol::output_note
+use miden::protocol::tx
+use miden::standards::wallets::basic
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SEND_NOTES_PAYLOAD_LENGTH_INVALID="send notes payload length advice input is not a valid u32"
+
+const ERR_SEND_NOTES_PAYLOAD_NOT_WORD_ALIGNED="send notes payload length is not a multiple of the word size"
+
+const ERR_SEND_NOTES_PAYLOAD_EMPTY="send notes payload must not be empty"
+
+const ERR_SEND_NOTES_NUM_NOTES_INVALID="send notes payload note count is not a valid u32"
+
+const ERR_SEND_NOTES_NUM_ASSETS_INVALID="send notes payload asset count is not a valid u32"
+
+const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID="send notes payload attachment count is not a valid u32"
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory address at which the payload is stored.
+const PAYLOAD_ADDR = 0
+
+# Memory address of the number of notes in the payload (header element 0).
+const NUM_NOTES_ADDR = 0
+
+# Memory address of the expiration delta in the payload (header element 1).
+const EXPIRATION_DELTA_ADDR = 1
+
+# Memory address of the first note record (right after the header word).
+const NOTES_START_ADDR = 4
+
+# Element offset of the tag within a note record (element 0 of the record's second word).
+const TAG_OFFSET = 4
+
+# Element offset of the note type within a note record.
+const NOTE_TYPE_OFFSET = 5
+
+# Element offset of the asset count within a note record.
+const NUM_ASSETS_OFFSET = 6
+
+# Element offset of the attachment count within a note record.
+const NUM_ATTACHMENTS_OFFSET = 7
+
+# Element offset of the first asset or attachment item within a note record.
+const ITEMS_OFFSET = 8
+
+# Number of elements occupied by a single asset or attachment item (two words).
+const ITEM_NUM_ELEMENTS = 8
+
+# Number of elements in a word.
+const WORD_NUM_ELEMENTS = 4
+
+# Index of the procedure local holding the current note record pointer.
+const READ_PTR_LOC = 0
+
+# Index of the procedure local holding the index of the currently processed output note.
+const NOTE_IDX_LOC = 1
+
+# Index of the procedure local holding the pointer to the current asset/attachment item.
+const ITEM_PTR_LOC = 2
+
+# PROCEDURES
+# =================================================================================================
+
+#! Loads the payload committed to by the transaction script argument from the advice map into
+#! memory at `PAYLOAD_ADDR` and sets the transaction expiration delta if requested.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - PAYLOAD_COMMITMENT is the sequential hash of the payload elements.
+#! - payload is the element stream described in the file header.
+#!
+#! Panics if:
+#! - the advice map has no entry for PAYLOAD_COMMITMENT.
+#! - the payload length is not a non-zero multiple of the word size.
+#! - the payload does not hash to PAYLOAD_COMMITMENT.
+#! - the expiration delta is non-zero and not in the range 1..=0xFFFF.
+#!
+#! Invocation: exec
+proc load_payload
+    # push the payload from the advice map onto the advice stack, together with its length
+    adv.push_mapvaln
+    # OS => [PAYLOAD_COMMITMENT, pad(12)]
+    # AS => [num_elements, payload]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push u32assert.err=ERR_SEND_NOTES_PAYLOAD_LENGTH_INVALID
+    # OS => [num_elements, PAYLOAD_COMMITMENT, pad(12)]
+    # AS => [payload]
+
+    u32divmod.4
+    # => [remainder, num_words, PAYLOAD_COMMITMENT, pad(12)]
+
+    eq.0 assert.err=ERR_SEND_NOTES_PAYLOAD_NOT_WORD_ALIGNED
+    # => [num_words, PAYLOAD_COMMITMENT, pad(12)]
+
+    dup neq.0 assert.err=ERR_SEND_NOTES_PAYLOAD_EMPTY
+    # => [num_words, PAYLOAD_COMMITMENT, pad(12)]
+
+    # pipe the payload to memory and validate it matches the PAYLOAD_COMMITMENT
+    push.PAYLOAD_ADDR swap
+    # => [num_words, write_ptr, PAYLOAD_COMMITMENT, pad(12)]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [pad(12)]
+
+    # set the transaction expiration delta if one was provided
+    mem_load.EXPIRATION_DELTA_ADDR
+    # => [expiration_delta, pad(12)]
+
+    dup neq.0
+    if.true
+        exec.tx::update_expiration_block_delta
+    else
+        drop
+    end
+    # => [pad(12)]
+end
+
+#! Creates the output notes described by the payload stored at `PAYLOAD_ADDR`, moving each
+#! note's assets out of the account via the basic wallet interface and adding its attachments.
+#!
+#! Inputs:
+#!   Operand stack: [pad(16)]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Panics if:
+#! - any payload count is not a valid u32.
+#! - the account does not expose the basic wallet interface.
+#! - any asset is not present in the account vault.
+#! - an attachment's elements are missing from the advice map.
+#!
+#! Locals:
+#! 0: pointer to the current note record
+#! 1: index of the currently processed output note
+#! 2: pointer to the current asset/attachment item
+#!
+#! Invocation: exec
+@locals(3)
+proc process_notes
+    push.NOTES_START_ADDR loc_store.READ_PTR_LOC
+    # => [pad(16)]
+
+    mem_load.NUM_NOTES_ADDR u32assert.err=ERR_SEND_NOTES_NUM_NOTES_INVALID
+    # => [notes_left, pad(16)]
+
+    dup neq.0
+    while.true
+        # => [notes_left, pad(16)]
+
+        # create the note from the record's RECIPIENT, note_type, and tag
+        # -----------------------------------------------------------------------------------------
+        padw loc_load.READ_PTR_LOC mem_loadw_le
+        # => [RECIPIENT, notes_left, pad(16)]
+
+        loc_load.READ_PTR_LOC add.NOTE_TYPE_OFFSET mem_load
+        # => [note_type, RECIPIENT, notes_left, pad(16)]
+
+        loc_load.READ_PTR_LOC add.TAG_OFFSET mem_load
+        # => [tag, note_type, RECIPIENT, notes_left, pad(16)]
+
+        exec.output_note::create
+        # => [note_idx, notes_left, pad(16)]
+
+        loc_store.NOTE_IDX_LOC
+        # => [notes_left, pad(16)]
+
+        # move the record's assets from the account into the note
+        # -----------------------------------------------------------------------------------------
+        loc_load.READ_PTR_LOC add.ITEMS_OFFSET loc_store.ITEM_PTR_LOC
+
+        loc_load.READ_PTR_LOC add.NUM_ASSETS_OFFSET mem_load
+        u32assert.err=ERR_SEND_NOTES_NUM_ASSETS_INVALID
+        # => [assets_left, notes_left, pad(16)]
+
+        dup neq.0
+        while.true
+            # => [assets_left, notes_left, pad(16)]
+            push.0.0.0.0 push.0.0.0
+            # => [pad(7), assets_left, notes_left, pad(16)]
+
+            loc_load.NOTE_IDX_LOC
+            # => [note_idx, pad(7), assets_left, notes_left, pad(16)]
+
+            padw loc_load.ITEM_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
+            # => [ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
+
+            padw loc_load.ITEM_PTR_LOC mem_loadw_le
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
+
+            call.basic::move_asset_to_note
+            # => [pad(16), assets_left, notes_left, pad(16)]
+
+            dropw dropw dropw dropw
+            # => [assets_left, notes_left, pad(16)]
+
+            loc_load.ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.ITEM_PTR_LOC
+
+            sub.1 dup neq.0
+        end
+        drop
+        # => [notes_left, pad(16)]
+
+        # add the record's attachments to the note
+        # -----------------------------------------------------------------------------------------
+        loc_load.READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
+        u32assert.err=ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID
+        # => [attachments_left, notes_left, pad(16)]
+
+        dup neq.0
+        while.true
+            # => [attachments_left, notes_left, pad(16)]
+            loc_load.NOTE_IDX_LOC
+            # => [note_idx, attachments_left, notes_left, pad(16)]
+
+            padw loc_load.ITEM_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
+            # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left, notes_left, pad(16)]
+
+            loc_load.ITEM_PTR_LOC mem_load
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left, notes_left, pad(16)]
+
+            exec.output_note::add_attachment
+            # => [attachments_left, notes_left, pad(16)]
+
+            loc_load.ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.ITEM_PTR_LOC
+
+            sub.1 dup neq.0
+        end
+        drop
+        # => [notes_left, pad(16)]
+
+        # advance to the next note record, which starts right after the last item
+        # -----------------------------------------------------------------------------------------
+        loc_load.ITEM_PTR_LOC loc_store.READ_PTR_LOC
+
+        sub.1 dup neq.0
+    end
+    drop
+    # => [pad(16)]
+end
+
+# ENTRYPOINT
+# =================================================================================================
+
+#! Sends the notes described by the advice-provided payload from an account exposing the basic
+#! wallet interface.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Invocation: call
+@transaction_script
+pub proc main
+    exec.load_payload
+    # => [pad(16)]
+
+    exec.process_notes
+    # => [pad(16)]
+end
