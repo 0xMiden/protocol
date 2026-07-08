@@ -81,13 +81,20 @@ impl AuthMultisigConfig {
         proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
         let num_approvers = self.approver_set.approvers().len() as u32;
-        for (_, threshold) in &proc_thresholds {
+        let mut unique_roots = alloc::collections::BTreeSet::new();
+        for (proc_root, threshold) in &proc_thresholds {
             if *threshold == 0 {
                 return Err(AccountError::other("procedure threshold must be at least 1"));
             }
             if *threshold > num_approvers {
                 return Err(AccountError::other(
                     "procedure threshold cannot be greater than number of approvers",
+                ));
+            }
+            // Reject duplicate procedure roots.
+            if !unique_roots.insert(proc_root.as_word()) {
+                return Err(AccountError::other(
+                    "duplicate procedure roots are not allowed in the procedure threshold map",
                 ));
             }
         }
