@@ -1,7 +1,5 @@
 # TYPE ALIASES
 # =================================================================================================
-# Type aliases shared by the transaction kernel and the protocol library. Kept here in the common
-# base library (statically linked into both) so there is a single source of truth.
 
 # Two-felt identifier (suffix on top of the stack, prefix below).
 pub type AccountId = struct { suffix: felt, prefix: felt }
