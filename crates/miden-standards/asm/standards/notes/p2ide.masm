@@ -17,9 +17,7 @@ const P2IDE_NOTE_NUM_STORAGE_ITEMS=6
 # - reclaim_block_height      [4]  : block height at which the reclaim authority may reclaim (0 = disabled)
 # - timelock_block_height     [5]  : block height before which the note cannot be consumed (0 = none)
 #
-# The reclaim authority (rather than the note's metadata sender) is the account allowed to reclaim
-# the note. Storing it here commits it into the note's storage commitment, so reclaim authority
-# cannot be altered by whoever submits the note-creating transaction.
+# The reclaim authority is the account allowed to reclaim the note.
 const STORAGE_PTR=0
 const RECLAIM_AUTHORITY_SUFFIX_PTR=0
 const RECLAIM_AUTHORITY_PREFIX_PTR=1

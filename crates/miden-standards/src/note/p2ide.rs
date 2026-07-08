@@ -139,7 +139,7 @@ impl P2ideNote {
         self.storage.target()
     }
 
-    /// Returns the account ID of the note's reclaim authority (the account allowed to reclaim it).
+    /// Returns the account ID of the note's reclaim authority.
     pub fn reclaim_authority(&self) -> AccountId {
         self.storage.reclaim_authority()
     }
@@ -238,7 +238,7 @@ impl From<P2ideNote> for Note {
 
 /// Canonical storage representation for a P2IDE note.
 ///
-/// Stores the reclaim authority account ID (the account allowed to reclaim the note) and the
+/// Stores the reclaim authority account ID and the
 /// target account ID together with optional reclaim and timelock constraints controlling when
 /// the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,7 +276,7 @@ impl P2ideNoteStorage {
         NoteRecipient::new(serial_num, P2ideNote::script(), self.into())
     }
 
-    /// Returns the reclaim authority account ID (the account allowed to reclaim the note).
+    /// Returns the reclaim authority account ID.
     pub fn reclaim_authority(&self) -> AccountId {
         self.reclaim_authority
     }
