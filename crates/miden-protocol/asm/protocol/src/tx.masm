@@ -11,6 +11,7 @@ use {
     TX_GET_TX_SCRIPT_ROOT_OFFSET,
     TX_PREPARE_FPI_OFFSET,
     TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET,
+    TX_COMPUTE_FEE_OFFSET
 } from miden::protocol::kernel_proc_offsets
 use { AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot } from miden::protocol::types
 
@@ -360,4 +361,34 @@ pub proc get_tx_script_root() -> TransactionScriptRoot
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [TX_SCRIPT_ROOT]
+end
+
+#! Computes the fee required for the current transaction.
+#!
+#! Inputs:  [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+#! Outputs: [fee_amount]
+#!
+#! Where:
+#! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
+#!   before computing the fee. This allows accounting for cycles that are spent after this call, e.g.
+#!   for signature verification or the epilogue.
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
+#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#!
+#! Invocation: exec
+pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: word) -> felt
+    push.TX_COMPUTE_FEE_OFFSET
+    # => [offset, num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # pad the stack to 16 elements
+    push.0.0 movdn.7 movdn.7 padw padw swapdw
+    # => [offset, num_extra_cycles, EXCLUDE_NOTES_COMMITMENT, pad(10)]
+
+    syscall.exec_kernel_proc
+    # => [fee_amount, pad(15)]
+
+    # truncate the stack
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [fee_amount]
 end

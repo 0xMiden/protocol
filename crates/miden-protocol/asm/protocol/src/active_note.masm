@@ -1,6 +1,4 @@
-use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
-
+use miden::protocol_utils::mem
 use {
     INPUT_NOTE_GET_ASSETS_INFO_OFFSET,
     INPUT_NOTE_GET_METADATA_OFFSET,
@@ -323,11 +321,8 @@ end
 #! Outputs:
 #!   Operand stack: []
 proc write_storage_to_memory
-    # load the inputs from the advice map to the advice stack
-    # we pad the number of inputs to the next multiple of 8 so that we can use the
-    # `pipe_double_words_to_memory` instruction. The padded zeros don't affect the commitment
-    # computation.
-
+    # load the inputs from the advice map to the advice stack, padded to the next multiple of 8 so
+    # they can be written with `pipe_elements_preimage_to_memory`
     adv.push_mapvaln.8
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [advice_num_storage_items, [INPUT_VALUES]]
@@ -341,52 +336,12 @@ proc write_storage_to_memory
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
-    # calculate the number of words required to store the inputs
-    dup.4 u32divmod.4 neq.0 add
-    # OS => [num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # write the inputs to memory and compute their commitment
+    movup.5 movup.5
+    # OS => [num_storage_items, dest_ptr, NOTE_STORAGE_COMMITMENT]
     # AS => [[INPUT_VALUES]]
 
-    # round up the number of words to the next multiple of 2
-    dup is_odd add
-    # OS => [even_num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
-    # AS => [[INPUT_VALUES]]
-
-    # compute the end pointer for writing the padded inputs (even_num_words * 4 elements)
-    dup.6 swap mul.4 add
-    # OS => [end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
-    # AS => [[INPUT_VALUES]]
-
-    # prepare the stack for the `pipe_double_words_to_memory` procedure.
-    #
-    # To match `poseidon2::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
-    # element to `num_storage_items % 8`.
-    movup.6 movup.6
-    # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
-    # AS => [[INPUT_VALUES]]
-
-    u32divmod.8 swap drop
-    # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
-    # AS => [[INPUT_VALUES]]
-
-    push.0.0.0 movup.3
-    # OS => [CAPACITY = [num_storage_items_mod_8, 0, 0, 0], write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
-    # AS => [[INPUT_VALUES]]
-
-    padw padw
-    # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
-    # AS => [[INPUT_VALUES]]
-
-    # write the inputs from the advice stack into memory
-    exec.mem::pipe_double_words_to_memory
-    # OS => [RATE0, RATE1, CAPACITY, end_ptr', NOTE_STORAGE_COMMITMENT]
-    # AS => []
-
-    # extract the computed commitment from the hasher state
-    exec.poseidon2::squeeze_digest
-    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT]
-
-    # drop end_ptr'
-    movup.4 drop
+    exec.mem::pipe_elements_preimage_to_memory
     # OS => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT]
 
     # validate that the inputs written to memory match the inputs commitment
