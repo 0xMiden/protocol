@@ -24,7 +24,10 @@ const ASM_COMPONENTS_DIR: &str = "components";
 const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
-const BUILD_PROFILE: &str = "release";
+///
+/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
+/// information; consumers can strip it as needed.
+const BUILD_PROFILE: &str = "dev";
 
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";

@@ -30,7 +30,10 @@ const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
-const BUILD_PROFILE: &str = "release";
+///
+/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
+/// information; consumers can strip it as needed.
+const BUILD_PROFILE: &str = "dev";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
