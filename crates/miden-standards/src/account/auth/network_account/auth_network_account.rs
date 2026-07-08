@@ -60,9 +60,11 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network
 /// that the node would likely not yet respect updates made to the list after deployment, but there
 /// is in principle nothing preventing us from supporting mutation in the future.
 ///
-/// Roots are matched exactly and cannot be updated on-chain, so the allowlist must enumerate
-/// every root variant the account will ever consume (including across compiler/standard versions,
-/// e.g. P2ID); a missing root means that note is permanently and silently unconsumable.
+/// Roots are matched exactly, so the allowlist must currently enumerate every root variant the
+/// account will ever consume (including across compiler/standard versions, e.g. P2ID). Until
+/// on-chain updates are supported, a missing root means that note is permanently and silently
+/// unconsumable; the ability to update the allowlist after deployment is expected to be added in
+/// the future.
 pub struct AuthNetworkAccount {
     allowed_notes: NetworkAccountNoteAllowlist,
     allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
