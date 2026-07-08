@@ -164,6 +164,25 @@ impl AuthMultisigConfig {
 /// signing ratio of every override (e.g. a `2`-of-`2` override becomes `2`-of-`n`). To preserve the
 /// intended security level, re-evaluate the affected overrides and, where appropriate, raise them
 /// via `set_procedure_threshold` in the same transaction that grows the signer set.
+///
+/// # Security: a raised override is only as strong as the default threshold
+///
+/// An override can demand *more* signatures for a sensitive operation than the default, but that
+/// extra protection is not tamper-proof. A group meeting only the default threshold can strip it in
+/// two transactions: first they lower the override (editing overrides is itself gated only at the
+/// default, and an override can be lowered as freely as raised), then, in a later transaction, they
+/// run the now-cheaper operation. Two transactions are required because the signatures needed are
+/// read from the state as of the start of the transaction, so a lowered override only takes effect
+/// in the next one.
+///
+/// For example, with 5 signers, a default of 2, and a transfer requiring 4: two signers cannot
+/// transfer directly, but they can lower the transfer's override to 2 in one transaction and
+/// transfer in the next. An override thus keeps out only groups smaller than the default; at the
+/// default of 1, a single signer can undo any override.
+///
+/// Updating the signer set shares this weakness. To make a raised override hold, also apply an
+/// equal-or-higher override to the operations that can weaken it (editing overrides and updating the
+/// signer set), so undoing the protection costs as many signatures as the operation it guards.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
