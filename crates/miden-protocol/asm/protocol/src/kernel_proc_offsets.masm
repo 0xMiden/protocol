@@ -94,3 +94,6 @@ pub const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=52      # mutator
 
 # tx script
 pub const TX_GET_TX_SCRIPT_ROOT_OFFSET=53
+
+# fee
+pub const TX_COMPUTE_FEE_OFFSET=54

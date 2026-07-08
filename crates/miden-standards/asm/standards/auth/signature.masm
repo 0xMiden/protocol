@@ -41,7 +41,7 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #! included to commit to the transaction creator's intended reference block of the transaction
 #! which determines the fee parameters and therefore the fee amount that is deducted.
 #!
-#! Inputs:  [PUB_KEY, scheme_id]
+#! Inputs:  [PK_COMM, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -52,20 +52,20 @@ pub proc authenticate_transaction
     exec.native_account::incr_nonce
     exec.tx::get_block_number
     push.0.0
-    # => [[0, 0, ref_block_num, final_nonce], PUB_KEY, scheme_id]
+    # => [[0, 0, ref_block_num, final_nonce], PK_COMM, scheme_id]
 
     # Compute the message that is signed.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PK_COMM, scheme_id]
 
     # insert tx summary into advice provider for extraction by the host
     adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PK_COMM, scheme_id]
 
     # The commitment to the tx summary is the message that is signed
     exec.auth::hash_tx_summary
-    # OS => [MESSAGE, PUB_KEY, scheme_id]
+    # OS => [MESSAGE, PK_COMM, scheme_id]
     # AS => []
 
     # Fetch signature from advice provider and verify.
@@ -73,11 +73,11 @@ pub proc authenticate_transaction
     # Emit the authentication request event that pushes a signature for the message to the advice stack
     emit.AUTH_REQUEST_EVENT
     swapw
-    # OS => [PUB_KEY, MESSAGE, scheme_id]
+    # OS => [PK_COMM, MESSAGE, scheme_id]
     # AS => [SIGNATURE]
 
     movup.8
-    # OS => [scheme_id, PUB_KEY, MESSAGE]
+    # OS => [scheme_id, PK_COMM, MESSAGE]
     # AS => [SIGNATURE]
 
     # Verify the signature against the public key and the message. The procedure gets as inputs the
@@ -92,25 +92,25 @@ end
 #   1 => ECDSA (ecdsa_k256_keccak)
 #   2 => Falcon (falcon512_poseidon2)
 #
-# Inputs:  [scheme_id, PUB_KEY, MSG]
+# Inputs:  [scheme_id, PK_COMM, MSG]
 # Outputs: []
 proc verify_signature_by_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
-    # => [is_one, scheme_id PUB_KEY, MESSAGE]
+    # => [is_one, scheme_id, PK_COMM, MESSAGE]
 
     if.true
         drop
-        # OS => [PUB_KEY, MESSAGE]
+        # OS => [PK_COMM, MESSAGE]
 
         exec.ecdsa_k256_keccak::verify
         # OS => []
         # AS => []
     else
         eq.FALCON_512_POSEIDON2_SCHEME_ID
-        # => [is_2, PUB_KEY, MESSAGE]
+        # => [is_2, PK_COMM, MESSAGE]
 
         if.true
-            # OS => [PUB_KEY, MESSAGE]
+            # OS => [PK_COMM, MESSAGE]
 
             exec.falcon512_poseidon2::verify
             # OS => []
@@ -214,58 +214,58 @@ pub proc verify_signatures
         loc_load.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
         loc_load.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
         exec.active_account::get_initial_map_item
-        # => [APPROVER_PUB_KEY, signer_idx, MSG]
+        # => [PK_COMM, signer_idx, MSG]
 
         # Check if signature exists for this signer.
         # -----------------------------------------------------------------------------------------
 
         movup.4 movdn.8
-        # => [APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [PK_COMM, MSG, signer_idx]
 
         dupw.1 dupw.1
-        # => [APPROVER_PUB_KEY, MSG, APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [PK_COMM, MSG, PK_COMM, MSG, signer_idx]
 
         exec.poseidon2::merge
-        # => [SIG_KEY, APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
 
         adv.has_mapkey
-        # => [SIG_KEY, APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
 
         dropw
-        # => [APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [PK_COMM, MSG, signer_idx]
 
         adv_push
-        # => [has_signature, APPROVER_PUB_KEY, MSG, signer_idx]
+        # => [has_signature, PK_COMM, MSG, signer_idx]
 
         # if a signature for this signer exists in the advice map, verify it
         if.true
-            # => [APPROVER_PUB_KEY, MSG, signer_idx]
+            # => [PK_COMM, MSG, signer_idx]
 
             dupw.1
-            # => [MSG, APPROVER_PUB_KEY, MSG, signer_idx]
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
             # Emit the authentication request event that pushes a signature for the message to the advice stack.
             emit.AUTH_REQUEST_EVENT
-            # => [MSG, APPROVER_PUB_KEY, MSG, signer_idx]
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             swapw
-            # => [APPROVER_PUB_KEY, MSG, MSG, signer_idx]
+            # => [PK_COMM, MSG, MSG, signer_idx]
 
             dup.12 exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, APPROVER_PUB_KEY, MSG, MSG, signer_idx]
+            # => [APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, APPROVER_PUB_KEY, MSG, MSG, signer_idx]
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
 
             # Get scheme_id for the signer index from initial storage state.
             exec.active_account::get_initial_map_item
-            # => [[scheme_id, 0, 0, 0], APPROVER_PUB_KEY, MSG, MSG, signer_idx]
+            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
 
             movdn.3 drop drop drop
-            # OS => [scheme_id, APPROVER_PUB_KEY, MSG, MSG, signer_idx]
+            # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
             # AS => [SIGNATURE]
 
             exec.verify_signature_by_scheme

@@ -147,6 +147,16 @@ impl AuthMultisigConfig {
 /// bound: on private accounts it rejects per-procedure thresholds below the default.
 ///
 /// [`create_multisig_wallet`]: crate::account::wallets::create_multisig_wallet
+///
+/// # Security: growing the signer set does not re-scale overrides
+///
+/// Per-procedure threshold overrides are absolute signature counts, not ratios. Updating the signer
+/// set (via the `update_signers_and_threshold` account procedure) does not re-scale existing
+/// overrides: the only cross-check is that each override stays `<= num_approvers`, which keeps it
+/// reachable but never raises it. Growing the approver set therefore silently lowers the effective
+/// signing ratio of every override (e.g. a `2`-of-`2` override becomes `2`-of-`n`). To preserve the
+/// intended security level, re-evaluate the affected overrides and, where appropriate, raise them
+/// via `set_procedure_threshold` in the same transaction that grows the signer set.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
