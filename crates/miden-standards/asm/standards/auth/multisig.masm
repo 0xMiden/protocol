@@ -79,6 +79,10 @@ const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be
 
 const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 
+const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
+
+const ERR_SIGNER_INDEX_OUT_OF_BOUNDS = "signer index must be less than the number of approvers"
+
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
@@ -607,16 +611,31 @@ end
 
 #! Returns signer public key at index i
 #!
+#! Reads the initial account state: the returned signer reflects the approver set at the start of
+#! the transaction, not any updates made earlier in the same transaction.
+#!
 #! Inputs:  [index, pad(15)]
 #! Outputs: [PUB_KEY, scheme_id, pad(11)]
 #!
 #! Panics if:
 #! - index is not a u32 value.
+#! - index is greater than or equal to the number of approvers.
 #!
 #! Invocation: call
 @account_procedure
 pub proc get_signer_at
     u32assert.err=ERR_SIGNER_INDEX_NOT_U32
+    # => [index]
+
+    # Bounds check: index must be < num_approvers
+    exec.get_initial_threshold_and_num_approvers drop
+    # => [num_approvers, index]
+
+    dup.1 swap
+    # => [num_approvers, index, index]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32
+    u32lt assert.err=ERR_SIGNER_INDEX_OUT_OF_BOUNDS
     # => [index]
 
     dup
@@ -652,7 +671,10 @@ pub proc get_signer_at
 end
 
 
-#! Returns 1 if PUB_KEY is a current signer, else 0.
+#! Returns 1 if PUB_KEY is a signer, else 0.
+#!
+#! Reads the initial account state: the result reflects the approver set at the start of the
+#! transaction, not any updates made earlier in the same transaction.
 #!
 #! Inputs:  [PUB_KEY, pad(12)]
 #! Outputs: [is_signer, pad(15)]
