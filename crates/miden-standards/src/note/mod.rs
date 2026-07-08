@@ -18,6 +18,9 @@ pub use file::{NoteFile, NoteSyncHint};
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
+mod owner_config;
+pub use owner_config::{OwnerConfigAction, OwnerConfigNote};
+
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
 
@@ -50,6 +53,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    OwnerConfig,
 }
 
 impl StandardNote {
@@ -83,6 +87,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == OwnerConfigNote::script_root() {
+            return Some(Self::OwnerConfig);
+        }
 
         None
     }
@@ -99,6 +106,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::OwnerConfig => "OwnerConfig",
         }
     }
 
@@ -111,6 +119,8 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            // OwnerConfig storage is variable per action; this returns the upper bound.
+            Self::OwnerConfig => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
         }
     }
 
@@ -123,6 +133,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::OwnerConfig => OwnerConfigNote::script(),
         }
     }
 
@@ -135,6 +146,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::OwnerConfig => OwnerConfigNote::script_root(),
         }
     }
 

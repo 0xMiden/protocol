@@ -6,6 +6,7 @@ mod expiration;
 mod faucet;
 mod non_fungible_faucet;
 mod ownable2step;
+mod owner_config;
 mod p2id;
 mod p2ide;
 mod pausable;
