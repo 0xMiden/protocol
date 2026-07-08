@@ -63,9 +63,7 @@ end
 #! - ASSET_VALUE is the value of the asset that was minted.
 #!
 #! Panics if:
-#! - the transaction is not being executed against a faucet.
-#! - the asset being minted is not associated with the faucet the transaction is being executed
-#!   against.
+#! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - for fungible faucets if the total issuance after minting is greater than the maximum amount
 #!   allowed.
@@ -81,7 +79,7 @@ pub proc mint
     # => [offset, ASSET_ID, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 
     # clean the stack
     dropw dropw dropw dropw
