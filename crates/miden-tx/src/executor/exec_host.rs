@@ -97,6 +97,15 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
+    /// Whether execution is currently inside the authentication procedure.
+    ///
+    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
+    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
+    /// procedure is running. It is used to reject `AuthRequest` events emitted from any other
+    /// context (e.g. untrusted note or transaction scripts), which must never trigger signature
+    /// production.
+    in_auth_procedure: bool,
+
     /// The source manager to track source code file span information, improving any MASM related
     /// error messages.
     source_manager: Arc<dyn SourceManagerSync>,
@@ -138,6 +147,7 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
+            in_auth_procedure: false,
             source_manager,
         }
     }
@@ -584,13 +594,22 @@ where
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,
-                } => match tx_summary_or_signature {
-                    TxSummaryOrSignature::Signature(signature) => {
-                        Ok(self.base_host.on_auth_requested(signature))
-                    },
-                    TxSummaryOrSignature::TxSummary(tx_summary) => {
-                        self.on_auth_requested(pub_key_commitment, tx_summary).await
-                    },
+                } => {
+                    // Signature production is only permitted while the registered auth procedure
+                    // is executing. An `AuthRequest` emitted from any other context (e.g. an
+                    // untrusted note or transaction script) must not force the host to sign.
+                    if !self.in_auth_procedure {
+                        Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                    } else {
+                        match tx_summary_or_signature {
+                            TxSummaryOrSignature::Signature(signature) => {
+                                Ok(self.base_host.on_auth_requested(signature))
+                            },
+                            TxSummaryOrSignature::TxSummary(tx_summary) => {
+                                self.on_auth_requested(pub_key_commitment, tx_summary).await
+                            },
+                        }
+                    }
                 },
 
                 // This always returns an error to abort the transaction.
@@ -643,10 +662,12 @@ where
                     },
                     TransactionProgressEvent::EpilogueAuthProcStart(clk) => {
                         self.tx_progress.start_auth_procedure(clk);
+                        self.in_auth_procedure = true;
                         Ok(Vec::new())
                     },
                     TransactionProgressEvent::EpilogueAuthProcEnd(clk) => {
                         self.tx_progress.end_auth_procedure(clk);
+                        self.in_auth_procedure = false;
                         Ok(Vec::new())
                     },
                 },
