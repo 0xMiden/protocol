@@ -1,12 +1,15 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
 
+use miden_protocol::Felt;
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
+use miden_protocol::errors::AccountIdError;
 
 pub mod authority;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
+pub mod warden;
 
 /// Access control configuration for network-style accounts whose authority-gated setters are
 /// gated by an owner / role check rather than by the account's auth component.
@@ -84,3 +87,20 @@ pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::RoleBasedAccessControl;
+pub use warden::{Warden, WardenError};
+
+// HELPERS
+// ================================================================================================
+
+/// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
+/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination / no warden).
+pub(crate) fn account_id_from_felt_pair(
+    suffix: Felt,
+    prefix: Felt,
+) -> Result<Option<AccountId>, AccountIdError> {
+    if suffix == Felt::ZERO && prefix == Felt::ZERO {
+        Ok(None)
+    } else {
+        AccountId::try_from_elements(suffix, prefix).map(Some)
+    }
+}
