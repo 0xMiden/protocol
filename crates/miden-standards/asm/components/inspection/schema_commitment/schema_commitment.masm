@@ -2,4 +2,4 @@
 #
 # See the `AccountSchemaCommitment` Rust type's documentation for more details.
 
-pub use {get_schema_commitment} from miden::standards::metadata::storage_schema
+pub use {get_schema_commitment} from miden::standards::inspection::storage_schema

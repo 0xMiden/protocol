@@ -889,8 +889,11 @@ proc compute_asset_delta
         cswapw
         # => [LESSER_ASSET_VALUE, GREATER_ASSET_VALUE, ASSET_ID, delta_op]
 
+        dupw.2 exec.asset::id_into_composition
+        # => [asset_composition, LESSER_ASSET_VALUE, GREATER_ASSET_VALUE, ASSET_ID, delta_op]
+
         # compute the delta as greater - lesser
-        dupw.2 exec.asset::split
+        exec.asset::split
         # => [DELTA_ASSET_VALUE, ASSET_ID, delta_op]
 
         swapw movup.8

@@ -98,7 +98,7 @@ end
 # ACCOUNT
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the active account commitment at the beginning of the transaction.
+#! Returns the native account commitment at the beginning of the transaction.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [INIT_COMMITMENT, pad(12)]
@@ -106,8 +106,15 @@ end
 #! Where:
 #! - INIT_COMMITMENT is the initial account commitment.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
 #! Invocation: dynexec
 pub proc account_get_initial_commitment
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [pad(16)]
+
     # get the initial account commitment
     exec.account::get_initial_commitment
     # => [INIT_COMMITMENT, pad(16)]
@@ -292,7 +299,7 @@ pub proc account_get_code_commitment
     # => [CODE_COMMITMENT, pad(12)]
 end
 
-#! Returns the storage commitment of the active account at the beginning of the transaction.
+#! Returns the storage commitment of the native account at the beginning of the transaction.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
@@ -300,8 +307,15 @@ end
 #! Where:
 #! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
 #! Invocation: dynexec
 pub proc account_get_initial_storage_commitment
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [pad(16)]
+
     # get the initial account storage commitment
     exec.account::get_initial_storage_commitment
     # => [INIT_STORAGE_COMMITMENT, pad(16)]
@@ -418,7 +432,7 @@ pub proc account_get_map_item
     # => [VALUE, pad(12)]
 end
 
-#! Gets an item from the account storage at its initial state (beginning of transaction).
+#! Gets an item from the native account storage at its initial state (beginning of transaction).
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
 #! Outputs: [INIT_VALUE, pad(12)]
@@ -430,9 +444,14 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
+#! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_item
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
@@ -447,7 +466,7 @@ pub proc account_get_initial_item
 end
 
 #! Returns the initial VALUE located under the specified KEY within the map contained in the
-#! account storage slot identified by the slot ID at the beginning of the transaction.
+#! native account storage slot identified by the slot ID at the beginning of the transaction.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 #! Outputs: [INIT_VALUE, pad(12)]
@@ -461,9 +480,14 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
+#! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_map_item
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
@@ -512,7 +536,7 @@ pub proc account_set_map_item
     # => [OLD_VALUE, pad(12)]
 end
 
-#! Returns the vault root of the active account at the beginning of the transaction.
+#! Returns the vault root of the native account at the beginning of the transaction.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [INIT_VAULT_ROOT, pad(12)]
@@ -520,8 +544,15 @@ end
 #! Where:
 #! - INIT_VAULT_ROOT is the initial account vault root.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
 #! Invocation: dynexec
 pub proc account_get_initial_vault_root
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [pad(16)]
+
     # get the initial account vault root
     exec.account::get_initial_vault_root
     # => [INIT_VAULT_ROOT, pad(16)]
@@ -635,7 +666,7 @@ pub proc account_get_asset
     # => [ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault at
+#! Returns the asset associated with the provided asset ID in the native account's vault at
 #! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_ID, pad(12)]
@@ -645,8 +676,15 @@ end
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [ASSET_ID, pad(12)]
+
     exec.asset::validate_id
     # => [ASSET_ID, pad(12)]
 
@@ -665,6 +703,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
+#! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: dynexec
 pub proc account_was_procedure_called
@@ -809,10 +848,8 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
-#! - the transaction is not being executed against a faucet.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the asset being burned is not associated with the faucet the transaction is being executed
-#!   against.
+#! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
 #!   - the amount being burned is greater than the total input to the transaction.
