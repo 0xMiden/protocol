@@ -13,7 +13,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32,
 };
 use miden_protocol::testing::tx::TransactionFee;
-use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, MAX_OUTPUT_NOTES_PER_TX, Word};
 use rstest::rstest;
 
