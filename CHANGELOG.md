@@ -87,6 +87,7 @@
 - [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
+- Optimized the multisig auth component MASM (unconditional loop entry where the counter is guaranteed non-zero, single-step `scheme_id` extraction in `get_signer_at`, and a stack read instead of a local reload in `update_signers_and_threshold`), and documented that growing the signer set does not re-scale existing per-procedure threshold overrides ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
 - Renamed the `Authority` config value slot, expressed the authority kind as a MASM `enum Authority : u8`, and enforced the canonical config-word encoding on read ([#3209](https://github.com/0xMiden/protocol/pull/3209)).
 - Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
 - Refactor `asset_vault::add_asset` and `faucet::mint` to use a unified path for all asset types, in preparation of custom asset ([#3217](https://github.com/0xMiden/protocol/pull/3217)).
@@ -100,6 +101,7 @@
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 - Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
+- Fixed `set_procedure_threshold` now asserts `PROC_ROOT` is one of the account's procedures (`ERR_PROC_ROOT_NOT_IN_ACCOUNT`) before storing an override, and corrected the inaccurate `assert_new_tx`, `update_signers_and_threshold`, and `get_signer_at` stack-layout and advice-map comments ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
 
 ## v0.15.2 (2026-06-05)
 
