@@ -1,9 +1,16 @@
 # Changelog
-
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
+- [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
+- Re-exported `LoadedMastForest` from `miden-tx` so consumers implementing the re-exported `MastForestStore` trait can name its return type without depending on `miden-processor` directly ([#3236](https://github.com/0xMiden/protocol/pull/3237)).
+- Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
+- Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
+- Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
+- [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
+- [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - Added a non-fungible (NFT) faucet (`NonFungibleFaucet`): the asset value is an off-chain salted commitment `hash(user_data, salt)`, and an on-chain asset-status registry keyed by `[hash0, hash1, 0, 0]` enforces per-commitment uniqueness and permanent burn. Added `create_user_non_fungible_faucet` / `create_network_non_fungible_faucet` APIs, the `mint_nft` / `burn_nft` note scripts (`NonFungibleMintNote` / `NonFungibleBurnNote`), a `compute_commitment` helper, and reuses `TokenMetadata` (with `external_link` surfaced as `contract_uri`) and `TokenPolicyManager` for mint/burn/transfer policies ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
 - [BREAKING] Updated Miden VM dependencies to v0.24, Miden crypto dependencies to v0.27, and the MSRV to 1.96 ([#3064](https://github.com/0xMiden/protocol/issues/3064), [#3146](https://github.com/0xMiden/protocol/pull/3146)).
@@ -20,6 +27,7 @@
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
+- Clarified that FPI reads reflect the reference block and may be outdated unless the foreign account sets a transaction expiration delta ([#3208](https://github.com/0xMiden/protocol/pull/3208)).
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
@@ -35,6 +43,7 @@
 - [BREAKING] Removed `AuthMethod` enum, `AccountAuthComponent` / `AccountAuthScheme`, and the `AccessControl::AuthControlled` variant. Faucet and wallet factories now take concrete auth-component types so invalid configurations are rejected at compile time ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - [BREAKING] Split `create_fungible_faucet` into `create_user_fungible_faucet(auth_component: AuthSingleSigAcl, ...)` (installs `Authority::AuthControlled` directly) and the opinionated `create_network_fungible_faucet(access_control, ...)` (always `AccountType::Public`, builds the `AuthNetworkAccount` allowlist internally from `MintNote` + `BurnNote` script roots with an empty tx-script allowlist). Other auth schemes / shapes are no longer supported through these helpers — fall back to `AccountBuilder` directly. A `user_faucet_single_sig_acl` testing helper is provided behind the `testing` feature ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - Added `create_multisig_wallet` and `create_guarded_wallet` helpers for `BasicWallet` accounts authenticated by `AuthMultisig` and `AuthGuardedMultisig` respectively ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- Added a standalone `Warden` account component storing a single warden account ID, with `get_warden` / `set_warden` procedures and `is_sender_warden` / `assert_sender_is_warden` authorization primitives ([#3125](https://github.com/0xMiden/protocol/pull/3125)).
 - [BREAKING] `create_basic_wallet` now takes `AuthSingleSig` directly and returns `AccountError` instead of the removed `BasicWalletError` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - [BREAKING] Removed `AccountInterface::auth()` and `AccountComponentInterface::auth_scheme()`. Auth components are now discovered via `AccountInterface::auth_components()`, which iterates `AccountComponentInterface` variants flagged by `is_auth_component()` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - [BREAKING] `FungibleFaucet` no longer installs the `is_paused` storage slot itself. Faucet factories (`create_user_fungible_faucet` / `create_network_fungible_faucet`) now bundle the `Pausable` component (slot + `is_paused()` view procedure) alongside `PausableManager`. Callers using `AccountBuilder` directly must also install `Pausable` or the faucet's mint / burn / transfer / metadata-setter procedures will panic at runtime ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
@@ -73,10 +82,17 @@
 - [BREAKING] Renamed `create_user_fungible_faucet` to `create_singlesig_user_fungible_faucet` and added the `create_multisig_user_fungible_faucet(auth_component: AuthMultisig, ...)` and `create_guarded_user_fungible_faucet(auth_component: AuthGuardedMultisig, ...)`. `create_network_fungible_faucet` now allowlists the canonical `ExpirationTransactionScript` in its tx-script allowlist ([#3143](https://github.com/0xMiden/protocol/pull/3143)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Updated `AuthRequest` event to carry either signature of TX summary, but not both ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- Introduced `MockTransactionBuilder`, created via `MockChain::build_transaction` ([#3172](https://github.com/0xMiden/protocol/pull/3172)).
+- [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
 - Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - [BREAKING] Moved asset callback flag from asset vault key to account ID, making it immutable ([#3167](https://github.com/0xMiden/protocol/pull/3167)).
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - Documented that the `ecdsa_k256_keccak` authentication scheme discloses the signer's public key and signature at proving time via precompile calldata ([#3178](https://github.com/0xMiden/protocol/pull/3178)).
+- Optimized the multisig auth component MASM (unconditional loop entry where the counter is guaranteed non-zero, single-step `scheme_id` extraction in `get_signer_at`, and a stack read instead of a local reload in `update_signers_and_threshold`), and documented that growing the signer set does not re-scale existing per-procedure threshold overrides ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
+- Renamed the `Authority` config value slot, expressed the authority kind as a MASM `enum Authority : u8`, and enforced the canonical config-word encoding on read ([#3209](https://github.com/0xMiden/protocol/pull/3209)).
+- Unified procedure ordering and document sender-based access control's authentication assumption in the `ownable2step` and `rbac` access control modules ([#3205](https://github.com/0xMiden/protocol/pull/3205)).
+- Refactor `asset_vault::add_asset` and `faucet::mint` to use a unified path for all asset types, in preparation of custom asset ([#3217](https://github.com/0xMiden/protocol/pull/3217)).
+- [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
 
 ### Fixes
 
@@ -86,6 +102,7 @@
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 - Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
+- Fixed `set_procedure_threshold` now asserts `PROC_ROOT` is one of the account's procedures (`ERR_PROC_ROOT_NOT_IN_ACCOUNT`) before storing an override, and corrected the inaccurate `assert_new_tx`, `update_signers_and_threshold`, and `get_signer_at` stack-layout and advice-map comments ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
 
 ## v0.15.2 (2026-06-05)
 
@@ -113,6 +130,7 @@
 - [BREAKING] Removed `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 - Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [agglayer] Added faucet deregistration, letting the bridge admin revoke a registered faucet ([#2838](https://github.com/0xMiden/protocol/pull/2838)).
 
 ### Changes
 

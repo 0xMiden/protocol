@@ -97,11 +97,11 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to be bridged out.
+#! - ASSET_ID is the asset ID of the asset to be bridged out.
 #! - ASSET_VALUE is the value of the asset to be bridged out.
 #! - dest_network_id is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
@@ -115,7 +115,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 @account_procedure
 pub proc bridge_out
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
-    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+    # => [ASSET_ID, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
@@ -136,7 +136,7 @@ pub proc bridge_out
     # --- 1. Validate faucet registration and convert asset via FPI ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.convert_asset
     # => [AMOUNT_U256(8), origin_addr(5), origin_network, pad(16)]
@@ -185,10 +185,10 @@ pub proc bridge_out
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     swapw dropw
-    # => [ASSET_KEY, pad(16)]
+    # => [ASSET_ID, pad(16)]
 
-    # extract the faucet ID from the asset key
-    exec.asset::key_into_faucet_id
+    # extract the faucet ID from the asset ID
+    exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     # Stash the is_native flag for the lock/burn branch later in this procedure.
@@ -230,10 +230,10 @@ pub proc bridge_out
     # --- 5. Dispatch on is_native: lock into the bridge vault or burn via an output note ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     loc_load.BRIDGE_OUT_IS_NATIVE_LOC
-    # => [is_native, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [is_native, ASSET_ID, ASSET_VALUE, pad(16)]
 
     if.true
         exec.lock_asset
@@ -271,11 +271,11 @@ end
 #! native Miden amount to the origin (AggLayer-side) U256 amount using bridge-local conversion
 #! metadata.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to be bridged out.
+#! - ASSET_ID is the asset ID of the asset to be bridged out.
 #! - ASSET_VALUE is the value of the asset to be bridged out.
 #! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian).
 #! - origin_addr: origin token address (5 u32 felts).
@@ -287,9 +287,9 @@ end
 #! Invocation: exec
 proc convert_asset
     swapw exec.asset::fungible_value_into_amount movdn.4
-    # => [ASSET_KEY, amount]
+    # => [ASSET_ID, amount]
 
-    exec.asset::key_into_faucet_id
+    exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
     dup.1 dup.1
@@ -566,20 +566,20 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_KEY))).
+#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_ID))).
 #!
-#! Inputs:  [ASSET_KEY]
+#! Inputs:  [ASSET_ID]
 #! Outputs: [SERIAL_NUM]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key from which to compute the burn note serial number.
+#! - ASSET_ID is the asset ID from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
 #! - num_leaves is the number of leaves in the Local Exit Tree, post-append.
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
-    # => [B2AGG_SERIAL_NUM, ASSET_KEY]
+    # => [B2AGG_SERIAL_NUM, ASSET_ID]
 
     exec.poseidon2::merge
     # => [SERIAL_AND_ASSET_HASH]
@@ -598,37 +598,37 @@ end
 #! This procedure creates an output note that represents a burn operation for the given asset.
 #! The note targets the faucet account via a NetworkAccountTarget attachment.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to be burnt.
+#! - ASSET_ID is the asset ID of the asset to be burnt.
 #! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
 @locals(14)
 proc create_burn_note
     swapw dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::store
-    # => [ASSET_KEY]
+    # => [ASSET_ID]
 
-    exec.asset::key_to_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+    exec.asset::id_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
 
     # Create NetworkAccountTarget attachment for the faucet
     push.ALWAYS movdn.2
-    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, ASSET_KEY]
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, ASSET_ID]
 
     exec.network_account_target::new
-    # => [attachment_scheme, NOTE_ATTACHMENT, ASSET_KEY]
+    # => [attachment_scheme, NOTE_ATTACHMENT, ASSET_ID]
 
     # Save attachment data to locals
     loc_store.ATTACHMENT_SCHEME_LOC
     loc_storew_le.ATTACHMENT_LOC dropw
-    # => [ASSET_KEY]
+    # => [ASSET_ID]
 
     exec.compute_burn_note_serial_num
     # => [SERIAL_NUM]
@@ -669,7 +669,7 @@ proc create_burn_note
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(15)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
 
     exec.output_note::add_asset
     # => [pad(15)]
@@ -684,7 +684,7 @@ end
 #! does not hold). Instead of creating a BURN note, the asset is simply added to the bridge's own
 #! vault; the bridge-in claim side will later remove it via `unlock_and_send`.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Invocation: exec

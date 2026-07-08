@@ -283,14 +283,15 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
             exec.output_note::create
 
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
             exec.output_note::add_asset
         end
         "#,
@@ -298,7 +299,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
         asset_value = Asset::Fungible(asset).to_value_word(),
-        asset_key = Asset::Fungible(asset).to_key_word(),
+        asset_id = Asset::Fungible(asset).to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
@@ -451,21 +452,22 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let tag = NoteTag::default();
     let note_type = NoteType::Private;
 
-    // `mint_and_send` takes the full asset (ASSET_KEY + ASSET_VALUE) the MINT note carries.
+    // `mint_and_send` takes the full asset (ASSET_ID + ASSET_VALUE) the MINT note carries.
     let asset = FungibleAsset::new(faucet.id(), amount)?;
-    let asset_key = asset.to_key_word();
+    let asset_id = asset.to_id_word();
     let asset_value = asset.to_value_word();
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             push.0.0
 
             push.{recipient}
             push.{note_type}
             push.{tag}
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
 
             call.::miden::standards::faucets::fungible::mint_and_send
 
@@ -476,7 +478,7 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
         note_type = note_type as u8,
         tag = u32::from(tag),
         asset_value = asset_value,
-        asset_key = asset_key,
+        asset_id = asset_id,
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;

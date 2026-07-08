@@ -8,5 +8,7 @@ pub use {
     eqz,
     is_equal,
     shape_suffix,
+    testz,
     validate,
+    validate_structure,
 } from miden::protocol_utils::account_id

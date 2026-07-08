@@ -42,13 +42,13 @@ pub proc auth_tx(auth_args: word)
     # ---------------------------------------------------------------------------------------------
 
     push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_initial_item
-    # => [PUB_KEY, pad(16)]
+    # => [PK_COMM, pad(16)]
 
     push.SCHEME_ID_SLOT[0..2] exec.active_account::get_initial_item
-    # => [scheme_id, 0, 0, 0, PUB_KEY, pad(16)]
+    # => [scheme_id, 0, 0, 0, PK_COMM, pad(16)]
 
     movdn.7 drop drop drop
-    # => [PUB_KEY, scheme_id, pad(16)]
+    # => [PK_COMM, scheme_id, pad(16)]
 
     exec.signature::authenticate_transaction
     # => [pad(16)]

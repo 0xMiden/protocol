@@ -552,11 +552,11 @@ end
 
 #! Adds the specified asset to the vault.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset that is added to the vault.
+#! - ASSET_ID is the asset ID of the asset that is added to the vault.
 #! - ASSET_VALUE is the value of the asset to add to the vault.
 #! - FINAL_ASSET_VALUE is the asset in the account vault after the operation, defined as follows:
 #!   - If ASSET_VALUE is a non-fungible asset, then FINAL_ASSET_VALUE is the same as ASSET_VALUE.
@@ -574,11 +574,11 @@ end
 pub proc account_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # add the specified asset to the account vault, emitting the corresponding events
     exec.account::add_asset_to_vault
@@ -587,11 +587,11 @@ end
 
 #! Removes the specified asset from the vault and returns the remaining asset value.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to remove from the vault.
+#! - ASSET_ID is the asset ID of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
@@ -605,50 +605,50 @@ end
 pub proc account_remove_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
     # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset vault key in the active account's vault.
+#! Returns the asset associated with the provided asset ID in the active account's vault.
 #!
-#! Inputs:  [ASSET_KEY, pad(12)]
+#! Inputs:  [ASSET_ID, pad(12)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
 #! Invocation: dynexec
 pub proc account_get_asset
-    exec.asset::validate_key
-    # => [ASSET_KEY, pad(12)]
+    exec.asset::validate_id
+    # => [ASSET_ID, pad(12)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset vault key in the active account's vault at
+#! Returns the asset associated with the provided asset ID in the active account's vault at
 #! the beginning of the transaction.
 #!
-#! Inputs:  [ASSET_KEY, pad(12)]
+#! Inputs:  [ASSET_ID, pad(12)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
-    exec.asset::validate_key
-    # => [ASSET_KEY, pad(12)]
+    exec.asset::validate_id
+    # => [ASSET_ID, pad(12)]
 
     exec.account::get_initial_asset
     # => [ASSET_VALUE, pad(12)]
@@ -768,18 +768,16 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to mint.
+#! - ASSET_ID is the asset ID of the asset to mint.
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
-#! - the transaction is not being executed against a faucet.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the asset being minted is not associated with the faucet the transaction is being executed
-#!   against.
+#! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
 #!   - if the total issuance after minting is greater than the maximum amount allowed.
@@ -790,11 +788,11 @@ end
 pub proc faucet_mint_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # mint the asset
     exec.faucet::mint
@@ -803,11 +801,11 @@ end
 
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to burn.
+#! - ASSET_ID is the asset ID of the asset to burn.
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
@@ -826,11 +824,11 @@ end
 pub proc faucet_burn_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # burn the asset
     exec.faucet::burn
@@ -1150,12 +1148,12 @@ end
 
 #! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
-#! - ASSET_KEY is the vault key of the asset to add.
+#! - ASSET_ID is the asset ID of the asset to add.
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
@@ -1166,10 +1164,10 @@ end
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     dup.8 exec.output_note::assert_note_index_in_bounds drop
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
     # => [pad(16)]
@@ -1428,6 +1426,25 @@ pub proc tx_get_num_output_notes
     # truncate the stack
     swap drop
     # => [num_output_notes, pad(15)]
+end
+
+#! Computes the fee required for the current transaction.
+#!
+#! Inputs:  [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT, pad(11)]
+#! Outputs: [fee_amount, pad(15)]
+#!
+#! Where:
+#! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
+#!   before computing the fee.
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
+#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#!
+#! Invocation: dynexec
+pub proc tx_compute_fee
+    # compute the fee, consuming num_extra_cycles and the exclude notes commitment
+    exec.tx::compute_fee
+    # => [fee_amount, pad(15)]
 end
 
 #! Returns the block commitment of the reference block.

@@ -329,7 +329,7 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
         // [0..7] = requested asset (key + value)
         let key = Word::new([note_storage[0], note_storage[1], note_storage[2], note_storage[3]]);
         let value = Word::new([note_storage[4], note_storage[5], note_storage[6], note_storage[7]]);
-        let requested_asset = Asset::from_key_value_words(key, value)
+        let requested_asset = Asset::from_id_and_value_words(key, value)
             .map_err(|err| NoteError::other_with_source("failed to parse requested asset", err))?;
 
         // [12] = payback_note_type

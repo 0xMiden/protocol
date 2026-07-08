@@ -11,8 +11,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_standards::code_builder::CodeBuilder;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use crate::{Auth, TestTransactionBuilder};
 
@@ -75,7 +73,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     )?;
 
     // Build an account with the wrapper component that uses the array utility
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
@@ -93,7 +91,8 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     let tx_script_code = r#"
         use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index 0 (should return [42, 42, 42, 42])
             push.0
             # => [index, pad(16)]
@@ -194,7 +193,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("wrapper::component"),
     )?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_rng(&mut rand::rng()).random())
+    let account = AccountBuilder::new(rand::random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
@@ -210,7 +209,8 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         r#"
         use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index {index} (should return the initial double-word)
             push.{index}
             call.wrapper::test_get

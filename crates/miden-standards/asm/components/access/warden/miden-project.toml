@@ -1,11 +1,11 @@
 [package]
-name              = "miden-standards-access-pausable"
+name              = "miden-standards-access-warden"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::access::pausable"
-path      = "mod.masm"
+namespace = "miden::standards::components::access::warden"
+path      = "warden.masm"
 
 [dependencies]
 miden-core.workspace      = true

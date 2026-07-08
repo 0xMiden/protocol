@@ -18,7 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
@@ -288,7 +288,7 @@ where
         &self,
         active_account_id: AccountId,
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let asset_witnesses = self
             .base_host
@@ -296,12 +296,12 @@ where
             .get_vault_asset_witnesses(
                 active_account_id,
                 vault_root,
-                BTreeSet::from_iter([asset_key]),
+                BTreeSet::from_iter([asset_id]),
             )
             .await
             .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
                 vault_root,
-                asset_key,
+                asset_id,
                 source: err,
             })?;
 
@@ -510,12 +510,12 @@ where
                 TransactionEvent::AccountVaultBeforeAssetAccess {
                     active_account_id,
                     vault_root,
-                    asset_key,
+                    asset_id,
                 } => {
                     self.on_account_vault_asset_witness_requested(
                         active_account_id,
                         vault_root,
-                        asset_key,
+                        asset_id,
                     )
                     .await
                 },
@@ -647,10 +647,6 @@ where
                     },
                     TransactionProgressEvent::EpilogueAuthProcEnd(clk) => {
                         self.tx_progress.end_auth_procedure(clk);
-                        Ok(Vec::new())
-                    },
-                    TransactionProgressEvent::EpilogueAfterTxCyclesObtained(clk) => {
-                        self.tx_progress.epilogue_after_tx_cycles_obtained(clk);
                         Ok(Vec::new())
                     },
                 },

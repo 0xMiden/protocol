@@ -915,7 +915,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     let mut updated_account = account.clone();
     updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
+    assert_eq!(updated_account.vault().get(asset.id()).unwrap(), asset);
 
     let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
         &account.code_interface(),

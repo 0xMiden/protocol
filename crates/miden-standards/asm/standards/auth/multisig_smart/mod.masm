@@ -43,8 +43,6 @@ const NOTE_RESTRICTION_MAX = 3
 # ERRORS
 # =================================================================================================
 
-const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
-
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
 const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selected execution mode"
@@ -555,6 +553,13 @@ end
 #! validating smart procedure policies ([`assert_proc_policies_lte_num_approvers`]) instead
 #! of per-procedure threshold overrides.
 #!
+#! Note: like [`multisig::update_signers_and_threshold`], this procedure does NOT re-scale existing
+#! smart procedure policies. Their immediate/delayed thresholds are absolute signature counts, not
+#! ratios, and `assert_proc_policies_lte_num_approvers` only enforces the reachability bound
+#! (`threshold <= num_approvers`). Growing the signer set silently lowers the effective signing ratio
+#! of every policy; operators must re-evaluate and, where appropriate, raise the affected policies in
+#! the same transaction that grows the signer set.
+#!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_COMMITMENT, pad(12)]
 #! Outputs:
@@ -574,6 +579,11 @@ end
 @locals(2)
 @account_procedure
 pub proc update_signers_and_threshold(multisig_config_commitment: word)
+    # The signer configuration is read from the advice provider without an inline hash check. Every
+    # value written below via set_item / set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which
+    # is part of the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration
+    # produces a different delta commitment and thus a summary the current signers never signed. The
+    # same applies to the per-signer loads in the loop below.
     adv.push_mapval
     # => [MULTISIG_CONFIG_COMMITMENT, pad(12)]
 
@@ -587,8 +597,8 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     dup dup.2
     # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
 
-    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
-    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+    # make sure that the threshold is reachable with the number of approvers
+    exec.multisig::assert_threshold_is_reachable
     # => [MULTISIG_CONFIG, pad(12)]
 
     dup dup.2

@@ -2,9 +2,10 @@
 members = [
   "access/authority",
   "access/ownable2step",
-  "access/pausable/manager",
-  "access/pausable/mod",
+  "access/pausable",
+  "access/pausable_manager",
   "access/rbac",
+  "access/warden",
   "auth/guarded_multisig",
   "auth/multisig",
   "auth/multisig_smart",
@@ -34,6 +35,6 @@ members = [
 version = "0.16.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.24" }
+miden-core      = { linkage = "dynamic", version = "0.22" }
 miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
 miden-standards = { linkage = "static", version = "0.16.0" }

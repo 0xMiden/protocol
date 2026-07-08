@@ -11,6 +11,7 @@ use {
     TX_GET_TX_SCRIPT_ROOT_OFFSET,
     TX_PREPARE_FPI_OFFSET,
     TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET,
+    TX_COMPUTE_FEE_OFFSET
 } from miden::protocol::kernel_proc_offsets
 
 #! Returns the block number of the transaction reference block.
@@ -214,6 +215,18 @@ end
 
 #! Executes the provided procedure against the foreign account.
 #!
+#! WARNING: the foreign account state read here reflects the transaction reference block, which is
+#! chosen by the executor. The foreign account commitment is not a transaction public input
+#! and is not revalidated against the foreign account's current on-chain state at inclusion, so the
+#! returned values may be outdated.
+#!
+#! If a foreign account holds time-sensitive data, it is the responsibility of that account to set a
+#! transaction expiration delta according to how time-sensitive the data is. The delta bounds how old
+#! the reference block can be relative to the block the transaction is included in. For example, if an
+#! oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 (or
+#! smaller): if the current block is 40 and the delta is 5, the reference block must be block 35 or
+#! newer, so a value from block 20 could not be read.
+#!
 #! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
 #! Outputs: [foreign_procedure_outputs(16)]
 #!
@@ -352,4 +365,34 @@ pub proc get_tx_script_root
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [TX_SCRIPT_ROOT]
+end
+
+#! Computes the fee required for the current transaction.
+#!
+#! Inputs:  [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+#! Outputs: [fee_amount]
+#!
+#! Where:
+#! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
+#!   before computing the fee. This allows accounting for cycles that are spent after this call, e.g.
+#!   for signature verification or the epilogue.
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
+#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#!
+#! Invocation: exec
+pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: word) -> felt
+    push.TX_COMPUTE_FEE_OFFSET
+    # => [offset, num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # pad the stack to 16 elements
+    push.0.0 movdn.7 movdn.7 padw padw swapdw
+    # => [offset, num_extra_cycles, EXCLUDE_NOTES_COMMITMENT, pad(10)]
+
+    syscall.exec_kernel_proc
+    # => [fee_amount, pad(15)]
+
+    # truncate the stack
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [fee_amount]
 end

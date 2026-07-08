@@ -76,7 +76,6 @@ miden-core             = { workspace = true }
 miden-core-lib         = { workspace = true }
 miden-mast-package     = { features = ["std"], workspace = true }
 miden-package-registry = { features = ["std"], workspace = true }
-miden-project          = { features = ["serde", "std"], workspace = true }
 regex                  = { workspace = true }
 walkdir                = { workspace = true }
 

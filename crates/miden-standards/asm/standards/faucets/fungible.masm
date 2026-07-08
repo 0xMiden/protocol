@@ -31,10 +31,10 @@ pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_c
 
 # The local memory address at which the token config slot content is stored.
 const TOKEN_CONFIG_SLOT_LOCAL = 0
-# The local memory address at which the MINT note's ASSET_KEY is held across the mint policy
+# The local memory address at which the MINT note's ASSET_ID is held across the mint policy
 # and supply checks in `mint_and_send`. Its faucet ID is checked against the active account
 # to bind the mint to the faucet the MINT note was created for.
-const MINT_ASSET_KEY_LOCAL = 4
+const MINT_ASSET_ID_LOCAL = 4
 const ASSET_PTR = 0
 
 const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
@@ -231,14 +231,14 @@ end
 #!
 #! The active mint policy runs on the asset amount, the token supply is updated, and an
 #! output note carrying the asset is created for the recipient. The asset minted is derived
-#! for the active faucet; the `ASSET_KEY` stored in the MINT note must belong to that faucet,
+#! for the active faucet; the `ASSET_ID` stored in the MINT note must belong to that faucet,
 #! so a MINT note created for one faucet cannot be minted by another faucet.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the asset to mint. Its faucet ID must equal the active
+#! - ASSET_ID is the asset ID of the asset to mint. Its faucet ID must equal the active
 #!   account.
 #! - ASSET_VALUE is the value word of the asset to mint. For fungible assets it is
 #!   `[amount, 0, 0, 0]`; the amount is what the supply checks operate on.
@@ -260,9 +260,9 @@ end
 @locals(8)
 @account_procedure
 pub proc mint_and_send
-    # save the MINT note's ASSET_KEY in a local so it survives the mint policy and supply
+    # save the MINT note's ASSET_ID in a local so it survives the mint policy and supply
     # checks; it is compared against the asset derived for the active faucet before minting
-    loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
+    loc_storew_le.MINT_ASSET_ID_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # Run the active mint policy over the full asset value word. The policy may adjust the asset
@@ -354,23 +354,23 @@ pub proc mint_and_send
 
     # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
     exec.faucet::create_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     # bind the mint to the faucet the MINT note was created for: the asset derived for the
     # active faucet must equal the asset stored in the MINT note. The key encodes the faucet
     # ID and the faucet's asset-callbacks bit, so a MINT note created for a different faucet
     # is rejected.
-    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL dupw.1
-    # => [ASSET_KEY, NOTE_ASSET_KEY, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    padw loc_loadw_le.MINT_ASSET_ID_LOCAL dupw.1
+    # => [ASSET_ID, NOTE_ASSET_ID, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.faucet::mint
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     # Add the asset to the note.
     # ---------------------------------------------------------------------------------------------
@@ -417,19 +417,19 @@ pub proc receive_and_burn
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.policy_manager::execute_burn_policy
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
     exec.asset::fungible_to_amount movdn.8
-    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are

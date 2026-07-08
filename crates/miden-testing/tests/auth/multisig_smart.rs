@@ -68,7 +68,7 @@ fn create_multisig_smart_account(
 }
 
 /// Compiles a transaction script that links against the multisig smart library so it can `call.`
-/// the wrapper-exported procedures.
+/// the component's exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisigSmart::code())?
@@ -329,7 +329,8 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
         end
         ",
@@ -415,7 +416,8 @@ async fn test_multisig_smart_set_procedure_policy(
     // stack is preserved across the boundary), so we must manually drop the 7 elements we pushed.
     let set_policy_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{root}
             push.{note_restrictions}
             push.{delay_threshold}
@@ -505,7 +507,8 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     let target_root = BasicWallet::move_asset_to_note_root().as_word();
     let set_policy_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{root}
             push.0     # note_restrictions
             push.0     # delay_threshold
@@ -612,7 +615,8 @@ async fn execute_delay_action(
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{target_commitment}
             call.::miden::standards::components::auth::multisig_smart::{proc_name}
             dropw dropw dropw dropw dropw
@@ -712,7 +716,8 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
 
     let update_timelock_script = compile_multisig_smart_tx_script(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -756,7 +761,8 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
     let bundled_commitment = Word::from([Felt::from(11u32); 4]);
     let bundled_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{bundled_commitment}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw
@@ -870,7 +876,8 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     // an execution because it is not a propose/cancel-only transaction.
     let execute_script = compile_multisig_smart_tx_script(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -950,7 +957,8 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
 
     let execute_script = compile_multisig_smart_tx_script(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1109,7 +1117,8 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     let new_expiration_delta = 5u32;
     let rotate_script = compile_multisig_smart_tx_script(format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{new_expiration_delta}
             push.{new_min_delay}
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy

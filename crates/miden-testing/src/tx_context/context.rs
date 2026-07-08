@@ -14,7 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{Asset, AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -82,11 +82,11 @@ impl TransactionContext {
     /// - If the provided `code` is not a valid program.
     pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
         // Fetch all witnesses for note assets.
-        let asset_vault_keys = self
+        let asset_ids = self
             .tx_inputs
             .input_notes()
             .iter()
-            .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
+            .flat_map(|note| note.note().assets().iter().map(Asset::id))
             .collect::<BTreeSet<_>>();
 
         let (account, _block_header, _blockchain) = self
@@ -97,9 +97,9 @@ impl TransactionContext {
             .await
             .expect("failed to fetch transaction inputs");
 
-        // Fetch the witnesses for all asset vault keys.
+        // Fetch the witnesses for all asset IDs.
         let asset_witnesses = self
-            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_vault_keys)
+            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_ids)
             .await
             .expect("failed to fetch asset witnesses");
 
@@ -264,7 +264,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        asset_ids: BTreeSet<AssetId>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             let asset_vault = if account_id == self.account().id() {
@@ -299,7 +299,7 @@ impl DataStore for TransactionContext {
                 foreign_account.vault()
             };
 
-            Ok(vault_keys.into_iter().map(|vault_key| asset_vault.open(vault_key)).collect())
+            Ok(asset_ids.into_iter().map(|asset_id| asset_vault.open(asset_id)).collect())
         }
     }
 
@@ -383,10 +383,13 @@ impl MastForestStore for TransactionContext {
 
 #[cfg(test)]
 mod tests {
+    use std::string::ToString;
+
+    use miden_protocol::errors::tx_kernel::ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32;
     use miden_standards::code_builder::CodeBuilder;
 
     use super::*;
-    use crate::TestTransactionBuilder;
+    use crate::{Auth, MockChain, TestTransactionBuilder};
 
     #[tokio::test]
     async fn test_get_note_scripts() {
@@ -429,5 +432,46 @@ mod tests {
         let non_existent_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let result = tx_context.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
+    }
+
+    /// Regression test: an error raised in a dynamically-linked library (here `compute_fee` from
+    /// the protocol library) must render its human-readable message, not just an opaque error
+    /// code. This relies on the assembled packages retaining their debug info.
+    #[tokio::test]
+    async fn execute_code_renders_masm_error_message() -> anyhow::Result<()> {
+        let mut builder = MockChain::builder();
+        let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+        let mock_chain = builder.build()?;
+
+        let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+
+        // A value that exceeds u32::MAX triggers the `u32assert` inside `compute_fee`.
+        let code = format!(
+            r#"
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::tx
+
+        begin
+            exec.prologue::prepare_transaction
+
+            padw
+            push.{num_extra_cycles}
+            exec.tx::compute_fee
+        end"#,
+            num_extra_cycles = u64::from(u32::MAX) + 1
+        );
+
+        let Err(error) = tx_context.execute_code(&code).await else {
+            anyhow::bail!("execution should fail on non-u32 extra cycles");
+        };
+
+        let rendered = error.to_string();
+        let expected_error = ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32;
+        assert!(
+            rendered.contains(expected_error.message()),
+            "rendered error should contain the masm error message",
+        );
+
+        Ok(())
     }
 }

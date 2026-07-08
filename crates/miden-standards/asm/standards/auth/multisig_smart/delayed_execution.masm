@@ -328,16 +328,11 @@ end
 # DISPATCH
 # =================================================================================================
 
-#! Returns 1 if the current transaction only invoked a delay-action procedure
-#! (`propose_transaction` or `cancel_transaction_proposal`) and nothing else.
+#! Returns 1 if the current transaction called `propose_transaction` or `cancel_transaction_proposal`.
 #!
-#! When a delay-action procedure was called it verifies its own signatures internally, so the auth
-#! procedure has no additional work to do for such transactions. Any other transaction is treated
-#! as an execution and runs the full signature/threshold/timelock checks in the auth procedure.
-#!
-#! The caller is responsible for asserting that a delay action was the only non-auth procedure
-#! called (via `assert_only_one_non_auth_procedure_called`), so it cannot be bundled with a
-#! state-mutating procedure to bypass the timelock.
+#! Such a delay-action transaction verifies its own signatures inside the called procedure, so the
+#! auth procedure only asserts it was the sole non-auth procedure called (see `auth_tx`). Any other
+#! transaction is treated as an execution and runs the full signature/threshold/timelock checks.
 #!
 #! Inputs:  []
 #! Outputs: [was_propose_or_cancel_called]

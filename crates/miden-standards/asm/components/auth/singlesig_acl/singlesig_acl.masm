@@ -82,7 +82,7 @@ pub proc auth_tx_acl(auth_args: word)
             # => [is_exempt, i, auth_required, pad(16)]
 
             # If the called procedure is not exempt, auth is required.
-            not
+            neq.1
             # => [is_not_exempt, i, auth_required, pad(16)]
 
             movup.2 or
@@ -108,14 +108,14 @@ pub proc auth_tx_acl(auth_args: word)
     if.true
         # Fetch public key from storage.
         push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_initial_item
-        # => [PUB_KEY, pad(16)]
+        # => [PK_COMM, pad(16)]
 
         # Fetch scheme_id from storage
         push.SCHEME_ID_SLOT[0..2] exec.active_account::get_initial_item
-        # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(16)]
+        # => [[scheme_id, 0, 0, 0], PK_COMM, pad(16)]
 
         movdn.7 drop drop drop
-        # => [PUB_KEY, scheme_id, pad(16)]
+        # => [PK_COMM, scheme_id, pad(16)]
 
         exec.signature::authenticate_transaction
     else
