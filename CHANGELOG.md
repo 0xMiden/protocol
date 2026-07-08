@@ -2,6 +2,8 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added a rejection to duplicate procedure roots in `AuthMultisigConfig::with_proc_thresholds` and added a fail-closed bounds check to the `get_signer_at` multisig helper so an out-of-range index reverts instead of returning an empty signer ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
+- Added an enforcement for procedure-root uniqueness when an `AccountCode` is constructed via `from_parts` or deserialized, rejecting codes whose procedure list repeats a root ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
 - Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
 - [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
 - Re-exported `LoadedMastForest` from `miden-tx` so consumers implementing the re-exported `MastForestStore` trait can name its return type without depending on `miden-processor` directly ([#3236](https://github.com/0xMiden/protocol/pull/3237)).
