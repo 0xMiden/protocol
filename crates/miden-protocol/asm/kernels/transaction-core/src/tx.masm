@@ -1,12 +1,8 @@
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::memory
-use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
 use miden::core::word
-use {
-    MAX_OUTPUT_NOTES_PER_TX,
-    WORD_NUM_ELEMENTS
-} from miden::tx_kernel_core::constants
+use miden::protocol_utils::mem
+use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
 
 # CONSTANTS
 # =================================================================================================
@@ -261,8 +257,8 @@ pub proc compute_fee
     mul
     # => [verification_fee_amount, EXCLUDE_NOTES_COMMITMENT]
 
-    # validate the notes to exclude and compute the output note fee
-    movdn.4 exec.compute_output_note_fee
+    # validate the notes to exclude and compute the output notes fee
+    movdn.4 exec.compute_output_notes_fee
     # => [output_note_fee_amount, verification_fee_amount]
 
     add
@@ -272,7 +268,7 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Computes the fee for output notes.
+#! Computes the fee for the output notes.
 #!
 #! Currently always returns 0.
 #!
@@ -287,8 +283,10 @@ end
 #! - the committed indices do not match EXCLUDE_NOTES_COMMITMENT.
 #! - an excluded index is out of bounds, or the indices are not sorted in ascending order and
 #!   duplicate-free.
+#!
+#! Invocation: exec
 @locals(1024)
-proc compute_output_note_fee
+proc compute_output_notes_fee
     locaddr.0 movdn.4
     # => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 
@@ -313,9 +311,9 @@ end
 #! Writes the output note indices committed to by the provided commitment from the advice provider
 #! to the provided pointer and validates them against that commitment.
 #!
-#! The committed value is an arbitrary-length list of output note indices (e.g. `[1, 3, 5]`), so it
-#! is not word-aligned. For efficiency reasons, the commitment is computed using
-#! `pipe_double_words_to_memory` which requires manually setting up the hasher state.
+#! The committed value is an arbitrary-length list of output note indices (e.g. `[1, 3, 5]`). The
+#! commitment is recomputed while writing the indices to memory via
+#! `mem::pipe_elements_preimage_to_memory`.
 #!
 #! Inputs:  [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 #! Outputs: [num_excluded_notes]
@@ -340,8 +338,8 @@ proc write_exclude_notes
         # => [num_excluded_notes = 0]
     else
         # load the committed indices from the advice map onto the advice stack, padded to the next
-        # multiple of 8 so they can be piped with `pipe_double_words_to_memory`. The padding zeros do
-        # not affect the `hash_elements` commitment.
+        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The padding
+        # zeros do not affect the commitment.
         adv.push_mapvaln.8
         # OS => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
         # AS => [num_excluded_notes, [INDICES]]
@@ -356,42 +354,14 @@ proc write_exclude_notes
         u32lte.MAX_OUTPUT_NOTES_PER_TX assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX
         # OS => [num_excluded_notes, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 
-        movdn.5
-        # OS => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr, num_excluded_notes]
+        dup movdn.6
+        # OS => [num_excluded_notes, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr, num_excluded_notes]
 
-        # compute the number of words required to store the indices: ceil(num_excluded_notes / 4)
-        dup.5 u32divmod.4 neq.0 add
-        # OS => [num_words, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr, num_excluded_notes]
+        # write the indices to local memory and compute their commitment
+        movup.5 swap
+        # OS => [num_excluded_notes, exclude_notes_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
 
-        # round the number of words up to the next multiple of 2 for `pipe_double_words_to_memory`
-        dup is_odd add
-        # OS => [even_num_words, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr, num_excluded_notes]
-
-        # compute the start and end pointers
-        # end_ptr = write_ptr + even_num_words * 4
-        movup.5 dup movup.2 mul.WORD_NUM_ELEMENTS add swap
-        # OS => [write_ptr, end_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        # set first capacity element to `num_excluded_notes % 8` to match the capacity as built in
-        # poseidon2::hash_elements
-        dup.6 u32mod.8
-        # OS => [num_excluded_notes_mod_8, write_ptr, end_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        push.0.0.0 movup.3
-        # OS => [CAPACITY, write_ptr, end_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        padw padw
-        # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        # write the indices to local memory while hashing them
-        exec.mem::pipe_double_words_to_memory
-        # OS => [RATE0, RATE1, CAPACITY, write_ptr', EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        # extract the computed commitment from the hasher state
-        exec.poseidon2::squeeze_digest
-        # OS => [COMPUTED_COMMITMENT, write_ptr', EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
-
-        movup.4 drop
+        exec.mem::pipe_elements_preimage_to_memory
         # OS => [COMPUTED_COMMITMENT, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
 
         # validate that the loaded indices match their commitment
@@ -433,7 +403,7 @@ proc assert_exclude_notes_sorted_and_unique
         # => [num_output_notes, max_note_idx, exclude_notes_ptr, num_excluded_notes]
 
         # assert max_note_idx < num_output_notes
-        u32assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32
+        u32assert2.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32
         u32lt assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS
         # => [exclude_notes_ptr, num_excluded_notes]
     end

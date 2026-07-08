@@ -12,6 +12,8 @@ use miden_protocol::errors::tx_kernel::{
     ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED,
     ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32,
 };
+use miden_protocol::testing::tx::TransactionFee;
+use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, MAX_OUTPUT_NOTES_PER_TX, Word};
 use rstest::rstest;
 
@@ -96,6 +98,48 @@ async fn compute_fee_adds_extra_cycles() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// This test captures the VM cycle count right before invoking `compute_fee` with zero extra
+/// cycles and checks the computed fee matches matches the expected fee using the captured clock.
+#[tokio::test]
+async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
+    let (mock_chain, account) = mock_chain_with_fee()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    // Capture `clk`, then compute the fee with an empty exclude-notes commitment and no extra
+    // cycles.
+    let code = "
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::tx
+        use miden::core::sys
+
+        begin
+            exec.prologue::prepare_transaction
+
+            clk padw push.0
+            # => [num_extra_cycles = 0, EXCLUDE_NOTES_COMMITMENT = EMPTY_WORD, captured_clk]
+
+            exec.tx::compute_fee
+            # => [fee_amount, captured_clk]
+
+            exec.sys::truncate_stack
+        end
+        ";
+
+    let exec_output = mock_tx.execute_code(code).await?;
+
+    let actual_fee = exec_output.get_stack_element(0).as_canonical_u64();
+    let captured_clk = u32::try_from(exec_output.get_stack_element(1).as_canonical_u64())?;
+
+    let expected_fee = TransactionFee::new(captured_clk.next_power_of_two())
+        .compute_fee(mock_tx.tx_inputs().block_header().fee_parameters());
+
+    // This assertion is somewhat brittle. If it fails, it is likely because log2(captured clock)
+    // and log2(actual clock) differ, which shouldn't happen most of the time.
+    assert_eq!(actual_fee, expected_fee.as_u64());
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn compute_fee_fails_on_non_u32_extra_cycles() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
@@ -174,12 +218,23 @@ async fn compute_fee_fails_on_invalid_exclude_notes(
     Ok(())
 }
 
+/// The transaction creates six output notes, so the excluded indices below are all in bounds. The
+/// cases cover zero, one and multiple excluded notes, to exercise all branches of the sorting and
+/// uniqueness validation.
+#[rstest]
+// No excluded notes.
+#[case::none(vec![])]
+// A single excluded note skips the adjacent-index comparison entirely.
+#[case::single(vec![2])]
+// Multiple sorted, duplicate-free indices, each below the six output notes.
+#[case::multiple(vec![1, 3, 5])]
 #[tokio::test]
-async fn compute_fee_accepts_sorted_in_bounds_exclude_notes() -> anyhow::Result<()> {
+async fn compute_fee_accepts_sorted_in_bounds_exclude_notes(
+    #[case] exclude_indices: Vec<u32>,
+) -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
 
-    // Sorted, duplicate-free indices, each below the six output notes created by the transaction.
-    let (commitment, elements) = build_exclude_notes_commitment(&[1, 3, 5]);
+    let (commitment, elements) = build_exclude_notes_commitment(&exclude_indices);
     let tx_context = mock_chain
         .build_tx_context(account, &[], &[])?
         .extend_advice_map(vec![(commitment, elements)])
