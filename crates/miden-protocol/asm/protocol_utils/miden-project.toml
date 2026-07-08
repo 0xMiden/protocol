@@ -5,3 +5,6 @@ version.workspace = true
 [lib]
 namespace = "miden::protocol_utils"
 path      = "src/mod.masm"
+
+[dependencies]
+miden-core.workspace = true

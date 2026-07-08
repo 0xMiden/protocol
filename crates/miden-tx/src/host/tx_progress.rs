@@ -15,12 +15,6 @@ pub struct TransactionProgress {
     tx_script_processing: CycleInterval,
     epilogue: CycleInterval,
     auth_procedure: CycleInterval,
-    /// The cycle count of the processor at the point where compute_fee called clk to obtain the
-    /// transaction's cycle count.
-    ///
-    /// This is used to get the total number of cycles the transaction takes for use in
-    /// compute_fee itself.
-    epilogue_after_tx_cycles_obtained: Option<RowIndex>,
 }
 
 impl TransactionProgress {
@@ -36,7 +30,6 @@ impl TransactionProgress {
             tx_script_processing: CycleInterval::default(),
             epilogue: CycleInterval::default(),
             auth_procedure: CycleInterval::default(),
-            epilogue_after_tx_cycles_obtained: None,
         }
     }
 
@@ -116,10 +109,6 @@ impl TransactionProgress {
         self.auth_procedure.set_end(cycle);
     }
 
-    pub fn epilogue_after_tx_cycles_obtained(&mut self, cycle: RowIndex) {
-        self.epilogue_after_tx_cycles_obtained = Some(cycle);
-    }
-
     pub fn end_epilogue(&mut self, cycle: RowIndex) {
         self.epilogue.set_end(cycle);
     }
@@ -149,16 +138,6 @@ impl From<TransactionProgress> for TransactionMeasurements {
 
         let auth_procedure = tx_progress.auth_procedure().len();
 
-        // Compute the number of cycles that where not captured by the call to clk.
-        let after_tx_cycles_obtained = if let Some(epilogue_after_tx_cycles_obtained) =
-            tx_progress.epilogue_after_tx_cycles_obtained
-        {
-            tx_progress.epilogue().end().expect("epilogue end should be set")
-                - epilogue_after_tx_cycles_obtained
-        } else {
-            0
-        };
-
         Self {
             prologue,
             notes_processing,
@@ -166,7 +145,6 @@ impl From<TransactionProgress> for TransactionMeasurements {
             tx_script_processing,
             epilogue,
             auth_procedure,
-            after_tx_cycles_obtained,
         }
     }
 }

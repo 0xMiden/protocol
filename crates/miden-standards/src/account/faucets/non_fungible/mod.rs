@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountStorage,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
@@ -38,7 +39,7 @@ use crate::account::access::{AccessControl, Authority, Pausable, PausableManager
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
 use crate::account::policies::TokenPolicyManager;
-use crate::note::{NonFungibleBurnNote, NonFungibleMintNote};
+use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -60,6 +61,45 @@ pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
         .expect("storage slot name should be valid")
 });
+
+// ASSET STATUS
+// ================================================================================================
+
+// On-chain status codes stored at element 0 of the asset-status registry value. These must match
+// the `STATUS_ISSUED` / `STATUS_BURNED` constants in the non-fungible faucet MASM.
+const STATUS_ISSUED: u8 = 1;
+const STATUS_BURNED: u8 = 2;
+
+/// The issuance status of a non-fungible asset within a [`NonFungibleFaucet`].
+///
+/// Mirrors the on-chain `get_asset_status` procedure: the faucet's asset-status registry maps each
+/// token ID to `Issued` or `Burned`; a token ID that was never issued is absent from the registry
+/// and reported as `NotIssued`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetStatus {
+    /// The commitment has never been issued by this faucet.
+    NotIssued,
+    /// An NFT has been issued for the commitment and has not been burned.
+    Issued,
+    /// The commitment was issued and later burned; it is permanently consumed and can never be
+    /// issued again.
+    Burned,
+}
+
+impl TryFrom<u8> for AssetStatus {
+    type Error = NonFungibleFaucetError;
+
+    /// Builds an [`AssetStatus`] from the raw status code held in element 0 of the registry value
+    /// word (0 = not issued, 1 = issued, 2 = burned).
+    fn try_from(status: u8) -> Result<Self, Self::Error> {
+        match status {
+            0 => Ok(Self::NotIssued),
+            STATUS_ISSUED => Ok(Self::Issued),
+            STATUS_BURNED => Ok(Self::Burned),
+            other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other.into() }),
+        }
+    }
+}
 
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
@@ -268,6 +308,40 @@ impl NonFungibleFaucet {
         Hasher::merge(&[data_digest, salt])
     }
 
+    /// Reads the issuance [`AssetStatus`] of the asset identified by `asset_commitment` (as
+    /// produced by [`compute_asset_commitment`]) from the faucet account's `storage`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the asset-status slot cannot be read or holds an invalid status code.
+    ///
+    /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
+    pub fn get_asset_status(
+        storage: &AccountStorage,
+        asset_commitment: Word,
+    ) -> Result<AssetStatus, NonFungibleFaucetError> {
+        // The registry key is the token ID (commitment elements 0 and 1) padded to a word, matching
+        // the `create_status_key` procedure in the non-fungible faucet MASM.
+        let key = StorageMapKey::new(Word::new([
+            asset_commitment[0],
+            asset_commitment[1],
+            Felt::ZERO,
+            Felt::ZERO,
+        ]));
+
+        let status_word = storage.get_map_item(Self::asset_status_slot(), key).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: Self::asset_status_slot().clone(),
+                source: err,
+            }
+        })?;
+
+        let raw_status = status_word[0].as_canonical_u64();
+        let status_code = u8::try_from(raw_status)
+            .map_err(|_| NonFungibleFaucetError::InvalidAssetStatus { status: raw_status })?;
+        AssetStatus::try_from(status_code)
+    }
+
     /// Returns the storage slot schema for the token symbol slot.
     pub fn symbol_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
@@ -435,7 +509,7 @@ pub fn create_user_non_fungible_faucet(
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
 /// The factory builds the [`AuthNetworkAccount`] auth component internally with a note allowlist
-/// covering the faucet's own [`NonFungibleMintNote`] and [`NonFungibleBurnNote`] scripts, plus a
+/// covering the faucet's own [`MintNote`] and [`BurnNote`] scripts, plus a
 /// tx-script allowlist covering the canonical expiration setter
 /// ([`ExpirationTransactionScript`]) so the network can bound its own transactions' expiry.
 pub fn create_network_non_fungible_faucet(
@@ -444,12 +518,10 @@ pub fn create_network_non_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
-    let note_allowlist = [NonFungibleMintNote::script_root(), NonFungibleBurnNote::script_root()]
-        .into_iter()
-        .collect();
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
     let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
-        .expect("non-fungible MintNote + BurnNote allowlist is non-empty")
+        .expect("MintNote + BurnNote allowlist is non-empty")
         .with_allowed_tx_scripts(tx_script_allowlist);
 
     AccountBuilder::new(init_seed)

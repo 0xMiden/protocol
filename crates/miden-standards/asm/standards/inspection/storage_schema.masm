@@ -8,7 +8,7 @@ use miden::protocol::active_account
 # =================================================================================================
 
 # The slot in this component's storage layout where the account storage schema commitment is stored
-const SCHEMA_COMMITMENT_SLOT = word("miden::standards::metadata::storage_schema::commitment")
+const SCHEMA_COMMITMENT_SLOT = word("miden::standards::inspection::storage_schema::commitment")
 
 # TODO(call invocation)
 @account_procedure
