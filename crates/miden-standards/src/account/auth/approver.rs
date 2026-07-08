@@ -24,6 +24,21 @@ pub struct Approver {
 
 impl Approver {
     /// Creates a new [`Approver`] from the given public key commitment and signature scheme.
+    ///
+    /// # Security
+    ///
+    /// The `pub_key` commitment must have been derived under `auth_scheme`. This is not checked
+    /// here: a commitment is a bare digest that carries no record of the scheme that produced it,
+    /// and this constructor accepts a raw commitment (e.g. one rebuilt from stored account state)
+    /// without the originating key, so it cannot re-derive or verify the scheme. Pairing a
+    /// commitment with the wrong scheme is a self-inflicted misconfiguration: authentication
+    /// dispatches on the stored scheme alone and hashes the provided key under that scheme's hash
+    /// function, so a mismatched commitment can never be reproduced and the account becomes
+    /// permanently unauthenticatable.
+    ///
+    /// To keep the two consistent by construction, derive the approver from a [`PublicKey`] via the
+    /// [`From<&PublicKey>`](Approver::from) conversion, or use the typed constructors on
+    /// [`AuthSingleSig`](crate::account::auth::AuthSingleSig).
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
         Self { pub_key, auth_scheme }
     }
