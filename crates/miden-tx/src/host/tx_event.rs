@@ -54,8 +54,6 @@ pub(crate) enum TransactionProgressEvent {
 
     EpilogueAuthProcStart(RowIndex),
     EpilogueAuthProcEnd(RowIndex),
-
-    EpilogueAfterTxCyclesObtained(RowIndex),
 }
 
 // TRANSACTION EVENT
@@ -554,10 +552,6 @@ impl TransactionEvent {
             )),
             TransactionEventId::EpilogueAuthProcEnd => Some(TransactionEvent::Progress(
                 TransactionProgressEvent::EpilogueAuthProcEnd(process.clock()),
-            )),
-
-            TransactionEventId::EpilogueAfterTxCyclesObtained => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAfterTxCyclesObtained(process.clock()),
             )),
         };
 
