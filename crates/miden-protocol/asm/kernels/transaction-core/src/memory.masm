@@ -1109,36 +1109,6 @@ pub proc set_account_vault_root
     mem_storew_le
 end
 
-#! Returns the memory pointer to the initial vault root of the active account.
-#!
-#! For the native account, this returns the pointer to the initial vault root.
-#! For foreign accounts, this returns the regular vault root pointer since foreign accounts
-#! are read-only and their initial and current vault state always matches.
-#!
-#! Inputs:  []
-#! Outputs: [account_initial_vault_root_ptr]
-#!
-#! Where:
-#! - account_initial_vault_root_ptr is the memory pointer to the initial vault root.
-pub proc get_account_initial_vault_root_ptr
-    # for foreign account, use the regular vault root pointer since foreign accounts are read-only
-    # and initial == current
-    exec.get_account_vault_root_ptr
-    # => [account_vault_root_ptr]
-
-    # for native account, use the initial vault root pointer
-    exec.get_init_native_account_vault_root_ptr
-    # => [native_account_initial_vault_root_ptr, account_vault_root_ptr]
-
-    # get the flag indicating whether the active account is native
-    exec.is_native_account
-    # => [is_native_account, native_account_initial_vault_root_ptr, account_vault_root_ptr]
-
-    # according to the is_native_account flag, return the corresponding pointer
-    cdrop
-    # => [account_initial_vault_root_ptr]
-end
-
 ### ACCOUNT CODE #################################################
 
 #! Returns the code commitment of the account.
@@ -1378,36 +1348,6 @@ end
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_native_account_initial_storage_slots_ptr
   push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
-end
-
-#! Returns the memory pointer to the initial storage slots of the active account.
-#!
-#! For the native account, this returns the pointer to the initial storage slots section.
-#! For foreign accounts, this returns the regular storage slots pointer since foreign accounts
-#! are read-only and their initial and current storage state always matches.
-#!
-#! Inputs:  []
-#! Outputs: [account_initial_storage_slots_ptr]
-#!
-#! Where:
-#! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
-pub proc get_account_initial_storage_slots_ptr
-    # for foreign account, use the regular storage slots pointer since foreign accounts are
-    # read-only and initial == current
-    exec.get_account_active_storage_slots_section_ptr
-    # => [account_storage_slots_ptr]
-
-    # for native account, use the initial storage slots pointer
-    exec.get_native_account_initial_storage_slots_ptr
-    # => [native_account_initial_storage_slots_ptr, account_storage_slots_ptr]
-
-    # get the flag indicating whether the active account is native
-    exec.is_native_account
-    # => [is_native_account, native_account_initial_storage_slots_ptr, account_storage_slots_ptr]
-
-    # according to the is_native_account flag, return the corresponding pointer
-    cdrop
-    # => [account_initial_storage_slots_ptr]
 end
 
 ### ACCOUNT DELTA #################################################

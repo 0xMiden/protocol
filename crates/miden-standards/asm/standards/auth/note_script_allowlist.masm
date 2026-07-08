@@ -8,7 +8,7 @@
 # passes the slot id (suffix, prefix) so the same logic can back multiple components, each with
 # their own allowlist.
 
-use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::protocol::tx
 use miden::protocol::input_note
 use miden::core::word
@@ -27,7 +27,7 @@ const ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED="input note script root is not 
 #! Map convention: keys are note script roots (defined as Word), and any non-empty value marks a
 #! root as allowed. Empty values (the default for absent keys) cause this procedure to fail.
 #!
-#! Note: Reads the allowlist via `active_account::get_initial_map_item`, i.e. the transaction's
+#! Note: Reads the allowlist via `native_account::get_initial_map_item`, i.e. the transaction's
 #! initial storage state rather than the live state.
 #!
 #! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix]
@@ -60,7 +60,7 @@ pub proc assert_all_input_notes_allowed
         dup.6 dup.6
         # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT, note_idx, slot_id_suffix, slot_id_prefix]
 
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [VALUE, note_idx, slot_id_suffix, slot_id_prefix]
 
         exec.word::eqz not

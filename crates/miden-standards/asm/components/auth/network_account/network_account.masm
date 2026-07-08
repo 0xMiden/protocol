@@ -33,7 +33,7 @@ const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::a
 #! If both checks pass, the nonce is incremented when the account state changed or the account is
 #! new, matching the behavior of the NoAuth and SingleSig components.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
@@ -57,7 +57,7 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Increment nonce iff the account state changed or the account is new ----
-    exec.active_account::get_initial_commitment
+    exec.native_account::get_initial_commitment
     # => [INITIAL_COMMITMENT, pad(16)]
 
     exec.active_account::compute_commitment
