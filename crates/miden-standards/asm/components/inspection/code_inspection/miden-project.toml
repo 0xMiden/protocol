@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-inspection-code-inspection"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::inspection::code_inspection"
+path      = "code_inspection.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

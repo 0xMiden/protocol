@@ -1,30 +1,73 @@
-use miden::standards::faucets::fungible as faucet
+use miden::standards::faucets::fungible as fungible
+use miden::standards::faucets::non_fungible as non_fungible
+use miden::standards::inspection::code_inspection
 
-#! BURN script: burns the asset from the note by calling the faucet's `receive_and_burn`
-#! procedure. This note is intended to be executed against a fungible faucet account.
+# ERRORS
+# =================================================================================================
+
+const ERR_BURN_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fungible nor a non-fungible faucet receive_and_burn procedure"
+
+#! BURN script: burns the asset carried by the note by calling the consuming faucet's
+#! `receive_and_burn` procedure. Works against both fungible and non-fungible faucets.
 #!
-#! The receive_and_burn procedure in the faucet already handles all necessary validations
+#! The faucet kind is determined by reflection: the script asks the account (via the
+#! `CodeInspection` component's `has_procedure`) whether it exposes the fungible
+#! `receive_and_burn`; if so the fungible procedure is called, otherwise the non-fungible one is
+#! called after asserting the account exposes it.
+#!
+#! The `receive_and_burn` procedure in the faucet already handles all necessary validations
 #! including:
-#! - Checking that the note contains exactly one asset
-#! - Verifying the asset is a fungible asset issued by this faucet
-#! - Ensuring the amount to burn doesn't exceed the outstanding supply
+#! - Checking that the note contains exactly one asset.
+#! - Verifying the asset was issued by this faucet.
+#! - Enforcing the active burn policy and updating supply / asset status.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::fungible::receive_and_burn` procedure.
+#! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
+#! - either `miden::standards::faucets::fungible::receive_and_burn` or
+#!   `miden::standards::faucets::non_fungible::receive_and_burn`.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - account does not expose receive_and_burn procedure.
-#! - any of the validations in the receive_and_burn procedure fail.
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account exposes neither faucet's `receive_and_burn` procedure.
+#! - any of the validations in the `receive_and_burn` procedure fail.
 @note_script
 pub proc main
     dropw
     # => [pad(16)]
 
-    # Call the fungible faucet receive_and_burn wrapper which enforces burn policy and then burns
-    # the asset.
-    call.faucet::receive_and_burn
+    # Determine the faucet kind
+    procref.fungible::receive_and_burn
+    # => [FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+
+    call.code_inspection::has_procedure
+    # => [is_fungible, pad(19)]
+
+    movdn.4 dropw
+    # => [is_fungible, pad(15)]
+
+    if.true
+        # Fungible faucet: burn the fungible asset.
+        call.fungible::receive_and_burn
+        # => [pad(16)]
+    else
+        # Not a fungible faucet: require that it is a non-fungible faucet.
+        procref.non_fungible::receive_and_burn
+        # => [NON_FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_non_fungible, pad(19)]
+
+        movdn.4 dropw
+        # => [is_non_fungible, pad(15)]
+
+        assert.err=ERR_BURN_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
+        call.non_fungible::receive_and_burn
+        # => [pad(16)]
+    end
     # => [pad(16)]
 end
