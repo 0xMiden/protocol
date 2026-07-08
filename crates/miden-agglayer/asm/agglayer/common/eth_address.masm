@@ -39,13 +39,9 @@ const TWO_POW_32=4294967296
 #!   prefix = (bswap(limb1) << 32) | bswap(limb2)   # bytes[4..12]
 #!   suffix = (bswap(limb3) << 32) | bswap(limb4)   # bytes[12..20]
 #!
-#! These 8-byte words are represented as field elements by packing two u32 limbs into a felt.
-#! The packing is done via build_felt, which validates limbs are u32 and checks the packed value
-#! did not reduce mod p (i.e. the word fits in the field).
+#! These 8-byte words are packed into field elements via build_felt.
 #!
-#! The decoded (suffix, prefix) is validated as a structurally valid AccountId, matching the Rust
-#! `EthEmbeddedAccountId::try_from_eth_address` contract. This guarantees the id is safe to use as
-#! an output target: an invalid id would otherwise be routed into an unspendable P2ID/MINT output.
+#! The decoded (suffix, prefix) is validated as a structurally valid AccountId.
 #!
 #! Inputs:  [limb0, limb1, limb2, limb3, limb4]
 #! Outputs: [suffix, prefix]
@@ -53,8 +49,7 @@ const TWO_POW_32=4294967296
 #! Panics if:
 #! - the most-significant 4 bytes (limb0) are non-zero.
 #! - any limb is not a valid u32, or a packed 8-byte word does not fit in the field.
-#! - the decoded (suffix, prefix) is not a valid AccountId (unsupported version, suffix most
-#!   significant bit set, or suffix least significant byte non-zero).
+#! - the decoded (suffix, prefix) is not a valid AccountId.
 #!
 #! Invocation: exec
 pub proc to_account_id
@@ -79,7 +74,7 @@ pub proc to_account_id
     swap
     # => [suffix, prefix]
 
-    # Validate the decoded id is a structurally valid AccountId before it is used as an output target.
+    # Validate the decoded id is a structurally valid AccountId.
     dup.1 dup.1
     # => [suffix, prefix, suffix, prefix]
 
