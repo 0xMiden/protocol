@@ -11,7 +11,7 @@ use miden_protocol::errors::protocol::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_O
 use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED,
-    ERR_VAULT_MERGE_COMPOSITION_NONE,
+    ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::errors::{AssetError, AssetVaultError};
@@ -330,7 +330,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
     let exec_result = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_result, ERR_VAULT_MERGE_COMPOSITION_NONE);
+    assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS);
     assert!(account_vault.add_asset(non_fungible_asset).is_err());
 
     Ok(())

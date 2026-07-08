@@ -10,6 +10,8 @@ use {COMPOSITION_NONE} from miden::tx_kernel_core::asset
 
 const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to add fungible asset to the asset vault due to the initial value being invalid"
 
+const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS="failed to add non-fungible asset that already exists in the vault"
+
 const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to remove fungible asset from the asset vault due to the initial value being invalid"
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-existent non-fungible asset from the vault"
@@ -176,10 +178,16 @@ pub proc add_asset
         dropw movupw.2
         # => [ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
     else
-        # merge the two values together
+        # a non-empty existing value means the asset is already present
+        # if the composition is none, it means the non-composable asset already exists in the vault
+        # merge would also panic in this case, but the extra assertion provides a better error
         movupw.3 loc_load.ADD_ASSET_ASSET_COMPOSITION_LOC
         # => [asset_composition, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
 
+        dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS
+        # => [asset_composition, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+        # merge the two values together
         exec.asset::merge
         # => [MERGED_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
     end
