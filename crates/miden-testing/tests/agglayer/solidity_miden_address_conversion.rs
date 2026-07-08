@@ -25,7 +25,6 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::{Felt, ProtocolLib};
-use miden_standards::StandardsLib;
 
 /// Execute a program with default host
 async fn execute_program_with_default_host(
@@ -45,9 +44,6 @@ async fn execute_program_with_default_host(
 
     let protocol_lib = ProtocolLib::default();
     host.load_library(protocol_lib.mast_forest()).unwrap();
-
-    let standards_lib = StandardsLib::default();
-    host.load_library(standards_lib.mast_forest()).unwrap();
 
     let asset_conversion_lib = agglayer_library();
     host.load_library(asset_conversion_lib.mast_forest()).unwrap();
