@@ -56,7 +56,7 @@
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
 - [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
 - [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
-- Added `ExpirationTransactionScript` assembly in build-time into a package ([#3111](https://github.com/0xMiden/protocol/pull/3111)).
+- Added `ExpirationTransactionScript` to standards package and assemble it at build-time ([#3111](https://github.com/0xMiden/protocol/pull/3111)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
