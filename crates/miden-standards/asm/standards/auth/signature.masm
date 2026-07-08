@@ -14,14 +14,11 @@ const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
 
 # Local Memory Addresses for multisig operations
-const NUM_OF_APPROVERS_LOC=0
-const SIGNER_INDEX_LOC=1
-const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=4
-const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=5
-const CURRENT_PK_LOC=8
-const SUCCESSFUL_VERIFICATIONS_LOC=12
-const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=16
-const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=17
+const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
+const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
+const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=2
+const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=3
+const SUCCESSFUL_VERIFICATIONS_LOC=4
 
 # ERRORS
 # =================================================================================================
@@ -82,10 +79,6 @@ pub proc authenticate_transaction
     # OS => [scheme_id, PK_COMM, MESSAGE]
     # AS => [SIGNATURE]
 
-    dup.0 exec.assert_supported_scheme
-    # OS => [scheme_id, PK_COMM, MESSAGE]
-    # AS => [SIGNATURE]
-
     # Verify the signature against the public key and the message. The procedure gets as inputs the
     # hash of the public key and the message via the operand stack. The signature is provided via
     # the advice stack. The signature is valid if and only if the procedure returns.
@@ -112,11 +105,10 @@ proc verify_signature_by_scheme
         # OS => []
         # AS => []
     else
-        dup eq.FALCON_512_POSEIDON2_SCHEME_ID
-        # => [is_2, scheme_id, PK_COMM, MESSAGE]
+        eq.FALCON_512_POSEIDON2_SCHEME_ID
+        # => [is_2, PK_COMM, MESSAGE]
 
         if.true
-            drop
             # OS => [PK_COMM, MESSAGE]
 
             exec.falcon512_poseidon2::verify
@@ -162,9 +154,9 @@ pub proc assert_supported_scheme_word
     dupw exec.assert_supported_scheme
     # => [0, 0, 0, SCHEME_ID_WORD]
 
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
     # => [SCHEME_ID_WORD]
 end
 
@@ -184,7 +176,7 @@ end
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(18)
+@locals(5)
 pub proc verify_signatures
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
@@ -211,99 +203,90 @@ pub proc verify_signatures
         # Fetch public key from storage map.
         # -----------------------------------------------------------------------------------------
 
-        sub.1 dup dup loc_store.SIGNER_INDEX_LOC
-        # => [i-1, i-1, MSG]
+        sub.1 dup
+        # => [signer_idx, signer_idx, MSG]
 
         exec.create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, MSG]
+        # => [APPROVER_MAP_KEY, signer_idx, MSG]
 
         # Get public key from initial storage state
         loc_load.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
         loc_load.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
         exec.native_account::get_initial_map_item
-        # => [PK_COMM, i-1, MSG]
-
-        loc_storew_le.CURRENT_PK_LOC
-        # => [PK_COMM, i-1, MSG]
+        # => [PK_COMM, signer_idx, MSG]
 
         # Check if signature exists for this signer.
         # -----------------------------------------------------------------------------------------
 
         movup.4 movdn.8
-        # => [PK_COMM, MSG, i-1]
+        # => [PK_COMM, MSG, signer_idx]
 
-        dupw.1 swapw
-        # => [PK_COMM, MSG, MSG, i-1]
+        dupw.1 dupw.1
+        # => [PK_COMM, MSG, PK_COMM, MSG, signer_idx]
 
         exec.poseidon2::merge
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
 
         adv.has_mapkey
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        dropw
+        # => [PK_COMM, MSG, signer_idx]
 
         adv_push
-        # => [has_signature, SIG_KEY, MSG, i-1]
+        # => [has_signature, PK_COMM, MSG, signer_idx]
 
-        # if SIG_KEY => SIGNATURE exists in AdviceMap check the signature
+        # if a signature for this signer exists in the advice map, verify it
         if.true
-            # => [SIG_KEY, MSG, i-1]
+            # => [PK_COMM, MSG, signer_idx]
 
             dupw.1
-            # => [MSG, SIG_KEY, MSG, i-1]
-
-            swapw
-            # => [SIG_KEY, MSG, MSG, i-1]
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
-            loc_loadw_le.CURRENT_PK_LOC
-            # => [PK_COMM, MSG, MSG, i-1]
-
-            swapw
-            # => [MSG, PK_COMM, MSG, i-1]
-
             # Emit the authentication request event that pushes a signature for the message to the advice stack.
             emit.AUTH_REQUEST_EVENT
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             swapw
-            # => [PK_COMM, MSG, MSG, i-1]
+            # => [PK_COMM, MSG, MSG, signer_idx]
 
-            # Build map key from the current signer index.
-            loc_load.SIGNER_INDEX_LOC exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, PK_COMM, MSG, MSG, i-1]
+            dup.12 exec.create_approver_map_key
+            # => [APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PK_COMM, MSG, MSG, i-1]
-            
-            # Get scheme_id for signer index i-1 from initial storage state.
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
+
+            # Get scheme_id for the signer index from initial storage state.
             exec.native_account::get_initial_map_item
-            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, i-1]
+            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
 
             movdn.3 drop drop drop
-            # OS => [scheme_id, PK_COMM, MSG, MSG, i-1]
+            # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
             # AS => [SIGNATURE]
 
             exec.verify_signature_by_scheme
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
 
             loc_load.SUCCESSFUL_VERIFICATIONS_LOC
             add.1
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
         else
             dropw
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
         end
-        # => [MSG, i-1]
+        # => [MSG, signer_idx]
 
         movup.4
-        # => [i-1, MSG]
+        # => [signer_idx, MSG]
 
         dup neq.0
-        # => [should_continue, i-1, MSG]
+        # => [should_continue, signer_idx, MSG]
     end
-    # => [i-1, MSG]
+    # => [signer_idx, MSG]
 
     # Return successful signature verifications along with MSG
     # -----------------------------------------------------------------------------------------
