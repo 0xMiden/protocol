@@ -672,10 +672,6 @@ where
                         self.in_auth_procedure = false;
                         Ok(Vec::new())
                     },
-                    TransactionProgressEvent::EpilogueAfterTxCyclesObtained(clk) => {
-                        self.tx_progress.epilogue_after_tx_cycles_obtained(clk);
-                        Ok(Vec::new())
-                    },
                 },
             };
 

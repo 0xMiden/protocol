@@ -1561,3 +1561,173 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
 
     Ok(())
 }
+
+/// Executes a fully-signed 2-of-4 multisig transaction whose script `call`s one of the public
+/// component getters, so the getter is exercised through the 16-felt `call` ABI (a getter that
+/// returns at any operand-stack depth other than 16 aborts in `restore_context` with
+/// `InvalidStackDepthOnReturn`).
+async fn execute_multisig_getter_call<F>(build_script: F) -> anyhow::Result<()>
+where
+    F: FnOnce(&[PublicKey]) -> String,
+{
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let script_code = build_script(&public_keys);
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script(&script_code)?;
+
+    let salt = Word::from([Felt::from_u8(77); 4]);
+
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    // First pass without signatures: the getter `call` must return cleanly so the transaction
+    // reaches authentication and only fails there for missing signatures.
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    // Second pass with a valid quorum: the whole transaction, getter included, executes.
+    tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Regression test for the `call` ABI of `get_threshold_and_num_approvers`.
+///
+/// The script asserts the returned `[default_threshold, num_approvers]` matches the 2-of-4
+/// configuration, which both proves the getter returns at operand-stack depth 16 and that it
+/// yields the correct values.
+#[tokio::test]
+async fn test_get_threshold_and_num_approvers_call_abi() -> anyhow::Result<()> {
+    execute_multisig_getter_call(|_| {
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig::get_threshold_and_num_approvers
+            # => [default_threshold, num_approvers, pad(14)]
+            push.2 eq assert
+            # => [num_approvers, pad(14)]
+            push.4 eq assert
+            # => [pad(14)]
+            exec.::miden::core::sys::truncate_stack
+        end
+        "
+        .to_string()
+    })
+    .await
+}
+
+/// Regression test for the `call` ABI of `get_signer_at`.
+///
+/// The signer at index `0` is queried and the script asserts the returned scheme id matches
+/// `EcdsaK256Keccak`, exercising the getter's five-felt output through the 16-felt `call` ABI.
+#[tokio::test]
+async fn test_get_signer_at_call_abi() -> anyhow::Result<()> {
+    let expected_scheme_id = AuthScheme::EcdsaK256Keccak.as_u8();
+    execute_multisig_getter_call(move |_| {
+        format!(
+            r#"
+        @transaction_script
+        pub proc main
+            # query the signer at index 0
+            push.0
+            call.::miden::standards::components::auth::multisig::get_signer_at
+            # => [PUB_KEY, scheme_id, pad(11)]
+            movup.4 eq.{expected_scheme_id} assert.err="expected scheme ID {expected_scheme_id}"
+            # => [PUB_KEY, pad(11)]
+            dropw
+            # => [pad(12)]
+            exec.::miden::core::sys::truncate_stack
+        end
+        "#
+        )
+    })
+    .await
+}
+
+/// Regression test for the `call` ABI of `is_signer` when the queried key is a signer.
+///
+/// A real approver public key is pushed by the script; the getter must return `1`.
+#[tokio::test]
+async fn test_is_signer_true_call_abi() -> anyhow::Result<()> {
+    execute_multisig_getter_call(|public_keys| {
+        let pub_key = public_keys[0].to_commitment();
+        format!(
+            r#"
+        @transaction_script
+        pub proc main
+            push.{pub_key}
+            call.::miden::standards::components::auth::multisig::is_signer
+            # => [is_signer, pad(15)]
+            assert
+            # => [pad(15)]
+            exec.::miden::core::sys::truncate_stack
+        end
+        "#
+        )
+    })
+    .await
+}
+
+/// Regression test for the `call` ABI of `is_signer` when the queried key is not a signer.
+///
+/// A key that is not part of the approver set is pushed by the script; the getter must return `0`
+/// after iterating over every approver.
+#[tokio::test]
+async fn test_is_signer_false_call_abi() -> anyhow::Result<()> {
+    execute_multisig_getter_call(|_| {
+        // A word that is not any approver's public key commitment.
+        let non_signer = Word::from([Felt::from_u8(0xff); 4]);
+        format!(
+            r#"
+        @transaction_script
+        pub proc main
+            push.{non_signer}
+            call.::miden::standards::components::auth::multisig::is_signer
+            # => [is_signer, pad(15)]
+            assertz
+            # => [pad(15)]
+            exec.::miden::core::sys::truncate_stack
+        end
+        "#
+        )
+    })
+    .await
+}

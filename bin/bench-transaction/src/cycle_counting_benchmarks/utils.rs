@@ -43,7 +43,6 @@ impl MeasurementsPrinter {
             epilogue: EpilogueMeasurements::from_parts(
                 measurements.epilogue,
                 measurements.auth_procedure,
-                measurements.after_tx_cycles_obtained,
             ),
             trace: TraceMeasurements::from(trace),
         }
@@ -54,27 +53,15 @@ impl MeasurementsPrinter {
 /// - `total` interval holds the total number of cycles required to execute the epilogue
 /// - `auth_procedure` interval holds the number of cycles required to execute the authentication
 ///   procedure
-/// - `after_tx_cycles_obtained` holds the number of cycles which was executed from the moment of
-///   the cycle count obtainment in the `epilogue::compute_fee` procedure to the end of the
-///   epilogue.
 #[derive(Debug, Clone, Serialize)]
 struct EpilogueMeasurements {
     total: usize,
     auth_procedure: usize,
-    after_tx_cycles_obtained: usize,
 }
 
 impl EpilogueMeasurements {
-    pub fn from_parts(
-        total: usize,
-        auth_procedure: usize,
-        after_tx_cycles_obtained: usize,
-    ) -> Self {
-        Self {
-            total,
-            auth_procedure,
-            after_tx_cycles_obtained,
-        }
+    pub fn from_parts(total: usize, auth_procedure: usize) -> Self {
+        Self { total, auth_procedure }
     }
 }
 

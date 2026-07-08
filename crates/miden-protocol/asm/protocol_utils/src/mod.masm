@@ -6,5 +6,6 @@
 
 pub mod account_id
 pub mod asset
+pub mod mem
 pub mod constants
 pub mod note

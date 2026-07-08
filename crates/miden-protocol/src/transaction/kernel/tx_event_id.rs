@@ -73,8 +73,6 @@ pub enum TransactionEventId {
     EpilogueAuthProcStart = EPILOGUE_AUTH_PROC_START_ID,
     EpilogueAuthProcEnd = EPILOGUE_AUTH_PROC_END_ID,
 
-    EpilogueAfterTxCyclesObtained = EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID,
-
     LinkMapSet = LINK_MAP_SET_ID,
     LinkMapGet = LINK_MAP_GET_ID,
 
@@ -133,7 +131,6 @@ impl TransactionEventId {
             Self::EpilogueEnd => &EPILOGUE_END_NAME,
             Self::EpilogueAuthProcStart => &EPILOGUE_AUTH_PROC_START_NAME,
             Self::EpilogueAuthProcEnd => &EPILOGUE_AUTH_PROC_END_NAME,
-            Self::EpilogueAfterTxCyclesObtained => &EPILOGUE_AFTER_TX_CYCLES_OBTAINED_NAME,
             Self::LinkMapSet => &LINK_MAP_SET_NAME,
             Self::LinkMapGet => &LINK_MAP_GET_NAME,
             Self::Unauthorized => &AUTH_UNAUTHORIZED_NAME,
@@ -223,9 +220,6 @@ impl TryFrom<EventId> for TransactionEventId {
             EPILOGUE_START_ID => Ok(TransactionEventId::EpilogueStart),
             EPILOGUE_AUTH_PROC_START_ID => Ok(TransactionEventId::EpilogueAuthProcStart),
             EPILOGUE_AUTH_PROC_END_ID => Ok(TransactionEventId::EpilogueAuthProcEnd),
-            EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID => {
-                Ok(TransactionEventId::EpilogueAfterTxCyclesObtained)
-            },
             EPILOGUE_END_ID => Ok(TransactionEventId::EpilogueEnd),
 
             LINK_MAP_SET_ID => Ok(TransactionEventId::LinkMapSet),
