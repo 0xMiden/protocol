@@ -1,4 +1,4 @@
-# miden::standards::metadata::code_inspection
+# miden::standards::inspection::code_inspection
 #
 # Read-only introspection over the active account's own code. These procedures wrap the
 # corresponding account-related kernel procedures so that they can be exposed in an account's
