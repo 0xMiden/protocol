@@ -57,7 +57,7 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Increment nonce iff the account state changed or the account is new ----
-    exec.active_account::get_initial_commitment
+    exec.native_account::get_initial_commitment
     # => [INITIAL_COMMITMENT, pad(16)]
 
     exec.active_account::compute_commitment

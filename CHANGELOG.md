@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Moved the initial-state account getters (`get_initial_*`) from `miden::protocol::active_account` to `miden::protocol::native_account`. They now always operate on the native account and panic with `ERR_ACCOUNT_IS_NOT_NATIVE` when invoked from a foreign procedure invocation (FPI) context ([#2034](https://github.com/0xMiden/protocol/issues/2034)).
 - Cleaned up `signature.masm` by removing redundant scheme-id validation and duplication, dropping the `neq.0` double-negation in `assert_supported_scheme_word`, and eliminating the unused `NUM_OF_APPROVERS_LOC` slot; also optimized `verify_signatures` to reuse the signer index and approver public key from the operand stack instead of round-tripping them through local memory ([#3230](https://github.com/0xMiden/protocol/pull/3230)).
 - Fixed the transaction executor host honoring `AuthRequest` events emitted outside the registered auth procedure, which let untrusted note or transaction scripts force the host to sign; signature production is now restricted to the authentication procedure ([#3233](https://github.com/0xMiden/protocol/pull/3233)).
 - Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).

@@ -449,7 +449,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
 
                 # 2b. get the override proc_threshold of that procedure
                 # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
-                exec.active_account::get_initial_map_item
+                exec.native_account::get_initial_map_item
                 # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
 
                 movdn.3 drop drop drop
@@ -505,7 +505,7 @@ end
 #! Invocation: exec
 pub proc get_initial_threshold_and_num_approvers
     push.THRESHOLD_CONFIG_SLOT[0..2]
-    exec.active_account::get_initial_item
+    exec.native_account::get_initial_item
     # => [default_threshold, num_approvers, 0, 0]
 
     movup.2 drop movup.2 drop
@@ -628,7 +628,7 @@ pub proc get_signer_at
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
     # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
 
-    exec.active_account::get_initial_map_item
+    exec.native_account::get_initial_map_item
     # => [PUB_KEY, index]
 
     movup.4
@@ -640,7 +640,7 @@ pub proc get_signer_at
     push.APPROVER_SCHEME_ID_SLOT[0..2]
     # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
 
-    exec.active_account::get_initial_map_item
+    exec.native_account::get_initial_map_item
     # => [[scheme_id, 0, 0, 0], PUB_KEY]
 
     movdn.7 drop drop drop
@@ -693,7 +693,7 @@ pub proc is_signer(pub_key: word) -> felt
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
         # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
 
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [CURRENT_PUB_KEY, PUB_KEY]
 
         dupw.1 exec.word::eq
