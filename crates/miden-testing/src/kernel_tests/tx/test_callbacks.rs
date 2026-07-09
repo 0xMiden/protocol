@@ -338,7 +338,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         push.{amount}
         exec.::miden::protocol::active_account::get_id
         # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
-        exec.::miden::protocol::asset::create_fungible_asset
+        exec.::miden::standards::assets::fungible_asset::from_parts
         # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         movupw.2
@@ -540,7 +540,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         push.{amount}
         exec.::miden::protocol::active_account::get_id
         # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
-        exec.::miden::protocol::asset::create_fungible_asset
+        exec.::miden::standards::assets::fungible_asset::from_parts
         # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
@@ -660,7 +660,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             push.{faucet_id_suffix}
             # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
 
-            exec.::miden::protocol::asset::create_fungible_asset
+            exec.::miden::standards::assets::fungible_asset::from_parts
             # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
 
             call.::miden::standards::faucets::fungible::mint_and_send

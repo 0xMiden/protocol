@@ -3,13 +3,46 @@ use miden::protocol::asset
 use miden::protocol::native_account
 use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
 
+# CONSTANTS
+# ================================================================================================
+
+# Specifies the maximum amount a fungible asset can represent: 2^63 - 2^31.
+pub const MAX_AMOUNT=0x7fffffff80000000
+
 # ERRORS
 # ================================================================================================
 
 const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
 
+const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT="fungible asset build operation called with amount that exceeds the maximum allowed asset amount"
+
 # PROCEDURES
 # ================================================================================================
+
+#! Creates a fungible asset ID for the specified faucet.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [ASSET_ID]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
+#! - ASSET_ID is the asset ID for the fungible asset.
+#!
+#! Invocation: exec
+pub proc create_id
+    # push the fungible composition for create_metadata
+    # this is equivalent to the asset metadata
+    push.COMPOSITION_FUNGIBLE
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
+
+    # merge the asset metadata into the lower 8 bits of the suffix
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    push.0.0
+    # => [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    # => [ASSET_ID]
+end
 
 #! Creates a fungible asset for the faucet the transaction is being executed against.
 #!
@@ -22,7 +55,7 @@ const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance ca
 #! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Panics if:
-#! - the active account is not a fungible faucet.
+#! - the provided amount exceeds MAX_AMOUNT.
 #!
 #! Invocation: exec
 pub proc create
@@ -31,7 +64,39 @@ pub proc create
     # => [id_suffix, id_prefix, amount]
 
     # create the fungible asset
-    exec.asset::create_fungible_asset
+    exec.from_parts
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Creates a fungible asset for the specified fungible faucet and amount.
+#!
+#! The provided asset ID will be created with asset composition set to COMPOSITION_FUNGIBLE.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
+#!   for.
+#! - amount is the amount of the asset to create.
+#! - ASSET_ID is the asset ID of the created fungible asset.
+#! - ASSET_VALUE is the value of the created fungible asset.
+#!
+#! Panics if:
+#! - the provided amount exceeds MAX_AMOUNT.
+#!
+#! Invocation: exec
+pub proc from_parts
+    # assert the amount is valid
+    dup.2 lte.MAX_AMOUNT
+    assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
+    # => [faucet_id_suffix, faucet_id_prefix, amount]
+
+    # pad amount into ASSET_VALUE
+    repeat.3 push.0 movdn.3 end
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    exec.create_id
     # => [ASSET_ID, ASSET_VALUE]
 end
 
@@ -61,7 +126,7 @@ pub proc get_initial_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.asset::fungible_value_into_amount
+    exec.value_into_amount
     # => [balance]
 end
 
@@ -90,6 +155,37 @@ pub proc get_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.asset::fungible_value_into_amount
+    exec.value_into_amount
     # => [balance]
+end
+
+#! Returns the balance of the given fungible asset and consumes it.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [balance]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - balance is the amount of the fungible asset.
+pub proc value_into_amount
+    movdn.3 drop drop drop
+    # => [balance]
+end
+
+#! Returns the balance of the given fungible asset.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [amount, ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - amount is the amount of the fungible asset.
+pub proc to_amount
+    # => [ASSET_ID, [amount, 0, 0, 0]]
+    dup.4
+    # => [amount, ASSET_ID, ASSET_VALUE]
 end

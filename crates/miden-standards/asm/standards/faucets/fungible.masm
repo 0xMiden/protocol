@@ -13,7 +13,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::access::authority
 use miden::standards::assets::fungible_asset
 use miden::standards::faucets::policies::policy_manager
@@ -429,7 +429,7 @@ pub proc receive_and_burn
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    exec.asset::fungible_to_amount movdn.8
+    exec.fungible_asset::to_amount movdn.8
     # => [ASSET_ID, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset

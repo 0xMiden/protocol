@@ -5,6 +5,7 @@ use miden::protocol::native_account
 use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
+use miden::standards::assets::fungible_asset
 use miden::standards::note_tag
 use {DEFAULT_TAG} from miden::standards::note_tag
 use miden::standards::notes::p2id
@@ -109,7 +110,7 @@ pub proc unlock_and_send
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    exec.asset::create_fungible_asset
+    exec.fungible_asset::from_parts
     # => [ASSET_ID, ASSET_VALUE]
 
     # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
@@ -212,7 +213,7 @@ proc write_mint_note_storage
     movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
-    exec.asset::create_fungible_asset
+    exec.fungible_asset::from_parts
     # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # write ASSET_ID [8..11]

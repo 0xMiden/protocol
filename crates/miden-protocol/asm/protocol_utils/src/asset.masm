@@ -85,37 +85,6 @@ pub proc load
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Returns the balance of the given fungible asset and consumes it.
-#!
-#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [balance]
-#!
-#! Where:
-#! - ASSET_VALUE is the fungible asset from which to extract the balance.
-#! - balance is the amount of the fungible asset.
-pub proc fungible_value_into_amount
-    movdn.3 drop drop drop
-    # => [balance]
-end
-
-#! Returns the balance of the given fungible asset.
-#!
-#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
-#!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: [amount, ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_VALUE is the fungible asset from which to extract the balance.
-#! - amount is the amount of the fungible asset.
-pub proc fungible_to_amount
-    # => [ASSET_ID, [amount, 0, 0, 0]]
-    dup.4
-    # => [amount, ASSET_ID, ASSET_VALUE]
-end
-
 #! Returns the faucet ID from an asset ID.
 #!
 #! WARNING: The faucet ID is not validated.
@@ -184,60 +153,6 @@ pub proc id_into_asset_class
 
     movup.2 drop movup.2 drop
     # => [asset_class_suffix, asset_class_prefix]
-end
-
-#! Creates a fungible asset ID for the specified faucet.
-#!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
-#! Outputs: [ASSET_ID]
-#!
-#! Where:
-#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
-#! - ASSET_ID is the asset ID for the fungible asset.
-#!
-#! Invocation: exec
-pub proc create_fungible_id
-    # push the fungible composition for create_metadata
-    push.COMPOSITION_FUNGIBLE
-    # => [asset_composition, faucet_id_suffix, faucet_id_prefix]
-
-    exec.create_metadata
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
-
-    # merge the asset metadata into the lower 8 bits of the suffix
-    # this is safe since create_metadata builds only valid metadata
-    add
-    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
-
-    push.0.0
-    # => [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]
-    # => [ASSET_ID]
-end
-
-#! Creates a fungible asset for the specified fungible faucet and amount.
-#!
-#! WARNING: Does not validate the amount.
-#!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
-#!   for.
-#! - amount is the amount of the asset to create.
-#! - ASSET_ID is the asset ID of the created fungible asset
-#! - ASSET_VALUE is the value of the created fungible asset.
-#!
-#! Invocation: exec
-pub proc create_fungible_asset_unchecked
-    # => [faucet_id_suffix, faucet_id_prefix, amount]
-
-    # pad amount into ASSET_VALUE
-    repeat.3 push.0 movdn.3 end
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-
-    exec.create_fungible_id
-    # => [ASSET_ID, ASSET_VALUE]
 end
 
 #! Splits the merged faucet ID suffix and the asset metadata.

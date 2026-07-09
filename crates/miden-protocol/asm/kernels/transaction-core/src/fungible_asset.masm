@@ -6,13 +6,7 @@ use miden::tx_kernel_core::asset
 # RE-EXPORTS
 # =================================================================================================
 
-pub use {
-    create_fungible_id as create_id,
-    create_fungible_asset_unchecked as create_unchecked,
-    FUNGIBLE_ASSET_MAX_AMOUNT,
-    fungible_to_amount as to_amount,
-    fungible_value_into_amount as value_into_amount
-} from miden::protocol_utils::asset
+pub use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol_utils::asset
 
 # ERRORS
 # =================================================================================================
@@ -213,4 +207,19 @@ pub proc validate_origin
 
     exec.account_id::is_equal assert.err=ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
     # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Returns the balance of the given fungible asset and consumes it.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [balance]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - balance is the amount of the fungible asset.
+pub proc value_into_amount
+    movdn.3 drop drop drop
+    # => [balance]
 end
