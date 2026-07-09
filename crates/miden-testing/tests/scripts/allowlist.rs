@@ -1,25 +1,34 @@
 //! Tests for the [`miden_standards::account::policies::BasicAllowlist`] transfer policy
 //! component (storage + `check_policy` predicate) and the
-//! [`miden_standards::account::policies::AllowlistOwnerControlled`] owner-controlled admin
+//! [`miden_standards::account::policies::AllowlistManager`] authority-gated admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    AssetCallbackFlag,
+    RoleSymbol,
+};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
+use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    AllowlistOwnerControlled,
+    AllowlistManager,
     AllowlistStorage,
     BurnPolicy,
     MintPolicy,
@@ -27,7 +36,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_ACCOUNT_IS_NOT_ALLOWED;
+use miden_standards::errors::standards::{ERR_ACCOUNT_IS_NOT_ALLOWED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -45,8 +54,9 @@ fn dummy_owner() -> AccountId {
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::with_basic_allowlist`] on both send and receive,
-/// plus the [`AllowlistOwnerControlled`] component (gated by `Ownable2Step::new(owner_id)`)
-/// so that the owner can invoke `allow_account` / `disallow_account` via owner-authored notes.
+/// plus the [`AllowlistManager`] component. With `Authority::OwnerControlled` the admin
+/// procedures are gated by the Ownable2Step owner, so the owner can invoke `allow_account` /
+/// `disallow_account` via owner-authored notes.
 ///
 /// The faucet starts with an empty allowlist — every transfer (and every mint that emits a
 /// note) will fail until the owner calls `allow_account` to add the relevant accounts.
@@ -88,7 +98,7 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
                 .build(),
         )
         .with_component(Pausable::unpaused())
-        .with_component(AllowlistOwnerControlled);
+        .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -104,10 +114,12 @@ fn account_id_felts(account_id: AccountId) -> (Felt, Felt) {
     (prefix, suffix)
 }
 
-/// Builds an owner-authored note whose script invokes
-/// `owner_controlled::{allow_account|disallow_account}` on the given target account.
-fn build_owner_admin_note(
-    owner_id: AccountId,
+/// Builds a `sender`-authored note whose script invokes
+/// `manager::{allow_account|disallow_account}` on the given target account. The sender must be
+/// authorized per the faucet's installed `Authority` component (the owner under
+/// `OwnerControlled`, or a role holder under `RbacControlled`).
+fn build_admin_note(
+    sender: AccountId,
     target_id: AccountId,
     proc: &str,
     rng_seed: u32,
@@ -115,7 +127,7 @@ fn build_owner_admin_note(
     let (prefix, suffix) = account_id_felts(target_id);
     let script_code = format!(
         r#"
-        use miden::standards::faucets::policies::transfer::allowlist::owner_controlled
+        use miden::standards::faucets::policies::transfer::allowlist::manager
 
         @note_script
         pub proc main
@@ -123,7 +135,7 @@ fn build_owner_admin_note(
 
             push.{prefix}
             push.{suffix}
-            call.owner_controlled::{proc}
+            call.manager::{proc}
 
             dropw dropw dropw dropw
         end
@@ -131,7 +143,7 @@ fn build_owner_admin_note(
     );
 
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
-    NoteBuilder::new(owner_id, &mut rng)
+    NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(script_code.as_str())
         .build()
@@ -241,7 +253,7 @@ async fn allow_then_receive_succeeds() -> anyhow::Result<()> {
         NoteType::Public,
     )?;
 
-    let allow_note = build_owner_admin_note(owner_id, target_account.id(), "allow_account", 1)?;
+    let allow_note = build_admin_note(owner_id, target_account.id(), "allow_account", 1)?;
     builder.add_output_note(RawOutputNote::Full(allow_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -333,8 +345,7 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
         NoteType::Public,
     )?;
 
-    let disallow_note =
-        build_owner_admin_note(owner_id, target_account.id(), "disallow_account", 3)?;
+    let disallow_note = build_admin_note(owner_id, target_account.id(), "disallow_account", 3)?;
     builder.add_output_note(RawOutputNote::Full(disallow_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -363,8 +374,8 @@ async fn allow_already_allowed_is_noop() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let allow_note_1 = build_owner_admin_note(owner_id, target_account.id(), "allow_account", 5)?;
-    let allow_note_2 = build_owner_admin_note(owner_id, target_account.id(), "allow_account", 6)?;
+    let allow_note_1 = build_admin_note(owner_id, target_account.id(), "allow_account", 5)?;
+    let allow_note_2 = build_admin_note(owner_id, target_account.id(), "allow_account", 6)?;
     builder.add_output_note(RawOutputNote::Full(allow_note_1.clone()));
     builder.add_output_note(RawOutputNote::Full(allow_note_2.clone()));
 
@@ -386,8 +397,7 @@ async fn disallow_when_not_allowed_is_noop() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    let disallow_note =
-        build_owner_admin_note(owner_id, target_account.id(), "disallow_account", 7)?;
+    let disallow_note = build_admin_note(owner_id, target_account.id(), "disallow_account", 7)?;
     builder.add_output_note(RawOutputNote::Full(disallow_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -417,7 +427,7 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
     )?;
 
     // Allow one account; the other should still be rejected (default-deny).
-    let allow_note = build_owner_admin_note(owner_id, allowed_account.id(), "allow_account", 8)?;
+    let allow_note = build_admin_note(owner_id, allowed_account.id(), "allow_account", 8)?;
     builder.add_output_note(RawOutputNote::Full(allow_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -451,7 +461,7 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     // The send policy is invoked from `on_before_asset_added_to_note`, where the native
     // account is the note creator (the faucet itself when minting). Seed the faucet's own
     // ID into the allowlist via an admin note so the mint can proceed.
-    let allow_faucet_note = build_owner_admin_note(owner_id, faucet.id(), "allow_account", 9)?;
+    let allow_faucet_note = build_admin_note(owner_id, faucet.id(), "allow_account", 9)?;
     builder.add_output_note(RawOutputNote::Full(allow_faucet_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -497,5 +507,193 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
         .await?;
 
     assert_eq!(executed.output_notes().num_notes(), 1);
+    Ok(())
+}
+
+// TESTS — ALLOWLIST MANAGER WITH PER-PROCEDURE RBAC ROLES
+// ================================================================================================
+
+fn role(name: &str) -> RoleSymbol {
+    RoleSymbol::new(name).expect("role symbol should be valid")
+}
+
+fn test_account_id(seed: u8) -> AccountId {
+    AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([seed; 32])
+}
+
+/// Maps both `allow_account` and `disallow_account` to a single `ALLOWLISTER` role, so one role
+/// gates both operations.
+fn allowlister_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
+    BTreeMap::from([
+        (AllowlistManager::allow_account_root(), role("ALLOWLISTER")),
+        (AllowlistManager::disallow_account_root(), role("ALLOWLISTER")),
+    ])
+}
+
+/// Builds a fungible faucet whose allowlist admin is gated by `Authority::RbacControlled`, with
+/// both `allow_account` and `disallow_account` mapped to the `ALLOWLISTER` role.
+fn add_rbac_faucet_with_allowlist(
+    builder: &mut MockChainBuilder,
+    admin: AccountId,
+    initial_allowed: impl IntoIterator<Item = AccountId>,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let allow_list = AllowlistStorage::with_allowed_accounts(initial_allowed);
+
+    let account_builder = AccountBuilder::new([71u8; 32])
+        .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
+        .with_component(faucet)
+        .with_components(AccessControl::Rbac { admin, roles: allowlister_roles() })
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::with_basic_allowlist(allow_list.clone()))
+                .active_receive_policy(TransferPolicy::with_basic_allowlist(allow_list))
+                .build(),
+        )
+        .with_component(Pausable::unpaused())
+        .with_component(AllowlistManager);
+
+    builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )
+}
+
+/// Builds an admin-authored note that grants `role` to `account_id` via `rbac::grant_role`.
+fn build_grant_role_note(
+    sender: AccountId,
+    role: &RoleSymbol,
+    account_id: AccountId,
+    rng_seed: u32,
+) -> anyhow::Result<Note> {
+    let script_code = format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
+        role = Felt::from(role),
+    );
+    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .code(script_code.as_str())
+        .build()
+        .map_err(Into::into)
+}
+
+/// A single `ALLOWLISTER` role holder can both allow and disallow accounts, and the effect is
+/// observable through the transfer policy.
+#[tokio::test]
+async fn rbac_allowlister_can_allow_and_disallow() -> anyhow::Result<()> {
+    let admin = test_account_id(60);
+    let allowlister = test_account_id(61);
+
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_rbac_faucet_with_allowlist(&mut builder, admin, [])?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let p2id_after_allow = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+    let p2id_after_disallow = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let grant = build_grant_role_note(admin, &role("ALLOWLISTER"), allowlister, 40)?;
+    let allow = build_admin_note(allowlister, target_account.id(), "allow_account", 41)?;
+    let disallow = build_admin_note(allowlister, target_account.id(), "disallow_account", 42)?;
+    for note in [&grant, &allow, &disallow] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Admin grants ALLOWLISTER; the role holder then allows the target.
+    consume_admin_note(&mut mock_chain, faucet.id(), &grant).await?;
+    consume_admin_note(&mut mock_chain, faucet.id(), &allow).await?;
+
+    // Allowed → receiving the asset succeeds.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    mock_chain
+        .build_tx_context(target_account.id(), &[p2id_after_allow.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    // The same role disallows the target.
+    consume_admin_note(&mut mock_chain, faucet.id(), &disallow).await?;
+
+    // Disallowed → receiving the asset now fails.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[p2id_after_disallow.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// A sender that does not hold the `ALLOWLISTER` role cannot invoke `allow_account`.
+#[tokio::test]
+async fn rbac_allow_fails_when_sender_lacks_role() -> anyhow::Result<()> {
+    let admin = test_account_id(62);
+    let stranger = test_account_id(63);
+
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_rbac_faucet_with_allowlist(&mut builder, admin, [])?;
+
+    let allow = build_admin_note(stranger, target_account.id(), "allow_account", 43)?;
+    builder.add_output_note(RawOutputNote::Full(allow.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[allow.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
     Ok(())
 }
