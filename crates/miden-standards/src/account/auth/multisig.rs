@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -62,7 +63,7 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigConfig {
     approver_set: ApproverSet,
-    proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
+    proc_thresholds: BTreeMap<AccountProcedureRoot, u32>,
 }
 
 impl AuthMultisigConfig {
@@ -70,7 +71,7 @@ impl AuthMultisigConfig {
     pub fn new(approver_set: ApproverSet) -> Self {
         Self {
             approver_set,
-            proc_thresholds: Vec::new(),
+            proc_thresholds: BTreeMap::new(),
         }
     }
 
@@ -81,24 +82,25 @@ impl AuthMultisigConfig {
         proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
         let num_approvers = self.approver_set.approvers().len() as u32;
-        let mut unique_roots = alloc::collections::BTreeSet::new();
-        for (proc_root, threshold) in &proc_thresholds {
-            if *threshold == 0 {
+        let mut thresholds = BTreeMap::new();
+        for (proc_root, threshold) in proc_thresholds {
+            if threshold == 0 {
                 return Err(AccountError::other("procedure threshold must be at least 1"));
             }
-            if *threshold > num_approvers {
+            if threshold > num_approvers {
                 return Err(AccountError::other(
                     "procedure threshold cannot be greater than number of approvers",
                 ));
             }
-            // Reject duplicate procedure roots.
-            if !unique_roots.insert(proc_root.as_word()) {
+            // The map keys the threshold by procedure root, so a repeated root is a caller mistake
+            // rather than a silent overwrite.
+            if thresholds.insert(proc_root, threshold).is_some() {
                 return Err(AccountError::other(
                     "duplicate procedure roots are not allowed in the procedure threshold map",
                 ));
             }
         }
-        self.proc_thresholds = proc_thresholds;
+        self.proc_thresholds = thresholds;
         Ok(self)
     }
 
@@ -114,7 +116,7 @@ impl AuthMultisigConfig {
         self.approver_set.threshold().get()
     }
 
-    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
+    pub fn proc_thresholds(&self) -> &BTreeMap<AccountProcedureRoot, u32> {
         &self.proc_thresholds
     }
 }
