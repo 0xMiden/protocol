@@ -74,8 +74,8 @@ end
 #! - Building the recipient
 #!
 #! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
-#! already inside an account procedure and can create the note directly via `exec.output_note::create`
-#! (e.g. the agglayer bridge code). Otherwise use `p2id::new`, which routes creation through the
+#! already inside an account procedure and can create the note directly via
+#! `exec.output_note::create`. Otherwise use `p2id::new`, which routes creation through the
 #! account's `create_note` procedure and can therefore be used from note or transaction scripts.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
@@ -142,8 +142,7 @@ pub proc new
     exec.create_parts
     # => [tag, note_type, RECIPIENT]
 
-    # Note creation must originate from the account context, so route through the account's
-    # `create_note` procedure. Pad the stack for the `call` convention.
+    # pad the stack before `call`
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
