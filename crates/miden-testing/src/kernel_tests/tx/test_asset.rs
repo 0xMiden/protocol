@@ -41,14 +41,14 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::faucet
+        use miden::standards::assets::fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
             # create fungible asset
             push.{FUNGIBLE_ASSET_AMOUNT}
-            exec.faucet::create_fungible_asset
+            exec.fungible_asset::create
             # => [ASSET_ID, ASSET_VALUE]
 
             # truncate the stack
@@ -80,14 +80,14 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::faucet
+        use miden::standards::assets::non_fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
             # push non-fungible asset data hash onto the stack
             push.{NON_FUNGIBLE_ASSET_DATA_HASH}
-            exec.faucet::create_non_fungible_asset
+            exec.non_fungible_asset::create
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack

@@ -15,6 +15,7 @@ use miden::protocol::output_note
 use miden::protocol::asset
 use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::access::authority
+use miden::standards::assets::fungible_asset
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets
 use miden::standards::access::pausable
@@ -353,7 +354,7 @@ pub proc mint_and_send
     # => [new_amount, note_idx, note_idx]
 
     # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
-    exec.faucet::create_fungible_asset
+    exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     # bind the mint to the faucet the MINT note was created for: the asset derived for the

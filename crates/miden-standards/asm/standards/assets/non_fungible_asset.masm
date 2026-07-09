@@ -1,0 +1,32 @@
+#! miden::standards::assets::non_fungible_asset
+#!
+#! Provides procedures for creating non-fungible assets.
+
+use miden::protocol::active_account
+use miden::protocol::asset
+
+# PROCEDURES
+# ================================================================================================
+
+#! Creates a non-fungible asset for the faucet the transaction is being executed against.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the non-fungible asset.
+#! - ASSET_VALUE is the value of the non-fungible asset.
+#!
+#! Panics if:
+#! - the active account is not a non-fungible faucet.
+#!
+#! Invocation: exec
+pub proc create
+    # fetch the id of the faucet the transaction is being executed against
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, ASSET_VALUE]
+
+    # create the non-fungible asset
+    exec.asset::create_non_fungible_asset
+    # => [ASSET_ID, ASSET_VALUE]
+end

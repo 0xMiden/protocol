@@ -11,6 +11,30 @@ const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance ca
 # PROCEDURES
 # ================================================================================================
 
+#! Creates a fungible asset for the faucet the transaction is being executed against.
+#!
+#! Inputs:  [amount]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - amount is the amount of the asset to create.
+#! - ASSET_ID is the asset ID of the created fungible asset.
+#! - ASSET_VALUE is the value of the created fungible asset.
+#!
+#! Panics if:
+#! - the active account is not a fungible faucet.
+#!
+#! Invocation: exec
+pub proc create
+    # fetch the id of the faucet the transaction is being executed against.
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, amount]
+
+    # create the fungible asset
+    exec.asset::create_fungible_asset
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
 #! Returns the balance of the fungible asset associated with the provided asset ID in the
 #! native account's vault at the beginning of the transaction.
 #!
