@@ -4,5 +4,6 @@ pub mod mint_fungible
 pub mod mint_non_fungible
 pub mod p2id
 pub mod p2ide
+pub mod pause_action
 pub mod pswap
 pub mod swap

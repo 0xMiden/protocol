@@ -24,6 +24,9 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
+mod pause_action;
+pub use pause_action::{PauseAction, PauseActionNote};
+
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
@@ -50,6 +53,10 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    // Two-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
+    // uppercase convention of the others (P2ID, MINT, ...).
+    #[allow(non_camel_case_types)]
+    PAUSE_ACTION,
 }
 
 impl StandardNote {
@@ -83,6 +90,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == PauseActionNote::script_root() {
+            return Some(Self::PAUSE_ACTION);
+        }
 
         None
     }
@@ -99,6 +109,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::PAUSE_ACTION => "PAUSE_ACTION",
         }
     }
 
@@ -111,6 +122,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -123,6 +135,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::PAUSE_ACTION => PauseActionNote::script(),
         }
     }
 
@@ -135,6 +148,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::PAUSE_ACTION => PauseActionNote::script_root(),
         }
     }
 
