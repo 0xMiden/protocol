@@ -15,6 +15,9 @@ pub use execution_hint::NoteExecutionHint;
 mod fee;
 pub use fee::FeeNote;
 
+mod fee_sponsorship;
+pub use fee_sponsorship::{FeeSponsorship, FeeSponsorshipError};
+
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 

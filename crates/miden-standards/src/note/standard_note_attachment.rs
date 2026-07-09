@@ -10,6 +10,8 @@ pub enum StandardNoteAttachment {
     /// Carries the word `[amount, order_id, depth, 0]`. See
     /// [`PswapNote`](crate::note::PswapNote) for details.
     PswapAttachment,
+    /// See [`FeeSponsorship`](crate::note::FeeSponsorship) for details.
+    FeeSponsorship,
 }
 
 impl StandardNoteAttachment {
@@ -18,6 +20,7 @@ impl StandardNoteAttachment {
         match self {
             StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new_const(2u16),
             StandardNoteAttachment::PswapAttachment => NoteAttachmentScheme::new_const(3u16),
+            StandardNoteAttachment::FeeSponsorship => NoteAttachmentScheme::new_const(4u16),
         }
     }
 }
