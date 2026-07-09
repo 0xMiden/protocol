@@ -1,0 +1,15 @@
+#! miden::standards::components::fees::fee_manager
+#!
+#! Exposes the fee schedule of a network account: what it charges to consume a given note script,
+#! and which asset it accepts.
+#!
+#! `get_fee_asset_id` and `estimate_note_fee` are read-only and are meant to be reachable over a
+#! foreign procedure invocation, so that a note creator - or an upstream network account pricing a
+#! note it is about to spawn - can size the sponsorship before the note exists.
+#!
+#! Depends on the [`Authority`] component, which gates `set_fee` and `remove_fee`.
+
+pub use {get_fee_asset_id} from miden::standards::fees::fee_manager
+pub use {estimate_note_fee} from miden::standards::fees::fee_manager
+pub use {set_fee} from miden::standards::fees::fee_manager
+pub use {remove_fee} from miden::standards::fees::fee_manager

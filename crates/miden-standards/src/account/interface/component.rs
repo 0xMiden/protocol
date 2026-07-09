@@ -54,6 +54,9 @@ pub enum AccountComponentInterface {
     /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
     /// script roots.
     AuthNetworkAccount,
+    /// Exposes the fee schedule of a network account. See the
+    /// [`FeeManager`][crate::account::fees::FeeManager] module.
+    FeeManager,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
     /// Custom interface holds all procedures which are not part of some standard interface which is
@@ -84,6 +87,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
+            AccountComponentInterface::FeeManager => "Fee Manager".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
                     .iter()

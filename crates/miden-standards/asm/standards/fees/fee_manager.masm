@@ -1,0 +1,212 @@
+#! miden::standards::fees::fee_manager
+#!
+#! Holds the price list a network account charges for consuming a note, and the ID of the asset it
+#! accepts fees in.
+#!
+#! The component holds no runtime asset path. It answers "what does this note cost?" and nothing
+#! else. Moving the fee is the job of the sponsorship note and the account's auth procedure.
+#!
+#! Requires that the account also installs the [`Authority`] component, whose `assert_authorized`
+#! gates the admin procedures.
+
+use miden::standards::access::authority
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+#! The storage slot holding the ASSET_ID word of the asset this account accepts fees in.
+pub const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
+
+#! The storage slot holding the fee schedule, a map of
+#! NOTE_SCRIPT_ROOT -> [app_fee, protocol_fee, enabled, 0].
+pub const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_schedule")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN="the enabled flag of a fee schedule entry must be 0 or 1"
+
+const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by this account's fee schedule"
+
+# PROCEDURES
+# ================================================================================================
+
+#! Returns the ASSET_ID of the asset this account accepts fees in.
+#!
+#! Inputs:  []
+#! Outputs: [FEE_ASSET_ID]
+#!
+#! Invocation: exec
+pub proc fee_asset_id
+    push.FEE_ASSET_ID_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.active_account::get_item
+    # => [FEE_ASSET_ID]
+end
+
+#! Returns the fee schedule entry for the provided note script root.
+#!
+#! An absent entry reads back as the empty word, whose `enabled` felt is 0. That is what makes an
+#! unpriced script distinguishable from a genuinely free one, which is stored as
+#! `[0, 0, 1, 0]`.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT]
+#! Outputs: [app_fee, protocol_fee, enabled, 0]
+#!
+#! Where:
+#! - app_fee is the portion the account keeps for performing the note's business logic.
+#! - protocol_fee is the portion forwarded to the batch builder.
+#! - enabled is 1 if the script is priced, 0 if the entry is absent or disabled.
+#!
+#! Invocation: exec
+pub proc fee_entry
+    # => [NOTE_SCRIPT_ROOT]
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT]
+
+    exec.active_account::get_map_item
+    # => [app_fee, protocol_fee, enabled, 0]
+end
+
+#! Returns the ASSET_ID of the asset this account accepts fees in.
+#!
+#! Exposed so that a note creator, or an upstream network account pricing a note it is about to
+#! spawn, can discover the fee asset over a foreign procedure invocation.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [FEE_ASSET_ID, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_fee_asset_id
+    exec.fee_asset_id
+    # => [FEE_ASSET_ID, pad(16)]
+
+    # a call must return with a stack depth of exactly 16, so drop the word the read pushed us over by
+    swapw dropw
+    # => [FEE_ASSET_ID, pad(12)]
+end
+
+#! Returns the fee this account requires to accept the note with the provided parameters.
+#!
+#! The estimator is flat: it looks the script root up in the fee schedule and ignores the storage
+#! commitment, the attachments commitment and the timeframe. Those parameters are nonetheless part
+#! of the signature, so that a richer estimator can replace this one without changing any caller,
+#! and so that the procedure remains callable over a foreign procedure invocation to price a note
+#! that does not exist yet.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - timeframe is the number of blocks for which the estimate should remain valid. Ignored.
+#! - FEE_ASSET_VALUE is `[fee_amount, 0, 0, 0]`, the value word of the required fungible asset.
+#!
+#! Panics if:
+#! - the note script root is not priced by this account.
+#!
+#! Invocation: call
+@account_procedure
+pub proc estimate_note_fee
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
+    swapw dropw
+    # => [NOTE_SCRIPT_ROOT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
+
+    swapw dropw
+    # => [NOTE_SCRIPT_ROOT, timeframe, pad(3)]
+
+    movup.4 drop
+    # => [NOTE_SCRIPT_ROOT, pad(3)]
+
+    exec.fee_entry
+    # => [app_fee, protocol_fee, enabled, 0, pad(3)]
+
+    movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
+    # => [app_fee, protocol_fee, 0, pad(3)]
+
+    add
+    # => [fee_amount, 0, pad(3)]
+
+    swap drop
+    # => [fee_amount, pad(3)]
+
+    push.0.0.0 movup.3
+    # => [FEE_ASSET_VALUE, pad(15)]
+
+    exec.fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(15)]
+
+    # A call must return with a stack depth of exactly 16. Dropping an operand never shrinks the
+    # stack below 16 (a zero shifts in from below), so the reads above left us eight elements over.
+    swapdw dropw dropw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+#! Prices the note script with the provided root.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - enabled is not 0 or 1.
+#!
+#! Invocation: call
+@locals(8)
+@account_procedure
+pub proc set_fee
+    exec.authority::assert_authorized
+    # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+
+    # enabled must be a boolean, i.e. enabled * (enabled - 1) == 0
+    dup.6 dup sub.1 mul assertz.err=ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN
+    # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+
+    loc_storew_le.0 dropw
+    # => [app_fee, protocol_fee, enabled, pad(9)]
+
+    push.0 movdn.3
+    # => [app_fee, protocol_fee, enabled, 0, pad(9)]
+
+    loc_storew_le.4 dropw
+    # => [pad(9)]
+
+    padw loc_loadw_le.4
+    # => [FEE_ENTRY, pad(9)]
+
+    padw loc_loadw_le.0
+    # => [NOTE_SCRIPT_ROOT, FEE_ENTRY, pad(9)]
+
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT, FEE_ENTRY, pad(9)]
+
+    exec.native_account::set_map_item dropw
+    # => [pad(16)]
+end
+
+#! Removes the price of the note script with the provided root.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#!
+#! Invocation: call
+@account_procedure
+pub proc remove_fee
+    exec.authority::assert_authorized
+    # => [NOTE_SCRIPT_ROOT, pad(12)]
+
+    padw swapw
+    # => [NOTE_SCRIPT_ROOT, EMPTY_WORD, pad(12)]
+
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT, EMPTY_WORD, pad(12)]
+
+    exec.native_account::set_map_item dropw
+    # => [pad(16)]
+end
