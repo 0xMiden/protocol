@@ -100,6 +100,7 @@
 - Refactor `asset_vault::add_asset` and `faucet::mint` to use a unified path for all asset types, in preparation of custom asset ([#3217](https://github.com/0xMiden/protocol/pull/3217)).
 - Refactor `asset_vault::remove_asset` and `faucet::burn` to use a unified path for all asset types, in preparation of custom assets ([#3078](https://github.com/0xMiden/protocol/issues/3078)).
 - [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
+- Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
 
 ### Fixes
 
