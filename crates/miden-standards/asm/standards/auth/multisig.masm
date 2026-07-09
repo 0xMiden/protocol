@@ -89,7 +89,7 @@ const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and pro
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
-const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedure root that is not one of the account's procedures"
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
 
 #! Remove old approver public keys and the corresponding scheme ids from the approver public key and
 #! scheme id mappings.

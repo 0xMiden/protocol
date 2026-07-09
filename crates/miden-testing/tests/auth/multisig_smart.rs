@@ -22,6 +22,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_PROC_ROOT_NOT_IN_ACCOUNT,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
@@ -468,6 +469,55 @@ async fn test_multisig_smart_set_procedure_policy(
         stored_policy,
         Word::from([immediate_threshold, delayed_threshold, note_restrictions as u32, 0])
     );
+
+    Ok(())
+}
+
+/// `set_procedure_policy` must reject a `PROC_ROOT` that is not one of the account's procedures, so
+/// a policy can never be stored under a foreign root. The `has_procedure` guard aborts during
+/// execution, before the epilogue auth check, so no signatures are required.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // A root that is not one of the account's procedures.
+    let foreign_root = Word::from([Felt::new_unchecked(123); 4]);
+
+    // Valid threshold/note-restriction values so execution reaches the `has_procedure` guard.
+    let set_policy_script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{root}
+            push.0
+            push.0
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
+        end
+        ",
+        root = foreign_root,
+    ))?;
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(set_policy_script)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_ROOT_NOT_IN_ACCOUNT);
 
     Ok(())
 }

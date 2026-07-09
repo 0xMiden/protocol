@@ -57,6 +57,8 @@ const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must b
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
 
@@ -528,6 +530,7 @@ end
 #! - either threshold exceeds the current number of approvers.
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
 #! - note_restrictions is non-zero while both thresholds are zero.
+#! - PROC_ROOT is not one of the account's procedures.
 #!
 #! Invocation: call
 @locals(3)
@@ -594,6 +597,11 @@ pub proc set_procedure_policy
         u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
         # => [PROC_ROOT]
     end
+
+    # ----- Validate PROC_ROOT is one of the account's procedures. -----
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT]
 
     # ----- Write [immediate, delayed, note_restrictions, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT].
     push.0
