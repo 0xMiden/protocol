@@ -192,7 +192,7 @@ async fn test_privileged_event_from_script_is_rejected() -> anyhow::Result<()> {
 
     assert_matches!(
         execution_result,
-        Err(TransactionExecutorError::PrivilegedEventFromNonRootContext(_))
+        Err(TransactionExecutorError::PrivilegedEventFromOutsideTransactionKernelContext(_))
     );
 
     Ok(())

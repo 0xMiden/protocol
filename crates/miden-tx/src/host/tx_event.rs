@@ -182,7 +182,11 @@ impl TransactionEvent {
 
         // Privileged events must originate from the kernel.
         if tx_event_id.is_privileged() && !process.ctx().is_root() {
-            return Err(TransactionKernelError::PrivilegedEventFromNonRootContext(tx_event_id));
+            return Err(
+                TransactionKernelError::PrivilegedEventFromOutsideTransactionKernelContext(
+                    tx_event_id,
+                ),
+            );
         }
 
         let tx_event = match tx_event_id {
