@@ -222,6 +222,7 @@ mod tests {
         AccountType,
         Approver,
         ApproverSet,
+        AuthMultisig,
         GuardianConfig,
         create_basic_wallet,
         create_guarded_wallet,
@@ -281,8 +282,13 @@ mod tests {
     #[test]
     fn test_create_multisig_wallet_private_higher_override_succeeds() -> anyhow::Result<()> {
         let approver_set = ApproverSet::new(vec![approver(1), approver(2), approver(3)], 2)?;
-        // Hardening a procedure above the default (2 -> 3) is safe for private accounts.
-        let proc_thresholds = vec![(BasicWallet::move_asset_to_note_root(), 3)];
+        // Hardening a procedure above the default (2 -> 3) is safe for private accounts, as long as
+        // the override editing procedure is hardened to the same level so the override cannot be
+        // lowered by a smaller quorum.
+        let proc_thresholds = vec![
+            (BasicWallet::move_asset_to_note_root(), 3),
+            (AuthMultisig::set_procedure_threshold_root(), 3),
+        ];
 
         create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)?;
 

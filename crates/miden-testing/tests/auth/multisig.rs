@@ -894,9 +894,17 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
         .collect::<Vec<_>>();
 
     // Configure a procedure override that is valid for the initial signer set (3-of-3),
-    // but invalid after updating to 2 signers.
-    let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_root(), 3)])?;
+    // but invalid after updating to 2 signers. The override editing procedure is hardened to the
+    // same level, as `AuthMultisig::new` requires for an override above the default.
+    let multisig_account = create_multisig_account(
+        2,
+        &approvers,
+        10,
+        vec![
+            (BasicWallet::receive_asset_root(), 3),
+            (AuthMultisig::set_procedure_threshold_root(), 3),
+        ],
+    )?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()

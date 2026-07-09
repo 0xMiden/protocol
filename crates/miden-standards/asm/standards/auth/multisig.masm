@@ -634,10 +634,7 @@ pub proc get_signer_at
     # => [index]
 
     # Bounds check: index must be < num_approvers
-    exec.get_initial_threshold_and_num_approvers drop
-    # => [num_approvers, index]
-
-    dup.1 swap
+    dup exec.get_initial_threshold_and_num_approvers drop
     # => [num_approvers, index, index]
 
     u32assert2.err=ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32

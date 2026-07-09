@@ -1,4 +1,5 @@
 use alloc::collections::BTreeSet;
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -67,25 +68,35 @@ impl AccountCode {
     /// Returns a new [`AccountCode`] instantiated from the provided [`MastForest`] and a list of
     /// [`AccountProcedureRoot`]s.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if:
+    /// Returns an error if:
     /// - The number of procedures is smaller than 2 or greater than 256.
     /// - The procedure roots are not unique.
-    pub fn from_parts(mast: Arc<MastForest>, procedures: Vec<AccountProcedureRoot>) -> Self {
-        assert!(procedures.len() >= Self::MIN_NUM_PROCEDURES, "not enough account procedures");
-        assert!(procedures.len() <= Self::MAX_NUM_PROCEDURES, "too many account procedures");
+    pub fn from_parts(
+        mast: Arc<MastForest>,
+        procedures: Vec<AccountProcedureRoot>,
+    ) -> Result<Self, AccountError> {
+        if procedures.len() < Self::MIN_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeNoProcedures);
+        }
+        if procedures.len() > Self::MAX_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeTooManyProcedures(procedures.len()));
+        }
 
-        let unique_roots: BTreeSet<_> =
-            procedures.iter().map(AccountProcedureRoot::as_word).collect();
-        assert!(unique_roots.len() == procedures.len(), "account procedure roots must be unique");
+        let mut unique_roots = BTreeSet::new();
+        for procedure in &procedures {
+            if !unique_roots.insert(procedure.as_word()) {
+                return Err(AccountError::AccountCodeDuplicateProcedureRoot(procedure.as_word()));
+            }
+        }
 
-        Self {
+        Ok(Self {
             commitment: build_procedure_commitment(&procedures),
             procedures,
             mast,
             package_debug_info: None,
-        }
+        })
     }
 
     /// Creates a new [`AccountCode`] from the provided components' libraries.
@@ -308,9 +319,7 @@ impl Deserializable for AccountCode {
             .read_many_iter(num_procedures)?
             .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
 
-        // make sure that all account procedures are in the MAST forest and that their roots are
-        // unique, since duplicate roots break the kernel's per-index procedure call tracking
-        let mut unique_roots = BTreeSet::new();
+        // make sure that all account procedures are in the MAST forest
         for procedure in procedures.iter() {
             if mast.find_procedure_root(procedure.as_word()).is_none() {
                 return Err(DeserializationError::InvalidValue(format!(
@@ -318,15 +327,11 @@ impl Deserializable for AccountCode {
                     procedure.as_word()
                 )));
             }
-            if !unique_roots.insert(procedure.as_word()) {
-                return Err(DeserializationError::InvalidValue(format!(
-                    "account code contains a duplicate procedure with root {}",
-                    procedure.as_word()
-                )));
-            }
         }
 
-        Ok(Self::from_parts(mast, procedures))
+        // `from_parts` enforces the procedure count and uniqueness of the roots
+        Self::from_parts(mast, procedures)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -568,14 +573,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_account_code_from_parts_rejects_duplicate_roots() {
         let code = AccountCode::mock();
         let procedures = code.procedures();
 
         // repeat the non-auth procedure root at a second index
         let duplicated = vec![procedures[0], procedures[1], procedures[1]];
-        let _ = AccountCode::from_parts(code.mast(), duplicated);
+        let err = AccountCode::from_parts(code.mast(), duplicated).unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1].as_word()
+        );
     }
 
     #[test]
@@ -592,6 +601,9 @@ mod tests {
 
         let err = AccountCode::read_from_bytes(&bytes).unwrap_err();
 
-        assert_matches!(err, DeserializationError::InvalidValue(_));
+        assert_matches!(
+            err,
+            DeserializationError::InvalidValue(msg) if msg.contains("duplicate procedure with root")
+        );
     }
 }

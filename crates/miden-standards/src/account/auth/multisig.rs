@@ -24,8 +24,19 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
+use crate::procedure_root;
 
 account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
+
+// Initialize the procedure root of the `set_procedure_threshold` procedure only once. It gates
+// edits to per-procedure overrides, so [`AuthMultisig::new`] uses it to reject overrides that
+// exceed its own threshold.
+procedure_root!(
+    MULTISIG_SET_PROCEDURE_THRESHOLD,
+    AuthMultisig::NAME,
+    AuthMultisig::SET_PROCEDURE_THRESHOLD_PROC_NAME,
+    AuthMultisig::code()
+);
 
 // CONSTANTS
 // ================================================================================================
@@ -167,24 +178,29 @@ impl AuthMultisigConfig {
 /// intended security level, re-evaluate the affected overrides and, where appropriate, raise them
 /// via `set_procedure_threshold` in the same transaction that grows the signer set.
 ///
-/// # Security: a raised override is only as strong as the default threshold
+/// # Security: a raised override is only as strong as the threshold of `set_procedure_threshold`
 ///
 /// An override can demand *more* signatures for a sensitive operation than the default, but that
-/// extra protection is not tamper-proof. A group meeting only the default threshold can strip it in
-/// two transactions: first they lower the override (editing overrides is itself gated only at the
-/// default, and an override can be lowered as freely as raised), then, in a later transaction, they
-/// run the now-cheaper operation. Two transactions are required because the signatures needed are
-/// read from the state as of the start of the transaction, so a lowered override only takes effect
-/// in the next one.
+/// extra protection is only as strong as the threshold guarding the procedure that can lower it,
+/// `set_procedure_threshold`. That guard is `set_procedure_threshold`'s own override if one is set,
+/// otherwise the default threshold; it is *not* necessarily the default. A group meeting that guard
+/// can strip a stronger override in two transactions: first they lower it, then, in a later
+/// transaction, they run the now-cheaper operation. Two transactions are required because the
+/// signatures needed are read from the state as of the start of the transaction, so a lowered
+/// override only takes effect in the next one.
 ///
-/// For example, with 5 signers, a default of 2, and a transfer requiring 4: two signers cannot
-/// transfer directly, but they can lower the transfer's override to 2 in one transaction and
-/// transfer in the next. An override thus keeps out only groups smaller than the default; at the
-/// default of 1, a single signer can undo any override.
+/// For example, with 5 signers, a default of 2, `set_procedure_threshold` left at the default, and
+/// a transfer requiring 4: two signers cannot transfer directly, but they can lower the transfer's
+/// override to 2 in one transaction and transfer in the next.
 ///
-/// Updating the signer set shares this weakness. To make a raised override hold, also apply an
-/// equal-or-higher override to the operations that can weaken it (editing overrides and updating
-/// the signer set), so undoing the protection costs as many signatures as the operation it guards.
+/// It follows that setting an override higher than the threshold of `set_procedure_threshold`
+/// (which may be the default) is pointless, because the excess signatures can always be removed by
+/// that smaller group. To make a raised override hold, raise `set_procedure_threshold`'s own
+/// threshold to at least that value, so undoing the protection costs as many signatures as the
+/// operation it guards. [`AuthMultisig::new`] enforces this by rejecting any configuration whose
+/// override exceeds the threshold of `set_procedure_threshold`. Note that
+/// `update_signers_and_threshold` can also weaken an override by growing the signer set (see
+/// above), so protect it the same way where relevant.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
@@ -193,6 +209,9 @@ pub struct AuthMultisig {
 impl AuthMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+
+    /// The name of the procedure that edits per-procedure threshold overrides.
+    const SET_PROCEDURE_THRESHOLD_PROC_NAME: &'static str = "set_procedure_threshold";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -204,8 +223,39 @@ impl AuthMultisig {
         &MULTISIG_CODE
     }
 
+    /// Returns the procedure root of the `set_procedure_threshold` account procedure.
+    pub fn set_procedure_threshold_root() -> AccountProcedureRoot {
+        *MULTISIG_SET_PROCEDURE_THRESHOLD
+    }
+
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a per-procedure override exceeds the threshold that guards
+    /// `set_procedure_threshold` (its own override if set, otherwise the default threshold). Such
+    /// an override is not enforceable, since a group meeting that lower threshold can strip it
+    /// via `set_procedure_threshold`; see the type-level security notes.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
+        // The threshold that must be met to edit overrides via `set_procedure_threshold`: its own
+        // override if configured, otherwise the default threshold.
+        let setter_threshold = config
+            .proc_thresholds()
+            .get(&Self::set_procedure_threshold_root())
+            .copied()
+            .unwrap_or_else(|| config.default_threshold());
+
+        for (_, &threshold) in config.proc_thresholds() {
+            if threshold > setter_threshold {
+                return Err(AccountError::other(format!(
+                    "per-procedure threshold override of {threshold} exceeds the threshold of \
+                     {setter_threshold} that guards set_procedure_threshold; such an override can \
+                     be removed by a smaller quorum. Raise the set_procedure_threshold override to \
+                     at least {threshold} to make it enforceable"
+                )));
+            }
+        }
+
         Ok(Self { config })
     }
 
@@ -510,5 +560,36 @@ mod tests {
                 .to_string()
                 .contains("procedure threshold cannot be greater than number of approvers")
         );
+    }
+
+    /// Test that an override exceeding the threshold guarding `set_procedure_threshold` (here the
+    /// default, since it has no override of its own) is rejected by `AuthMultisig::new`, because a
+    /// smaller quorum could lower it.
+    #[test]
+    fn test_proc_threshold_above_set_procedure_threshold_rejected() {
+        let approvers = vec![
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
+        ];
+        let approver_set = ApproverSet::new(approvers, 2).expect("invalid approver set");
+
+        // The override (3) is within num_approvers, so `with_proc_thresholds` accepts it, but it
+        // exceeds the default threshold (2) that guards `set_procedure_threshold`.
+        let config = AuthMultisigConfig::new(approver_set)
+            .with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 3)])
+            .expect("an override within num_approvers is accepted by with_proc_thresholds");
+
+        let err = AuthMultisig::new(config).unwrap_err();
+        assert!(err.to_string().contains("exceeds the threshold"));
     }
 }
