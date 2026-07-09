@@ -1,0 +1,71 @@
+use miden::protocol::active_account
+use miden::protocol::asset
+use miden::protocol::native_account
+use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
+
+# ERRORS
+# ================================================================================================
+
+const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
+
+# PROCEDURES
+# ================================================================================================
+
+#! Returns the balance of the fungible asset associated with the provided asset ID in the
+#! native account's vault at the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [init_balance]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
+#!
+#! Panics if:
+#! - the asset composition encoded in ASSET_ID is not fungible.
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_balance
+    # assert that the asset composition is fungible
+    exec.asset::id_to_composition
+    eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
+    # => [ASSET_ID]
+
+    exec.native_account::get_initial_asset
+    # => [ASSET_VALUE]
+
+    # extract the asset's balance
+    exec.asset::fungible_value_into_amount
+    # => [balance]
+end
+
+#! Returns the balance of the fungible asset associated with the provided asset ID in the
+#! active account's vault.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [balance]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - balance is the vault balance of the fungible asset.
+#!
+#! Panics if:
+#! - the asset composition encoded in ASSET_ID is not fungible.
+#!
+#! Invocation: exec
+pub proc get_balance
+    # assert that the asset composition is fungible
+    exec.asset::id_to_composition
+    eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
+    # => [ASSET_ID]
+
+    exec.active_account::get_asset
+    # => [ASSET_VALUE]
+
+    # extract the asset's balance
+    exec.asset::fungible_value_into_amount
+    # => [balance]
+end

@@ -7,7 +7,6 @@ use miden_protocol::asset::{
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
-use miden_protocol::errors::protocol::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET;
 use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED,
@@ -24,6 +23,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::transaction::memory;
 use miden_protocol::{ONE, Word};
+use miden_standards::errors::standards::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET;
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -39,13 +39,13 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::protocol::active_account
+        use miden::standards::assets::fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_balance
             # => [balance]
 
             # truncate the stack
@@ -129,12 +129,12 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::active_account
+        use miden::standards::assets::fungible_asset
 
         begin
             exec.prologue::prepare_transaction
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_balance
         end
         ",
         ASSET_ID = non_fungible_asset.to_id_word(),
@@ -164,7 +164,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.active_account::has_non_fungible_asset
+            exec.active_account::has_asset
 
             # truncate the stack
             swap drop
