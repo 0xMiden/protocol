@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-fees-fee-auth"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::fees::fee_auth"
+path      = "fee_auth.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

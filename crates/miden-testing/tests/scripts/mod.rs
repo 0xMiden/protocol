@@ -5,6 +5,7 @@ mod code_inspection;
 mod expiration;
 mod faucet;
 mod fee;
+mod fee_flow;
 mod fee_manager;
 mod network_sponsorship;
 mod non_fungible_faucet;

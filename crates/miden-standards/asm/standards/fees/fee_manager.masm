@@ -9,9 +9,19 @@
 #! Requires that the account also installs the [`Authority`] component, whose `assert_authorized`
 #! gates the admin procedures.
 
-use miden::standards::access::authority
+use miden::core::word
 use miden::protocol::active_account
+use miden::protocol::input_note
 use miden::protocol::native_account
+use miden::protocol::note
+use miden::protocol::output_note
+use miden::protocol::tx
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use miden::standards::access::authority
+use miden::standards::attachments::fee_sponsorship
+use miden::standards::note::note_id
+use miden::standards::notes::fee as fee_note
+use miden::standards::notes::network_sponsorship
 
 # CONSTANTS
 # ================================================================================================
@@ -29,6 +39,12 @@ pub const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_sch
 const ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN="the enabled flag of a fee schedule entry must be 0 or 1"
 
 const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by this account's fee schedule"
+
+const ERR_FEE_MANAGER_SPONSORSHIP_NOT_ONE_ASSET="a NETWORK_SPONSORSHIP note must carry exactly one asset"
+
+const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET="a NETWORK_SPONSORSHIP note must carry the fee asset this account accepts"
+
+const ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP="the feature note is not covered by enough sponsorship"
 
 # PROCEDURES
 # ================================================================================================
@@ -209,4 +225,263 @@ pub proc remove_fee
 
     exec.native_account::set_map_item dropw
     # => [pad(16)]
+end
+
+# FEE SETTLEMENT
+# ================================================================================================
+
+#! Returns the total sponsorship bound to the provided feature note ID by this transaction's input
+#! notes.
+#!
+#! Every input note carrying the NETWORK_SPONSORSHIP script root, whose fee sponsorship attachment
+#! names FEATURE_NOTE_ID, contributes its single fee asset. Sponsorship is summed rather than
+#! matched one-to-one, which is what makes a second sponsorship note a top-up rather than a way to
+#! block the feature note it names.
+#!
+#! Inputs:  [FEATURE_NOTE_ID]
+#! Outputs: [sponsored_amount]
+#!
+#! Where:
+#! - FEATURE_NOTE_ID is the ID of the feature note whose sponsorship should be summed.
+#! - sponsored_amount is the total amount of the fee asset sponsoring that note.
+#!
+#! Panics if:
+#! - a sponsorship note bound to this feature note carries anything other than exactly one asset.
+#! - that asset is not the fee asset this account accepts.
+#!
+#! Invocation: exec
+@locals(24)
+proc sponsored_amount
+    loc_storew_le.0 dropw
+    # => []
+
+    exec.fee_asset_id loc_storew_le.4 dropw
+    # => []
+
+    push.0 loc_store.8
+    # => []
+
+    exec.tx::get_num_input_notes
+    # => [note_idx]
+
+    dup neq.0
+    # => [should_loop, note_idx]
+
+    while.true
+        # => [note_idx]
+        sub.1 dup loc_store.9
+        # => [note_idx]
+
+        exec.input_note::get_script_root
+        # => [NOTE_SCRIPT_ROOT]
+
+        procref.network_sponsorship::main
+        # => [SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
+
+        exec.word::eq
+        # => [is_sponsorship]
+
+        if.true
+            loc_load.9 exec.fee_sponsorship::input_note_bound_note_id
+            # => [BOUND_NOTE_ID]
+
+            padw loc_loadw_le.0
+            # => [FEATURE_NOTE_ID, BOUND_NOTE_ID]
+
+            exec.word::eq
+            # => [is_bound_to_this_feature_note]
+
+            if.true
+                loc_load.9 locaddr.12
+                # => [dest_ptr, note_idx]
+
+                exec.input_note::get_assets
+                # => [num_assets]
+
+                eq.1 assert.err=ERR_FEE_MANAGER_SPONSORSHIP_NOT_ONE_ASSET
+                # => []
+
+                padw loc_loadw_le.12
+                # => [SPONSORSHIP_ASSET_ID]
+
+                padw loc_loadw_le.4
+                # => [FEE_ASSET_ID, SPONSORSHIP_ASSET_ID]
+
+                exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
+                # => []
+
+                # the asset value word sits directly after the asset ID word
+                loc_load.16 loc_load.8 add loc_store.8
+                # => []
+            end
+        end
+
+        loc_load.9 dup neq.0
+        # => [should_loop, note_idx]
+    end
+    # => [note_idx]
+
+    drop loc_load.8
+    # => [sponsored_amount]
+end
+
+#! Emits a single FEE note carrying `protocol_owed` of this account's fee asset, payable to whoever
+#! builds the batch.
+#!
+#! The asset is taken out of the account vault, into which the sponsorship notes' scripts already
+#! deposited it, so asset preservation holds.
+#!
+#! The serial number is `[account_id_suffix, account_id_prefix, nonce, 0]`, which is unique because
+#! an account's nonce strictly increases with every transaction it authorises. It must therefore be
+#! read before the nonce is incremented.
+#!
+#! Inputs:  [protocol_owed]
+#! Outputs: []
+#!
+#! Invocation: exec
+@locals(8)
+proc emit_fee_note
+    loc_store.4
+    # => []
+
+    procref.fee_note::main
+    # => [FEE_NOTE_SCRIPT_ROOT]
+
+    push.0 exec.active_account::get_nonce exec.active_account::get_id
+    # => [SERIAL_NUM, FEE_NOTE_SCRIPT_ROOT]
+
+    push.0 locaddr.0
+    # => [storage_ptr, num_storage_items, SERIAL_NUM, FEE_NOTE_SCRIPT_ROOT]
+
+    exec.note::compute_and_store_recipient
+    # => [RECIPIENT]
+
+    push.NOTE_TYPE_PUBLIC push.0
+    # => [tag, note_type, RECIPIENT]
+
+    exec.output_note::create
+    # => [note_idx]
+
+    # take the protocol portion out of the account vault
+    push.0.0.0 loc_load.4
+    # => [FEE_ASSET_VALUE, note_idx]
+
+    exec.fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    exec.native_account::remove_asset dropw
+    # => [note_idx]
+
+    # and put it into the FEE note
+    push.0.0.0 loc_load.4
+    # => [FEE_ASSET_VALUE, note_idx]
+
+    exec.fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end
+
+#! Settles the fees of the current transaction.
+#!
+#! Asserts that every feature note consumed by this account is covered by enough sponsorship, then
+#! forwards the summed protocol portion to the batch builder in a single FEE note. The application
+#! portion, and any surplus the sponsor overpaid, stay with the account.
+#!
+#! This is the mirror image of the check inside the sponsorship note's own script. Consuming a
+#! sponsorship without its feature note costs the *sponsor*, so that note guards it. Consuming a
+#! feature note without sponsorship costs the *account*, so the account guards this.
+#!
+#! Must be called from the account's auth procedure, which the kernel invokes unconditionally. A
+#! note script could not be trusted to call it: a feature note that skipped the call would be
+#! exactly the note that never paid.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a feature note's script root is not priced by this account.
+#! - a feature note is not covered by enough sponsorship.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc settle_fees
+    push.0 loc_store.4
+    # => []
+
+    exec.tx::get_num_input_notes
+    # => [note_idx]
+
+    dup neq.0
+    # => [should_loop, note_idx]
+
+    while.true
+        # => [note_idx]
+        sub.1 dup loc_store.5
+        # => [note_idx]
+
+        exec.input_note::get_script_root
+        # => [NOTE_SCRIPT_ROOT]
+
+        procref.network_sponsorship::main
+        # => [SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
+
+        exec.word::test_eq
+        # => [is_sponsorship, SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
+
+        movdn.8 dropw
+        # => [NOTE_SCRIPT_ROOT, is_sponsorship]
+
+        movup.4 not
+        # => [is_feature_note, NOTE_SCRIPT_ROOT]
+
+        if.true
+            # => [NOTE_SCRIPT_ROOT]
+            exec.fee_entry
+            # => [app_fee, protocol_fee, enabled, 0]
+
+            movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
+            # => [app_fee, protocol_fee, 0]
+
+            movup.2 drop swap
+            # => [protocol_fee, app_fee]
+
+            dup loc_load.4 add loc_store.4
+            # => [protocol_fee, app_fee]
+
+            add
+            # => [required]
+
+            loc_load.5 exec.note_id::compute_input_note_id
+            # => [FEATURE_NOTE_ID, required]
+
+            exec.sponsored_amount
+            # => [sponsored, required]
+
+            lte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
+            # => []
+        else
+            dropw
+            # => []
+        end
+
+        loc_load.5 dup neq.0
+        # => [should_loop, note_idx]
+    end
+    # => [note_idx]
+
+    drop
+    # => []
+
+    loc_load.4 dup neq.0
+    # => [has_protocol_fee, protocol_owed]
+
+    if.true
+        exec.emit_fee_note
+        # => []
+    else
+        drop
+        # => []
+    end
 end

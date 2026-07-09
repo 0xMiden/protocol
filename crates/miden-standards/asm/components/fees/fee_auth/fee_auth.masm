@@ -1,0 +1,51 @@
+#! miden::standards::components::fees::fee_auth
+#!
+#! Authentication for a fee-managed network account.
+#!
+#! Settles the transaction's fees before incrementing the nonce. Settlement lives here, in the auth
+#! procedure, because the kernel invokes it unconditionally: a note script could not be trusted to
+#! call it, since a feature note that skipped the call would be exactly the note that never paid.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::fees::fee_manager
+
+#! Settles fees, then increments the nonce if the account state changed.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - a feature note's script root is not priced by this account.
+#! - a feature note is not covered by enough sponsorship.
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_fee_managed
+    dropw
+    # => [pad(16)]
+
+    exec.fee_manager::settle_fees
+    # => [pad(16)]
+
+    # increment the nonce iff the account state changed or the account is new
+    exec.native_account::get_initial_commitment
+    # => [INITIAL_COMMITMENT, pad(16)]
+
+    exec.active_account::compute_commitment
+    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+    exec.word::eq not
+    # => [has_account_state_changed, pad(16)]
+
+    exec.active_account::get_nonce eq.0
+    # => [is_new_account, has_account_state_changed, pad(16)]
+
+    or
+    # => [should_increment_nonce, pad(16)]
+
+    if.true
+        exec.native_account::incr_nonce drop
+    end
+end
