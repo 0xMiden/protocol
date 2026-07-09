@@ -22,6 +22,7 @@ use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
     ERR_TX_ALREADY_EXECUTED,
 };
@@ -943,6 +944,72 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
         .await;
 
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
+/// Tests that `update_signers_and_threshold` rejects a signer set containing duplicate public keys.
+///
+/// Without this check a duplicated key lets a single signature satisfy multiple approver slots
+/// (signatures are looked up in the advice map by public key, not by signer index, and are not
+/// consumed on lookup), which would defeat the distinct-approvers policy.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_update_signers_rejects_duplicate_public_keys(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    // Update to a signer set of [PK_A, PK_A, PK_B]: the first key is repeated.
+    let duplicate_public_keys =
+        vec![public_keys[0].clone(), public_keys[0].clone(), public_keys[1].clone()];
+    let threshold = 2u64;
+    let num_of_approvers = 3u64;
+
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &duplicate_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
 
     Ok(())
 }
