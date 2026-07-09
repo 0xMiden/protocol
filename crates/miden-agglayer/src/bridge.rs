@@ -240,11 +240,11 @@ impl BridgeRoles {
 ///
 /// ## Access control
 ///
-/// The bridge's privileged roles are managed by the account's RBAC stack (`Ownable2Step` +
-/// `RoleBasedAccessControl` + `Authority`), installed alongside this component at account
+/// The bridge's privileged roles are managed by the account's RBAC stack
+/// (`RoleBasedAccessControl` + `Authority`), installed alongside this component at account
 /// creation. The role-gated procedures call `authority::assert_authorized`, which requires the note
-/// sender to hold the role mapped to the procedure. See [`BridgeRoles`] and
-/// [`AggLayerBridge::procedure_roles`].
+/// sender to hold the role mapped to the procedure. The built-in `ADMIN` role (seeded at creation)
+/// administers the operational roles. See [`BridgeRoles`] and [`AggLayerBridge::procedure_roles`].
 ///
 /// ## Storage Layout
 ///

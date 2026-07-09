@@ -86,8 +86,7 @@ const RBAC_CONTROLLED: u8 = 2;
 /// Under RBAC, each gated procedure can be assigned its own role via `roles`, keyed by the
 /// procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
 /// runtime `assert_authorized` identifies the calling procedure via the `caller` instruction and
-/// looks up its role. A procedure without a mapping falls back to the
-/// [`Ownable2Step`][crate::account::access::Ownable2Step] owner check.
+/// looks up its role. A procedure without a mapping falls back to the `ADMIN` role check.
 ///
 /// # Emergency switch (`is_frozen`)
 ///
@@ -95,11 +94,14 @@ const RBAC_CONTROLLED: u8 = 2;
 /// `assert_authorized` would panic, effectively freezing them. Accounts are always constructed
 /// unfrozen.
 ///
-/// The flag can be toggled by the configured
-/// [`Ownable2Step`][crate::account::access::Ownable2Step] owner via `freeze` / `unfreeze`.
+/// The flag is toggled via `freeze` / `unfreeze`. Under [`Authority::OwnerControlled`] these are
+/// gated on the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; under
+/// [`Authority::RbacControlled`] they resolve their role from the role map (e.g. `FREEZER` /
+/// `UNFREEZER`), defaulting to the `ADMIN` role. Both bypass the frozen flag itself so the switch
+/// can always be toggled.
 ///
-/// This flag is only meaningful when [`Ownable2Step`][crate::account::access::Ownable2Step] is
-/// installed and has no effect under [`Authority::AuthControlled`].
+/// This flag has no effect under [`Authority::AuthControlled`], where `freeze` / `unfreeze` panic
+/// (there is no owner and no role graph).
 ///
 /// Storage layout:
 /// - Value slot: `[authority, is_frozen, 0, 0]`.
@@ -140,18 +142,22 @@ impl Authority {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the procedure root of the owner-gated `freeze` emergency switch.
+    /// Returns the procedure root of the `freeze` emergency switch.
     ///
-    /// This procedure is always gated on the owner check directly, so unlike role-assignable
-    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    /// Under [`Authority::OwnerControlled`] this is gated on the owner. Under
+    /// [`Authority::RbacControlled`] it may be assigned its own role via the role map (e.g.
+    /// `FREEZER`); when unmapped it falls back to the `ADMIN` role. Unlike ordinary gated
+    /// procedures it bypasses the frozen flag so it can always be toggled.
     pub fn freeze_root() -> AccountProcedureRoot {
         *AUTHORITY_FREEZE
     }
 
-    /// Returns the procedure root of the owner-gated `unfreeze` emergency switch.
+    /// Returns the procedure root of the `unfreeze` emergency switch.
     ///
-    /// This procedure is always gated on the owner check directly, so unlike role-assignable
-    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    /// Under [`Authority::OwnerControlled`] this is gated on the owner. Under
+    /// [`Authority::RbacControlled`] it may be assigned its own role via the role map (e.g.
+    /// `UNFREEZER`); when unmapped it falls back to the `ADMIN` role. Unlike ordinary gated
+    /// procedures it bypasses the frozen flag so it can always be toggled.
     pub fn unfreeze_root() -> AccountProcedureRoot {
         *AUTHORITY_UNFREEZE
     }

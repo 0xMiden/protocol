@@ -17,6 +17,9 @@ pub use {
     get_symbol,
 } from miden::standards::faucets::non_fungible
 
+# Code inspection
+pub use {has_procedure} from miden::standards::inspection::code_inspection
+
 # Token metadata: mandatory name + optional description, logo, contract URI.
 # The shared `external_link` field is surfaced under the NFT-specific name `contract_uri`
 # (the OpenSea-style collection metadata pointer); it reuses the shared external_link storage.

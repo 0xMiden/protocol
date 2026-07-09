@@ -23,6 +23,6 @@ pub proc auth_tx_multisig(salt: word)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 
-    exec.multisig::assert_new_tx
+    exec.multisig::record_and_assert_new_tx
     # => []
 end

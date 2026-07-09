@@ -2,12 +2,14 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
+
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::Library;
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::serde::Deserializable;
-use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
+use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -132,25 +134,26 @@ fn create_agglayer_faucet_component(
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
-/// Access control is provided by the RBAC stack: `owner` becomes the account's `Ownable2Step`
-/// governance owner, and `roles` seeds the initial holders of the `FAUCET_ADMIN`, `GER_INJECTOR`,
-/// and `GER_REMOVER` roles that gate the bridge's privileged procedures.
+/// Access control is provided by the RBAC stack (`RoleBasedAccessControl` + `Authority`): `admin`
+/// is seeded as the initial member of the built-in `ADMIN` role, which administers (grants/revokes)
+/// the operational roles, and `roles` seeds the initial holders of the `FAUCET_ADMIN`,
+/// `GER_INJECTOR`, and `GER_REMOVER` roles that gate the bridge's privileged procedures.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
 fn create_bridge_account_builder(
     seed: Word,
-    owner: AccountId,
+    admin: AccountId,
     roles: BridgeRoles,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
         .with_component(AggLayerBridge)
-        .with_components(AccessControl::Rbac {
-            owner,
-            roles: AggLayerBridge::procedure_roles(),
-            members: roles.role_members(),
-        })
+        .with_component(RoleBasedAccessControl::with_roles(
+            BTreeSet::from([admin]),
+            roles.role_members(),
+        ))
+        .with_component(Authority::RbacControlled { roles: AggLayerBridge::procedure_roles() })
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
@@ -159,10 +162,11 @@ fn create_bridge_account_builder(
 
 /// Creates a new bridge account with the standard configuration.
 ///
-/// This creates a new account suitable for production use. `owner` is the governance owner; the
-/// initial role holders are seeded from `roles` (see [`BridgeRoles`]).
-pub fn create_bridge_account(seed: Word, owner: AccountId, roles: BridgeRoles) -> Account {
-    create_bridge_account_builder(seed, owner, roles)
+/// This creates a new account suitable for production use. `admin` bootstraps the `ADMIN` role
+/// (role administration); the initial operational-role holders are seeded from `roles` (see
+/// [`BridgeRoles`]).
+pub fn create_bridge_account(seed: Word, admin: AccountId, roles: BridgeRoles) -> Account {
+    create_bridge_account_builder(seed, admin, roles)
         .build()
         .expect("bridge account should be valid")
 }

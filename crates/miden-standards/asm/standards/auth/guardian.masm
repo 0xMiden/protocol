@@ -77,7 +77,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
 
     push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-    # => [guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix,
+    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix,
     #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
 
     exec.native_account::set_map_item
@@ -97,7 +97,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
 
     push.GUARDIAN_SCHEME_ID_SLOT[0..2]
-    # => [guardian_scheme_slot_prefix, guardian_scheme_slot_suffix,
+    # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
     #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
 
     exec.native_account::set_map_item
@@ -140,11 +140,11 @@ pub proc verify_signature(msg: word)
         # => [1, MSG]
 
         push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-        # => [guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix, 1, MSG]
+        # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, 1, MSG]
 
         push.GUARDIAN_SCHEME_ID_SLOT[0..2]
-        # => [guardian_scheme_slot_prefix, guardian_scheme_slot_suffix,
-        #     guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix, 1, MSG]
+        # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
+        #     guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, 1, MSG]
 
         exec.signature::verify_signatures
         # => [num_verified_signatures, MSG]

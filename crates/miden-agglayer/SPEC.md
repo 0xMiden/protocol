@@ -198,12 +198,13 @@ TODO: Faucet existence and code commitment are not validated during registration
 ### 2.5 Administration
 
 The bridge uses role-based access control (RBAC) for its privileged operations, built on the
-`miden-standards` access-control stack (`Ownable2Step` + `RoleBasedAccessControl` + `Authority`)
-installed on the bridge account alongside the bridge component.
+`miden-standards` access-control stack (`RoleBasedAccessControl` + `Authority`) installed on the
+bridge account alongside the bridge component.
 
-- **Governance owner** (`Ownable2Step`): the top-level authority. The owner can grant and revoke
-  the operational roles below, and can transfer its position via the two-step
-  `transfer_ownership` / `accept_ownership` flow.
+- **`ADMIN` role**: the built-in administrative role. Members of `ADMIN` administer (grant and
+  revoke) the operational roles below. It is the effective admin of any role whose delegated admin
+  is unset, and it administers itself, so `ADMIN` membership can be granted, revoked, and renounced
+  through the standard RBAC API.
 - **`FAUCET_ADMIN` role**: authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes (`register_faucet`,
   `store_faucet_metadata_hash`) and faucet deregistration via
@@ -216,13 +217,14 @@ installed on the bridge account alongside the bridge component.
 
 Each role-gated procedure calls `authority::assert_authorized`, which resolves the calling
 procedure's required role from the account's `Authority` procedure-to-role map and asserts that the
-note sender holds that role (a role may have multiple holders). The governance owner and the
-initial role holders are seeded at account creation.
+note sender holds that role (a role may have multiple holders). Procedures with no mapped role fall
+back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
+holders are seeded at account creation, so the bridge is born fully functional.
 
-TODO: On-chain role management — notes that call `grant_role` / `revoke_role` /
-`transfer_ownership` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
+TODO: On-chain role management — notes that call `grant_role` / `revoke_role` / `renounce_role` /
+`set_role_admin` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
 follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706). The note scripts and Rust
-builders for these `Rbac` / `Ownable2Step` procedures are tracked more broadly by
+builders for these `Rbac` procedures are tracked more broadly by
 [#3046](https://github.com/0xMiden/protocol/issues/3046) (note configuration for standards
 components); once they exist, the bridge only needs to add their script roots to
 [`AggLayerBridge::allowed_notes`].
@@ -392,12 +394,12 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
 
 The privileged-role state is held by the access-control components installed on the bridge account
-(`Ownable2Step` owner config, `RoleBasedAccessControl` role config/membership maps, and the
-`Authority` procedure-to-role map), documented in `miden-standards`, rather than in dedicated bridge
-slots. See [Administration](#25-administration).
+(`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
+documented in `miden-standards`, rather than in dedicated bridge slots. See
+[Administration](#25-administration).
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The governance owner and the
-initial `FAUCET_ADMIN` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
+the initial `FAUCET_ADMIN` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
 access-control components at account creation time.
 
 ### 3.2 Faucet Account Component

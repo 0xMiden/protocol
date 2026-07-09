@@ -1,0 +1,64 @@
+use miden::core::mem
+use miden::core::crypto::hashes::poseidon2
+
+use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+
+#! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr` and returns
+#! their commitment.
+#!
+#! The elements committed to are an arbitrary-length list , so their count must not necessarily be
+#! word-aligned. For efficiency, the commitment is computed using `pipe_double_words_to_memory`,
+#! which requires that the elements must already be on the advice stack and that they are padded to
+#! the next multiple of 8 (e.g. via `adv.push_mapvaln.8`). The padding zeros do not affect the
+#! commitment.
+#!
+#! Inputs:
+#!   Operand stack: [num_elements, dest_ptr]
+#!   Advice stack:  [[ELEMENTS]]
+#! Outputs:
+#!   Operand stack: [COMPUTED_COMMITMENT]
+#!
+#! Where:
+#! - num_elements is the number of elements to write, matching the number of committed elements.
+#! - dest_ptr is the memory pointer at which the elements are written.
+#! - COMPUTED_COMMITMENT is the commitment over the written elements.
+#!
+#! Invocation: exec
+pub proc pipe_elements_preimage_to_memory
+    # compute the number of words required to store the elements: ceil(num_elements / 4)
+    dup u32divmod.WORD_NUM_ELEMENTS neq.0 add
+    # => [num_words, num_elements, dest_ptr]
+
+    # round the number of words up to the next multiple of 2 for `pipe_double_words_to_memory`
+    dup is_odd add
+    # => [even_num_words, num_elements, dest_ptr]
+
+    # compute end_ptr = dest_ptr + even_num_words * WORD_NUM_ELEMENTS
+    mul.WORD_NUM_ELEMENTS dup.2 add
+    # => [end_ptr, num_elements, dest_ptr]
+
+    movup.2
+    # => [dest_ptr, end_ptr, num_elements]
+
+    # set the first capacity element to `num_elements % 8` to match the capacity as built in
+    # poseidon2::hash_elements
+    movup.2 u32mod.8
+    # => [num_elements_mod_8, dest_ptr, end_ptr]
+
+    push.0.0.0 movup.3
+    # => [CAPACITY, dest_ptr, end_ptr]
+
+    padw padw
+    # => [RATE0, RATE1, CAPACITY, dest_ptr, end_ptr]
+
+    # write the elements to memory while hashing them
+    exec.mem::pipe_double_words_to_memory
+    # => [RATE0, RATE1, CAPACITY, dest_ptr']
+
+    # extract the computed commitment from the hasher state
+    exec.poseidon2::squeeze_digest
+    # => [COMPUTED_COMMITMENT, dest_ptr']
+
+    movup.4 drop
+    # => [COMPUTED_COMMITMENT]
+end

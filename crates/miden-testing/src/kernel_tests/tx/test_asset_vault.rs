@@ -11,7 +11,7 @@ use miden_protocol::errors::protocol::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_O
 use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED,
-    ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::errors::{AssetError, AssetVaultError};
@@ -330,7 +330,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
     let exec_result = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS);
+    assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS);
     assert!(account_vault.add_asset(non_fungible_asset).is_err());
 
     Ok(())
@@ -503,11 +503,11 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 #[tokio::test]
 async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
-    let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
+    let non_fungible_asset = account_vault
+        .assets()
+        .find(|asset| asset.id().composition().is_none())
+        .expect("one non-fungible asset should be present");
 
     let code = format!(
         "
@@ -516,16 +516,16 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_ID}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_ID}
             call.account::remove_asset
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
-        FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;

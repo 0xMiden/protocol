@@ -536,13 +536,13 @@ fn generate_agglayer_constants(
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(auth_component), agglayer_component];
         if lib_name == "bridge" {
-            // The bridge installs the RBAC access-control stack (Ownable2Step + RBAC +
-            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. Empty
-            // role config / members suffice here since only component code affects the commitment.
+            // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
+            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. An
+            // empty admin / role config suffices here since only component code affects the
+            // commitment.
             components.extend(AccessControl::Rbac {
-                owner: dummy_owner,
+                admin: dummy_owner,
                 roles: BTreeMap::new(),
-                members: BTreeMap::new(),
             });
         } else if lib_name == "faucet" {
             components.push(AccountComponent::from(

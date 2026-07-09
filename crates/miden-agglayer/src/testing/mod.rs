@@ -41,9 +41,9 @@ use crate::{
 // BRIDGE ACCOUNT HELPERS
 // ================================================================================================
 
-/// A fixed dummy governance owner used for bridge accounts in tests that don't exercise the
-/// owner's role-management powers.
-pub fn bridge_test_owner() -> AccountId {
+/// A fixed dummy `ADMIN`-role account used for bridge accounts in tests that don't exercise the
+/// admin's role-management powers (granting/revoking the operational roles).
+pub fn bridge_test_admin() -> AccountId {
     AccountId::dummy(
         [0xee; 15],
         AccountIdVersion::Version1,
@@ -52,8 +52,8 @@ pub fn bridge_test_owner() -> AccountId {
     )
 }
 
-/// Creates an existing bridge account seeded with a single holder per role and the fixed
-/// [`bridge_test_owner`] as the governance owner.
+/// Creates an existing bridge account seeded with a single holder per operational role and the
+/// fixed [`bridge_test_admin`] as the built-in `ADMIN` role member.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     faucet_admin: AccountId,
@@ -66,7 +66,7 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([ger_remover]),
     )
     .expect("single-holder role sets are non-empty");
-    create_bridge_account_builder(seed, bridge_test_owner(), roles)
+    create_bridge_account_builder(seed, bridge_test_admin(), roles)
         .build_existing()
         .expect("bridge account should be valid")
 }
