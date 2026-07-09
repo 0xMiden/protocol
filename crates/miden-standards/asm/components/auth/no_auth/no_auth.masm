@@ -16,6 +16,11 @@ use miden::core::word
 #! Invocation: call
 @auth_script
 pub proc auth_no_auth
+    # AUTH_ARGS are unused by this component; drop them so the stack matches the [pad(16)] auth
+    # calling convention, consistent with the other auth components.
+    dropw
+    # => [pad(16)]
+
     # check if the account state has changed by comparing initial and final commitments
 
     exec.native_account::get_initial_commitment
