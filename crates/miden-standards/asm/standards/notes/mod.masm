@@ -5,5 +5,5 @@ pub mod mint_non_fungible
 pub mod p2id
 pub mod p2ide
 pub mod pswap
-pub mod role_config
+pub mod rbac_action
 pub mod swap
