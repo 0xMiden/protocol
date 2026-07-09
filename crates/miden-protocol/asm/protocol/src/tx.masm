@@ -92,7 +92,7 @@ end
 #! Where:
 #! - timestamp is the timestamp of the reference block for this transaction. The underlying value is
 #!   of type u32, so u32 operations can be safely used on it.
-pub proc get_block_timestamp() -> felt
+pub proc get_block_timestamp() -> u32
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -298,7 +298,7 @@ end
 #! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
 #!
 #! Annotation hint: is not used anywhere
-pub proc update_expiration_block_delta(block_height_delta: felt)
+pub proc update_expiration_block_delta(block_height_delta: u16)
     push.TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
     # => [offset, expiration_delta, ...]
 
@@ -321,7 +321,7 @@ end
 #! - block_height_delta is the stored expiration time delta (1 to 0xFFFF).
 #!
 #! Annotation hint: is not used anywhere
-pub proc get_expiration_block_delta() -> felt
+pub proc get_expiration_block_delta() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
