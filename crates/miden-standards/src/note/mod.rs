@@ -12,6 +12,9 @@ pub use burn::BurnNote;
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
+mod fee;
+pub use fee::FeeNote;
+
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
@@ -50,6 +53,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    FEE,
 }
 
 impl StandardNote {
@@ -83,6 +87,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == FeeNote::script_root() {
+            return Some(Self::FEE);
+        }
 
         None
     }
@@ -99,6 +106,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::FEE => "FEE",
         }
     }
 
@@ -111,6 +119,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::FEE => FeeNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -123,6 +132,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::FEE => FeeNote::script(),
         }
     }
 
@@ -135,6 +145,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::FEE => FeeNote::script_root(),
         }
     }
 

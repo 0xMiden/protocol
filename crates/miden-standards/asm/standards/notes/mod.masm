@@ -1,4 +1,5 @@
 pub mod burn
+pub mod fee
 pub mod mint
 pub mod mint_fungible
 pub mod mint_non_fungible

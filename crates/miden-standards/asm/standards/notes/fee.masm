@@ -1,0 +1,35 @@
+use miden::standards::wallets::basic as basic_wallet
+
+#! FEE script: moves the assets carried by the note into the consuming account's vault.
+#!
+#! The script performs no target check and no sender check, so the note can be consumed by any
+#! account exposing `receive_asset`. It is essentially a P2ID note without the target account check.
+#!
+#! This is how a transaction pays its fee to a batch builder: whichever account builds the batch
+#! consumes the note during batch construction. Because the note is payable to nobody in particular,
+#! the payer does not need to know who the builder will be.
+#!
+#! WARNING: this note pays whoever consumes it first, so it cannot be used to pay a specific party.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::wallets::basic::receive_asset procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - ARGS are the note arguments, which this script ignores.
+#!
+#! Panics if:
+#! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
+#! - The same non-fungible asset already exists in the account.
+#! - Adding a fungible asset would result in amount overflow, i.e., the total amount would be
+#!   greater than 2^63.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    exec.basic_wallet::add_assets_to_account
+    # => [pad(16)]
+end
