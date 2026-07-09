@@ -9,6 +9,9 @@ use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 mod burn;
 pub use burn::BurnNote;
 
+mod faucet_policy_action;
+pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
+
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
@@ -50,6 +53,10 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    // Multi-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
+    // uppercase convention of the others (P2ID, MINT, ...).
+    #[allow(non_camel_case_types)]
+    FAUCET_POLICY_ACTION,
 }
 
 impl StandardNote {
@@ -83,6 +90,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == FaucetPolicyActionNote::script_root() {
+            return Some(Self::FAUCET_POLICY_ACTION);
+        }
 
         None
     }
@@ -99,6 +109,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
         }
     }
 
@@ -111,6 +122,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -123,6 +135,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
         }
     }
 
@@ -135,6 +148,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
         }
     }
 
