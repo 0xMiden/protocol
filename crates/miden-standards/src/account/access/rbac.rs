@@ -188,10 +188,8 @@ impl RoleBasedAccessControl {
     ///
     /// Each seeded role's delegated admin is left unset, so — like any role — it is administered
     /// by the `ADMIN` role until an admin is delegated via `set_role_admin`. This lets an account
-    /// be created already populated with role holders (e.g. domain-specific operator roles)
-    /// alongside the bootstrap administrator. A role mapped to an empty member set is dropped (a
-    /// role with no members is a no-op). Members provided for the `ADMIN` role are merged with
-    /// `initial_admins`.
+    /// be created already populated with role holders alongside the bootstrap administrator. A role
+    /// mapped to an empty member set is dropped: a role with no members is a no-op.
     pub fn with_roles(
         initial_admins: BTreeSet<AccountId>,
         mut roles: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
@@ -252,7 +250,8 @@ impl From<RoleBasedAccessControl> for AccountComponent {
     fn from(rbac: RoleBasedAccessControl) -> Self {
         // Combine the seeded ADMIN members with any additional seeded roles into a single
         // role -> members map. Each seeded role (including ADMIN) leaves its delegated admin unset
-        // (0), so ADMIN administers it.
+        // (0), so ADMIN administers it. Members provided for the `ADMIN` role are merged with
+        // `initial_admins`.
         let mut roles = rbac.initial_roles;
         if !rbac.initial_admins.is_empty() {
             roles
@@ -262,7 +261,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         }
 
         // Seed, for every non-empty role:
-        // - role_config:     [0, 0, 0, role]                  -> [member_count, 0, 0, 0]
+        // - role_config:     [0, 0, 0, role] -> [member_count, 0, 0, 0]
         // - role_membership: [0, role, acct_suffix, acct_prefix] -> [1, 0, 0, 0]
         let mut config_entries = Vec::new();
         let mut membership_entries = Vec::new();

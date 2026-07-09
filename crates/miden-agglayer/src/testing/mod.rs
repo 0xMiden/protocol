@@ -14,13 +14,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountType,
-    AssetCallbackFlag,
-};
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
@@ -41,19 +36,8 @@ use crate::{
 // BRIDGE ACCOUNT HELPERS
 // ================================================================================================
 
-/// A fixed dummy `ADMIN`-role account used for bridge accounts in tests that don't exercise the
-/// admin's role-management powers (granting/revoking the operational roles).
-pub fn bridge_test_admin() -> AccountId {
-    AccountId::dummy(
-        [0xee; 15],
-        AccountIdVersion::Version1,
-        AccountType::Public,
-        AssetCallbackFlag::Disabled,
-    )
-}
-
 /// Creates an existing bridge account seeded with a single holder per operational role and the
-/// fixed [`bridge_test_admin`] as the built-in `ADMIN` role member.
+/// fixed dummy acconunt as the built-in `ADMIN` role member.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     faucet_admin: AccountId,
@@ -66,7 +50,11 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([ger_remover]),
     )
     .expect("single-holder role sets are non-empty");
-    create_bridge_account_builder(seed, bridge_test_admin(), roles)
+
+    let bridge_admin_account =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    create_bridge_account_builder(seed, bridge_admin_account, roles)
         .build_existing()
         .expect("bridge account should be valid")
 }

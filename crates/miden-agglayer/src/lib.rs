@@ -134,10 +134,10 @@ fn create_agglayer_faucet_component(
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
-/// Access control is provided by the RBAC stack (`RoleBasedAccessControl` + `Authority`): `admin`
-/// is seeded as the initial member of the built-in `ADMIN` role, which administers (grants/revokes)
-/// the operational roles, and `roles` seeds the initial holders of the `FAUCET_ADMIN`,
-/// `GER_INJECTOR`, and `GER_REMOVER` roles that gate the bridge's privileged procedures.
+/// Here `admin` is seeded as the initial member of the built-in `ADMIN` role, which administers the
+/// operational roles in case they don't have their own administrators, and `roles` seeds the
+/// initial holders of the `FAUCET_ADMIN`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
+/// bridge's privileged procedures.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.

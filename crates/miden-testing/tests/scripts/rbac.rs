@@ -25,284 +25,6 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
-// HELPERS
-// ================================================================================================
-
-fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
-    let account = AccountBuilder::new([9; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { admin, roles: BTreeMap::new() })
-        .build_existing()?;
-
-    Ok(account)
-}
-
-fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
-    let account = create_rbac_account_with_admin(admin)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-
-    Ok((account, builder.build()?))
-}
-
-fn test_account_id(seed: u8) -> AccountId {
-    AccountId::builder()
-        .account_type(AccountType::Private)
-        .build_with_seed([seed; 32])
-}
-
-fn role(name: &str) -> RoleSymbol {
-    RoleSymbol::new(name).expect("role symbol should be valid")
-}
-
-fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
-    StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
-}
-
-fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKey {
-    StorageMapKey::from_raw(Word::from([
-        Felt::ZERO,
-        Felt::from(role),
-        account_id.suffix(),
-        account_id.prefix().as_felt(),
-    ]))
-}
-
-/// Returns the role's `(member_count, admin_role_symbol)` from on-chain storage.
-fn get_role_config(account: &Account, role: &RoleSymbol) -> anyhow::Result<(Felt, Felt)> {
-    let word = account
-        .storage()
-        .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?;
-    Ok((word[0], word[1]))
-}
-
-fn is_role_member(
-    account: &Account,
-    role: &RoleSymbol,
-    account_id: AccountId,
-) -> anyhow::Result<bool> {
-    let word = account.storage().get_map_item(
-        RoleBasedAccessControl::role_membership_slot(),
-        role_membership_key(role, account_id),
-    )?;
-    Ok(word[0].as_canonical_u64() != 0)
-}
-
-fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
-    let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
-    Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Private)
-        .code(code.into())
-        .build()?)
-}
-
-async fn execute_note_and_apply(
-    mock_chain: &MockChain,
-    account: &Account,
-    note: &Note,
-) -> anyhow::Result<Account> {
-    let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(note))?
-        .build()?;
-    let executed = tx.execute().await?;
-
-    let mut updated = account.clone();
-    updated.apply_patch(executed.account_patch())?;
-
-    Ok(updated)
-}
-
-// SCRIPTS
-// ================================================================================================
-
-fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
-    let admin_role = admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.14 push.0 end
-            push.{admin_role}
-            push.{role}
-            call.rbac::set_role_admin
-            dropw dropw dropw dropw
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
-fn grant_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.rbac::grant_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = account_id.suffix(),
-        role = Felt::from(role),
-    )
-}
-
-fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.rbac::revoke_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = account_id.suffix(),
-        role = Felt::from(role),
-    )
-}
-
-fn renounce_role_script(role: &RoleSymbol) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::renounce_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
-fn assert_role_member_count_script(role: &RoleSymbol, expected_count: u64) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::get_role_member_count
-            eq.{expected_count} assert.err="role member count mismatch"
-            dropw dropw dropw
-            drop drop drop
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
-fn assert_role_has_members_script(role: &RoleSymbol, expected_has_members: bool) -> String {
-    let expected_has_members = u8::from(expected_has_members);
-
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::get_role_member_count
-            neq.0
-            eq.{expected_has_members} assert.err="role population mismatch"
-            dropw dropw dropw
-            drop drop drop
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
-fn assert_role_admin_script(role: &RoleSymbol, expected_admin_role: Option<&RoleSymbol>) -> String {
-    let expected_admin_role = expected_admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
-
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{role}
-            call.rbac::get_role_admin
-            eq.{expected_admin_role} assert.err="role admin mismatch"
-            dropw dropw dropw
-            drop drop drop
-        end
-        "#,
-        role = Felt::from(role),
-    )
-}
-
-fn assert_has_role_script(
-    role: &RoleSymbol,
-    account_id: AccountId,
-    expected_has_role: bool,
-) -> String {
-    let expected_has_role = u8::from(expected_has_role);
-
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.rbac::has_role
-            eq.{expected_has_role} assert.err="account role membership mismatch"
-            dropw dropw dropw
-            drop drop drop
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = account_id.suffix(),
-        role = Felt::from(role),
-    )
-}
-
-fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.14 push.0 end
-            push.{admin_role}
-            push.{role}
-            call.rbac::set_role_admin
-            dropw dropw dropw dropw
-        end
-        "#,
-    )
-}
-
 // TESTS
 // ================================================================================================
 
@@ -727,15 +449,6 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
     Ok(())
 }
 
-/// The action that a role's delegated admin performs exclusively, out of the general `ADMIN`
-/// role's reach.
-enum DelegatedAdminAction {
-    /// Grant the delegated role to a member (`grant_role`).
-    GrantRole,
-    /// Clear the delegation, reverting the role to `ADMIN` management (`set_role_admin(_, None)`).
-    ClearDelegation,
-}
-
 /// Regression test: once a role is delegated to a dedicated admin role, the general `ADMIN` role
 /// is locked out of it entirely — it can neither manage membership (`grant_role`) nor re-point the
 /// delegation (`set_role_admin`). The role becomes exclusively controlled by its delegated admin,
@@ -938,4 +651,291 @@ fn test_rbac_with_roles_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
     assert_eq!(get_role_config(&account, &empty_role)?.0, Felt::ZERO);
 
     Ok(())
+}
+
+// HELPERS
+// ================================================================================================
+
+/// The action that a role's delegated admin performs exclusively, out of the general `ADMIN`
+/// role's reach.
+enum DelegatedAdminAction {
+    /// Grant the delegated role to a member (`grant_role`).
+    GrantRole,
+    /// Clear the delegation, reverting the role to `ADMIN` management (`set_role_admin(_, None)`).
+    ClearDelegation,
+}
+
+fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
+    let account = AccountBuilder::new([9; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_components(AccessControl::Rbac { admin, roles: BTreeMap::new() })
+        .build_existing()?;
+
+    Ok(account)
+}
+
+fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
+    let account = create_rbac_account_with_admin(admin)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    Ok((account, builder.build()?))
+}
+
+fn test_account_id(seed: u8) -> AccountId {
+    AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([seed; 32])
+}
+
+fn role(name: &str) -> RoleSymbol {
+    RoleSymbol::new(name).expect("role symbol should be valid")
+}
+
+fn role_config_key(role: &RoleSymbol) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]))
+}
+
+fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKey {
+    StorageMapKey::from_raw(Word::from([
+        Felt::ZERO,
+        Felt::from(role),
+        account_id.suffix(),
+        account_id.prefix().as_felt(),
+    ]))
+}
+
+/// Returns the role's `(member_count, admin_role_symbol)` from on-chain storage.
+fn get_role_config(account: &Account, role: &RoleSymbol) -> anyhow::Result<(Felt, Felt)> {
+    let word = account
+        .storage()
+        .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?;
+    Ok((word[0], word[1]))
+}
+
+fn is_role_member(
+    account: &Account,
+    role: &RoleSymbol,
+    account_id: AccountId,
+) -> anyhow::Result<bool> {
+    let word = account.storage().get_map_item(
+        RoleBasedAccessControl::role_membership_slot(),
+        role_membership_key(role, account_id),
+    )?;
+    Ok(word[0].as_canonical_u64() != 0)
+}
+
+fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
+    let seed: [u64; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
+    Ok(NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .code(code.into())
+        .build()?)
+}
+
+async fn execute_note_and_apply(
+    mock_chain: &MockChain,
+    account: &Account,
+    note: &Note,
+) -> anyhow::Result<Account> {
+    let tx = mock_chain
+        .build_tx_context(account.clone(), &[], slice::from_ref(note))?
+        .build()?;
+    let executed = tx.execute().await?;
+
+    let mut updated = account.clone();
+    updated.apply_patch(executed.account_patch())?;
+
+    Ok(updated)
+}
+
+// SCRIPTS
+// ================================================================================================
+
+fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
+    let admin_role = admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.14 push.0 end
+            push.{admin_role}
+            push.{role}
+            call.rbac::set_role_admin
+            dropw dropw dropw dropw
+        end
+        "#,
+        role = Felt::from(role),
+    )
+}
+
+fn grant_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
+        role = Felt::from(role),
+    )
+}
+
+fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::revoke_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
+        role = Felt::from(role),
+    )
+}
+
+fn renounce_role_script(role: &RoleSymbol) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.15 push.0 end
+            push.{role}
+            call.rbac::renounce_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        role = Felt::from(role),
+    )
+}
+
+fn assert_role_member_count_script(role: &RoleSymbol, expected_count: u64) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.15 push.0 end
+            push.{role}
+            call.rbac::get_role_member_count
+            eq.{expected_count} assert.err="role member count mismatch"
+            dropw dropw dropw
+            drop drop drop
+        end
+        "#,
+        role = Felt::from(role),
+    )
+}
+
+fn assert_role_has_members_script(role: &RoleSymbol, expected_has_members: bool) -> String {
+    let expected_has_members = u8::from(expected_has_members);
+
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.15 push.0 end
+            push.{role}
+            call.rbac::get_role_member_count
+            neq.0
+            eq.{expected_has_members} assert.err="role population mismatch"
+            dropw dropw dropw
+            drop drop drop
+        end
+        "#,
+        role = Felt::from(role),
+    )
+}
+
+fn assert_role_admin_script(role: &RoleSymbol, expected_admin_role: Option<&RoleSymbol>) -> String {
+    let expected_admin_role = expected_admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
+
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.15 push.0 end
+            push.{role}
+            call.rbac::get_role_admin
+            eq.{expected_admin_role} assert.err="role admin mismatch"
+            dropw dropw dropw
+            drop drop drop
+        end
+        "#,
+        role = Felt::from(role),
+    )
+}
+
+fn assert_has_role_script(
+    role: &RoleSymbol,
+    account_id: AccountId,
+    expected_has_role: bool,
+) -> String {
+    let expected_has_role = u8::from(expected_has_role);
+
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::has_role
+            eq.{expected_has_role} assert.err="account role membership mismatch"
+            dropw dropw dropw
+            drop drop drop
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
+        role = Felt::from(role),
+    )
+}
+
+fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.14 push.0 end
+            push.{admin_role}
+            push.{role}
+            call.rbac::set_role_admin
+            dropw dropw dropw dropw
+        end
+        "#,
+    )
 }
