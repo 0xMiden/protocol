@@ -18,8 +18,8 @@ pub use file::{NoteFile, NoteSyncHint};
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
-mod owner_config;
-pub use owner_config::{OwnerConfigAction, OwnerConfigNote};
+mod owner_action;
+pub use owner_action::{OwnerAction, OwnerActionNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -53,7 +53,10 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    OwnerConfig,
+    // Two-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
+    // uppercase convention of the others (P2ID, MINT, ...).
+    #[allow(non_camel_case_types)]
+    OWNER_ACTION,
 }
 
 impl StandardNote {
@@ -87,8 +90,8 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
-        if root == OwnerConfigNote::script_root() {
-            return Some(Self::OwnerConfig);
+        if root == OwnerActionNote::script_root() {
+            return Some(Self::OWNER_ACTION);
         }
 
         None
@@ -106,7 +109,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
-            Self::OwnerConfig => "OwnerConfig",
+            Self::OWNER_ACTION => "OWNER_ACTION",
         }
     }
 
@@ -119,8 +122,8 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
-            // OwnerConfig storage is variable per action; this returns the upper bound.
-            Self::OwnerConfig => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
+            // OwnerAction storage is variable per action; this returns the upper bound.
+            Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
         }
     }
 
@@ -133,7 +136,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
-            Self::OwnerConfig => OwnerConfigNote::script(),
+            Self::OWNER_ACTION => OwnerActionNote::script(),
         }
     }
 
@@ -146,7 +149,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-            Self::OwnerConfig => OwnerConfigNote::script_root(),
+            Self::OWNER_ACTION => OwnerActionNote::script_root(),
         }
     }
 

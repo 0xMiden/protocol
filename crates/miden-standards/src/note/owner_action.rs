@@ -25,32 +25,32 @@ use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the OWNER_CONFIG note script procedure in the standards library.
-const OWNER_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::owner_config::main";
+/// Path to the OWNER_ACTION note script procedure in the standards library.
+const OWNER_ACTION_SCRIPT_PATH: &str = "::miden::standards::notes::owner_action::main";
 
-// Initialize the OWNER_CONFIG note script only once.
-static OWNER_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the OWNER_ACTION note script only once.
+static OWNER_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(OWNER_CONFIG_SCRIPT_PATH);
+    let path = Path::new(OWNER_ACTION_SCRIPT_PATH);
     NoteScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains OWNER_CONFIG note script procedure")
+        .expect("Standards library contains OWNER_ACTION note script procedure")
 });
 
-// OWNER CONFIG ACTION
+// OWNER ACTION
 // ================================================================================================
 
 /// A management action of the [`Ownable2Step`](crate::account::access::Ownable2Step) component
-/// that an [`OwnerConfigNote`] triggers on the account that consumes it.
+/// that an [`OwnerActionNote`] triggers on the account that consumes it.
 ///
 /// The action, together with its arguments, is encoded into the note's storage (see
 /// [`NoteStorage`] conversion below). Because the storage is fixed at note creation and bound into
 /// the note commitment, the authorized party is the note sender: the consuming account's
 /// `Ownable2Step` procedures authorize against `active_note::get_sender`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OwnerConfigAction {
+pub enum OwnerAction {
     /// Nominate `new_owner` as the new owner (two-step transfer; the nominee must later accept via
-    /// [`OwnerConfigAction::AcceptOwnership`]). A `new_owner` of `None` cancels any pending
-    /// nomination. Only the current owner is authorized.
+    /// [`OwnerAction::AcceptOwnership`]). A `new_owner` of `None` cancels any pending nomination.
+    /// Only the current owner is authorized.
     TransferOwnership { new_owner: Option<AccountId> },
     /// Accept a pending ownership nomination. Only the nominated owner is authorized.
     AcceptOwnership,
@@ -59,11 +59,11 @@ pub enum OwnerConfigAction {
     RenounceOwnership,
 }
 
-impl OwnerConfigAction {
+impl OwnerAction {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with `owner_config.masm`.
+    // Action selectors stored in the first storage item. Keep in sync with `owner_action.masm`.
     const SELECTOR_TRANSFER_OWNERSHIP: u8 = 0;
     const SELECTOR_ACCEPT_OWNERSHIP: u8 = 1;
     const SELECTOR_RENOUNCE_OWNERSHIP: u8 = 2;
@@ -71,7 +71,7 @@ impl OwnerConfigAction {
     /// Returns the note storage values encoding this action, laid out as `[selector, ..args]`.
     fn to_storage_values(self) -> Vec<Felt> {
         match self {
-            OwnerConfigAction::TransferOwnership { new_owner } => {
+            OwnerAction::TransferOwnership { new_owner } => {
                 // [selector, new_owner_suffix, new_owner_prefix]; the zero address (0, 0) is the
                 // cancel value understood by `ownable2step::transfer_ownership`.
                 let (suffix, prefix) = match new_owner {
@@ -80,27 +80,27 @@ impl OwnerConfigAction {
                 };
                 vec![Felt::from(Self::SELECTOR_TRANSFER_OWNERSHIP), suffix, prefix]
             },
-            OwnerConfigAction::AcceptOwnership => {
+            OwnerAction::AcceptOwnership => {
                 vec![Felt::from(Self::SELECTOR_ACCEPT_OWNERSHIP)]
             },
-            OwnerConfigAction::RenounceOwnership => {
+            OwnerAction::RenounceOwnership => {
                 vec![Felt::from(Self::SELECTOR_RENOUNCE_OWNERSHIP)]
             },
         }
     }
 }
 
-impl From<OwnerConfigAction> for NoteStorage {
-    fn from(action: OwnerConfigAction) -> Self {
+impl From<OwnerAction> for NoteStorage {
+    fn from(action: OwnerAction) -> Self {
         NoteStorage::new(action.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// OWNER CONFIG NOTE
+// OWNER ACTION NOTE
 // ================================================================================================
 
-/// An OwnerConfig note: triggers an [`Ownable2Step`](crate::account::access::Ownable2Step)
+/// An OwnerAction note: triggers an [`Ownable2Step`](crate::account::access::Ownable2Step)
 /// management action on the account that consumes it.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
@@ -108,26 +108,25 @@ impl From<OwnerConfigAction> for NoteStorage {
 /// authorization is enforced by those procedures against the note sender, so the note carries no
 /// assets and its authorization is bound to `sender` at creation time.
 ///
-/// The note is tagged for `account` — the account carrying the `Ownable2Step` component whose
-/// ownership state is being managed. The `sender` is the account authorized for the selected
-/// action: the current owner for `TransferOwnership` / `RenounceOwnership`, or the nominated owner
-/// for `AcceptOwnership`.
+/// The note is always public (for network execution) and tagged for `account` — the account
+/// carrying the `Ownable2Step` component whose ownership state is being managed. The `sender` is
+/// the account authorized for the selected action: the current owner for `TransferOwnership` /
+/// `RenounceOwnership`, or the nominated owner for `AcceptOwnership`.
 ///
-/// Construct one with the [builder](OwnerConfigNote::builder); convert it into a protocol [`Note`]
+/// Construct one with the [builder](OwnerActionNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct OwnerConfigNote {
+pub struct OwnerActionNote {
     sender: AccountId,
     account: AccountId,
-    action: OwnerConfigAction,
+    action: OwnerAction,
     serial_number: Word,
-    note_type: NoteType,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl OwnerConfigNote {
-    /// Builds a new [`OwnerConfigNote`] that triggers `action` on `account`.
+impl OwnerActionNote {
+    /// Builds a new [`OwnerActionNote`] that triggers `action` on `account`.
     ///
     /// # Errors
     ///
@@ -138,9 +137,8 @@ impl OwnerConfigNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: OwnerConfigAction,
+        action: OwnerAction,
         serial_number: Word,
-        #[builder(default)] note_type: NoteType,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -149,17 +147,16 @@ impl OwnerConfigNote {
             account,
             action,
             serial_number,
-            note_type,
             attachments,
         })
     }
 }
 
-impl OwnerConfigNote {
+impl OwnerActionNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Upper bound on the number of storage items of an OwnerConfig note.
+    /// Upper bound on the number of storage items of an OwnerAction note.
     ///
     /// The layout is variable: `TransferOwnership` uses 3 items (`[selector, new_owner_suffix,
     /// new_owner_prefix]`), while `AcceptOwnership` / `RenounceOwnership` use 1 (`[selector]`).
@@ -168,14 +165,14 @@ impl OwnerConfigNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the OwnerConfig note.
+    /// Returns the script of the OwnerAction note.
     pub fn script() -> NoteScript {
-        OWNER_CONFIG_SCRIPT.clone()
+        OWNER_ACTION_SCRIPT.clone()
     }
 
-    /// Returns the OwnerConfig note script root.
+    /// Returns the OwnerAction note script root.
     pub fn script_root() -> NoteScriptRoot {
-        OWNER_CONFIG_SCRIPT.root()
+        OWNER_ACTION_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -189,18 +186,13 @@ impl OwnerConfigNote {
     }
 
     /// Returns the management action carried by the note.
-    pub fn action(&self) -> OwnerConfigAction {
+    pub fn action(&self) -> OwnerAction {
         self.action
     }
 
     /// Returns the note's serial number.
     pub fn serial_number(&self) -> Word {
         self.serial_number
-    }
-
-    /// Returns the note's type.
-    pub fn note_type(&self) -> NoteType {
-        self.note_type
     }
 
     /// Returns the attachments carried by the note.
@@ -212,7 +204,7 @@ impl OwnerConfigNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: owner_config_note_builder::State> OwnerConfigNoteBuilder<S> {
+impl<S: owner_action_note_builder::State> OwnerActionNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -229,15 +221,15 @@ impl<S: owner_config_note_builder::State> OwnerConfigNoteBuilder<S> {
     }
 }
 
-impl<S: owner_config_note_builder::State> OwnerConfigNoteBuilder<S>
+impl<S: owner_action_note_builder::State> OwnerActionNoteBuilder<S>
 where
-    S::SerialNumber: owner_config_note_builder::IsUnset,
+    S::SerialNumber: owner_action_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> OwnerConfigNoteBuilder<owner_config_note_builder::SetSerialNumber<S>> {
+    ) -> OwnerActionNoteBuilder<owner_action_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -245,14 +237,15 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<OwnerConfigNote> for Note {
-    fn from(note: OwnerConfigNote) -> Self {
-        // OwnerConfig notes carry no assets; the action and its arguments live in the note storage.
-        let metadata = PartialNoteMetadata::new(note.sender, note.note_type)
+impl From<OwnerActionNote> for Note {
+    fn from(note: OwnerActionNote) -> Self {
+        // OwnerAction notes carry no assets and are always public for network execution; the action
+        // and its arguments live in the note storage.
+        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            OwnerConfigNote::script(),
+            OwnerActionNote::script(),
             NoteStorage::from(note.action),
         );
 
@@ -276,18 +269,18 @@ mod tests {
             .build_with_seed([seed; 32])
     }
 
-    /// The builder produces an asset-less note tagged for the managed account.
+    /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_owner_config_note() {
+    fn builder_builds_owner_action_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
         let owner = account_id(2);
         let new_owner = account_id(3);
 
-        let note = OwnerConfigNote::builder()
+        let note = OwnerActionNote::builder()
             .sender(owner)
             .account(managed)
-            .action(OwnerConfigAction::TransferOwnership { new_owner: Some(new_owner) })
+            .action(OwnerAction::TransferOwnership { new_owner: Some(new_owner) })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -296,7 +289,7 @@ mod tests {
         assert_eq!(note.account(), managed);
 
         let note = Note::from(note);
-        assert_eq!(note.metadata().note_type(), NoteType::Private);
+        assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(managed));
         assert_eq!(note.assets().num_assets(), 0);
     }
@@ -306,12 +299,12 @@ mod tests {
     fn transfer_ownership_storage_layout() {
         let new_owner = account_id(3);
         let storage =
-            NoteStorage::from(OwnerConfigAction::TransferOwnership { new_owner: Some(new_owner) });
+            NoteStorage::from(OwnerAction::TransferOwnership { new_owner: Some(new_owner) });
 
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(OwnerConfigAction::SELECTOR_TRANSFER_OWNERSHIP),
+                Felt::from(OwnerAction::SELECTOR_TRANSFER_OWNERSHIP),
                 new_owner.suffix(),
                 new_owner.prefix().as_felt(),
             ]
@@ -321,25 +314,21 @@ mod tests {
     /// A cancelling `TransferOwnership` encodes the zero address.
     #[test]
     fn cancel_transfer_ownership_storage_layout() {
-        let storage = NoteStorage::from(OwnerConfigAction::TransferOwnership { new_owner: None });
+        let storage = NoteStorage::from(OwnerAction::TransferOwnership { new_owner: None });
 
         assert_eq!(
             storage.items(),
-            &[
-                Felt::from(OwnerConfigAction::SELECTOR_TRANSFER_OWNERSHIP),
-                Felt::ZERO,
-                Felt::ZERO,
-            ]
+            &[Felt::from(OwnerAction::SELECTOR_TRANSFER_OWNERSHIP), Felt::ZERO, Felt::ZERO]
         );
     }
 
     /// `AcceptOwnership` / `RenounceOwnership` storage is a single selector item.
     #[test]
     fn accept_and_renounce_storage_layout() {
-        let accept = NoteStorage::from(OwnerConfigAction::AcceptOwnership);
-        assert_eq!(accept.items(), &[Felt::from(OwnerConfigAction::SELECTOR_ACCEPT_OWNERSHIP)]);
+        let accept = NoteStorage::from(OwnerAction::AcceptOwnership);
+        assert_eq!(accept.items(), &[Felt::from(OwnerAction::SELECTOR_ACCEPT_OWNERSHIP)]);
 
-        let renounce = NoteStorage::from(OwnerConfigAction::RenounceOwnership);
-        assert_eq!(renounce.items(), &[Felt::from(OwnerConfigAction::SELECTOR_RENOUNCE_OWNERSHIP)]);
+        let renounce = NoteStorage::from(OwnerAction::RenounceOwnership);
+        assert_eq!(renounce.items(), &[Felt::from(OwnerAction::SELECTOR_RENOUNCE_OWNERSHIP)]);
     }
 }

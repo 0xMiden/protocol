@@ -7,13 +7,13 @@ use miden::standards::access::ownable2step
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the OwnerConfig note storage.
+# Memory addresses of the OwnerAction note storage.
 const SELECTOR_PTR = STORAGE_PTR
 const NEW_OWNER_SUFFIX_PTR = STORAGE_PTR + 1
 const NEW_OWNER_PREFIX_PTR = STORAGE_PTR + 2
 
-# Action selectors, stored in the first storage item. Keep in sync with `OwnerConfigAction`
-# on the Rust side.
+# Action selectors, stored in the first storage item. Keep in sync with `OwnerAction` on the Rust
+# side.
 const SELECTOR_TRANSFER_OWNERSHIP = 0
 const SELECTOR_ACCEPT_OWNERSHIP = 1
 const SELECTOR_RENOUNCE_OWNERSHIP = 2
@@ -26,14 +26,14 @@ const NUM_ITEMS_RENOUNCE_OWNERSHIP = 1
 # ERRORS
 # =================================================================================================
 
-const ERR_OWNER_CONFIG_UNKNOWN_SELECTOR = "owner config note selector does not match a known action"
+const ERR_OWNER_ACTION_UNKNOWN_SELECTOR = "owner action note selector does not match a known action"
 
-const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note storage item count does not match the selected action"
+const ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner action note storage item count does not match the selected action"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! OwnerConfig script: triggers an `Ownable2Step` management action against the consuming account,
+#! OwnerAction script: triggers an `Ownable2Step` management action against the consuming account,
 #! dispatched on a selector stored in the first note storage item.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation,
@@ -64,40 +64,36 @@ pub proc main
 
     # write the note storage to memory starting at STORAGE_PTR
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, pad(16)]
+    # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items, pad(16)]
+    # => [selector, num_storage_items]
 
     # dispatch on the selector to the matching action procedure
     dup eq.SELECTOR_TRANSFER_OWNERSHIP
-    # => [is_transfer, selector, num_storage_items, pad(16)]
+    # => [is_transfer, selector, num_storage_items]
 
     if.true
         drop
-        # => [num_storage_items, pad(16)]
+        # => [num_storage_items]
 
         exec.execute_transfer_ownership
     else
         dup eq.SELECTOR_ACCEPT_OWNERSHIP
-        # => [is_accept, selector, num_storage_items, pad(16)]
+        # => [is_accept, selector, num_storage_items]
 
         if.true
             drop
-            # => [num_storage_items, pad(16)]
+            # => [num_storage_items]
 
             exec.execute_accept_ownership
         else
-            eq.SELECTOR_RENOUNCE_OWNERSHIP assert.err=ERR_OWNER_CONFIG_UNKNOWN_SELECTOR
-            # => [num_storage_items, pad(16)]
+            eq.SELECTOR_RENOUNCE_OWNERSHIP assert.err=ERR_OWNER_ACTION_UNKNOWN_SELECTOR
+            # => [num_storage_items]
 
             exec.execute_renounce_ownership
         end
     end
-    # => [pad(16), pad(16)]
-
-    # drop the called procedure's output window, restoring the note script's [pad(16)] output
-    dropw dropw dropw dropw
     # => [pad(16)]
 end
 
@@ -107,8 +103,8 @@ end
 #! Executes the TransferOwnership action: nominates a new owner (or cancels a pending nomination
 #! when the stored new owner is the zero address).
 #!
-#! Inputs:  [num_storage_items, pad(16)]
-#! Outputs: [pad(16), pad(16)]
+#! Inputs:  [num_storage_items]
+#! Outputs: []
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_TRANSFER_OWNERSHIP.
@@ -117,23 +113,27 @@ end
 #! Invocation: exec
 proc execute_transfer_ownership
     eq.NUM_ITEMS_TRANSFER_OWNERSHIP
-    assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    # => [pad(16)]
+    assert.err=ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
 
-    # build the `transfer_ownership` input window: [new_owner_suffix, new_owner_prefix, pad(14)]
+    # pad to the `transfer_ownership` input window [new_owner_suffix, new_owner_prefix, pad(14)]
     padw padw padw push.0.0
     mem_load.NEW_OWNER_PREFIX_PTR
     mem_load.NEW_OWNER_SUFFIX_PTR
-    # => [new_owner_suffix, new_owner_prefix, pad(14), pad(16)]
+    # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
     call.ownable2step::transfer_ownership
-    # => [pad(16), pad(16)]
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
 end
 
 #! Executes the AcceptOwnership action: the nominated owner accepts the pending transfer.
 #!
-#! Inputs:  [num_storage_items, pad(16)]
-#! Outputs: [pad(16), pad(16)]
+#! Inputs:  [num_storage_items]
+#! Outputs: []
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_ACCEPT_OWNERSHIP.
@@ -142,21 +142,25 @@ end
 #! Invocation: exec
 proc execute_accept_ownership
     eq.NUM_ITEMS_ACCEPT_OWNERSHIP
-    assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad to the empty `accept_ownership` input window [pad(16)]
+    padw padw padw padw
     # => [pad(16)]
 
-    # build the empty input window: [pad(16)]
-    padw padw padw padw
-    # => [pad(16), pad(16)]
-
     call.ownable2step::accept_ownership
-    # => [pad(16), pad(16)]
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
 end
 
 #! Executes the RenounceOwnership action: the owner renounces ownership.
 #!
-#! Inputs:  [num_storage_items, pad(16)]
-#! Outputs: [pad(16), pad(16)]
+#! Inputs:  [num_storage_items]
+#! Outputs: []
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_RENOUNCE_OWNERSHIP.
@@ -165,13 +169,17 @@ end
 #! Invocation: exec
 proc execute_renounce_ownership
     eq.NUM_ITEMS_RENOUNCE_OWNERSHIP
-    assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad to the empty `renounce_ownership` input window [pad(16)]
+    padw padw padw padw
     # => [pad(16)]
 
-    # build the empty input window: [pad(16)]
-    padw padw padw padw
-    # => [pad(16), pad(16)]
-
     call.ownable2step::renounce_ownership
-    # => [pad(16), pad(16)]
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
 end
