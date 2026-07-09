@@ -245,7 +245,7 @@ impl AuthMultisig {
             .copied()
             .unwrap_or_else(|| config.default_threshold());
 
-        for (_, &threshold) in config.proc_thresholds() {
+        for &threshold in config.proc_thresholds().values() {
             if threshold > setter_threshold {
                 return Err(AccountError::other(format!(
                     "per-procedure threshold override of {threshold} exceeds the threshold of \
