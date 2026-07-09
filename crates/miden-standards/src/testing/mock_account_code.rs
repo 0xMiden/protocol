@@ -193,9 +193,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc get_asset
         exec.active_account::get_asset
         # => [ASSET_VALUE, pad(12)]
-
-        exec.sys::truncate_stack
-        # => [ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [ASSET_ID, pad(12)]
@@ -203,9 +200,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     @account_procedure
     pub proc get_initial_asset
         exec.native_account::get_initial_asset
-        # => [ASSET_VALUE, pad(12)]
-
-        exec.sys::truncate_stack
         # => [ASSET_VALUE, pad(12)]
     end
 
@@ -215,9 +209,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc get_balance
         exec.active_account::get_balance
         # => [balance, pad(15)]
-
-        exec.sys::truncate_stack
-        # => [balance, pad(15)]
     end
 
     #! Inputs:  [ASSET_ID, pad(12)]
@@ -226,9 +217,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc get_initial_balance
         exec.native_account::get_initial_balance
         # => [init_balance, pad(15)]
-
-        exec.sys::truncate_stack
-        # => [init_balance, pad(15)]
     end
 
     #! Inputs:  [ASSET_ID, pad(12)]
@@ -236,9 +224,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     @account_procedure
     pub proc has_non_fungible_asset
         exec.active_account::has_non_fungible_asset
-        # => [has_asset, pad(15)]
-
-        exec.sys::truncate_stack
         # => [has_asset, pad(15)]
     end
 
@@ -270,9 +255,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc has_procedure
         exec.active_account::has_procedure
         # => [is_available, pad(15)]
-
-        exec.sys::truncate_stack
-        # => [is_available, pad(15)]
     end
 
     #! Inputs:  [pad(16)]
@@ -291,9 +273,6 @@ const MOCK_ACCOUNT_CODE: &str = "
     @account_procedure
     pub proc was_procedure_called
         exec.native_account::was_procedure_called
-        # => [was_called, pad(15)]
-
-        exec.sys::truncate_stack
         # => [was_called, pad(15)]
     end
 
