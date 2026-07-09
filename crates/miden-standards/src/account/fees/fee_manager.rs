@@ -43,6 +43,11 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+static SPAWN_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fees::fee_manager::spawn_schedule")
+        .expect("storage slot name should be valid")
+});
+
 procedure_root!(
     FEE_MANAGER_GET_FEE_ASSET_ID_ROOT,
     FeeManager::NAME,
@@ -164,6 +169,7 @@ impl FeeScheduleEntry {
 pub struct FeeManager {
     fee_asset_id: Word,
     schedule: BTreeMap<NoteScriptRoot, FeeScheduleEntry>,
+    spawn: BTreeMap<NoteScriptRoot, NoteScriptRoot>,
 }
 
 impl FeeManager {
@@ -190,12 +196,24 @@ impl FeeManager {
         Ok(Self {
             fee_asset_id: fee_asset.to_id_word(),
             schedule: BTreeMap::new(),
+            spawn: BTreeMap::new(),
         })
     }
 
     /// Prices the provided note script root.
     pub fn with_fee(mut self, script_root: NoteScriptRoot, entry: FeeScheduleEntry) -> Self {
         self.schedule.insert(script_root, entry);
+        self
+    }
+
+    /// Declares that a note bearing `parent` spawns a note bearing `child`.
+    ///
+    /// The account must declare this rather than derive it: `output_note::create` records only a
+    /// recipient, into which the script root is hashed irreversibly, so the kernel never learns an
+    /// output note's script root. Without the declaration the account cannot price the note it is
+    /// about to spawn, and so cannot sponsor the next hop of a chained network transaction.
+    pub fn with_spawn(mut self, parent: NoteScriptRoot, child: NoteScriptRoot) -> Self {
+        self.spawn.insert(parent, child);
         self
     }
 
@@ -237,6 +255,11 @@ impl FeeManager {
         &FEE_SCHEDULE_SLOT_NAME
     }
 
+    /// Returns the storage slot name of the spawn schedule map.
+    pub fn spawn_schedule_slot() -> &'static StorageSlotName {
+        &SPAWN_SCHEDULE_SLOT_NAME
+    }
+
     /// Returns the ASSET_ID word of the asset this account accepts fees in.
     pub fn fee_asset_id(&self) -> Word {
         self.fee_asset_id
@@ -270,6 +293,14 @@ impl FeeManager {
                     SchemaType::native_word(),
                 ),
             ),
+            (
+                SPAWN_SCHEDULE_SLOT_NAME.clone(),
+                StorageSlotSchema::map(
+                    "Spawn schedule (parent note script root -> child note script root)",
+                    SchemaType::native_word(),
+                    SchemaType::native_word(),
+                ),
+            ),
         ];
 
         let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
@@ -293,11 +324,21 @@ impl From<FeeManager> for AccountComponent {
             (StorageMapKey::new(script_root.as_word()), entry.to_word())
         });
 
+        let spawn_entries = fee_manager
+            .spawn
+            .into_iter()
+            .map(|(parent, child)| (StorageMapKey::new(parent.as_word()), child.as_word()));
+
         let slots: Vec<StorageSlot> = vec![
             StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), fee_manager.fee_asset_id),
             StorageSlot::with_map(
                 FEE_SCHEDULE_SLOT_NAME.clone(),
                 StorageMap::with_entries(entries).expect("fee schedule map should be valid"),
+            ),
+            StorageSlot::with_map(
+                SPAWN_SCHEDULE_SLOT_NAME.clone(),
+                StorageMap::with_entries(spawn_entries)
+                    .expect("spawn schedule map should be valid"),
             ),
         ];
 
