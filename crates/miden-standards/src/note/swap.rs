@@ -194,7 +194,7 @@ pub struct SwapNoteStorage {
 /// - [`SwapPayback::Private`] embeds the precomputed P2ID recipient digest as an opaque value, so
 ///   the SWAP storage alone does not reveal who the payback targets.
 /// - [`SwapPayback::Public`] embeds the payback target account id in plaintext, so any consumer can
-///   reconstruct the payback recipient at consume time via `p2id::new`.
+///   reconstruct the payback recipient at consume time via `p2id::create_parts`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwapPayback {
     Private {

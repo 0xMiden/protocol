@@ -103,12 +103,12 @@ pub proc main
         mem_load.PAYBACK_TAG_PTR
         # => [tag, note_type, s0', s1, s2, s3]
 
-        # Load prefix then suffix so suffix ends on top, as `p2id::new` expects.
+        # Load prefix then suffix so suffix ends on top, as `p2id::create_parts` expects.
         mem_load.PAYBACK_TARGET_PREFIX_PTR
         mem_load.PAYBACK_TARGET_SUFFIX_PTR
         # => [target_suffix, target_prefix, tag, note_type, s0', s1, s2, s3]
 
-        exec.p2id::new
+        exec.p2id::create_parts
         # => [tag, note_type, PAYBACK_RECIPIENT]
     end
     # => [tag, note_type, PAYBACK_RECIPIENT]

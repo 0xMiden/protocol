@@ -7,8 +7,7 @@
 #   gated by the active mint policy)
 # - `receive_and_burn` for bridge-out
 # - `has_procedure` from the CodeInspection component, so the unified MINT/BURN note scripts can
-#   reflectively detect the faucet kind via `call.code_inspection::has_procedure` (the
-#   account-context guard requires the reflected procedure to be part of the account's interface)
+#   reflectively detect the faucet kind.
 
 pub use {mint_and_send} from agglayer::faucet
 pub use {receive_and_burn} from agglayer::faucet

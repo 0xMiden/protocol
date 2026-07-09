@@ -60,23 +60,26 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
 
         @transaction_script
         pub proc main
+            # drop the transaction script args
+            dropw
+            # => [pad(16)]
+
             # create an output note with fungible asset
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            # Note creation must originate from the account context, so route through the account's
-            # `create_note` procedure. Pad the stack for the `call` convention.
-            push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+            # => [tag, note_type, RECIPIENT, pad(16)]
+
             call.::miden::standards::wallets::basic::create_note
-            movdn.15 dropw dropw dropw drop drop drop
-            # => [note_idx]
+            # => [note_idx, pad(21)]
 
             # move the asset to the note
-            dup
             push.{ASSET_VALUE}
             push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(21)]
+
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [note_idx]
+            # => [pad(30)]
 
             # truncate the stack
             exec.sys::truncate_stack

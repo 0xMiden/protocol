@@ -72,8 +72,8 @@ end
 #! - nonce is the active account's nonce.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc get_nonce
@@ -104,8 +104,8 @@ end
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc compute_commitment
@@ -205,8 +205,8 @@ end
 #! - VAULT_ROOT is the root of the account vault.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc get_vault_root
@@ -341,8 +341,8 @@ end
 #!   present.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc get_asset
@@ -373,8 +373,8 @@ end
 #! - balance is the vault balance of the fungible asset.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #! - the asset composition encoded in ASSET_ID is not fungible.
 #!
 #! Invocation: exec
@@ -404,8 +404,8 @@ end
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #! - the ASSET_VALUE is a fungible asset.
 #!
 #! Invocation: exec
@@ -433,8 +433,8 @@ end
 #! - num_procedures is the number of procedures in the active account.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc get_num_procedures
@@ -463,8 +463,8 @@ end
 #! - PROC_ROOT is the hash of the procedure.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: exec
@@ -501,8 +501,8 @@ end
 #!   available on the active account.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc has_procedure

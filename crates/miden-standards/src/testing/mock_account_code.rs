@@ -119,103 +119,182 @@ const MOCK_ACCOUNT_CODE: &str = "
     # READ-ONLY GETTERS
     # ---------------------------------------------------------------------------------------------
     # These wrap the account-context-only read procedures so tests can invoke them through the
-    # account (via `call`). Each truncates the stack so the account procedure returns at most 16
-    # elements as required by the `call` convention.
+    # account via `call`.
 
-    #! Inputs:  [pad(16)]  Outputs: [INIT_COMMITMENT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_COMMITMENT, pad(12)]
     @account_procedure
     pub proc get_initial_commitment
-        exec.native_account::get_initial_commitment exec.sys::truncate_stack
+        exec.native_account::get_initial_commitment
+        # => [INIT_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [ACCOUNT_COMMITMENT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
     @account_procedure
     pub proc compute_commitment
-        exec.active_account::compute_commitment exec.sys::truncate_stack
+        exec.active_account::compute_commitment
+        # => [ACCOUNT_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [ACCOUNT_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [nonce, pad(15)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [nonce, pad(15)]
     @account_procedure
     pub proc get_nonce
-        exec.active_account::get_nonce exec.sys::truncate_stack
+        exec.active_account::get_nonce
+        # => [nonce, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [nonce, pad(15)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
     @account_procedure
     pub proc get_initial_storage_commitment
-        exec.native_account::get_initial_storage_commitment exec.sys::truncate_stack
+        exec.native_account::get_initial_storage_commitment
+        # => [INIT_STORAGE_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_STORAGE_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [INIT_VAULT_ROOT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_VAULT_ROOT, pad(12)]
     @account_procedure
     pub proc get_initial_vault_root
-        exec.native_account::get_initial_vault_root exec.sys::truncate_stack
+        exec.native_account::get_initial_vault_root
+        # => [INIT_VAULT_ROOT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_VAULT_ROOT, pad(12)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [VAULT_ROOT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [VAULT_ROOT, pad(12)]
     @account_procedure
     pub proc get_vault_root
-        exec.active_account::get_vault_root exec.sys::truncate_stack
+        exec.active_account::get_vault_root
+        # => [VAULT_ROOT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [VAULT_ROOT, pad(12)]
     end
 
-    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc get_asset
-        exec.active_account::get_asset exec.sys::truncate_stack
+        exec.active_account::get_asset
+        # => [ASSET_VALUE, pad(12)]
+
+        exec.sys::truncate_stack
+        # => [ASSET_VALUE, pad(12)]
     end
 
-    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_asset
-        exec.native_account::get_initial_asset exec.sys::truncate_stack
+        exec.native_account::get_initial_asset
+        # => [ASSET_VALUE, pad(12)]
+
+        exec.sys::truncate_stack
+        # => [ASSET_VALUE, pad(12)]
     end
 
-    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [balance, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [balance, pad(15)]
     @account_procedure
     pub proc get_balance
-        exec.active_account::get_balance exec.sys::truncate_stack
+        exec.active_account::get_balance
+        # => [balance, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [balance, pad(15)]
     end
 
-    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [init_balance, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [init_balance, pad(15)]
     @account_procedure
     pub proc get_initial_balance
-        exec.native_account::get_initial_balance exec.sys::truncate_stack
+        exec.native_account::get_initial_balance
+        # => [init_balance, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [init_balance, pad(15)]
     end
 
-    #! Inputs:  [ASSET_ID, pad(12)]  Outputs: [has_asset, pad(15)]
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [has_asset, pad(15)]
     @account_procedure
     pub proc has_non_fungible_asset
-        exec.active_account::has_non_fungible_asset exec.sys::truncate_stack
+        exec.active_account::has_non_fungible_asset
+        # => [has_asset, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [has_asset, pad(15)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [num_procedures, pad(15)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [num_procedures, pad(15)]
     @account_procedure
     pub proc get_num_procedures
-        exec.active_account::get_num_procedures exec.sys::truncate_stack
+        exec.active_account::get_num_procedures
+        # => [num_procedures, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [num_procedures, pad(15)]
     end
 
-    #! Inputs:  [index, pad(15)]  Outputs: [PROC_ROOT, pad(12)]
+    #! Inputs:  [index, pad(15)]
+    #! Outputs: [PROC_ROOT, pad(12)]
     @account_procedure
     pub proc get_procedure_root
-        exec.active_account::get_procedure_root exec.sys::truncate_stack
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [PROC_ROOT, pad(12)]
     end
 
-    #! Inputs:  [PROC_ROOT, pad(12)]  Outputs: [is_available, pad(15)]
+    #! Inputs:  [PROC_ROOT, pad(12)]
+    #! Outputs: [is_available, pad(15)]
     @account_procedure
     pub proc has_procedure
-        exec.active_account::has_procedure exec.sys::truncate_stack
+        exec.active_account::has_procedure
+        # => [is_available, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [is_available, pad(15)]
     end
 
-    #! Inputs:  [pad(16)]  Outputs: [DELTA_COMMITMENT, pad(12)]
+    #! Inputs:  [pad(16)]
+    #! Outputs: [DELTA_COMMITMENT, pad(12)]
     @account_procedure
     pub proc compute_delta_commitment
-        exec.native_account::compute_delta_commitment exec.sys::truncate_stack
+        exec.native_account::compute_delta_commitment
+        # => [DELTA_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [DELTA_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [PROC_ROOT, pad(12)]  Outputs: [was_called, pad(15)]
+    #! Inputs:  [PROC_ROOT, pad(12)]
+    #! Outputs: [was_called, pad(15)]
     @account_procedure
     pub proc was_procedure_called
-        exec.native_account::was_procedure_called exec.sys::truncate_stack
+        exec.native_account::was_procedure_called
+        # => [was_called, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [was_called, pad(15)]
     end
 
     #! Inputs:  [pad(16)]

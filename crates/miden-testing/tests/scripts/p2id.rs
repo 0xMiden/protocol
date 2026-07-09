@@ -351,12 +351,6 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
             # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
             exec.p2id::new
-            # => [tag, note_type, RECIPIENT]
-
-            # `p2id::new` only computes the recipient; create the note from the account context.
-            push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-            call.::miden::standards::wallets::basic::create_note
-            movdn.15 dropw dropw dropw drop drop drop
             # => [note_idx]
 
             # Add an asset to the created note

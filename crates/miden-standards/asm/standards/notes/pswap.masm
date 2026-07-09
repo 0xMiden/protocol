@@ -234,28 +234,13 @@ proc create_p2id_note
     # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
 
     exec.p2id::new
-    # => [tag, note_type, RECIPIENT, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
-
-    # Stash the requested-fill parameters (which sit below the note-creation args) to locals so the
-    # `create_note` call sees only [tag, note_type, RECIPIENT].
-    movup.6 loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
-    movup.6 loc_store.P2ID_REQUESTED_FAUCET_PREFIX
-    movup.6 loc_store.P2ID_AMT_ACCOUNT_FILL
-    movup.6 loc_store.P2ID_AMT_NOTE_FILL
-    # => [tag, note_type, RECIPIENT]
-
-    # Note creation must originate from the account context, so route through the account's
-    # `create_note` procedure. Pad the stack for the `call` convention.
-    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, note_type, RECIPIENT, pad(10)]
-
-    call.wallet::create_note
-    # => [note_idx, pad(15)]
-
-    movdn.15 dropw dropw dropw drop drop drop
-    # => [note_idx]
+    # => [note_idx, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     loc_store.P2ID_NOTE_IDX
+    loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
+    loc_store.P2ID_REQUESTED_FAUCET_PREFIX
+    loc_store.P2ID_AMT_ACCOUNT_FILL
+    loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
     # The add cannot overflow: `execute_pswap` overflow-checks and validates the fill sum first.

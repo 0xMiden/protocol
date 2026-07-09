@@ -3,7 +3,6 @@ use {ASSET_SIZE} from miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
-use miden::core::sys
 
 # CONSTANTS
 # =================================================================================================
@@ -56,10 +55,6 @@ end
 @account_procedure
 pub proc create_note
     exec.output_note::create
-    # => [note_idx, pad(15)]
-
-    # the caller may pass a full stack, so truncate to satisfy the `call` return convention
-    exec.sys::truncate_stack
     # => [note_idx, pad(15)]
 end
 

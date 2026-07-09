@@ -126,8 +126,8 @@ pub proc unlock_and_send
     dropw
     # => []
 
-    # Build p2id::new's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from the
-    # bottom up.
+    # Build p2id::create_parts's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from
+    # the bottom up.
     padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
@@ -143,11 +143,11 @@ pub proc unlock_and_send
     loc_load.UNLOCK_DEST_PREFIX_LOC loc_load.UNLOCK_DEST_SUFFIX_LOC
     # => [dest_suffix, dest_prefix, dest_tag, note_type, SERIAL_NUM]
 
-    exec.p2id::new
+    exec.p2id::create_parts
     # => [tag, note_type, RECIPIENT]
 
     # `unlock_and_send` runs inside the `claim` account procedure, so the note may be created
-    # directly here: `output_note::create`'s caller boundary is `claim`, a valid account procedure.
+    # directly here
     exec.output_note::create
     # => [note_idx]
 

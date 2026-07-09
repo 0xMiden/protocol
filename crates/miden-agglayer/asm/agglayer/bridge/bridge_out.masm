@@ -647,8 +647,7 @@ proc create_burn_note
     # => [tag, note_type, RECIPIENT]
 
     # `bridge_out` is itself an account procedure, so note creation may originate here directly
-    # via `exec` (the caller boundary the kernel authenticates is `bridge_out`, which is a procedure
-    # of the active account).
+    # via `exec`
     exec.output_note::create
     # => [note_idx]
 

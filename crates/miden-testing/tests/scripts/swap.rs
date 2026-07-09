@@ -165,7 +165,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
 // Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
 // the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
-// serial number, then registers it with the advice provider via `p2id::new ->
+// serial number, then registers it with the advice provider via `p2id::create_parts ->
 // note::build_recipient`.
 #[tokio::test]
 async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {

@@ -15,10 +15,8 @@ use miden_protocol::utils::sync::LazyLock;
 use crate::StandardsLib;
 use crate::testing::mock_account_code::MockAccountCodeExt;
 
-// Note: note creation must originate from the account context (the `output_note::create` kernel
-// procedure authenticates the caller). These helpers therefore delegate to the account procedures
-// exposed by the mock account (`mock::account`), which perform the actual creation. Each helper
-// then normalizes the stack to preserve the historical `exec`-based output shape.
+// Note: note creation must originate from the account context. These helpers therefore delegate to
+// the account procedures exposed by the mock account, which perform the actual creation.
 const MOCK_UTIL_LIBRARY_CODE: &str = "
     use miden::standards::wallets::basic as wallet
 
@@ -26,6 +24,7 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     #! Outputs: [note_idx]
     pub proc create_default_note
         call.::mock::account::create_default_note
+
         # drop the 15 pad elements the account-procedure call convention leaves
         movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx]
@@ -35,6 +34,7 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     #! Outputs: []
     pub proc create_default_note_with_asset
         call.::mock::account::create_default_note_with_asset
+
         # drop the pad elements the account-procedure call convention leaves
         dropw dropw dropw dropw
         # => []
@@ -44,6 +44,7 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     #! Outputs: []
     pub proc create_default_note_with_moved_asset
         call.::mock::account::create_default_note_with_moved_asset
+
         # drop the pad elements the account-procedure call convention leaves
         dropw dropw dropw dropw
         # => []

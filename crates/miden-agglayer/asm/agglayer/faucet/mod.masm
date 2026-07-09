@@ -30,8 +30,7 @@ pub use {receive_and_burn} from miden::standards::faucets::fungible
 pub use {mint_and_send} from miden::standards::faucets::fungible
 
 #! Re-export the CodeInspection component's `has_procedure` procedure so the unified MINT/BURN note
-#! scripts can reflectively detect the faucet kind via `call.code_inspection::has_procedure`. The
-#! account-context guard requires the reflected procedure to be part of the account's interface.
+#! scripts can reflectively detect the faucet kind.
 #!
 #! See `miden::standards::inspection::code_inspection::has_procedure` for more details.
 #!

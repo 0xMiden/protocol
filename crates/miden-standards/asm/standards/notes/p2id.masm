@@ -73,11 +73,10 @@ end
 #! - Obtaining the note script root via procref
 #! - Building the recipient
 #!
-#! Note creation itself is intentionally left to the caller: `output_note::create` must originate
-#! from the active account's context, and only the caller knows how to reach it (a note/tx script
-#! must `call` the account's `create_note` procedure, whereas an account procedure can create the
-#! note directly via `exec`). Keeping `p2id::new` creation-agnostic lets it be shared by accounts
-#! that expose different procedures (e.g. a basic wallet vs. the agglayer bridge).
+#! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
+#! already inside an account procedure and can create the note directly via `exec.output_note::create`
+#! (e.g. the agglayer bridge code). Otherwise use `p2id::new`, which routes creation through the
+#! account's `create_note` procedure and can therefore be used from note or transaction scripts.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [tag, note_type, RECIPIENT]
@@ -92,7 +91,7 @@ end
 #!
 #! Invocation: exec
 @locals(2)
-pub proc new
+pub proc create_parts
     # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
     loc_store.TARGET_ACCOUNT_ID_SUFFIX_PTR loc_store.TARGET_ACCOUNT_ID_PREFIX_PTR
@@ -115,4 +114,42 @@ pub proc new
 
     movup.5 movup.5
     # => [tag, note_type, RECIPIENT]
+end
+
+#! Creates a new P2ID output note from the given inputs and returns its index.
+#!
+#! Note creation must originate from the account context, so this procedure routes creation through
+#! the account's `basic_wallet::create_note` procedure. This lets `p2id::new` be used from contexts
+#! outside the account code, such as note or transaction scripts. Callers that are already inside an
+#! account procedure should instead use `p2id::create_parts` together with `exec.output_note::create`.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::wallets::basic::create_note procedure.
+#!
+#! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - target_id_suffix is the suffix felt of the target account ID.
+#! - target_id_prefix is the prefix felt of the target account ID.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the storage type of the note (1 = public, 2 = private).
+#! - SERIAL_NUM is the serial number of the note (4 elements).
+#! - note_idx is the index of the created note.
+#!
+#! Invocation: exec
+pub proc new
+    exec.create_parts
+    # => [tag, note_type, RECIPIENT]
+
+    # Note creation must originate from the account context, so route through the account's
+    # `create_note` procedure. Pad the stack for the `call` convention.
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.basic_wallet::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
 end

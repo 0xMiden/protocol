@@ -114,8 +114,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment
     # pad the stack
@@ -517,8 +517,8 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (e.g. it is called from a note or
-#!   transaction script instead of the account's code).
+#! - the procedure is not invoked from the account context (it was called outside of the account
+#!   code).
 #!
 #! Invocation: exec
 pub proc was_procedure_called
