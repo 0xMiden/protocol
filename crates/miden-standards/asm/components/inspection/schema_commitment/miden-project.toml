@@ -1,10 +1,10 @@
 [package]
-name              = "miden-standards-metadata-schema-commitment"
+name              = "miden-standards-inspection-schema-commitment"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::metadata::schema_commitment"
+namespace = "miden::standards::components::inspection::schema_commitment"
 path      = "schema_commitment.masm"
 
 [dependencies]
