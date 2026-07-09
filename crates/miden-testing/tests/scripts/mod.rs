@@ -5,6 +5,7 @@ mod code_inspection;
 mod expiration;
 mod faucet;
 mod fee;
+mod network_sponsorship;
 mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;
