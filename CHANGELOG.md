@@ -100,6 +100,19 @@
 - Refactor `asset_vault::add_asset` and `faucet::mint` to use a unified path for all asset types, in preparation of custom asset ([#3217](https://github.com/0xMiden/protocol/pull/3217)).
 - Refactor `asset_vault::remove_asset` and `faucet::burn` to use a unified path for all asset types, in preparation of custom assets ([#3078](https://github.com/0xMiden/protocol/issues/3078)).
 - [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
+- [BREAKING] Moved the fungible asset procedures out of the protocol layer into the new `miden::standards::assets::fungible_asset` module ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+  - Moved `protocol::asset::create_fungible_id` -> `create_id`
+  - Moved `protocol::faucet::create_fungible_asset` -> `create`
+  - Moved `protocol::asset::create_fungible_asset` -> `from_parts`
+  - Moved `protocol::active_account::get_balance` -> `get_balance`
+  - Moved `protocol::native_account::get_initial_balance` -> `get_initial_balance`
+  - Moved `protocol::asset::fungible_value_into_amount` -> `value_into_amount`
+  - Moved `protocol::asset::fungible_to_amount` -> `to_amount`
+- [BREAKING] Moved the non-fungible asset procedures out of the protocol layer into the new `miden::standards::assets::non_fungible_asset` module ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+  - Moved `protocol::faucet::create_non_fungible_asset` -> `create`
+  - Moved `protocol::asset::create_non_fungible_asset` -> `from_parts`
+  - Moved `protocol::asset::non_fungible_value_into_asset_class` -> `value_into_asset_class`
+- [BREAKING] Renamed and generalized `miden::protocol::active_account::has_non_fungible_asset` to `has_asset`, which now accepts any asset ID instead of only non-fungible assets ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 
 ### Fixes
 
