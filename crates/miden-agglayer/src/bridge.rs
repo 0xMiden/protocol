@@ -124,8 +124,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 // BRIDGE RBAC ROLES
 // ================================================================================================
 
-static FAUCET_ADMIN_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
-    RoleSymbol::new("FAUCET_ADMIN").expect("FAUCET_ADMIN role symbol should be valid")
+static FAUCET_MANAGER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
+    RoleSymbol::new("FAUCET_MNGR").expect("FAUCET_MNGR role symbol should be valid")
 });
 static GER_INJECTOR_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
     RoleSymbol::new("GER_INJECTOR").expect("GER_INJECTOR role symbol should be valid")
@@ -174,12 +174,12 @@ procedure_root!(
 ///
 /// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
 /// set of bridge procedures:
-/// - `FAUCET_ADMIN` gates `register_faucet` and `store_faucet_metadata_hash`.
+/// - `FAUCET_MNGR` gates `register_faucet` and `store_faucet_metadata_hash`.
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
-    faucet_admins: BTreeSet<AccountId>,
+    faucet_managers: BTreeSet<AccountId>,
     ger_injectors: BTreeSet<AccountId>,
     ger_removers: BTreeSet<AccountId>,
 }
@@ -192,12 +192,12 @@ impl BridgeRoles {
     /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the three roles is given an empty
     /// set of holders.
     pub fn new(
-        faucet_admins: BTreeSet<AccountId>,
+        faucet_managers: BTreeSet<AccountId>,
         ger_injectors: BTreeSet<AccountId>,
         ger_removers: BTreeSet<AccountId>,
     ) -> Result<Self, AgglayerBridgeError> {
         for (role, members) in [
-            (AggLayerBridge::faucet_admin_role(), &faucet_admins),
+            (AggLayerBridge::faucet_manager_role(), &faucet_managers),
             (AggLayerBridge::ger_injector_role(), &ger_injectors),
             (AggLayerBridge::ger_remover_role(), &ger_removers),
         ] {
@@ -207,7 +207,7 @@ impl BridgeRoles {
         }
 
         Ok(Self {
-            faucet_admins,
+            faucet_managers,
             ger_injectors,
             ger_removers,
         })
@@ -216,7 +216,7 @@ impl BridgeRoles {
     /// Returns the RBAC role-membership map used to seed the account's RBAC component.
     pub(crate) fn role_members(&self) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
         BTreeMap::from([
-            (AggLayerBridge::faucet_admin_role(), self.faucet_admins.clone()),
+            (AggLayerBridge::faucet_manager_role(), self.faucet_managers.clone()),
             (AggLayerBridge::ger_injector_role(), self.ger_injectors.clone()),
             (AggLayerBridge::ger_remover_role(), self.ger_removers.clone()),
         ])
@@ -300,10 +300,10 @@ impl AggLayerBridge {
         &BRIDGE_COMPONENT_CODE
     }
 
-    /// Returns the `FAUCET_ADMIN` role symbol. Holders may register faucets and store faucet
+    /// Returns the `FAUCET_MNGR` role symbol. Holders may register faucets and store faucet
     /// metadata (`register_faucet`, `store_faucet_metadata_hash`).
-    pub fn faucet_admin_role() -> RoleSymbol {
-        FAUCET_ADMIN_ROLE.clone()
+    pub fn faucet_manager_role() -> RoleSymbol {
+        FAUCET_MANAGER_ROLE.clone()
     }
 
     /// Returns the `GER_INJECTOR` role symbol. Holders may inject GERs (`update_ger`).
@@ -346,9 +346,9 @@ impl AggLayerBridge {
     /// required to invoke it.
     pub fn procedure_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
         BTreeMap::from([
-            (Self::register_faucet_root(), Self::faucet_admin_role()),
-            (Self::store_faucet_metadata_hash_root(), Self::faucet_admin_role()),
-            (Self::deregister_faucet_root(), Self::faucet_admin_role()),
+            (Self::register_faucet_root(), Self::faucet_manager_role()),
+            (Self::store_faucet_metadata_hash_root(), Self::faucet_manager_role()),
+            (Self::deregister_faucet_root(), Self::faucet_manager_role()),
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
         ])

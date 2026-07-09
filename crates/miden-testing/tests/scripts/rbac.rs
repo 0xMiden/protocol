@@ -611,9 +611,9 @@ async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `RoleBasedAccessControl::with_roles` seeds the `ADMIN` role plus arbitrary operator roles at
-/// construction. Each seeded operator role's delegated admin is left unset (0), and a role mapped
-/// to an empty member set is dropped.
+/// `RoleBasedAccessControl::with_role_members` seeds the `ADMIN` role plus arbitrary operator
+/// roles at construction. Each seeded operator role's delegated admin is left unset (0), and a role
+/// mapped to an empty member set is dropped.
 #[test]
 fn test_rbac_with_roles_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
     let admin = test_account_id(201);
@@ -628,7 +628,7 @@ fn test_rbac_with_roles_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_component(RoleBasedAccessControl::with_roles(
+        .with_component(RoleBasedAccessControl::with_role_members(
             BTreeSet::from([admin]),
             BTreeMap::from([
                 (minter_role.clone(), BTreeSet::from([minter])),
@@ -669,7 +669,7 @@ fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { admin, roles: BTreeMap::new() })
+        .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() })
         .build_existing()?;
 
     Ok(account)

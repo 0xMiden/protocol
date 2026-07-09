@@ -13,7 +13,7 @@ use super::test_utils::create_existing_bridge_account_with_roles;
 fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -25,7 +25,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );

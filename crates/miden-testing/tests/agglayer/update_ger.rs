@@ -51,9 +51,9 @@ static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
 async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER injector)
+    // CREATE FAUCET MANAGER ACCOUNT (not used in this test, but distinct from GER injector)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -74,7 +74,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -284,8 +284,8 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
 async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -303,7 +303,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -353,7 +353,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
 async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -366,7 +366,7 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );

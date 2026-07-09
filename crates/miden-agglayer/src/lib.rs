@@ -136,7 +136,7 @@ fn create_agglayer_faucet_component(
 ///
 /// Here `admin` is seeded as the initial member of the built-in `ADMIN` role, which administers the
 /// operational roles in case they don't have their own administrators, and `roles` seeds the
-/// initial holders of the `FAUCET_ADMIN`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
+/// initial holders of the `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
 /// bridge's privileged procedures.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
@@ -149,11 +149,13 @@ fn create_bridge_account_builder(
     Account::builder(seed.into())
         .account_type(AccountType::Public)
         .with_component(AggLayerBridge)
-        .with_component(RoleBasedAccessControl::with_roles(
+        .with_component(RoleBasedAccessControl::with_role_members(
             BTreeSet::from([admin]),
             roles.role_members(),
         ))
-        .with_component(Authority::RbacControlled { roles: AggLayerBridge::procedure_roles() })
+        .with_component(Authority::RbacControlled {
+            procedure_roles: AggLayerBridge::procedure_roles(),
+        })
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),

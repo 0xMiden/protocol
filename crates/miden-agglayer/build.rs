@@ -542,7 +542,7 @@ fn generate_agglayer_constants(
             // commitment.
             components.extend(AccessControl::Rbac {
                 admin: dummy_owner,
-                roles: BTreeMap::new(),
+                procedure_roles: BTreeMap::new(),
             });
         } else if lib_name == "faucet" {
             components.push(AccountComponent::from(

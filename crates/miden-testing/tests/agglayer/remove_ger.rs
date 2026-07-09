@@ -17,12 +17,12 @@ const GER_BYTES: [u8; 32] = [
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 ];
 
-/// Creates the bridge admin, GER injector, and GER remover wallets, builds the bridge account
+/// Creates the faucet manager, GER injector, and GER remover wallets, builds the bridge account
 /// wired to those roles, and registers the bridge account with the builder.
 ///
 /// Returns the bridge account together with the GER injector and GER remover wallets.
 fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Account, Account)> {
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -35,7 +35,7 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Acco
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );

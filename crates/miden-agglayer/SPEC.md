@@ -23,7 +23,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
-| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_ADMIN` role. | Not an onchain entity; creates config notes |
+| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
 
 ---
 
@@ -175,7 +175,7 @@ TODO: No hash chain tracks GER insertions for proof generation
 Each bridged token (wrapped or Miden-native) requires registration in the bridge's
 registries. The Bridge Operator creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes
 carrying the faucet's account ID, the origin token address, the origin network, the scale
-factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting that the sender holds the `FAUCET_ADMIN` role) and runs
+factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting that the sender holds the `FAUCET_MNGR` role) and runs
 two calls back-to-back:
 
 - `bridge_config::register_faucet` writes the registration flag plus `is_native` into
@@ -205,7 +205,7 @@ bridge account alongside the bridge component.
   revoke) the operational roles below. It is the effective admin of any role whose delegated admin
   is unset, and it administers itself, so `ADMIN` membership can be granted, revoked, and renounced
   through the standard RBAC API.
-- **`FAUCET_ADMIN` role**: authorizes faucet registration via
+- **`FAUCET_MNGR` role**: authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes (`register_faucet`,
   `store_faucet_metadata_hash`) and faucet deregistration via
   [`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) notes (`deregister_faucet`).
@@ -277,9 +277,9 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_ADMIN` role |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role |
 
-Asserts that the note sender holds the `FAUCET_ADMIN`
+Asserts that the note sender holds the `FAUCET_MNGR`
 role, then performs a two-step registration:
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
@@ -304,9 +304,9 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_ADMIN` role; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
 
-Asserts the note sender holds the `FAUCET_ADMIN` role and the faucet is currently registered (via
+Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
 
 1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
@@ -316,7 +316,7 @@ Asserts the note sender holds the `FAUCET_ADMIN` role and the faucet is currentl
    matches the faucet's current registration.
 3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
-After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so a `FAUCET_ADMIN`
+After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so a `FAUCET_MNGR`
 role holder should warn users with notes in flight. As defense-in-depth, `claim` and `bridge_out` also re-check
 `assert_faucet_registered` after the token lookup, so a faucet can never mint or unlock through a
 `token_registry` entry once it is deregistered.
@@ -399,7 +399,7 @@ documented in `miden-standards`, rather than in dedicated bridge slots. See
 [Administration](#25-administration).
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
-the initial `FAUCET_ADMIN` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
+the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
 access-control components at account creation time.
 
 ### 3.2 Faucet Account Component
@@ -654,7 +654,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `sender` | Holder of the `FAUCET_ADMIN` role (sender authorization enforced by the bridge's `register_faucet` procedure) |
+| `sender` | Holder of the `FAUCET_MNGR` role (sender authorization enforced by the bridge's `register_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -682,14 +682,14 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::register_faucet` (which asserts that the
-sender holds the `FAUCET_ADMIN` role and performs two-step registration into
+sender holds the `FAUCET_MNGR` role and performs two-step registration into
 `faucet_registry_map` and `token_registry_map`).
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the `FAUCET_ADMIN` role only -- **enforced** by `bridge_config::register_faucet` |
+| **Issuer** | Holders of the `FAUCET_MNGR` role only -- **enforced** by `bridge_config::register_faucet` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.4 DEREGISTER_AGG_FAUCET
@@ -702,7 +702,7 @@ sender holds the `FAUCET_ADMIN` role and performs two-step registration into
 
 | Field | Value |
 |-------|-------|
-| `sender` | Holder of the `FAUCET_ADMIN` role (sender authorization enforced by the bridge's `deregister_faucet` procedure) |
+| `sender` | Holder of the `FAUCET_MNGR` role (sender authorization enforced by the bridge's `deregister_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -730,20 +730,20 @@ The origin token address and origin network are not carried by the note; the bri
 back from its own `faucet_metadata_map` when clearing the token registry.
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::deregister_faucet` (which asserts the sender holds the `FAUCET_ADMIN` role, asserts
+`bridge_config::deregister_faucet` (which asserts the sender holds the `FAUCET_MNGR` role, asserts
 the faucet is currently registered, and clears the `faucet_registry_map`,
 `token_registry_map`, and `faucet_metadata_map` entries).
 
 After consumption, in-flight B2AGG / CLAIM notes referencing the deregistered
 faucet will fail their `assert_faucet_registered` / `lookup_faucet_by_token_address`
-checks. A `FAUCET_ADMIN` role holder should drain or otherwise warn users about pending
+checks. A `FAUCET_MNGR` role holder should drain or otherwise warn users about pending
 notes before sending a `DEREGISTER_AGG_FAUCET`.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the `FAUCET_ADMIN` role only -- **enforced** by `bridge_config::deregister_faucet` procedure |
+| **Issuer** | Holders of the `FAUCET_MNGR` role only -- **enforced** by `bridge_config::deregister_faucet` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.5 UPDATE_GER
@@ -1280,7 +1280,7 @@ token metadata — symbol, decimals, max supply, and token supply
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is
-precomputed by the `FAUCET_ADMIN` role holder and is currently not verified onchain
+precomputed by the `FAUCET_MNGR` role holder and is currently not verified onchain
 (TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586))).
 
 Registration is performed via [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes. The bridge
@@ -1306,11 +1306,11 @@ data and calls `bridge_config::lookup_faucet_by_token_address` to find the regis
 faucet. If the `(origin_token_address, origin_network)` pair is not registered, the `CLAIM`
 note consumption will fail.
 
-The `FAUCET_ADMIN` role holder is trusted, and is the sole entity that can register faucets on
+The `FAUCET_MNGR` role holder is trusted, and is the sole entity that can register faucets on
 the Miden side (enforced by the caller restriction on
 [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
-A `FAUCET_ADMIN` role holder can also revoke a faucet's authorization via a
+A `FAUCET_MNGR` role holder can also revoke a faucet's authorization via a
 [`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note (see
 [Section 4.4](#44-deregister_agg_faucet)), which retires compromised, broken, or deprecated faucets
 without redeploying the bridge.
@@ -1333,8 +1333,8 @@ operations against them — *not* how they are registered.
   `origin_token_address` is the faucet's own `AccountId` in the [Embedded
   Format](#62-embedded-format), and `origin_network` is Miden's own network ID.
 
-In both cases the `FAUCET_ADMIN` role holder drives registration via the same `CONFIG_AGG_BRIDGE` note;
-the `FAUCET_ADMIN` role holder is responsible for setting `is_native` correctly for the faucet at hand.
+In both cases the `FAUCET_MNGR` role holder drives registration via the same `CONFIG_AGG_BRIDGE` note;
+the `FAUCET_MNGR` role holder is responsible for setting `is_native` correctly for the faucet at hand.
 
 ### 7.2 Bridging-out: How tokens are registered on other chains
 
