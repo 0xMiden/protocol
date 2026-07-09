@@ -111,6 +111,7 @@
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 - Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
+- Fixed `eth_address::to_account_id` to validate the decoded `AccountId` structural invariants, preventing a malformed bridge-in destination address from being routed into an unspendable P2ID/MINT output ([#3243](https://github.com/0xMiden/protocol/pull/3243)).
 - Fixed `set_procedure_threshold` now asserts `PROC_ROOT` is one of the account's procedures (`ERR_PROC_ROOT_NOT_IN_ACCOUNT`) before storing an override, and corrected the inaccurate `assert_new_tx`, `update_signers_and_threshold`, and `get_signer_at` stack-layout and advice-map comments ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
 
 ## v0.15.2 (2026-06-05)
