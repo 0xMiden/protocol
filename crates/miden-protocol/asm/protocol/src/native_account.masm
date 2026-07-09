@@ -14,6 +14,7 @@ use {
     ACCOUNT_REMOVE_ASSET_OFFSET,
     ACCOUNT_SET_ITEM_OFFSET,
     ACCOUNT_SET_MAP_ITEM_OFFSET,
+    ACCOUNT_UPGRADE_OFFSET,
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 
@@ -129,6 +130,39 @@ pub proc compute_delta_commitment
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [DELTA_COMMITMENT]
+end
+
+#! Records the commitments describing an upgrade of the native account's code and storage.
+#!
+#! This procedure is currently a no-op beyond storing the two commitments in kernel memory; the
+#! actual application of the upgrade is not yet implemented, and the commitment formats are not yet
+#! defined.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
+    # pad the stack
+    padw push.0.0.0 push.ACCOUNT_UPGRADE_OFFSET
+    swapdw
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, offset, pad(7)]
+
+    movup.8
+    # => [offset, CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(7)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    # clean the stack
+    dropw dropw dropw dropw
 end
 
 #! Returns the commitment of the native account at the beginning of the transaction.
