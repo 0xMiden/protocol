@@ -197,7 +197,7 @@ pub proc mint_and_send
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
-    exec.asset::non_fungible_value_into_asset_class
+    exec.non_fungible_asset::value_into_asset_class
     # => [token_id_suffix, token_id_prefix, tag, note_type, RECIPIENT, pad(10)]
 
     exec.create_status_key
@@ -278,7 +278,7 @@ pub proc receive_and_burn
     dupw.1
     # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 
-    exec.asset::non_fungible_value_into_asset_class
+    exec.non_fungible_asset::value_into_asset_class
     # => [token_id_suffix, token_id_prefix, ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.create_status_key
