@@ -173,6 +173,33 @@ pub proc account_compute_delta_commitment
     # => [ACCOUNT_COMMITMENT, pad(12)]
 end
 
+#! Records the commitments describing an upgrade of the native account's code and storage.
+#!
+#! This procedure is currently a no-op beyond storing the two commitments in kernel memory.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: dynexec
+pub proc account_upgrade
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.memory::set_code_upgrade_commitment
+    # => [STORAGE_UPGRADE_COMMITMENT, pad(12)]
+
+    exec.memory::set_storage_upgrade_commitment
+    # => [pad(16)]
+end
+
 #! Returns the ID of the specified account.
 #!
 #! Inputs:  [is_native, pad(15)]

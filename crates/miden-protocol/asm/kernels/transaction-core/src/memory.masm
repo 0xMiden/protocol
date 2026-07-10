@@ -229,6 +229,15 @@ pub const ACCOUNT_UPDATE_ASSET_PTR=532480
 # The section spans `MAX_NUM_STORAGE_SLOTS` (255) entries, one per possible slot index.
 const ACCOUNT_PATCH_STORAGE_MAP_SECTION=ACCOUNT_UPDATE_ASSET_PTR+4
 
+# UPGRADE COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the native account code upgrade commitment is stored.
+pub const CODE_UPGRADE_COMMITMENT_PTR = 532744
+
+# The memory address at which the native account storage upgrade commitment is stored.
+pub const STORAGE_UPGRADE_COMMITMENT_PTR = 532748
+
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
 
@@ -1240,6 +1249,28 @@ end
 pub proc set_account_storage_commitment
     exec.get_active_account_data_ptr add.ACCT_STORAGE_COMMITMENT_OFFSET
     mem_storew_le
+end
+
+#! Sets the native account code upgrade commitment.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+pub proc set_code_upgrade_commitment
+    mem_storew_le.CODE_UPGRADE_COMMITMENT_PTR dropw
+end
+
+#! Sets the native account storage upgrade commitment.
+#!
+#! Inputs:  [STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+pub proc set_storage_upgrade_commitment
+    mem_storew_le.STORAGE_UPGRADE_COMMITMENT_PTR dropw
 end
 
 #! Sets the dirty flag for the native account storage commitment.
