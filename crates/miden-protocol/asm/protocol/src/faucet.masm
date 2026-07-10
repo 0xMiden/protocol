@@ -2,7 +2,7 @@ use {
     FAUCET_BURN_ASSET_OFFSET,
     FAUCET_MINT_ASSET_OFFSET,
 } from miden::protocol::kernel_proc_offsets
-use { Asset, AssetId } from miden::protocol::types
+use { Asset } from miden::protocol::types
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
@@ -21,7 +21,7 @@ use { Asset, AssetId } from miden::protocol::types
 #! - for non-fungible faucets if the non-fungible asset being minted already exists.
 #!
 #! Invocation: exec
-pub proc mint(asset_id: AssetId, asset_value: Asset)
+pub proc mint(asset: Asset)
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -55,7 +55,7 @@ end
 #!   provided as input to the transaction via a note or the accounts vault.
 #!
 #! Invocation: exec
-pub proc burn(asset_id: AssetId, asset_value: Asset)
+pub proc burn(asset: Asset)
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]

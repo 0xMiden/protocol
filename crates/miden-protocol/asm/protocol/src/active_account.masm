@@ -14,7 +14,7 @@ use {
     ACCOUNT_HAS_PROCEDURE_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use { AccountId, AccountProcedureRoot, Asset, AssetId, StorageMapKey, StorageSlotId } from miden::protocol::types
+use { AccountId, AccountProcedureRoot, AssetId, AssetValue, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -321,7 +321,7 @@ end
 #!   present.
 #!
 #! Invocation: exec
-pub proc get_asset(asset_id: AssetId) -> Asset
+pub proc get_asset(asset_id: AssetId) -> AssetValue
     push.ACCOUNT_GET_ASSET_OFFSET
     # => [offset, ASSET_ID]
 

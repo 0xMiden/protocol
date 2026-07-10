@@ -1,7 +1,7 @@
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use { Asset, AssetId, MemoryAddress, NoteMetadata, NoteRecipient, NoteTag, NoteType } from miden::protocol::types
+use { Asset, MemoryAddress, NoteMetadata, NoteRecipient, NoteTag, NoteType } from miden::protocol::types
 use {
     OUTPUT_NOTE_ADD_ASSET_OFFSET,
     OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET,
@@ -173,7 +173,7 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Invocation: exec
-pub proc add_asset(asset_id: AssetId, asset_value: Asset, note_idx: felt)
+pub proc add_asset(asset: Asset, note_idx: felt)
     push.OUTPUT_NOTE_ADD_ASSET_OFFSET
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx]
 

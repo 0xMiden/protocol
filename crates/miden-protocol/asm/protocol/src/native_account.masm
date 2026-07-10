@@ -16,7 +16,7 @@ use {
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use { AccountId, AccountProcedureRoot, Asset, AssetId, StorageMapKey, StorageSlotId } from miden::protocol::types
+use { AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -416,7 +416,7 @@ end
 #! - the vault already contains the same non-fungible asset.
 #!
 #! Invocation: exec
-pub proc add_asset(asset_id: AssetId, asset_value: Asset) -> Asset
+pub proc add_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -449,7 +449,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: exec
-pub proc remove_asset(asset_id: AssetId, asset_value: Asset) -> Asset
+pub proc remove_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -480,7 +480,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_asset(asset_id: AssetId) -> Asset
+pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
     push.ACCOUNT_GET_INITIAL_ASSET_OFFSET
     # => [offset, ASSET_ID]
 
