@@ -246,7 +246,7 @@ end
 #!
 #! Cost: O(num_approvers^2) map reads; num_approvers is small for a multisig.
 @locals(2)
-proc assert_unique_approver_public_keys(num_approvers: u32)
+pub proc assert_unique_approver_public_keys(num_approvers: u32)
     dup neq.0
     # => [outer_continue, num_approvers]
     while.true

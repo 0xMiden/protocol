@@ -750,6 +750,11 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     drop
     # => [pad(12)]
 
+    # assert all approver public keys are unique.
+    loc_load.0
+    exec.multisig::assert_unique_approver_public_keys
+    # => [pad(12)]
+
     loc_load.0 loc_load.1
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 

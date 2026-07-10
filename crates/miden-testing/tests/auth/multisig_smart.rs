@@ -22,6 +22,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_PROC_ROOT_NOT_IN_ACCOUNT,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
@@ -379,6 +380,66 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         let expected_word: Word = expected_key.to_commitment().into();
         assert_eq!(stored_pub_key, expected_word, "public key at index {i} mismatch");
     }
+
+    Ok(())
+}
+
+/// Tests that `multisig_smart::update_signers_and_threshold` rejects a signer set containing
+/// duplicate public keys, mirroring the check on the plain `multisig` variant.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // Update to a signer set of [PK_A, PK_A, PK_B]: the first key is repeated.
+    let duplicate_public_keys =
+        vec![public_keys[0].clone(), public_keys[0].clone(), public_keys[1].clone()];
+    let new_threshold: u64 = 2;
+    let new_num_approvers: u64 = 3;
+
+    let multisig_config_data = build_update_signers_config_vector(
+        new_threshold,
+        new_num_approvers,
+        &duplicate_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, multisig_config_data);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let salt = Word::from([Felt::new_unchecked(3); 4]);
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_signers_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
 
     Ok(())
 }
