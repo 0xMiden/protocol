@@ -44,30 +44,6 @@ pub proc create_id
     # => [ASSET_ID]
 end
 
-#! Creates a fungible asset for the faucet the transaction is being executed against.
-#!
-#! Inputs:  [amount]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - amount is the amount of the asset to create.
-#! - ASSET_ID is the asset ID of the created fungible asset.
-#! - ASSET_VALUE is the value of the created fungible asset.
-#!
-#! Panics if:
-#! - the provided amount exceeds MAX_AMOUNT.
-#!
-#! Invocation: exec
-pub proc create
-    # fetch the id of the faucet the transaction is being executed against.
-    exec.active_account::get_id
-    # => [id_suffix, id_prefix, amount]
-
-    # create the fungible asset
-    exec.from_parts
-    # => [ASSET_ID, ASSET_VALUE]
-end
-
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
 #! The provided asset ID will be created with asset composition set to COMPOSITION_FUNGIBLE.
@@ -86,7 +62,7 @@ end
 #! - the provided amount exceeds MAX_AMOUNT.
 #!
 #! Invocation: exec
-pub proc from_parts
+pub proc create
     # assert the amount is valid
     dup.2 lte.MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
@@ -115,7 +91,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_balance
+pub proc get_initial_native_account_balance
     # assert that the asset composition is fungible
     exec.asset::id_to_composition
     eq.COMPOSITION_FUNGIBLE
@@ -144,7 +120,7 @@ end
 #! - the asset composition encoded in ASSET_ID is not fungible.
 #!
 #! Invocation: exec
-pub proc get_balance
+pub proc get_active_account_balance
     # assert that the asset composition is fungible
     exec.asset::id_to_composition
     eq.COMPOSITION_FUNGIBLE

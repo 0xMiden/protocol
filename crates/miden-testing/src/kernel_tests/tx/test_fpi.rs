@@ -767,7 +767,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         pub proc get_asset_balance
             # get balance of first asset
             push.{FUNGIBLE_ASSET_ID}
-            exec.fungible_asset::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [balance]
 
             # check presence of non fungible asset

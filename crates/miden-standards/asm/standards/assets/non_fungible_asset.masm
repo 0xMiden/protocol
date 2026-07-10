@@ -2,34 +2,10 @@
 #!
 #! Provides procedures for creating non-fungible assets.
 
-use miden::protocol::active_account
 use {COMPOSITION_NONE} from miden::protocol::asset
 
 # PROCEDURES
 # ================================================================================================
-
-#! Creates a non-fungible asset for the faucet the transaction is being executed against.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the non-fungible asset.
-#! - ASSET_VALUE is the value of the non-fungible asset.
-#!
-#! Panics if:
-#! - the active account is not a non-fungible faucet.
-#!
-#! Invocation: exec
-pub proc create
-    # fetch the id of the faucet the transaction is being executed against
-    exec.active_account::get_id
-    # => [id_suffix, id_prefix, ASSET_VALUE]
-
-    # create the non-fungible asset
-    exec.from_parts
-    # => [ASSET_ID, ASSET_VALUE]
-end
 
 #! Creates a non fungible asset for the specified non-fungible faucet.
 #!
@@ -46,7 +22,7 @@ end
 #! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to ASSET_VALUE.
 #!
 #! Invocation: exec
-pub proc from_parts
+pub proc create
     # push the non-fungible (None) composition
     # this is equivalent to the asset metadata
     push.COMPOSITION_NONE

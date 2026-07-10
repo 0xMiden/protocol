@@ -45,7 +45,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{ASSET_ID}
-            exec.fungible_asset::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [balance]
 
             # truncate the stack
@@ -134,7 +134,7 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
             push.{ASSET_ID}
-            exec.fungible_asset::get_balance
+            exec.fungible_asset::get_active_account_balance
         end
         ",
         ASSET_ID = non_fungible_asset.to_id_word(),

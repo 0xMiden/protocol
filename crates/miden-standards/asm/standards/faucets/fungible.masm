@@ -354,6 +354,9 @@ pub proc mint_and_send
     # => [new_amount, note_idx, note_idx]
 
     # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, new_amount, note_idx, note_idx]
+
     exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 

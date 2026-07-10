@@ -46,8 +46,9 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            # create fungible asset
+            # create fungible asset for the active faucet
             push.{FUNGIBLE_ASSET_AMOUNT}
+            exec.::miden::protocol::active_account::get_id
             exec.fungible_asset::create
             # => [ASSET_ID, ASSET_VALUE]
 
@@ -87,6 +88,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
             # push non-fungible asset data hash onto the stack
             push.{NON_FUNGIBLE_ASSET_DATA_HASH}
+            exec.::miden::protocol::active_account::get_id
             exec.non_fungible_asset::create
 
             # truncate the stack

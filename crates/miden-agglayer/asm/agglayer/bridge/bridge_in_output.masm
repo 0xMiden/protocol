@@ -110,7 +110,7 @@ pub proc unlock_and_send
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    exec.fungible_asset::from_parts
+    exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE]
 
     # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
@@ -213,7 +213,7 @@ proc write_mint_note_storage
     movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
-    exec.fungible_asset::from_parts
+    exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # write ASSET_ID [8..11]

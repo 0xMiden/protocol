@@ -224,6 +224,9 @@ pub proc mint_and_send
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
 
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
     exec.non_fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 

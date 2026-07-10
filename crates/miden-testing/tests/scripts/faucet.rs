@@ -93,7 +93,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 push.{faucet_id_suffix}
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
 
-                exec.::miden::standards::assets::fungible_asset::from_parts
+                exec.::miden::standards::assets::fungible_asset::create
                 # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
@@ -492,7 +492,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 push.{faucet_id_suffix}
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
 
-                exec.::miden::standards::assets::fungible_asset::from_parts
+                exec.::miden::standards::assets::fungible_asset::create
                 # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
@@ -761,7 +761,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{faucet_id_suffix}
                 # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
 
-                exec.::miden::standards::assets::fungible_asset::from_parts
+                exec.::miden::standards::assets::fungible_asset::create
                 # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
@@ -2250,7 +2250,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{faucet_id_suffix}
                 # => [faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
 
-                exec.::miden::standards::assets::fungible_asset::from_parts
+                exec.::miden::standards::assets::fungible_asset::create
                 # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT_1]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
@@ -2268,7 +2268,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{faucet_id_suffix}
                 # => [faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
 
-                exec.::miden::standards::assets::fungible_asset::from_parts
+                exec.::miden::standards::assets::fungible_asset::create
                 # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT_2]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
