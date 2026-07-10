@@ -50,6 +50,11 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_schedul
 #! settles as a plain feature note.
 const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_schedule")
 
+#! The storage slot holding [reclaim_delta_blocks, 0, 0, 0]: the number of blocks after which this
+#! account may reclaim a chained sponsorship it created, should the downstream account never
+#! consume it. 0 disables reclaim.
+const RECLAIM_DELTA_SLOT = word("miden::standards::fees::fee_manager::reclaim_delta")
+
 # ERRORS
 # ================================================================================================
 
@@ -630,8 +635,22 @@ proc sponsor_downstream_note
     loc_storew_le.4 dropw
     # => []
 
-    # reclaim is disabled on a chained sponsorship: its sponsor is this account, not a user
-    push.0 loc_store.8
+    # the chained sponsorship's reclaim height derives from the configured delta, letting this
+    # account recover the budget if the downstream account never consumes the note; 0 disables it
+    push.RECLAIM_DELTA_SLOT[0..2] exec.active_account::get_item
+    # => [reclaim_delta, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [reclaim_delta]
+
+    dup neq.0
+    # => [is_enabled, reclaim_delta]
+
+    if.true
+        exec.tx::get_block_number add
+        # => [reclaim_block_height]
+    end
+    loc_store.8
     # => []
 
     procref.network_sponsorship::main

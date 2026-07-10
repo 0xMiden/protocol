@@ -48,6 +48,11 @@ static SPAWN_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+static RECLAIM_DELTA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fees::fee_manager::reclaim_delta")
+        .expect("storage slot name should be valid")
+});
+
 procedure_root!(
     FEE_MANAGER_ESTIMATE_NOTE_FEE_ROOT,
     FeeManager::NAME,
@@ -165,6 +170,7 @@ pub struct FeeManager {
     fee_asset_id: Word,
     schedule: BTreeMap<NoteScriptRoot, FeeScheduleEntry>,
     spawn: BTreeMap<NoteScriptRoot, NoteScriptRoot>,
+    reclaim_delta: u32,
 }
 
 impl FeeManager {
@@ -192,6 +198,7 @@ impl FeeManager {
             fee_asset_id: fee_asset.to_id_word(),
             schedule: BTreeMap::new(),
             spawn: BTreeMap::new(),
+            reclaim_delta: 0,
         })
     }
 
@@ -213,6 +220,16 @@ impl FeeManager {
     /// sponsored budget covers another hop.
     pub fn with_spawn(mut self, parent: NoteScriptRoot, child: NoteScriptRoot) -> Self {
         self.spawn.insert(parent, child);
+        self
+    }
+
+    /// Makes chained sponsorships this account creates reclaimable by it `delta_blocks` after
+    /// their creation.
+    ///
+    /// Without this (or with a delta of 0), a chained sponsorship whose downstream note is never
+    /// consumed locks its budget forever.
+    pub fn with_reclaim_delta(mut self, delta_blocks: u32) -> Self {
+        self.reclaim_delta = delta_blocks;
         self
     }
 
@@ -267,6 +284,18 @@ impl FeeManager {
                     SchemaType::native_word(),
                 ),
             ),
+            (
+                RECLAIM_DELTA_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Blocks after which a chained sponsorship becomes reclaimable (0 = disabled)",
+                    [
+                        FeltSchema::felt("reclaim_delta_blocks"),
+                        FeltSchema::felt("zero_0"),
+                        FeltSchema::felt("zero_1"),
+                        FeltSchema::felt("zero_2"),
+                    ],
+                ),
+            ),
         ];
 
         let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
@@ -305,6 +334,15 @@ impl From<FeeManager> for AccountComponent {
                 SPAWN_SCHEDULE_SLOT_NAME.clone(),
                 StorageMap::with_entries(spawn_entries)
                     .expect("spawn schedule map should be valid"),
+            ),
+            StorageSlot::with_value(
+                RECLAIM_DELTA_SLOT_NAME.clone(),
+                Word::new([
+                    Felt::from(fee_manager.reclaim_delta),
+                    Felt::ZERO,
+                    Felt::ZERO,
+                    Felt::ZERO,
+                ]),
             ),
         ];
 

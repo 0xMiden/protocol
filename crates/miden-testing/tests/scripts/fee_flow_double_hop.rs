@@ -134,7 +134,7 @@ struct Chain {
     sponsorship_note: Note,
 }
 
-fn setup(budget: u64, parent_spawns: bool) -> anyhow::Result<Chain> {
+fn setup(budget: u64, parent_spawns: bool, reclaim_delta: u32) -> anyhow::Result<Chain> {
     let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let mut rng = RandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
@@ -169,7 +169,8 @@ fn setup(budget: u64, parent_spawns: bool) -> anyhow::Result<Chain> {
         8,
         FeeManager::new(fee_faucet)?
             .with_fee(parent_root, FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?)
-            .with_spawn(parent_root, P2idNote::script_root()),
+            .with_spawn(parent_root, P2idNote::script_root())
+            .with_reclaim_delta(reclaim_delta),
     )?;
 
     builder.add_account(downstream.clone())?;
@@ -209,7 +210,7 @@ fn setup(budget: u64, parent_spawns: bool) -> anyhow::Result<Chain> {
 async fn downstream_fee_must_be_sponsored_up_front(
     #[case] downstream_budget: u64,
 ) -> anyhow::Result<()> {
-    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + downstream_budget, true)?;
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + downstream_budget, true, 0)?;
 
     let downstream_foreign = c.mock_chain.get_foreign_account_inputs(c.downstream.id())?;
     let result = c
@@ -232,7 +233,7 @@ async fn downstream_fee_must_be_sponsored_up_front(
 /// downstream consideration.
 #[tokio::test]
 async fn parent_fee_must_be_sponsored() -> anyhow::Result<()> {
-    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE - 1, true)?;
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE - 1, true, 0)?;
 
     let downstream_foreign = c.mock_chain.get_foreign_account_inputs(c.downstream.id())?;
     let result = c
@@ -255,7 +256,7 @@ async fn parent_fee_must_be_sponsored() -> anyhow::Result<()> {
 /// plain feature note, without pricing or funding a downstream hop.
 #[tokio::test]
 async fn declared_spawn_without_spawned_note_settles_normally() -> anyhow::Result<()> {
-    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE, false)?;
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE, false, 0)?;
 
     let executed = c
         .mock_chain
@@ -291,7 +292,7 @@ async fn declared_spawn_without_spawned_note_settles_normally() -> anyhow::Resul
 async fn double_hop_settles_both_fees(#[case] surplus: u64) -> anyhow::Result<()> {
     // The user funds the whole chain up front: both hops, out of one sponsorship note.
     let total_budget = UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL + surplus;
-    let c = setup(total_budget, true)?;
+    let c = setup(total_budget, true, 0)?;
     let (mut mock_chain, upstream, downstream) = (c.mock_chain, c.upstream, c.downstream);
 
     // ---- HOP 1: upstream consumes [sponsorship, parent] ------------------------------------
@@ -378,6 +379,60 @@ async fn double_hop_settles_both_fees(#[case] surplus: u64) -> anyhow::Result<()
         downstream_after.vault().get_balance(fee_asset(0)?.id())?.as_u64(),
         DOWNSTREAM_APP_FEE + surplus,
         "the downstream account keeps its application fee and the terminal surplus",
+    );
+
+    Ok(())
+}
+
+/// After the configured delta, the upstream account reclaims a chained sponsorship whose
+/// downstream note was never consumed, recovering the budget instead of locking it forever.
+#[tokio::test]
+async fn upstream_reclaims_chained_sponsorship_after_delta() -> anyhow::Result<()> {
+    const RECLAIM_DELTA: u32 = 5;
+    let total_budget = UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL;
+    let c = setup(total_budget, true, RECLAIM_DELTA)?;
+    let mut mock_chain = c.mock_chain;
+
+    let downstream_foreign = mock_chain.get_foreign_account_inputs(c.downstream.id())?;
+    let hop1 = mock_chain
+        .build_tx_context(c.upstream.id(), &[c.sponsorship_note.id(), c.parent_note.id()], &[])?
+        .foreign_accounts(vec![downstream_foreign])
+        .add_note_script(P2idNote::script())
+        .add_note_script(NetworkSponsorshipNote::script())
+        .add_note_script(FeeNote::script())
+        .build()?
+        .execute()
+        .await?;
+
+    let child_sponsorship_id = hop1
+        .output_notes()
+        .iter()
+        .find(|note| {
+            note.recipient().expect("public note exposes its recipient").script().root()
+                == NetworkSponsorshipNote::script_root()
+        })
+        .expect("hop 1 mints a child sponsorship")
+        .id();
+
+    mock_chain.add_pending_executed_transaction(&hop1)?;
+    let past_reclaim = mock_chain.latest_block_header().block_num() + RECLAIM_DELTA + 1;
+    mock_chain.prove_until_block(past_reclaim)?;
+
+    // The downstream account never consumed the child sponsorship; upstream, its sender, reclaims.
+    let reclaim = mock_chain
+        .build_tx_context(c.upstream.id(), &[child_sponsorship_id], &[])?
+        .add_note_script(NetworkSponsorshipNote::script())
+        .build()?
+        .execute()
+        .await?;
+
+    let mut upstream = c.upstream;
+    upstream.apply_patch(hop1.account_patch())?;
+    upstream.apply_patch(reclaim.account_patch())?;
+    assert_eq!(
+        upstream.vault().get_balance(fee_asset(0)?.id())?.as_u64(),
+        UPSTREAM_APP_FEE + DOWNSTREAM_TOTAL,
+        "the chained budget returns to the upstream account",
     );
 
     Ok(())

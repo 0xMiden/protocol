@@ -36,10 +36,10 @@ const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR="failed to reclaim NET
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts that the feature note bound by the active note's fee sponsorship attachment is among the
-#! transaction's input notes.
+#! Returns whether the feature note bound by the active note's fee sponsorship attachment is among
+#! the transaction's input notes.
 #!
-#! This is what stops a sponsorship note from being consumed on its own. The check lives in the
+#! This check is what stops a sponsorship note from being consumed on its own. It lives in the
 #! note's own script rather than in the consuming account, because the sponsor trusts neither the
 #! network account nor the transaction builder; they do, however, choose the note's script root.
 #!
@@ -48,13 +48,12 @@ const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR="failed to reclaim NET
 #! transaction whose feature note is in fact present, handing the builder a griefing vector.
 #!
 #! Inputs:  []
-#! Outputs: []
+#! Outputs: [is_found]
 #!
 #! Panics if:
 #! - the active note carries no fee sponsorship attachment.
-#! - no input note has the bound note ID.
 @locals(4)
-proc assert_bound_feature_note_present
+proc is_bound_feature_note_present
     exec.fee_sponsorship::active_note_bound_note_id
     loc_storew_le.0 dropw
     # => []
@@ -95,9 +94,6 @@ proc assert_bound_feature_note_present
 
     drop
     # => [is_found]
-
-    assert.err=ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT
-    # => []
 end
 
 #! Returns the sponsorship assets to the sponsor, provided reclaim is enabled and its block height
@@ -156,7 +152,9 @@ end
 #!
 #! If the target account never consumes the note, the sponsor may reclaim it once the reclaim block
 #! height is reached. That path is not a nicety: once the bound feature note is consumed by some
-#! other transaction, the presence check can never pass again and reclaim is the only way out.
+#! other transaction, the presence check can never pass again and reclaim is the only way out. When
+#! the sponsor is also the target -- a self-spawning chain sponsoring its own next hop -- the same
+#! reclaim applies once the feature note can no longer be presented.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -174,7 +172,8 @@ end
 #! Panics if:
 #! - the number of note storage items is not 1.
 #! - the note carries no network account target attachment or no fee sponsorship attachment.
-#! - the active account is the target but the bound feature note is not consumed.
+#! - the active account is the target but the bound feature note is not consumed, and the account
+#!   is not the sponsor either.
 #! - the active account is not the target and cannot reclaim the note.
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
 @note_script
@@ -192,13 +191,29 @@ pub proc main
     # => [is_target, pad(16)]
 
     if.true
-        # the targeted network account is consuming the note: it may keep the sponsorship, but only
-        # alongside the feature note it pays for
-        exec.assert_bound_feature_note_present
-        # => [pad(16)]
+        # the targeted network account is consuming the note: it may keep the sponsorship alongside
+        # the feature note it pays for
+        exec.is_bound_feature_note_present
+        # => [is_present, pad(16)]
 
-        exec.basic_wallet::add_assets_to_account
-        # => [pad(16)]
+        if.true
+            exec.basic_wallet::add_assets_to_account
+            # => [pad(16)]
+        else
+            # without the feature note, the target may only proceed as the sponsor of its own
+            # chained sponsorship, through the reclaim path
+            exec.active_note::get_sender exec.active_account::get_id exec.account_id::is_equal
+            # => [is_sponsor, pad(16)]
+
+            assert.err=ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT
+            # => [pad(16)]
+
+            mem_load.RECLAIM_BLOCK_HEIGHT_PTR
+            # => [reclaim_block_height, pad(16)]
+
+            exec.reclaim_note
+            # => [pad(16)]
+        end
     else
         # anybody else may only reclaim the note back to its sponsor
         mem_load.RECLAIM_BLOCK_HEIGHT_PTR

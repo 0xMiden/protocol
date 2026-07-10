@@ -209,6 +209,71 @@ async fn sponsor_cannot_reclaim_before_reclaim_height() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A sponsorship whose sender is also its target, as in a self-spawning chain sponsoring its own
+/// next hop, bound to a feature note that is never consumed.
+fn self_targeted_fixture(reclaim_height: u32) -> anyhow::Result<(MockChain, Account, Note, Asset)> {
+    let fee_asset: Asset = FungibleAsset::mock(FEE_AMOUNT);
+    let mut rng = RandomCoin::new(Word::empty());
+
+    let mut builder = MockChain::builder();
+    let network_account = builder.add_existing_wallet(auth())?;
+    let feature_note = builder.add_p2any_note(network_account.id(), NoteType::Public, [])?;
+
+    let sponsorship_note = Note::from(
+        NetworkSponsorshipNote::builder()
+            .sender(network_account.id())
+            .target_account(network_account.id())?
+            .feature_note_id(feature_note.id())
+            .asset(fee_asset)
+            .reclaim_height(BlockNumber::from(reclaim_height))
+            .generate_serial_number(&mut rng)
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    Ok((mock_chain, network_account, sponsorship_note, fee_asset))
+}
+
+/// A self-targeted sponsorship falls back to the reclaim path when its feature note cannot be
+/// presented: the target consuming without the feature note is valid only as the sponsor.
+#[tokio::test]
+async fn self_targeted_sponsor_reclaims_without_feature_note() -> anyhow::Result<()> {
+    let (mock_chain, network_account, sponsorship_note, fee_asset) = self_targeted_fixture(1)?;
+
+    let executed = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let mut network_account = network_account;
+    network_account.apply_patch(executed.account_patch())?;
+    assert_eq!(network_account.vault().get_balance(fee_asset.id())?.as_u64(), FEE_AMOUNT);
+
+    Ok(())
+}
+
+/// The self-target fallback still honors the reclaim height.
+#[tokio::test]
+async fn self_targeted_sponsor_cannot_reclaim_before_height() -> anyhow::Result<()> {
+    let (mock_chain, network_account, sponsorship_note, _) = self_targeted_fixture(1_000)?;
+
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED);
+
+    Ok(())
+}
+
 /// With reclaim disabled, not even the sponsor can take the note back.
 #[tokio::test]
 async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()> {
