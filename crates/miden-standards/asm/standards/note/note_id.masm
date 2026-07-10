@@ -7,8 +7,11 @@
 #! input and output notes, mirroring the kernel's own derivation.
 
 use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::output_note
+use miden::protocol::tx
 
 # CONSTANTS
 # ================================================================================================
@@ -112,6 +115,54 @@ pub proc compute_input_note_id
     # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
 
     exec.merge_note_commitments
+    # => [NOTE_ID]
+end
+
+#! Computes the ID of the active note.
+#!
+#! The kernel exposes neither the active note's ID nor its index, so the note is located among the
+#! input notes by recipient and its ID recomputed via the indexed accessors. If two input notes
+#! share a recipient (same serial number, script and storage), the first match wins.
+#!
+#! Inputs:  []
+#! Outputs: [NOTE_ID]
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc compute_active_note_id
+    exec.active_note::get_recipient loc_storew_le.0 dropw
+    # => []
+
+    push.0 loc_store.4
+    exec.tx::get_num_input_notes
+    # => [note_idx]
+
+    dup neq.0
+    # => [should_loop, note_idx]
+
+    while.true
+        sub.1 dup loc_store.5
+        # => [note_idx]
+
+        exec.input_note::get_recipient
+        padw loc_loadw_le.0
+        exec.word::eq
+        # => [is_match]
+
+        if.true
+            loc_load.5 loc_store.4
+        end
+
+        loc_load.5 dup neq.0
+        # => [should_loop, note_idx]
+    end
+    drop
+    # => []
+
+    loc_load.4 exec.compute_input_note_id
     # => [NOTE_ID]
 end
 

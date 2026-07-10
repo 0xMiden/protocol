@@ -15,41 +15,40 @@ use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{Auth, TestTransactionBuilder};
+use crate::{Auth, TestTransactionBuilder, TransactionContext};
+
+/// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
+/// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
+fn two_note_tx() -> anyhow::Result<TransactionContext> {
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let bare_note = NoteBuilder::new(account.id(), &mut rng).build()?;
+    let rich_note = NoteBuilder::new(account.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .add_assets(vec![FungibleAsset::mock(150)])
+        .attachment(NoteAttachment::with_word(
+            NoteAttachmentScheme::new(10)?,
+            Word::from([3, 4, 5, 6u32]),
+        ))
+        .attachment(NoteAttachment::with_word(
+            NoteAttachmentScheme::new(20)?,
+            Word::from([7, 8, 9, 10u32]),
+        ))
+        .build()?;
+
+    TestTransactionBuilder::new(account)
+        .extend_input_notes(vec![bare_note, rich_note])
+        .build()
+}
 
 /// Recomputing an input note's ID in MASM must match `Note::id()` in Rust.
-///
-/// Note 0 is bare: no assets, no attachments, so its assets and attachments commitments are both
-/// the empty word. Note 1 carries an asset and two attachments, so both commitments are non-empty.
-/// Together they cover the branches that a naive implementation would get wrong.
 #[rstest]
 #[case::bare_note(0)]
 #[case::note_with_assets_and_attachments(1)]
 #[tokio::test]
 async fn compute_input_note_id_matches_rust(#[case] note_index: u8) -> anyhow::Result<()> {
-    let tx_context = {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-
-        let bare_note = NoteBuilder::new(account.id(), &mut rng).build()?;
-        let rich_note = NoteBuilder::new(account.id(), &mut rng)
-            .note_type(NoteType::Public)
-            .add_assets(vec![FungibleAsset::mock(150)])
-            .attachment(NoteAttachment::with_word(
-                NoteAttachmentScheme::new(10)?,
-                Word::from([3, 4, 5, 6u32]),
-            ))
-            .attachment(NoteAttachment::with_word(
-                NoteAttachmentScheme::new(20)?,
-                Word::from([7, 8, 9, 10u32]),
-            ))
-            .build()?;
-
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![bare_note, rich_note])
-            .build()?
-    };
+    let tx_context = two_note_tx()?;
 
     let code = format!(
         r#"
@@ -72,6 +71,38 @@ async fn compute_input_note_id_matches_rust(#[case] note_index: u8) -> anyhow::R
     let exec_output = tx_context.execute_code(&code).await?;
 
     let expected = tx_context.input_notes().get_note(note_index as usize).note().id();
+    assert_eq!(exec_output.get_stack_word(0), expected.as_word());
+
+    Ok(())
+}
+
+/// Recomputing the active note's ID must match `Note::id()` of the note being processed.
+///
+/// The active note is located among the input notes by recipient; consuming two notes proves the
+/// right one is found.
+#[tokio::test]
+async fn compute_active_note_id_matches_rust() -> anyhow::Result<()> {
+    let tx_context = two_note_tx()?;
+
+    // The prologue leaves the active-note pointer on input note 0.
+    let code = r#"
+        use miden::tx_kernel_core::prologue
+        use miden::standards::note::note_id
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.note_id::compute_active_note_id
+            # => [NOTE_ID]
+
+            # truncate the stack
+            swapw dropw
+        end
+    "#;
+
+    let exec_output = tx_context.execute_code(code).await?;
+
+    let expected = tx_context.input_notes().get_note(0).note().id();
     assert_eq!(exec_output.get_stack_word(0), expected.as_word());
 
     Ok(())

@@ -11,6 +11,7 @@
 
 use miden::core::word
 use miden::protocol::active_account
+use miden::protocol::active_note
 use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::protocol::input_note
 use miden::protocol::native_account
@@ -117,6 +118,27 @@ proc spawn_entry
     # => [CHILD_NOTE_SCRIPT_ROOT]
 end
 
+#! Returns the total fee (application + protocol) this account charges for the note script with
+#! the provided root.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT]
+#! Outputs: [fee_amount]
+#!
+#! Panics if:
+#! - the note script root is not priced by this account.
+#!
+#! Invocation: exec
+pub proc fee_total
+    exec.fee_entry
+    # => [app_fee, protocol_fee, enabled, 0]
+
+    movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
+    # => [app_fee, protocol_fee, 0]
+
+    add swap drop
+    # => [fee_amount]
+end
+
 #! Returns the ASSET_ID of the asset this account accepts fees in.
 #!
 #! Exposed so that a note creator, or an upstream network account pricing a note it is about to
@@ -167,16 +189,7 @@ pub proc estimate_note_fee
     movup.4 drop
     # => [NOTE_SCRIPT_ROOT, pad(3)]
 
-    exec.fee_entry
-    # => [app_fee, protocol_fee, enabled, 0, pad(3)]
-
-    movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
-    # => [app_fee, protocol_fee, 0, pad(3)]
-
-    add
-    # => [fee_amount, 0, pad(3)]
-
-    swap drop
+    exec.fee_total
     # => [fee_amount, pad(3)]
 
     push.0.0.0 movup.3
@@ -298,7 +311,7 @@ end
 #!
 #! Invocation: exec
 @locals(24)
-proc sponsored_amount
+pub proc sponsored_amount
     loc_storew_le.0 dropw
     # => []
 
@@ -386,6 +399,46 @@ proc sponsored_amount
 
     drop loc_load.8
     # => [sponsored_amount]
+end
+
+#! Returns the sponsorship budget bound to the active note that remains after the note's own fee,
+#! or 0 if the sponsorship does not cover even that (settlement rejects such a transaction in the
+#! epilogue regardless).
+#!
+#! Intended to be exec'd from an account procedure while a feature note is being processed, so the
+#! note's business logic can decide whether the remaining budget supports spawning a downstream
+#! note. Uses the same schedule and sponsorship sum as `settle_fees`, so the note-time decision and
+#! the auth-time coverage check cannot disagree.
+#!
+#! Inputs:  []
+#! Outputs: [remainder]
+#!
+#! Panics if:
+#! - no note is currently active.
+#! - the active note's script root is not priced by this account.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc active_note_remainder
+    exec.active_note::get_script_root exec.fee_total loc_store.0
+    # => []
+
+    exec.note_id::compute_active_note_id exec.sponsored_amount
+    # => [sponsored]
+
+    dup loc_load.0
+    # => [own_fee, sponsored, sponsored]
+
+    gte
+    # => [sponsored >= own_fee, sponsored]
+
+    if.true
+        loc_load.0 sub
+        # => [remainder]
+    else
+        drop push.0
+        # => [0]
+    end
 end
 
 #! Moves `amount` of this account's fee asset out of the vault and into the output note at
