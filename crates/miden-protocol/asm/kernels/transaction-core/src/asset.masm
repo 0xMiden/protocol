@@ -35,6 +35,7 @@ pub use {
     load,
     store,
     validate_metadata,
+    fungible_value_into_amount,
 } from miden::protocol_utils::asset
 
 # PROCEDURES

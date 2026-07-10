@@ -8,8 +8,8 @@
 
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::asset
 use miden::standards::access::authority
+use miden::standards::assets::fungible_asset
 
 # CONSTANTS — slot names
 # =================================================================================================
@@ -45,7 +45,7 @@ pub proc check_policy
     dropw
     # => [ASSET_VALUE]
 
-    exec.asset::fungible_value_into_amount
+    exec.fungible_asset::value_into_amount
     # => [amount]
 
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item

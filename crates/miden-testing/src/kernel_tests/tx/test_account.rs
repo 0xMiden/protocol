@@ -1068,13 +1068,14 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
-/// procedure in two cases:
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure in two
+/// cases:
 /// - when a note adds the asset which already exists in the account vault.
 /// - when a note adds the asset which doesn't exist in the account vault.
 ///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // prepare the testing data
@@ -1128,14 +1129,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_existing_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
+        use miden::standards::assets::fungible_asset
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1145,7 +1145,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1179,14 +1179,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_new_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
+        use miden::standards::assets::fungible_asset
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1196,7 +1195,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1221,11 +1220,12 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
-/// procedure in case when we create a note which removes an asset from the account vault.
-///  
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure when an
+/// asset is moved from the vault to a note.
+///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1258,9 +1258,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
     let remove_existing_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
+        use miden::standards::assets::fungible_asset
         use mock::util
 
         @transaction_script
@@ -1276,7 +1274,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1286,7 +1284,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1354,7 +1352,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         r#"
         use miden::protocol::active_account
         use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
+        use miden::standards::assets::fungible_asset
         use mock::util
 
         @transaction_script
