@@ -57,6 +57,10 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
+use miden_protocol::transaction::memory::{
+    CODE_UPGRADE_COMMITMENT_PTR,
+    STORAGE_UPGRADE_COMMITMENT_PTR,
+};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
@@ -787,6 +791,51 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
         expected_storage_commitment = &tx_context.account().storage().to_commitment(),
     );
     tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `native_account::upgrade` stores the code and storage upgrade commitments in the
+/// dedicated kernel memory region.
+#[tokio::test]
+async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    let code = format!(
+        r#"
+        use miden::protocol::native_account
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            exec.native_account::upgrade
+            # => []
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+
+    let exec_output = &tx_context.execute_code(&code).await?;
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
+        code_upgrade_commitment,
+        "code upgrade commitment should be stored in kernel memory"
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
+        storage_upgrade_commitment,
+        "storage upgrade commitment should be stored in kernel memory"
+    );
 
     Ok(())
 }
