@@ -216,9 +216,13 @@ pub proc set_fee
     dup.6 dup sub.1 mul assertz.err=ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN
     # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
 
-    # the portions are charged as a single fungible asset, so they must fit one, individually and
-    # summed; this mirrors the Rust `FeeScheduleEntry::new`. The per-portion checks make the `add`
-    # wrap-free: 2 * FUNGIBLE_ASSET_MAX_AMOUNT = p - 1.
+    # Each portion must fit a fungible asset amount on its own: settlement materializes the
+    # protocol portion as a standalone asset, and the application portion stays in the vault as
+    # one. Their sum must fit too, because the sponsorship charges them as a single asset. This
+    # mirrors the Rust `FeeScheduleEntry::new`. The ordering is load-bearing: the per-portion
+    # checks are what make the `add` provably wrap-free over the field, since
+    # 2 * FUNGIBLE_ASSET_MAX_AMOUNT = p - 1, where p = 2^64 - 2^32 + 1 is the Goldilocks modulus.
+    # A sum-only check would accept two portions that wrap past p.
     dup.4 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     dup.5 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     dup.5 dup.5 add lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT

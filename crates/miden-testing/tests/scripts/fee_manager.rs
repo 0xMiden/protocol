@@ -5,7 +5,7 @@ use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, S
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::fees::{FeeManager, FeeScheduleEntry};
@@ -306,7 +306,7 @@ fn set_fee_tx_script(
     app_fee: u64,
     protocol_fee: u64,
     enabled: u64,
-) -> anyhow::Result<miden_protocol::transaction::TransactionScript> {
+) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default().compile_tx_script(format!(
         r#"
         use miden::core::sys
@@ -350,6 +350,12 @@ async fn set_fee_rejects_a_non_boolean_enabled_flag() -> anyhow::Result<()> {
 #[case::app_fee_too_large(u64::from(FungibleAsset::MAX_AMOUNT) + 1, 0)]
 #[case::protocol_fee_too_large(0, u64::from(FungibleAsset::MAX_AMOUNT) + 1)]
 #[case::sum_too_large(u64::from(FungibleAsset::MAX_AMOUNT), 1)]
+// MAX_AMOUNT + 1 = (p + 1) / 2, so this sum wraps the field to 1. It is what the per-portion
+// checks exist to reject: a sum-only check would accept it.
+#[case::sum_wraps_the_field(
+    u64::from(FungibleAsset::MAX_AMOUNT) + 1,
+    u64::from(FungibleAsset::MAX_AMOUNT) + 1,
+)]
 #[tokio::test]
 async fn set_fee_rejects_portions_exceeding_the_max_asset_amount(
     #[case] app_fee: u64,
@@ -367,6 +373,34 @@ async fn set_fee_rejects_portions_exceeding_the_max_asset_amount(
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT);
+
+    Ok(())
+}
+
+/// `set_fee` accepts a schedule entry summing to exactly the maximum fungible asset amount: the
+/// bound is inclusive, matching `FeeScheduleEntry::new`.
+#[tokio::test]
+async fn set_fee_accepts_a_total_of_exactly_the_max_asset_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = add_fee_managed_account(&mut builder, 9)?;
+    let mock_chain = builder.build()?;
+
+    let max_amount = u64::from(FungibleAsset::MAX_AMOUNT);
+    let executed = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(set_fee_tx_script(max_amount, 0, 1)?)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut account = account;
+    account.apply_patch(executed.account_patch())?;
+    let entry = account.storage().get_map_item(
+        FeeManager::fee_schedule_slot(),
+        StorageMapKey::new(NoteScriptRoot::as_word(&NetworkSponsorshipNote::script_root())),
+    )?;
+    let expected = Word::from([Felt::new(max_amount)?, Felt::ZERO, Felt::ONE, Felt::ZERO]);
+    assert_eq!(entry, expected, "a maximal fee entry should be accepted and stored verbatim");
 
     Ok(())
 }
@@ -401,15 +435,22 @@ async fn set_fee_rejects_an_unauthorized_sender() -> anyhow::Result<()> {
         .note_type(NoteType::Private)
         .code(format!(
             r#"
+            use miden::core::sys
             use miden::standards::fees::fee_manager
 
             @note_script
             pub proc main
                 repeat.16 push.0 end
+                # => [pad(16)]
+
                 push.1 push.5 push.7
                 push.{target_root}
+                # => [SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+
                 call.fee_manager::set_fee
-                dropw dropw dropw dropw
+                # => [pad(16)]
+
+                exec.sys::truncate_stack
             end
             "#,
             target_root = NoteScriptRoot::as_word(&NetworkSponsorshipNote::script_root()),
