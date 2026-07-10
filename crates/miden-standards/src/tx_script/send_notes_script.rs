@@ -161,33 +161,29 @@ fn move_asset_to_note_body(
         push_note_header(&mut body, sender, note)?;
 
         // Note creation is only accessible from the account context, so it is created through the
-        // wallet's `create_note` procedure rather than the kernel procedure directly. Collapse the
-        // padding left by the `call` convention so the subsequent asset moves stay within the
-        // 16-element stack.
+        // wallet's `create_note` procedure rather than the kernel procedure directly
         body.push_str(
             "
             call.::miden::standards::wallets::basic::create_note
-            movdn.15 dropw dropw dropw drop drop drop
-            # => [note_idx]\n
+            # => [note_idx, pad(21)]\n
             ",
         );
 
         for asset in note.assets().iter() {
             body.push_str(&format!(
                 "
-                # duplicate note index below the move_asset_to_note window so it survives the call
-                padw push.0 push.0 push.0 dup.7
-                # => [note_idx, pad(7), note_idx]
+                dup movdn.8
+                # => [note_idx, pad(7), note_idx, pad(14)]
 
                 push.{ASSET_VALUE}
                 push.{ASSET_ID}
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx]
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx, pad(14)]
 
                 call.::miden::standards::wallets::basic::move_asset_to_note
-                # => [pad(16), note_idx]
+                # => [pad(16), note_idx, pad(14)]
 
-                dropw dropw dropw dropw
-                # => [note_idx]\n
+                dropw dropw dropw drop drop movup.2
+                # => [note_idx, pad(16)]\n
                 ",
                 ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
