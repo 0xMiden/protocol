@@ -353,12 +353,6 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
 }
 
 /// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program.
-///
-/// The operands for all cases are provided as the 16 stack inputs and consumed top-first. Each
-/// boolean result is asserted inside the program with `assert`/`assertz`, which consumes it (both
-/// exposing the next case's operands and keeping the stack within the 16-element limit -- `testz`
-/// grows the stack, but the following `assert`/`assertz` shrinks it right back). The final `testz`
-/// leaves the preserved ID `[suffix_1, prefix_1]` on the stack, which is asserted from Rust.
 #[tokio::test]
 async fn test_account_id_comparison() -> anyhow::Result<()> {
     let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
