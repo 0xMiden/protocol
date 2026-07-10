@@ -36,7 +36,7 @@ const VERSION_1=1
 #! - other_account_id_{suffix,prefix} are the suffix and prefix felts of the other account ID to
 #!   compare against.
 #! - is_id_equal is a boolean indicating whether the account IDs are equal.
-pub proc is_equal
+pub proc eq
     movup.2 eq
     # => [is_suffix_equal, account_id_prefix, other_account_id_prefix]
     movdn.2 eq
