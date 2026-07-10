@@ -647,8 +647,6 @@ proc create_burn_note
     push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
-    # `bridge_out` is itself an account procedure, so note creation may originate here directly
-    # via `exec`
     exec.output_note::create
     # => [note_idx]
 

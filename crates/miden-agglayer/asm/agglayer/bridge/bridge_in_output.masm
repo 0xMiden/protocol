@@ -147,8 +147,6 @@ pub proc unlock_and_send
     exec.p2id::create_parts
     # => [tag, note_type, RECIPIENT]
 
-    # `unlock_and_send` runs inside the `claim` account procedure, so the note may be created
-    # directly here
     exec.output_note::create
     # => [note_idx]
 

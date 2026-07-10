@@ -57,6 +57,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
     let tx_note_creation_script = format!(
         "
         use miden::core::sys
+        use miden::standards::wallets::basic as basic_wallet
 
         @transaction_script
         pub proc main
@@ -70,7 +71,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
             push.{tag}
             # => [tag, note_type, RECIPIENT, pad(16)]
 
-            call.::miden::standards::wallets::basic::create_note
+            call.basic_wallet::create_note
             # => [note_idx, pad(21)]
 
             # move the asset to the note
@@ -78,7 +79,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
             push.{ASSET_ID}
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(21)]
 
-            call.::miden::standards::wallets::basic::move_asset_to_note
+            call.basic_wallet::move_asset_to_note
             # => [pad(30)]
 
             # truncate the stack

@@ -307,7 +307,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             push.{recipient_1}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag_1}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             push.{ASSET_1_VALUE}
             push.{ASSET_1_KEY}
@@ -318,7 +319,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             push.{recipient_2}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag_2}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             dup
             push.{ASSET_2_VALUE}
@@ -506,7 +508,8 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             push.{recipient}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # assert that the index of the created note equals zero
             dup assertz.err=\"index of the created note should be zero\"
@@ -634,7 +637,8 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             push.{recipient}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             dup
             push.{ASSET_VALUE}
@@ -812,7 +816,8 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
             push.{tag}
             # => [tag, note_type, RECIPIENT]
 
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # clean the stack
             exec.sys::truncate_stack
@@ -911,7 +916,8 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # move the asset 0 to the note
             dup
@@ -1347,7 +1353,8 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             push.{ATTACHMENT}
             push.{attachment_scheme}
@@ -1417,7 +1424,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # Store attachment words to memory
             {store_attachment_words}
@@ -1595,7 +1603,8 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # add first word attachment (note_idx = 0)
             push.{ATTACHMENT_WORD_0}
@@ -1706,7 +1715,8 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx]
 
             # add first word attachment (note_idx = 0)
             push.{attachment0_word}
@@ -2043,7 +2053,8 @@ fn create_output_note(note: &Note) -> String {
         push.{RECIPIENT}
         push.{note_type}
         push.{tag}
-        call.::mock::account::create_note        # => [note_idx]
+        call.::mock::account::create_note
+        # => [note_idx]
     ",
         RECIPIENT = note.recipient().digest(),
         note_type = note.metadata().note_type() as u8,

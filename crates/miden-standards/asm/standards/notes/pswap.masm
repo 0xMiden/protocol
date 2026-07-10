@@ -380,10 +380,7 @@ proc create_remainder_note
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
-    loc_store.REMAINDER_NOTE_IDX
-    # => []
-
-    loc_load.REMAINDER_NOTE_IDX
+    dup loc_store.REMAINDER_NOTE_IDX
     # => [note_idx]
 
     push.0
