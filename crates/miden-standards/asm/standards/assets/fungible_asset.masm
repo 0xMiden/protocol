@@ -2,12 +2,12 @@ use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
 use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
+pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol::asset
 
-# CONSTANTS
+# RE-EXPORTS
 # ================================================================================================
 
-# Specifies the maximum amount a fungible asset can represent: 2^63 - 2^31.
-pub const MAX_AMOUNT=0x7fffffff80000000
+pub use {fungible_value_into_amount as value_into_amount} from miden::protocol::asset
 
 # ERRORS
 # ================================================================================================
@@ -156,21 +156,6 @@ pub proc get_balance
 
     # extract the asset's balance
     exec.value_into_amount
-    # => [balance]
-end
-
-#! Returns the balance of the given fungible asset and consumes it.
-#!
-#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [balance]
-#!
-#! Where:
-#! - ASSET_VALUE is the fungible asset from which to extract the balance.
-#! - balance is the amount of the fungible asset.
-pub proc value_into_amount
-    movdn.3 drop drop drop
     # => [balance]
 end
 
