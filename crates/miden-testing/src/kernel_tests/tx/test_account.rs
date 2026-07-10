@@ -358,52 +358,56 @@ async fn test_account_id_comparison() -> anyhow::Result<()> {
     let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
     let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
 
-    // Operands consumed top-first: eq(id_1, id_1), eq(id_1, id_2), eqz(0), eqz(id_1), testz(0),
-    // testz(id_1).
-    let stack_inputs = StackInputs::new(&[
-        suffix_1, prefix_1, suffix_1, prefix_1, // eq(id_1, id_1)
-        suffix_1, prefix_1, suffix_2, prefix_2, // eq(id_1, id_2)
-        ZERO, ZERO, // eqz(0)
-        suffix_1, prefix_1, // eqz(id_1)
-        ZERO, ZERO, // testz(0)
-        suffix_1, prefix_1, // testz(id_1)
-    ])
-    .unwrap();
-
-    let code = r#"
+    let code = format!(
+        r#"
         use miden::protocol::account_id
 
         begin
             # eq: identical IDs are equal
+            push.{prefix_1}.{suffix_1}.{prefix_1}.{suffix_1}
             exec.account_id::eq
             assert.err="eq: identical IDs should be equal"
+            # => [pad(16)]
 
             # eq: different IDs are not equal
+            push.{prefix_1}.{suffix_1}.{prefix_2}.{suffix_2}
             exec.account_id::eq
             assertz.err="eq: different IDs should not be equal"
+            # => [pad(16)]
 
             # eqz: the zero address is zero
+            push.0.0
             exec.account_id::eqz
             assert.err="eqz: the zero address should be zero"
+            # => [pad(16)]
 
             # eqz: a valid ID is not zero
+            push.{prefix_1}.{suffix_1}
             exec.account_id::eqz
             assertz.err="eqz: a valid ID should not be zero"
+            # => [pad(16)]
 
-            # testz: the zero address is zero; drop the preserved zeros
+            # testz: the zero address is zero
+            push.0.0
             exec.account_id::testz
             assert.err="testz: the zero address should be zero"
-            drop drop
+            # => [pad(18)]
 
             # testz: a valid ID is not zero, leaving [suffix_1, prefix_1] on the stack
+            push.{prefix_1}.{suffix_1}
             exec.account_id::testz
             assertz.err="testz: a valid ID should not be zero"
+            # => [suffix_1, prefix_1, pad(18)]
+
+            # truncate the stack
+            swapw dropw
+            # => [suffix_1, prefix_1, pad(14)]
         end
-        "#;
+        "#
+    );
 
     let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(stack_inputs)
-        .run(code)
+        .run(&code)
         .await
         .map_err(ExecError::into_execution_error)?;
 
