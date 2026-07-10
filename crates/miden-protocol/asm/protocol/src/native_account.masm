@@ -14,6 +14,7 @@ use {
     ACCOUNT_SET_MAP_ITEM_OFFSET,
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
+use miden::core::word
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -459,6 +460,29 @@ pub proc get_initial_asset
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [ASSET_VALUE]
+end
+
+#! Returns a boolean indicating whether the native account's vault contained an asset with the
+#! provided asset ID at the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [has_asset]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to check.
+#! - has_asset is a boolean indicating whether the account vault had the asset.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc has_initial_asset
+    exec.get_initial_asset
+    # => [ASSET_VALUE]
+
+    # compare with EMPTY_WORD to assess if the asset existed in the vault
+    exec.word::eqz not
+    # => [has_asset]
 end
 
 # CODE

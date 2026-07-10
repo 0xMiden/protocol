@@ -181,6 +181,56 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_has_initial_asset() -> anyhow::Result<()> {
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let non_fungible_asset =
+        tx_context.account().vault().assets().find(Asset::is_non_fungible).unwrap();
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::native_account
+        use mock::account
+
+        begin
+            exec.prologue::prepare_transaction
+
+            # the asset is present in the initial vault
+            push.{NON_FUNGIBLE_ASSET_ID}
+            exec.native_account::has_initial_asset
+            # => [has_asset_before]
+
+            # remove the asset from the account's current vault
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_ID}
+            call.account::remove_asset
+            # => [FINAL_ASSET_VALUE, has_asset_before]
+            dropw
+            # => [has_asset_before]
+
+            # has_initial_asset still reports it since it reads the initial vault
+            push.{NON_FUNGIBLE_ASSET_ID}
+            exec.native_account::has_initial_asset
+            # => [has_asset_after, has_asset_before]
+
+            # truncate the stack
+            exec.::miden::core::sys::truncate_stack
+        end
+        ",
+        NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
+    );
+
+    let exec_output = tx_context.execute_code(&code).await?;
+
+    // The asset is reported both before and after its removal from the current vault.
+    assert_eq!(exec_output.get_stack_element(0).as_canonical_u64(), 1);
+    assert_eq!(exec_output.get_stack_element(1).as_canonical_u64(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
     let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();

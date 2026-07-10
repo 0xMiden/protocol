@@ -115,6 +115,7 @@
   - Moved `protocol::asset::create_non_fungible_asset` -> `from_parts`
   - Moved `protocol::asset::non_fungible_value_into_asset_class` -> `value_into_asset_class`
 - [BREAKING] Renamed and generalized `miden::protocol::active_account::has_non_fungible_asset` to `has_asset`, which now accepts any asset ID instead of only non-fungible assets ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+- Added `miden::protocol::native_account::has_initial_asset` procedure returning whether the native account's vault contained an asset at the beginning of the transaction ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 
 ### Fixes
 
