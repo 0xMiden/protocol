@@ -2,7 +2,7 @@ use miden::protocol::account_id
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use { AccountId, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType } from miden::protocol::types
+use { AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType } from miden::protocol::types
 
 pub use {
     ATTACHMENT_SCHEME_NONE,
@@ -43,7 +43,7 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bo
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment(storage_ptr: MemoryAddress, num_storage_items: felt) -> word
+pub proc compute_storage_commitment(storage_ptr: MemoryAddress, num_storage_items: u16) -> word
     # check that number of storage items is less than or equal to MAX_NOTE_STORAGE_ITEMS
     dup.1 push.MAX_NOTE_STORAGE_ITEMS u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
@@ -64,7 +64,7 @@ end
 #!   }
 #! Outputs:
 #!   Operand stack: []
-pub proc write_assets_to_memory(assets_commitment: word, num_assets: felt, dest_ptr: MemoryAddress)
+pub proc write_assets_to_memory(assets_commitment: word, num_assets: u8, dest_ptr: MemoryAddress)
     # load the asset data from the advice map to the advice stack
     adv.push_mapval
     # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
@@ -96,7 +96,7 @@ end
 #!   }
 #! Outputs:
 #!   Operand stack: [num_attachments]
-pub proc write_attachment_commitments_to_memory(attachments_commitment: word, dest_ptr: MemoryAddress) -> felt
+pub proc write_attachment_commitments_to_memory(attachments_commitment: word, dest_ptr: MemoryAddress) -> u8
     # push the individual ATTACHMENT commitments from the advice map onto the advice stack
     adv.push_mapvaln
     # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
@@ -140,7 +140,7 @@ end
 #! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
 #! - dest_ptr is the memory address to which to write the attachment data.
 #! - num_words is the number of words in the attachment.
-pub proc write_attachment_to_memory(attachment_commitment: word, dest_ptr: MemoryAddress) -> felt
+pub proc write_attachment_to_memory(attachment_commitment: word, dest_ptr: MemoryAddress) -> u16
     # push the number of attachment elements from the advice map onto the advice stack
     adv.push_mapvaln
     # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
@@ -187,7 +187,7 @@ end
 #!   attachment commitment.
 #!
 #! Invocation: exec
-pub proc write_indexed_attachment_to_memory(num_attachments: felt, attachment_commitments_ptr: MemoryAddress, attachment_idx: felt, dest_ptr: MemoryAddress) -> felt
+pub proc write_indexed_attachment_to_memory(num_attachments: u8, attachment_commitments_ptr: MemoryAddress, attachment_idx: u8, dest_ptr: MemoryAddress) -> u16
     # assert attachment_idx < num_attachments
     dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
@@ -238,7 +238,7 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_and_store_recipient(storage_ptr: MemoryAddress, num_storage_items: felt, serial_num: word, script_root: NoteScriptRoot) -> NoteRecipient
+pub proc compute_and_store_recipient(storage_ptr: MemoryAddress, num_storage_items: u16, serial_num: word, script_root: NoteScriptRoot) -> NoteRecipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -333,7 +333,7 @@ end
 #! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (felt, felt, felt, felt)
+pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (u16, u16, u16, u16)
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
     drop drop drop
@@ -422,7 +422,7 @@ end
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
 #! Invocation: exec
-pub proc find_attachment_idx(attachment_scheme: felt, metadata: NoteMetadata) -> (felt, felt)
+pub proc find_attachment_idx(attachment_scheme: u16, metadata: NoteMetadata) -> (Bool, u8)
     movdn.4 exec.metadata_into_attachment_schemes
     # => [scheme_0, scheme_1, scheme_2, scheme_3, attachment_scheme]
 

@@ -14,7 +14,7 @@ use {
     ACCOUNT_HAS_PROCEDURE_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use { AccountId, AccountProcedureRoot, AssetId, AssetValue, StorageMapKey, StorageSlotId } from miden::protocol::types
+use { AccountId, AccountProcedureRoot, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -255,7 +255,7 @@ end
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc has_storage_slot(slot_id: StorageSlotId) -> felt
+pub proc has_storage_slot(slot_id: StorageSlotId) -> Bool
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -349,7 +349,7 @@ end
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Invocation: exec
-pub proc has_asset(asset_id: AssetId) -> felt
+pub proc has_asset(asset_id: AssetId) -> Bool
     exec.get_asset
     # => [ASSET_VALUE]
 
@@ -367,7 +367,7 @@ end
 #! - num_procedures is the number of procedures in the active account.
 #!
 #! Invocation: exec
-pub proc get_num_procedures() -> felt
+pub proc get_num_procedures() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -396,7 +396,7 @@ end
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: exec
-pub proc get_procedure_root(index: felt) -> AccountProcedureRoot
+pub proc get_procedure_root(index: u8) -> AccountProcedureRoot
     # => [index]
 
     push.0.0 movup.2
@@ -429,7 +429,7 @@ end
 #!   available on the active account.
 #!
 #! Invocation: exec
-pub proc has_procedure(proc_root: AccountProcedureRoot) -> felt
+pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_HAS_PROCEDURE_OFFSET
     # => [offset, PROC_ROOT]
 

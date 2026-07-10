@@ -170,7 +170,7 @@ end
 #! - num_input_notes is the total number of input notes consumed by this transaction.
 #!
 #! Invocation: exec
-pub proc get_num_input_notes() -> felt
+pub proc get_num_input_notes() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -198,7 +198,7 @@ end
 #! - num_output_notes is the number of output notes created in this transaction so far.
 #!
 #! Invocation: exec
-pub proc get_num_output_notes() -> felt
+pub proc get_num_output_notes() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]

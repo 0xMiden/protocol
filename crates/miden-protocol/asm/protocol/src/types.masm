@@ -24,6 +24,7 @@ pub type TransactionScriptRoot = word
 pub type Asset = struct { id: word, value: word }
 
 # Scalar domain values.
+pub type Bool = i1
 pub type AssetAmount = felt
 pub type NoteTag = u32
 pub type NoteType = u8

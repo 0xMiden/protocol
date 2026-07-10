@@ -16,7 +16,7 @@ use {
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use { AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, StorageMapKey, StorageSlotId } from miden::protocol::types
+use { AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -511,7 +511,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc has_initial_asset(asset_id: AssetId) -> felt
+pub proc has_initial_asset(asset_id: AssetId) -> Bool
     exec.get_initial_asset
     # => [ASSET_VALUE]
 
@@ -537,7 +537,7 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> felt
+pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
     # => [offset, PROC_ROOT]
 
