@@ -378,7 +378,11 @@ async fn test_account_id_eq() -> anyhow::Result<()> {
         .run(code)
         .await
         .map_err(ExecError::into_execution_error)?;
-    assert_eq!(exec_output.get_stack_element(0).as_canonical_u64(), 1, "equal IDs should be equal");
+    assert_eq!(
+        exec_output.get_stack_element(0).as_canonical_u64(),
+        1,
+        "equal IDs should be equal"
+    );
 
     // Different IDs compare as not equal.
     let exec_output = CodeExecutor::with_default_host()
