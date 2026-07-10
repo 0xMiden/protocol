@@ -172,6 +172,13 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 // ACCOUNT ID TESTS
 // ================================================================================================
 
+/// Splits a raw account ID into its suffix and prefix felts.
+fn account_id_felts(account_id: &u128) -> anyhow::Result<(Felt, Felt)> {
+    let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+    let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+    Ok((prefix, suffix))
+}
+
 #[tokio::test]
 async fn test_account_validate_id() -> anyhow::Result<()> {
     let test_cases = [
@@ -204,8 +211,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+        let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
             use miden::protocol::account_id
@@ -290,8 +296,7 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+        let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
             use miden::protocol::account_id
@@ -347,22 +352,11 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
     Ok(())
 }
 
-// ACCOUNT ID ZERO-TEST HELPER TESTS
-// ================================================================================================
-
-/// Splits a raw account ID into its suffix and prefix felts, matching the on-stack layout
-/// `[account_id_suffix, account_id_prefix]` expected by the `account_id` procedures.
-fn account_id_felts(account_id: u128) -> anyhow::Result<(Felt, Felt)> {
-    let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-    let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
-    Ok((suffix, prefix))
-}
-
 /// `account_id::eq` returns `1` when both limbs of two account IDs match and `0` otherwise.
 #[tokio::test]
 async fn test_account_id_eq() -> anyhow::Result<()> {
-    let (a_suffix, a_prefix) = account_id_felts(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
-    let (b_suffix, b_prefix) = account_id_felts(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
+    let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+    let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
 
     let code = "
         use miden::protocol::account_id
@@ -374,7 +368,7 @@ async fn test_account_id_eq() -> anyhow::Result<()> {
 
     // Equal IDs compare as equal.
     let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[a_suffix, a_prefix, a_suffix, a_prefix]).unwrap())
+        .stack_inputs(StackInputs::new(&[suffix_1, prefix_1, suffix_1, prefix_1]).unwrap())
         .run(code)
         .await
         .map_err(ExecError::into_execution_error)?;
@@ -386,7 +380,7 @@ async fn test_account_id_eq() -> anyhow::Result<()> {
 
     // Different IDs compare as not equal.
     let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[a_suffix, a_prefix, b_suffix, b_prefix]).unwrap())
+        .stack_inputs(StackInputs::new(&[suffix_1, prefix_1, suffix_2, prefix_2]).unwrap())
         .run(code)
         .await
         .map_err(ExecError::into_execution_error)?;
@@ -423,7 +417,7 @@ async fn test_account_id_eqz() -> anyhow::Result<()> {
     );
 
     // A valid, non-zero ID is not zero, and the ID is consumed leaving only the flag.
-    let (suffix, prefix) = account_id_felts(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+    let (prefix, suffix) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
     let exec_output = CodeExecutor::with_default_host()
         .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
         .run(code)
@@ -465,7 +459,7 @@ async fn test_account_id_testz() -> anyhow::Result<()> {
 
     // The `assertz` only passes if `testz` reports a valid ID as non-zero (flag == 0); the ID must
     // still be on the stack afterwards.
-    let (suffix, prefix) = account_id_felts(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+    let (prefix, suffix) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
     let nonzero_code = r#"
         use miden::protocol::account_id
 
