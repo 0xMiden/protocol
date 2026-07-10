@@ -1020,7 +1020,8 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
 }
 
 /// This test checks the correctness of the
-/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure in two cases:
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure in two
+/// cases:
 /// - when a note adds the asset which already exists in the account vault.
 /// - when a note adds the asset which doesn't exist in the account vault.
 ///
@@ -1171,8 +1172,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 }
 
 /// This test checks the correctness of the
-/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure when an asset is moved
-/// from the vault to a note.
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure when an
+/// asset is moved from the vault to a note.
 ///
 /// As part of the test pipeline it also checks the correctness of the
 /// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
