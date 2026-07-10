@@ -18,7 +18,7 @@ pub type StorageSlot = u8;
 // | Global inputs      | 400           | 40               |                                            |
 // | Block header       | 800           | 44               |                                            |
 // | Partial blockchain | 1_200         | 132              |                                            |
-// | Kernel data        | 1_600         | 280              | 56 procedures in total, 4 elements each    |
+// | Kernel data        | 1_600         | 224              | 56 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
 // | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches  |
 // | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment          |
