@@ -10,6 +10,7 @@ members = [
   "auth/multisig",
   "auth/multisig_smart",
   "auth/network_account",
+  "auth/network_account_with_fees",
   "auth/no_auth",
   "auth/singlesig",
   "auth/singlesig_acl",

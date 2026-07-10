@@ -11,18 +11,21 @@
 //! The fee budget travels down the chain inside the notes. No network account ever fronts
 //! liquidity, and neither feature note knows anything about fees.
 
+use std::collections::BTreeSet;
+
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Authority;
-use miden_standards::account::fees::{FeeAuth, FeeManager, FeeScheduleEntry};
+use miden_standards::account::auth::AuthNetworkAccountWithFees;
+use miden_standards::account::fees::{FeeManager, FeeScheduleEntry};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP,
@@ -102,11 +105,18 @@ fn parent_note_code(downstream: &Account) -> String {
     )
 }
 
-/// Builds a fee-managed network account.
-fn fee_managed_account(seed: u8, fee_manager: FeeManager) -> anyhow::Result<Account> {
+/// Builds a fee-managed network account allowlisting `allowed_note` (the sponsorship root is
+/// added automatically).
+fn fee_managed_account(
+    seed: u8,
+    fee_manager: FeeManager,
+    allowed_note: NoteScriptRoot,
+) -> anyhow::Result<Account> {
+    let auth = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from([allowed_note]))?;
+
     Ok(AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(FeeAuth)
+        .with_auth_component(auth)
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_component(fee_manager)
@@ -146,6 +156,7 @@ fn setup(budget: u64, parent_spawns: bool, reclaim_delta: u32) -> anyhow::Result
             P2idNote::script_root(),
             FeeScheduleEntry::new(DOWNSTREAM_APP_FEE, DOWNSTREAM_PROTOCOL_FEE)?,
         ),
+        P2idNote::script_root(),
     )?;
 
     // The parent note's script root is only known once its code is compiled, and its code names the
@@ -171,6 +182,7 @@ fn setup(budget: u64, parent_spawns: bool, reclaim_delta: u32) -> anyhow::Result
             .with_fee(parent_root, FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?)
             .with_spawn(parent_root, P2idNote::script_root())
             .with_reclaim_delta(reclaim_delta),
+        parent_root,
     )?;
 
     builder.add_account(downstream.clone())?;
@@ -452,6 +464,7 @@ async fn two_spawning_notes_are_rejected() -> anyhow::Result<()> {
             P2idNote::script_root(),
             FeeScheduleEntry::new(DOWNSTREAM_APP_FEE, DOWNSTREAM_PROTOCOL_FEE)?,
         ),
+        P2idNote::script_root(),
     )?;
 
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -472,6 +485,7 @@ async fn two_spawning_notes_are_rejected() -> anyhow::Result<()> {
         FeeManager::new(fee_faucet)?
             .with_fee(parent_root, FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?)
             .with_spawn(parent_root, P2idNote::script_root()),
+        parent_root,
     )?;
 
     builder.add_account(downstream.clone())?;

@@ -5,6 +5,8 @@
 //! was covered, keeps the application portion, and forwards the protocol portion to the batch
 //! builder in a FEE note that anyone may consume.
 
+use std::collections::BTreeSet;
+
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -17,9 +19,13 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Authority;
-use miden_standards::account::fees::{FeeAuth, FeeManager, FeeScheduleEntry};
+use miden_standards::account::auth::AuthNetworkAccountWithFees;
+use miden_standards::account::fees::{FeeManager, FeeScheduleEntry};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::errors::standards::ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP;
+use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP,
+    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
+};
 use miden_standards::note::{NetworkSponsorshipNote, P2idNote};
 use miden_testing::{
     Auth,
@@ -52,16 +58,19 @@ struct Fixture {
     sponsorship_note: Note,
 }
 
-/// Adds the fee-managed network account: `FeeAuth` + `BasicWallet` + `Authority` + `FeeManager`
-/// pricing the fee-unaware P2ID feature note.
+/// Adds the fee-managed network account: allowlist + fee auth, `BasicWallet`, `Authority`, and
+/// `FeeManager` pricing the fee-unaware P2ID feature note.
 fn add_network_account(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let fee_manager = FeeManager::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?)?
         // The feature note is a plain P2ID: it knows nothing about fees.
         .with_fee(P2idNote::script_root(), FeeScheduleEntry::new(APP_FEE, PROTOCOL_FEE)?);
 
+    let auth =
+        AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from([P2idNote::script_root()]))?;
+
     let network_account = AccountBuilder::new([7u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(FeeAuth)
+        .with_auth_component(auth)
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_component(fee_manager)
@@ -373,6 +382,60 @@ async fn malformed_sponsorship_does_not_block_settlement(
         .await?;
 
     assert_note_created!(executed, assets: [fee_asset(PROTOCOL_FEE)?]);
+
+    Ok(())
+}
+
+/// A priced note whose root is not allowlisted is rejected by the auth component before
+/// settlement runs: pricing a script does not grant it permission to run.
+#[tokio::test]
+async fn priced_but_not_allowlisted_note_is_rejected() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::empty());
+    let mut builder = MockChain::builder();
+
+    let fee_manager = FeeManager::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?)?
+        .with_fee(P2idNote::script_root(), FeeScheduleEntry::new(APP_FEE, PROTOCOL_FEE)?);
+
+    // The allowlist holds only the auto-inserted sponsorship root: P2ID is priced but not allowed.
+    let auth = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::new())?;
+
+    let network_account = AccountBuilder::new([13u8; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(auth)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_component(fee_manager)
+        .build_existing()?;
+    builder.add_account(network_account.clone())?;
+
+    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let feature_note = builder.add_p2id_note(
+        sponsor.id(),
+        network_account.id(),
+        &[business_asset()?],
+        NoteType::Public,
+    )?;
+    let sponsorship_note = Note::from(
+        NetworkSponsorshipNote::builder()
+            .sender(sponsor.id())
+            .target_account(network_account.id())?
+            .feature_note_id(feature_note.id())
+            .asset(fee_asset(APP_FEE + PROTOCOL_FEE)?)
+            .generate_serial_number(&mut rng)
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+
+    let mock_chain = builder.build()?;
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .authenticated_input_note(feature_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
 
     Ok(())
 }

@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-network-account-with-fees"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::network_account_with_fees"
+path      = "network_account_with_fees.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

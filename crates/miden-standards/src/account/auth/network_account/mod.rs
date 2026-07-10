@@ -1,6 +1,9 @@
 mod auth_network_account;
 pub use auth_network_account::AuthNetworkAccount;
 
+mod auth_network_account_with_fees;
+pub use auth_network_account_with_fees::AuthNetworkAccountWithFees;
+
 #[allow(clippy::module_inception)]
 mod network_account;
 pub use network_account::NetworkAccount;

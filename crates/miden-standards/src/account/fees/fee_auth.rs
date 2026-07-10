@@ -24,8 +24,10 @@ account_component_code!(FEE_AUTH_CODE, "miden-standards-fees-fee-auth.masp");
 ///
 /// # Warning
 ///
-/// This component performs **no cryptographic authentication**. A production network account would
-/// compose fee settlement with the note-script and transaction-script allowlists of
+/// This component is **test-only**: it performs no authentication of any kind and gates nothing.
+/// A production network account should use
+/// [`AuthNetworkAccountWithFees`](crate::account::auth::AuthNetworkAccountWithFees), which
+/// combines this settlement with the note-script and transaction-script allowlists of
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FeeAuth;
