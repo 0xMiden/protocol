@@ -855,7 +855,7 @@ pub proc validate_seed
     # => [hashed_account_id_suffix, hashed_account_id_prefix, account_id_suffix, account_id_prefix]
 
     # assert the account ID matches the account ID of the new account
-    exec.account_id::is_equal assert.err=ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH
+    exec.account_id::eq assert.err=ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH
     # => []
 end
 
@@ -1015,7 +1015,7 @@ pub proc load_foreign_account
     # check that the account ID provided by the advice map matches the one provided by the operand
     # stack
     dup.5 dup.5
-    exec.account_id::is_equal assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
+    exec.account_id::eq assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
@@ -1727,7 +1727,7 @@ pub proc get_account_data_ptr
         # => [is_empty_block, account_id_suffix, account_id_prefix, curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         # check whether the current id matches the foreign id
-        movdn.2 dup.5 dup.5 exec.account_id::is_equal
+        movdn.2 dup.5 dup.5 exec.account_id::eq
         # => [is_equal_id, is_empty_block, curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         # get the loop flag
