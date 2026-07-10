@@ -192,10 +192,19 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment
+    # These two checks are strictly redundant here: a non-empty delta requires the nonce to be
+    # incremented, which is already gated to the auth procedure, and an empty delta only ever
+    # commits to the (public) empty word. We keep them for consistency with the other account
+    # procedures and may drop them later.
+    exec.memory::assert_native_account
+    exec.authenticate_and_track_account_origin
+
     # compute the account delta commitment
     exec.account_update::compute_delta_commitment
     # => [DELTA_COMMITMENT, pad(16)]
