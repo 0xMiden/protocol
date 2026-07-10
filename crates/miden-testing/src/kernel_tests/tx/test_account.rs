@@ -352,138 +352,106 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
     Ok(())
 }
 
-/// `account_id::eq` returns `1` when both limbs of two account IDs match and `0` otherwise.
+/// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program
+/// that leaves every result on the stack, so all six cases are asserted from one execution.
+///
+/// The operands for all cases are provided as the 16 stack inputs and consumed top-first. Each
+/// result is tucked beneath the remaining operands with `movdn` so it survives to the end, and the
+/// program finishes with a net-consuming `eqz` so the final stack stays within the 16-element limit
+/// (`testz` grows the stack, so it cannot be the last operation). The final stack, from the top,
+/// is:   `[eqz(id_1), testz(id_1), suffix_1, prefix_1, eq(id_1, id_1), eq(id_1, id_2), eqz(0),
+///     testz(0)]`
 #[tokio::test]
-async fn test_account_id_eq() -> anyhow::Result<()> {
+async fn test_account_id_comparison() -> anyhow::Result<()> {
     let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
     let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
 
+    // Operands consumed top-first: eq(id_1, id_1), eq(id_1, id_2), eqz(0), testz(0), testz(id_1),
+    // eqz(id_1).
+    let stack_inputs = StackInputs::new(&[
+        suffix_1, prefix_1, suffix_1, prefix_1, // eq(id_1, id_1)
+        suffix_1, prefix_1, suffix_2, prefix_2, // eq(id_1, id_2)
+        ZERO, ZERO, // eqz(0)
+        ZERO, ZERO, // testz(0)
+        suffix_1, prefix_1, // testz(id_1)
+        suffix_1, prefix_1, // eqz(id_1)
+    ])
+    .unwrap();
+
     let code = "
         use miden::protocol::account_id
 
         begin
+            # eq(id_1, id_1) -> 1
             exec.account_id::eq
-        end
-        ";
+            movdn.12
 
-    // Equal IDs compare as equal.
-    let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[suffix_1, prefix_1, suffix_1, prefix_1]).unwrap())
-        .run(code)
-        .await
-        .map_err(ExecError::into_execution_error)?;
-    assert_eq!(
-        exec_output.get_stack_element(0).as_canonical_u64(),
-        1,
-        "equal IDs should be equal"
-    );
+            # eq(id_1, id_2) -> 0
+            exec.account_id::eq
+            movdn.9
 
-    // Different IDs compare as not equal.
-    let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[suffix_1, prefix_1, suffix_2, prefix_2]).unwrap())
-        .run(code)
-        .await
-        .map_err(ExecError::into_execution_error)?;
-    assert_eq!(
-        exec_output.get_stack_element(0).as_canonical_u64(),
-        0,
-        "different IDs should not be equal"
-    );
+            # eqz(0) -> 1
+            exec.account_id::eqz
+            movdn.8
 
-    Ok(())
-}
+            # testz(0) -> 1; drop the preserved zeros, keeping only the flag
+            exec.account_id::testz
+            movdn.2 drop drop
+            movdn.7
 
-/// `account_id::eqz` consumes the ID and returns `1` for the zero address, `0` otherwise.
-#[tokio::test]
-async fn test_account_id_eqz() -> anyhow::Result<()> {
-    let code = "
-        use miden::protocol::account_id
+            # testz(id_1) -> 0; keep [is_zero, suffix_1, prefix_1] and tuck it beneath the operands
+            exec.account_id::testz
+            movdn.4 movdn.4 movdn.4
 
-        begin
+            # eqz(id_1) -> 0
             exec.account_id::eqz
         end
         ";
 
-    // The zero address is detected as zero.
     let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[ZERO, ZERO]).unwrap())
+        .stack_inputs(stack_inputs)
         .run(code)
         .await
         .map_err(ExecError::into_execution_error)?;
-    assert_eq!(
-        exec_output.get_stack_element(0).as_canonical_u64(),
-        1,
-        "the zero address should be zero"
-    );
 
-    // A valid, non-zero ID is not zero, and the ID is consumed leaving only the flag.
-    let (prefix, suffix) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
-    let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
-        .run(code)
-        .await
-        .map_err(ExecError::into_execution_error)?;
+    // eqz(id_1): a valid ID is not zero.
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
         0,
-        "a valid account ID should not be zero"
+        "eqz: valid ID is not zero"
     );
-    assert_eq!(exec_output.get_stack_element(1), ZERO, "eqz should consume the account ID");
 
-    Ok(())
-}
-
-/// `account_id::testz` reports whether the ID is the zero address while preserving the ID.
-///
-/// Because `testz` leaves an extra element on the stack, the flag is consumed inside the program
-/// (via `assert`/`assertz`, mirroring how the procedure is used in the codebase) so the final stack
-/// fits within the 16-element limit; the preserved ID is then checked from the remaining stack.
-#[tokio::test]
-async fn test_account_id_testz() -> anyhow::Result<()> {
-    // The `assert` only passes if `testz` reports the zero address as zero (flag == 1).
-    let zero_code = r#"
-        use miden::protocol::account_id
-
-        begin
-            exec.account_id::testz
-            # => [is_zero, account_id_suffix, account_id_prefix]
-            assert.err="testz should report the zero address as zero"
-            # => [account_id_suffix, account_id_prefix]
-        end
-        "#;
-    CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[ZERO, ZERO]).unwrap())
-        .run(zero_code)
-        .await
-        .map_err(ExecError::into_execution_error)?;
-
-    // The `assertz` only passes if `testz` reports a valid ID as non-zero (flag == 0); the ID must
-    // still be on the stack afterwards.
-    let (prefix, suffix) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
-    let nonzero_code = r#"
-        use miden::protocol::account_id
-
-        begin
-            exec.account_id::testz
-            # => [is_zero, account_id_suffix, account_id_prefix]
-            assertz.err="testz should report a valid account ID as non-zero"
-            # => [account_id_suffix, account_id_prefix]
-        end
-        "#;
-    let exec_output = CodeExecutor::with_default_host()
-        .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
-        .run(nonzero_code)
-        .await
-        .map_err(ExecError::into_execution_error)?;
+    // testz(id_1): a valid ID is not zero and is preserved beneath the flag.
     assert_eq!(
-        exec_output.get_stack_element(0),
-        suffix,
-        "testz must preserve the account ID suffix"
+        exec_output.get_stack_element(1).as_canonical_u64(),
+        0,
+        "testz: valid ID is not zero"
+    );
+    assert_eq!(exec_output.get_stack_element(2), suffix_1, "testz must preserve the ID suffix");
+    assert_eq!(exec_output.get_stack_element(3), prefix_1, "testz must preserve the ID prefix");
+
+    // eq: identical IDs are equal, different IDs are not.
+    assert_eq!(
+        exec_output.get_stack_element(4).as_canonical_u64(),
+        1,
+        "eq: identical IDs are equal"
     );
     assert_eq!(
-        exec_output.get_stack_element(1),
-        prefix,
-        "testz must preserve the account ID prefix"
+        exec_output.get_stack_element(5).as_canonical_u64(),
+        0,
+        "eq: different IDs differ"
+    );
+
+    // eqz(0) and testz(0): the zero address is zero.
+    assert_eq!(
+        exec_output.get_stack_element(6).as_canonical_u64(),
+        1,
+        "eqz: zero address is zero"
+    );
+    assert_eq!(
+        exec_output.get_stack_element(7).as_canonical_u64(),
+        1,
+        "testz: zero address is zero"
     );
 
     Ok(())
