@@ -1,5 +1,3 @@
-use miden::protocol::asset
-use {COMPOSITION_FUNGIBLE, COMPOSITION_NONE} from miden::protocol::asset
 use {
     ACCOUNT_GET_ID_OFFSET,
     ACCOUNT_GET_NONCE_OFFSET,
@@ -19,13 +17,6 @@ use miden::core::word
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
-
-# ERRORS
-# -------------------------------------------------------------------------------------------------
-
-const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
-
-const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET="the has_non_fungible_asset procedure can only be called on a non-fungible faucet"
 
 # ID AND NONCE
 # -------------------------------------------------------------------------------------------------
@@ -362,60 +353,22 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the balance of the fungible asset associated with the provided asset ID in the
-#! active account's vault.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [balance]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the fungible asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
-#! - the asset composition encoded in ASSET_ID is not fungible.
-#!
-#! Invocation: exec
-pub proc get_balance
-    # assert that the asset composition is fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_FUNGIBLE
-    assert_eq.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
-    exec.get_asset
-    # => [ASSET_VALUE]
-
-    # extract the asset's balance
-    exec.asset::fungible_value_into_amount
-    # => [balance]
-end
-
 #! Returns a boolean indicating whether the active account stores an asset with the provided
-#! non-fungible asset ID in its vault.
+#! asset ID in its vault.
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET_ID is the key of the fungible asset to check.
+#! - ASSET_ID is the asset ID of the asset to check.
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
 #! - the procedure is not invoked from the account context (it was called outside of the account
 #!   code).
-#! - the ASSET_VALUE is a fungible asset.
 #!
 #! Invocation: exec
-pub proc has_non_fungible_asset
-    # assert that the asset's composition is non-fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_NONE
-    assert_eq.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
+pub proc has_asset
     exec.get_asset
     # => [ASSET_VALUE]
 

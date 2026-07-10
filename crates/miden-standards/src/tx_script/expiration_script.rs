@@ -1,38 +1,27 @@
 use core::num::NonZeroU16;
 
+use miden_protocol::assembly::Path;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::code_builder::CodeBuilder;
+use crate::StandardsLib;
+
+// CONSTANTS
+// ================================================================================================
+
+/// Path to the expiration transaction script procedure in the standards library, assembled from
+/// `asm/standards/tx_scripts/expiration.masm`.
+const EXPIRATION_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::expiration::main";
 
 // EXPIRATION TRANSACTION SCRIPT
 // ================================================================================================
 
-/// Transaction script that sets the expiration delta.
-const EXPIRATION_TX_SCRIPT_SOURCE: &str = "\
-use miden::protocol::tx
-
-#! Set the transaction's expiration delta.
-#!
-#! Inputs:  [[delta, 0, 0, 0], pad(12)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - delta is 0 or not a u32 in the range 1..=0xFFFF (ERR_TX_INVALID_EXPIRATION_DELTA).
-#!
-#! Invocation: call
-@transaction_script
-pub proc main
-    exec.tx::update_expiration_block_delta
-    # => [pad(16)]
-end
-";
-
 static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    CodeBuilder::default()
-        .compile_tx_script(EXPIRATION_TX_SCRIPT_SOURCE)
-        .expect("canonical expiration tx script should compile")
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(EXPIRATION_TX_SCRIPT_PATH);
+    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("standards library should contain the expiration tx script procedure")
 });
 
 /// The canonical transaction script that sets the transaction's expiration delta to the value

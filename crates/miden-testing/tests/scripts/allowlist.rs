@@ -476,7 +476,8 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
             push.{tag}
             push.{amount}
 
-            exec.::miden::protocol::faucet::create_fungible_asset
+            exec.::miden::protocol::active_account::get_id
+            exec.::miden::standards::assets::fungible_asset::create
 
             call.::miden::standards::faucets::fungible::mint_and_send
 

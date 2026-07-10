@@ -1,0 +1,56 @@
+#! miden::standards::assets::non_fungible_asset
+#!
+#! Provides procedures for creating non-fungible assets.
+
+use {COMPOSITION_NONE} from miden::protocol::asset
+
+# PROCEDURES
+# ================================================================================================
+
+#! Creates a non fungible asset for the specified non-fungible faucet.
+#!
+#! The provided asset ID will be created with asset composition set to COMPOSITION_NONE.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
+#!   for.
+#! - ASSET_VALUE is the data hash of the non-fungible asset to create.
+#! - ASSET_ID is the asset ID of the created non-fungible asset.
+#! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to ASSET_VALUE.
+#!
+#! Invocation: exec
+pub proc create
+    # push the non-fungible (None) composition
+    # this is equivalent to the asset metadata
+    push.COMPOSITION_NONE
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    # merge the asset metadata into the lower 8 bits of the suffix
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+
+    # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key
+    # word
+    dup.3 dup.3
+    # => [hash0, hash1, faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Returns the asset class of the given non-fungible asset value and consumes the value.
+#!
+#! WARNING: Assumes that the given asset value is non-fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [asset_class_suffix, asset_class_prefix]
+#!
+#! Where:
+#! - ASSET_VALUE is the non-fungible asset value, whose first two elements are the asset class.
+#! - asset_class is the (suffix, prefix) pair of the non-fungible asset.
+pub proc value_into_asset_class
+    # => [asset_class_suffix, asset_class_prefix, value_2, value_3]
+    movup.3 drop movup.2 drop
+    # => [asset_class_suffix, asset_class_prefix]
+end

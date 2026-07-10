@@ -31,6 +31,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     use miden::protocol::output_note
     use {NOTE_TYPE_PRIVATE} from miden::protocol::note
     use miden::standards::wallets::basic as wallet
+    use miden::standards::assets::fungible_asset
 
     pub use {receive_asset} from miden::standards::wallets::basic
     pub use {move_asset_to_note} from miden::standards::wallets::basic
@@ -207,7 +208,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [balance, pad(15)]
     @account_procedure
     pub proc get_balance
-        exec.active_account::get_balance
+        exec.fungible_asset::get_active_account_balance
         # => [balance, pad(15)]
     end
 
@@ -215,7 +216,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [init_balance, pad(15)]
     @account_procedure
     pub proc get_initial_balance
-        exec.native_account::get_initial_balance
+        exec.fungible_asset::get_initial_native_account_balance
         # => [init_balance, pad(15)]
     end
 
@@ -223,7 +224,15 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [has_asset, pad(15)]
     @account_procedure
     pub proc has_non_fungible_asset
-        exec.active_account::has_non_fungible_asset
+        exec.active_account::has_asset
+        # => [has_asset, pad(15)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [has_asset, pad(15)]
+    @account_procedure
+    pub proc has_initial_asset
+        exec.native_account::has_initial_asset
         # => [has_asset, pad(15)]
     end
 

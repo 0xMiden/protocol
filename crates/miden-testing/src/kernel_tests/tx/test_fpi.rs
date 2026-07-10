@@ -761,17 +761,18 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let foreign_account_code_source = format!(
         "
         use miden::protocol::active_account
+        use miden::standards::assets::fungible_asset
 
         @account_procedure
         pub proc get_asset_balance
             # get balance of first asset
             push.{FUNGIBLE_ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [balance]
 
             # check presence of non fungible asset
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.active_account::has_non_fungible_asset
+            exec.active_account::has_asset
             # => [has_asset, balance]
 
             # add the balance and the bool
