@@ -14,8 +14,13 @@ use miden::standards::fees::fee_manager
 
 # The slots reuse AuthNetworkAccount's standardized names, so off-chain services identify a
 # fee-managed network account exactly like a plain one.
+
+# The slot holding the map of allowed input-note script roots. Keys are note script roots
+# (defined as Word); any non-empty value marks a root as allowed.
 const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_note_scripts")
 
+# The slot holding the map of allowed tx script roots. Keys are tx script roots (defined as Word);
+# any non-empty value marks a root as allowed.
 const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_tx_scripts")
 
 # AUTH PROCEDURE

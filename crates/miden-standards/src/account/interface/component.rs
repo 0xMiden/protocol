@@ -93,7 +93,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccountWithFees => {
-                "Network Account Auth With Fees".to_string()
+                "Network Account Auth with Fees".to_string()
             },
             AccountComponentInterface::FeeManager => "Fee Manager".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {

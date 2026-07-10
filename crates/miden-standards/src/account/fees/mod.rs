@@ -5,8 +5,5 @@
 //! [`FeeManager`] component holds the price list a network account charges, and exposes read-only
 //! estimation over FPI so a sponsorship can be sized before the note it pays for exists.
 
-mod fee_auth;
-pub use fee_auth::FeeAuth;
-
 mod fee_manager;
 pub use fee_manager::{FeeManager, FeeScheduleEntry};

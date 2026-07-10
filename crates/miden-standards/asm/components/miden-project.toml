@@ -27,7 +27,6 @@ members = [
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
   "faucets/policies/transfer/blocklist/owner_controlled",
-  "fees/fee_auth",
   "fees/fee_manager",
   "inspection/code_inspection",
   "inspection/schema_commitment",

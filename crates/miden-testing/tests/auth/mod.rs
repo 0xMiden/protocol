@@ -10,3 +10,5 @@ mod multisig_smart;
 mod guarded_multisig;
 
 mod network_account;
+
+mod network_account_with_fees;

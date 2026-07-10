@@ -12,7 +12,7 @@ use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -396,8 +396,11 @@ async fn priced_but_not_allowlisted_note_is_rejected() -> anyhow::Result<()> {
     let fee_manager = FeeManager::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?)?
         .with_fee(P2idNote::script_root(), FeeScheduleEntry::new(APP_FEE, PROTOCOL_FEE)?);
 
-    // The allowlist holds only the auto-inserted sponsorship root: P2ID is priced but not allowed.
-    let auth = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::new())?;
+    // The allowlist holds a placeholder root (plus the auto-inserted sponsorship root): P2ID is
+    // priced but not allowlisted.
+    let auth = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from([
+        NoteScriptRoot::from_array([9, 9, 9, 9]),
+    ]))?;
 
     let network_account = AccountBuilder::new([13u8; 32])
         .account_type(AccountType::Public)

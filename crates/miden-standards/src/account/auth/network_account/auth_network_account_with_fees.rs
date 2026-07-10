@@ -6,7 +6,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountComponentName};
+use miden_protocol::account::{AccountComponent, AccountComponentName, StorageSlotName};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionScriptRoot;
 
@@ -67,10 +67,21 @@ impl AuthNetworkAccountWithFees {
     ///
     /// The [`NetworkSponsorshipNote`] script root is always added to the set: a fee-managed
     /// account that cannot consume sponsorship notes could never be paid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `allowed_script_roots` is empty. A sponsorship note is never
+    /// consumable on its own, so an account allowlisting nothing else could not consume any
+    /// notes.
     pub fn with_allowed_notes(
-        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+        mut allowed_script_roots: BTreeSet<NoteScriptRoot>,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
-        let mut allowed_script_roots = allowed_script_roots;
+        // Validate the caller-supplied set before the auto-insertion, so an operator who
+        // configured an account that can consume no feature notes gets a diagnostic instead of a
+        // permanently inert account.
+        if allowed_script_roots.is_empty() {
+            return Err(NetworkAccountNoteAllowlistError::EmptyAllowlist);
+        }
         allowed_script_roots.insert(NetworkSponsorshipNote::script_root());
 
         Ok(Self {
@@ -91,6 +102,16 @@ impl AuthNetworkAccountWithFees {
     ) -> Self {
         self.allowed_tx_scripts = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
         self
+    }
+
+    /// Returns the storage slot holding the allowlist of allowed input-note script roots.
+    pub fn allowed_note_scripts_slot() -> &'static StorageSlotName {
+        NetworkAccountNoteAllowlist::slot_name()
+    }
+
+    /// Returns the storage slot holding the allowlist of allowed transaction script roots.
+    pub fn allowed_tx_scripts_slot() -> &'static StorageSlotName {
+        NetworkAccountTxScriptAllowlist::slot_name()
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
@@ -121,7 +142,69 @@ impl From<AuthNetworkAccountWithFees> for AccountComponent {
         AccountComponent::new(AuthNetworkAccountWithFees::code().clone(), storage_slots, metadata)
             .expect(
                 "AuthNetworkAccountWithFees component should satisfy the requirements of a valid \
-             account component",
+                 account component",
             )
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::{AccountBuilder, AccountType, StorageSlotContent};
+
+    use super::super::NetworkAccount;
+    use super::*;
+    use crate::account::wallets::BasicWallet;
+
+    #[test]
+    fn empty_allowlist_is_rejected() {
+        let result = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::new());
+        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
+    }
+
+    /// The allowlists live in the same standardized slots as `AuthNetworkAccount`'s, so off-chain
+    /// services identify a fee-managed network account exactly like a plain one.
+    #[test]
+    fn uses_standardized_allowlist_slots() {
+        let root = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let component: AccountComponent =
+            AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from_iter([root]))
+                .expect("non-empty allowlist should construct")
+                .into();
+
+        let storage_slots = component.storage_slots();
+        assert_eq!(storage_slots.len(), 2);
+        assert_eq!(storage_slots[0].name(), NetworkAccountNoteAllowlist::slot_name());
+        assert_eq!(storage_slots[1].name(), NetworkAccountTxScriptAllowlist::slot_name());
+
+        for slot in storage_slots {
+            let StorageSlotContent::Map(_) = slot.content() else {
+                panic!("allowlist slots must be maps");
+            };
+        }
+    }
+
+    /// An account built with this component round-trips through [`NetworkAccount`], and its
+    /// allowlist contains the auto-inserted sponsorship root.
+    #[test]
+    fn network_account_round_trip_with_auto_inserted_sponsorship_root() {
+        let root = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let account = AccountBuilder::new([0; 32])
+            .account_type(AccountType::Public)
+            .with_auth_component(
+                AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from_iter([root]))
+                    .expect("non-empty allowlist should construct"),
+            )
+            .with_component(BasicWallet)
+            .build_existing()
+            .expect("account building with AuthNetworkAccountWithFees failed");
+
+        let network_account =
+            NetworkAccount::new(account).expect("the standardized slot should be recognized");
+        let allowed = network_account.allowed_notes().allowed_script_roots();
+        assert!(allowed.contains(&root));
+        assert!(allowed.contains(&NetworkSponsorshipNote::script_root()));
     }
 }
