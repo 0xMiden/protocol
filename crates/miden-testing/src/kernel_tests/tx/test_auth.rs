@@ -108,15 +108,15 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
 ///
 /// A script fabricates the auth procedure's signature request by building the transaction summary
 /// and emitting `AUTH_REQUEST`. Building the summary requires `auth::create_tx_summary`, which
-/// computes `account::compute_delta_commitment` - now gated to the account context. The gate rejects
-/// the script before it can reach the `AUTH_REQUEST` event, so the transaction aborts with an
-/// `UnknownAccountProcedure` event error (the script's root is not an account procedure).
+/// computes `account::compute_delta_commitment` - now gated to the account context. The gate
+/// rejects the script before it can reach the `AUTH_REQUEST` event, so the transaction aborts with
+/// an `UnknownAccountProcedure` event error (the script's root is not an account procedure).
 ///
 /// Note: this is a deliberate canary. If the account-context gate on `compute_delta_commitment` is
 /// ever removed, `create_tx_summary` will once again succeed from a script (an empty delta commits
-/// to the empty word), execution will reach `AUTH_REQUEST`, and the host will instead reject it with
-/// `AuthRequestOutsideAuthProcedure`. That would flip the error and fail this assertion, which is
-/// intended: whoever removes the gate must revisit this test (and the second layer of defence it
+/// to the empty word), execution will reach `AUTH_REQUEST`, and the host will instead reject it
+/// with `AuthRequestOutsideAuthProcedure`. That would flip the error and fail this assertion, which
+/// is intended: whoever removes the gate must revisit this test (and the second layer of defence it
 /// exercises).
 #[tokio::test]
 async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
