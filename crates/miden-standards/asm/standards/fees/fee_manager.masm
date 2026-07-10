@@ -61,6 +61,8 @@ const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by t
 
 const ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP="the feature note is not covered by enough sponsorship"
 
+const ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP="the sponsorship remainder does not cover the fee of the spawned downstream note"
+
 const ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES="this account cannot settle more than one spawning feature note per transaction"
 
 # PROCEDURES
@@ -470,7 +472,11 @@ proc fund_note_with_fee_asset
     # => []
 end
 
-#! Finds the output note this transaction created that is targeted at some *other* network account.
+#! Finds the output note this transaction created that is targeted at a network account, possibly
+#! this account itself (a self-spawning chain).
+#!
+#! Safe to call from settlement: the notes settlement itself creates (the downstream sponsorship
+#! and the FEE note) are only emitted after this scan.
 #!
 #! Inputs:  []
 #! Outputs: [is_found, note_idx, target_id_suffix, target_id_prefix]
@@ -515,18 +521,10 @@ proc find_downstream_note
             exec.network_account_target::into_target_id
             # => [target_id_suffix, target_id_prefix]
 
-            dup.1 dup.1 exec.active_account::get_id exec.account_id::is_equal
-            # => [targets_this_account, target_id_suffix, target_id_prefix]
-
-            if.true
-                drop drop
-                # => []
-            else
-                loc_store.0 loc_store.1
-                loc_load.5 loc_store.7
-                push.1 loc_store.6
-                # => []
-            end
+            loc_store.0 loc_store.1
+            loc_load.5 loc_store.7
+            push.1 loc_store.6
+            # => []
         else
             drop
             # => []
@@ -581,6 +579,35 @@ proc estimate_downstream_fee
 
     loc_load.6
     # => [fee_amount]
+end
+
+#! Returns the fee the target account charges to accept a note bearing the provided script root.
+#!
+#! When the target is this account itself -- a self-spawning chain -- the local fee schedule is
+#! read directly: a foreign procedure invocation against the native account panics in the kernel,
+#! and the local schedule is the same data the FPI would return.
+#!
+#! Inputs:  [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
+#! Outputs: [fee_amount]
+#!
+#! Panics if:
+#! - the target is this account and the child script root is not priced by it.
+#!
+#! Invocation: exec
+proc estimate_child_fee
+    dup.5 dup.5 exec.active_account::get_id exec.account_id::is_equal
+    # => [is_self, CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
+
+    if.true
+        movup.4 drop movup.4 drop
+        # => [CHILD_NOTE_SCRIPT_ROOT]
+
+        exec.fee_total
+        # => [fee_amount]
+    else
+        exec.estimate_downstream_fee
+        # => [fee_amount]
+    end
 end
 
 #! Creates a sponsorship note for the downstream network note this transaction spawned, funding it
@@ -657,15 +684,17 @@ end
 #!
 #! Asserts that every feature note this account consumed is covered by enough sponsorship, then
 #! forwards the summed protocol portion to the batch builder in a single FEE note. The application
-#! portion, and any surplus the sponsor overpaid, stay with the account.
+#! portion stays with the account, as does the surplus of a non-spawning note.
 #!
-#! A feature note that spawns a downstream network note must be covered for that note's fee too:
-#! the required amount is `app_fee + protocol_fee + downstream_fee`, where the downstream fee comes
-#! from asking the downstream account itself, over FPI, what it charges. The downstream sponsorship
-#! is then funded out of the vault. Folding the downstream fee into the coverage check *before*
-#! paying it out is what keeps this account from fronting the next hop's liquidity, and is what
-#! bounds the payout a hostile downstream account can name: an inflated estimate fails the check
-#! rather than draining the vault.
+#! A feature note that spawns a downstream network note funds that note out of its sponsorship
+#! remainder: everything left of its sponsored budget after its own `app_fee + protocol_fee` flows
+#! into a fresh sponsorship for the spawned note. The remainder must cover what the downstream
+#! account charges -- asked over FPI, or read from the local schedule when the note is targeted
+#! back at this account. Checking the estimate against the remainder *before* paying out is what
+#! keeps this account from fronting the next hop's liquidity, and what bounds the payout a hostile
+#! downstream account can name: an inflated estimate fails the check rather than draining the
+#! vault. Passing the entire remainder, rather than the exact estimate, is what lets a chain of
+#! self-spawning notes keep running until the budget is exhausted.
 #!
 #! This is the mirror image of the check inside the sponsorship note's own script. Consuming a
 #! sponsorship without its feature note costs the *sponsor*, so that note guards it. Consuming a
@@ -687,7 +716,8 @@ end
 #!
 #! Panics if:
 #! - a feature note's script root is not priced by this account.
-#! - a feature note is not covered by enough sponsorship, including the downstream fee it spawns.
+#! - a feature note is not covered by enough sponsorship for its own fee.
+#! - a spawning feature note's sponsorship remainder does not cover the downstream estimate.
 #! - more than one consumed feature note declares a spawn.
 #!
 #! Invocation: exec
@@ -737,6 +767,20 @@ pub proc settle_fees
             add loc_store.20
             # => []
 
+            # the sponsorship must cover the note's own fee before any remainder exists; the
+            # assert must precede the subtraction, which would otherwise wrap over the field
+            loc_load.5 exec.note_id::compute_input_note_id
+            # => [FEATURE_NOTE_ID]
+
+            exec.sponsored_amount
+            # => [sponsored]
+
+            dup loc_load.20 gte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
+            # => [sponsored]
+
+            loc_load.20 sub loc_store.21
+            # => []
+
             # does this feature note spawn a downstream network note?
             padw loc_loadw_le.8 exec.spawn_entry
             # => [CHILD_NOTE_SCRIPT_ROOT]
@@ -768,32 +812,25 @@ pub proc settle_fees
                     loc_load.18 loc_load.17 padw loc_loadw_le.12
                     # => [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
 
-                    exec.estimate_downstream_fee loc_store.16
-                    # => []
+                    exec.estimate_child_fee
+                    # => [estimate]
 
-                    # the sponsorship must cover the downstream leg too, or this account would front it
-                    loc_load.16 loc_load.20 add loc_store.20
+                    # the entire remainder funds the downstream sponsorship, and must cover what
+                    # the downstream account charges, or this account would front the difference
+                    loc_load.21 loc_store.16
+                    # => [estimate]
+
+                    loc_load.21 lte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP
                     # => []
                 else
                     # a declared spawn is a permission, not an obligation: the script spawned
-                    # nothing, so there is nothing to price or fund
+                    # nothing, so there is nothing to price or fund, and the remainder stays with
+                    # the account
                     drop drop drop
                     # => []
                 end
             end
-            # => []
-
-            loc_load.20
-            # => [required]
-
-            loc_load.5 exec.note_id::compute_input_note_id
-            # => [FEATURE_NOTE_ID, required]
-
-            exec.sponsored_amount
-            # => [sponsored, required]
-
-            lte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
-            # => []
+            # a non-spawning note's remainder stays with the account
         end
 
         loc_load.5 dup neq.0

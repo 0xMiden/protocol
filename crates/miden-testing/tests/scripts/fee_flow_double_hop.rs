@@ -24,10 +24,15 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Authority;
 use miden_standards::account::fees::{FeeAuth, FeeManager, FeeScheduleEntry};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::errors::standards::ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP;
+use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP,
+    ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP,
+    ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES,
+};
 use miden_standards::note::{FeeNote, NetworkSponsorshipNote, P2idNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 // Upstream prices the parent note; downstream prices the spawned P2ID note.
 const UPSTREAM_APP_FEE: u64 = 30;
@@ -191,16 +196,43 @@ fn setup(budget: u64, parent_spawns: bool) -> anyhow::Result<Chain> {
     })
 }
 
-/// A sponsorship that covers only the parent note's own fee is rejected.
+/// A sponsorship whose remainder does not cover the downstream fee is rejected.
 ///
 /// Without this check the upstream account would fund the downstream hop out of its own vault,
-/// silently losing the downstream fee on every such transaction. It is also what bounds the payout
+/// silently losing the difference on every such transaction. It is also what bounds the payout
 /// a hostile downstream account can name through `estimate_note_fee`: an inflated estimate fails
 /// the coverage check instead of draining the vault.
+#[rstest]
+#[case::nothing_left_for_downstream(0)]
+#[case::one_unit_short(DOWNSTREAM_TOTAL - 1)]
 #[tokio::test]
-async fn downstream_fee_must_be_sponsored_up_front() -> anyhow::Result<()> {
-    // Exactly the parent's fee, and not one unit of the downstream's.
-    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE, true)?;
+async fn downstream_fee_must_be_sponsored_up_front(
+    #[case] downstream_budget: u64,
+) -> anyhow::Result<()> {
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + downstream_budget, true)?;
+
+    let downstream_foreign = c.mock_chain.get_foreign_account_inputs(c.downstream.id())?;
+    let result = c
+        .mock_chain
+        .build_tx_context(c.upstream.id(), &[c.sponsorship_note.id(), c.parent_note.id()], &[])?
+        .foreign_accounts(vec![downstream_foreign])
+        .add_note_script(P2idNote::script())
+        .add_note_script(NetworkSponsorshipNote::script())
+        .add_note_script(FeeNote::script())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP);
+
+    Ok(())
+}
+
+/// A sponsorship that does not even cover the parent note's own fee is rejected before any
+/// downstream consideration.
+#[tokio::test]
+async fn parent_fee_must_be_sponsored() -> anyhow::Result<()> {
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE - 1, true)?;
 
     let downstream_foreign = c.mock_chain.get_foreign_account_inputs(c.downstream.id())?;
     let result = c
@@ -248,10 +280,17 @@ async fn declared_spawn_without_spawned_note_settles_normally() -> anyhow::Resul
 }
 
 /// The full chained flow, end to end.
+///
+/// Any surplus beyond the upstream account's own fee travels downstream inside the child
+/// sponsorship, rather than staying with the upstream account: this is what lets a chain keep
+/// running on one up-front budget.
+#[rstest]
+#[case::exact_budget(0)]
+#[case::surplus_flows_downstream(25)]
 #[tokio::test]
-async fn double_hop_settles_both_fees() -> anyhow::Result<()> {
+async fn double_hop_settles_both_fees(#[case] surplus: u64) -> anyhow::Result<()> {
     // The user funds the whole chain up front: both hops, out of one sponsorship note.
-    let total_budget = UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL;
+    let total_budget = UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL + surplus;
     let c = setup(total_budget, true)?;
     let (mut mock_chain, upstream, downstream) = (c.mock_chain, c.upstream, c.downstream);
 
@@ -295,12 +334,11 @@ async fn double_hop_settles_both_fees() -> anyhow::Result<()> {
         Some(fee_asset(UPSTREAM_PROTOCOL_FEE)?),
     );
 
-    // The child sponsorship is funded with exactly what the downstream account charges, priced over
-    // FPI rather than hardcoded by the upstream account.
+    // The child sponsorship carries the entire remainder of the budget after the upstream fee: at
+    // least the downstream account's own price (asked over FPI), plus any surplus.
     assert_eq!(
         child_sponsorship.assets().iter().next().copied(),
-        Some(fee_asset(DOWNSTREAM_TOTAL)?),
-        "the child sponsorship should carry the downstream account's own price",
+        Some(fee_asset(DOWNSTREAM_TOTAL + surplus)?),
     );
 
     let (spawned_note_id, child_sponsorship_id) = (spawned_note.id(), child_sponsorship.id());
@@ -338,9 +376,81 @@ async fn double_hop_settles_both_fees() -> anyhow::Result<()> {
     downstream_after.apply_patch(hop2.account_patch())?;
     assert_eq!(
         downstream_after.vault().get_balance(fee_asset(0)?.id())?.as_u64(),
-        DOWNSTREAM_APP_FEE,
-        "the downstream account keeps its application fee",
+        DOWNSTREAM_APP_FEE + surplus,
+        "the downstream account keeps its application fee and the terminal surplus",
     );
+
+    Ok(())
+}
+
+/// At most one consumed feature note may declare a spawn: the downstream note is located by
+/// attachment rather than script root, so a second spawner could not be matched to its parent.
+#[tokio::test]
+async fn two_spawning_notes_are_rejected() -> anyhow::Result<()> {
+    let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
+    let mut rng = RandomCoin::new(Word::empty());
+    let mut builder = MockChain::builder();
+
+    let downstream = fee_managed_account(
+        9,
+        FeeManager::new(fee_faucet)?.with_fee(
+            P2idNote::script_root(),
+            FeeScheduleEntry::new(DOWNSTREAM_APP_FEE, DOWNSTREAM_PROTOCOL_FEE)?,
+        ),
+    )?;
+
+    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mut parents = Vec::new();
+    for _ in 0..2 {
+        parents.push(
+            NoteBuilder::new(sponsor.id(), &mut rng)
+                .note_type(NoteType::Public)
+                .add_assets([business_asset()?])
+                .code(parent_note_code(&downstream))
+                .build()?,
+        );
+    }
+    let parent_root = parents[0].script().root();
+
+    let upstream = fee_managed_account(
+        8,
+        FeeManager::new(fee_faucet)?
+            .with_fee(parent_root, FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?)
+            .with_spawn(parent_root, P2idNote::script_root()),
+    )?;
+
+    builder.add_account(downstream.clone())?;
+    builder.add_account(upstream.clone())?;
+
+    let mut note_ids = Vec::new();
+    for parent in &parents {
+        builder.add_output_note(RawOutputNote::Full(parent.clone()));
+        let sponsorship = Note::from(
+            NetworkSponsorshipNote::builder()
+                .sender(sponsor.id())
+                .target_account(upstream.id())?
+                .feature_note_id(parent.id())
+                .asset(fee_asset(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL)?)
+                .generate_serial_number(&mut rng)
+                .build()?,
+        );
+        builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+        note_ids.extend([sponsorship.id(), parent.id()]);
+    }
+
+    let mock_chain = builder.build()?;
+    let downstream_foreign = mock_chain.get_foreign_account_inputs(downstream.id())?;
+    let result = mock_chain
+        .build_tx_context(upstream.id(), &note_ids, &[])?
+        .foreign_accounts(vec![downstream_foreign])
+        .add_note_script(P2idNote::script())
+        .add_note_script(NetworkSponsorshipNote::script())
+        .add_note_script(FeeNote::script())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES);
 
     Ok(())
 }
