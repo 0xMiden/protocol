@@ -108,6 +108,18 @@ fn fee_managed_account(seed: u8, fee_manager: FeeManager) -> anyhow::Result<Acco
         .build_existing()?)
 }
 
+/// A parent note that only sweeps its assets and spawns nothing, despite its root being declared
+/// in the upstream account's spawn schedule.
+const SWEEP_ONLY_NOTE_CODE: &str = r#"
+    use miden::standards::wallets::basic as basic_wallet
+
+    @note_script
+    pub proc main
+        dropw
+        exec.basic_wallet::add_assets_to_account
+    end
+"#;
+
 /// Builds the whole double-hop fixture with the top-level sponsorship funded with `budget`.
 struct Chain {
     mock_chain: MockChain,
@@ -117,7 +129,7 @@ struct Chain {
     sponsorship_note: Note,
 }
 
-fn setup(budget: u64) -> anyhow::Result<Chain> {
+fn setup(budget: u64, parent_spawns: bool) -> anyhow::Result<Chain> {
     let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let mut rng = RandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
@@ -134,15 +146,20 @@ fn setup(budget: u64) -> anyhow::Result<Chain> {
     // The parent note's script root is only known once its code is compiled, and its code names the
     // downstream account, so the downstream account must exist first.
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let parent_code = if parent_spawns {
+        parent_note_code(&downstream)
+    } else {
+        SWEEP_ONLY_NOTE_CODE.into()
+    };
     let parent_note = NoteBuilder::new(sponsor.id(), &mut rng)
         .note_type(NoteType::Public)
         .add_assets([business_asset()?])
-        .code(parent_note_code(&downstream))
+        .code(parent_code)
         .build()?;
     let parent_root = parent_note.script().root();
 
-    // The upstream account prices the parent note, and declares what it spawns so that it can price
-    // the spawned note against the downstream account.
+    // The upstream account prices the parent note, and declares what it may spawn so that it can
+    // price the spawned note against the downstream account.
     let upstream = fee_managed_account(
         8,
         FeeManager::new(fee_faucet)?
@@ -183,7 +200,7 @@ fn setup(budget: u64) -> anyhow::Result<Chain> {
 #[tokio::test]
 async fn downstream_fee_must_be_sponsored_up_front() -> anyhow::Result<()> {
     // Exactly the parent's fee, and not one unit of the downstream's.
-    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE)?;
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE, true)?;
 
     let downstream_foreign = c.mock_chain.get_foreign_account_inputs(c.downstream.id())?;
     let result = c
@@ -202,64 +219,46 @@ async fn downstream_fee_must_be_sponsored_up_front() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A declared spawn is a permission, not an obligation: a parent that spawns nothing settles as a
+/// plain feature note, without pricing or funding a downstream hop.
+#[tokio::test]
+async fn declared_spawn_without_spawned_note_settles_normally() -> anyhow::Result<()> {
+    let c = setup(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE, false)?;
+
+    let executed = c
+        .mock_chain
+        .build_tx_context(c.upstream.id(), &[c.sponsorship_note.id(), c.parent_note.id()], &[])?
+        .add_note_script(NetworkSponsorshipNote::script())
+        .add_note_script(FeeNote::script())
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.output_notes().num_notes(), 1, "only the FEE note is emitted");
+    assert_eq!(
+        executed.output_notes().get_note(0).assets().iter().next().copied(),
+        Some(fee_asset(UPSTREAM_PROTOCOL_FEE)?),
+    );
+
+    let mut upstream = c.upstream;
+    upstream.apply_patch(executed.account_patch())?;
+    assert_eq!(upstream.vault().get_balance(fee_asset(0)?.id())?.as_u64(), UPSTREAM_APP_FEE);
+
+    Ok(())
+}
+
 /// The full chained flow, end to end.
 #[tokio::test]
 async fn double_hop_settles_both_fees() -> anyhow::Result<()> {
-    let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
-    let mut rng = RandomCoin::new(Word::empty());
-    let mut builder = MockChain::builder();
-
-    // The downstream account prices the spawned P2ID note.
-    let downstream = fee_managed_account(
-        9,
-        FeeManager::new(fee_faucet)?.with_fee(
-            P2idNote::script_root(),
-            FeeScheduleEntry::new(DOWNSTREAM_APP_FEE, DOWNSTREAM_PROTOCOL_FEE)?,
-        ),
-    )?;
-
-    // The parent note's script root is only known once its code is compiled, and its code names the
-    // downstream account, so the downstream account must exist first.
-    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let parent_note = NoteBuilder::new(sponsor.id(), &mut rng)
-        .note_type(NoteType::Public)
-        .add_assets([business_asset()?])
-        .code(parent_note_code(&downstream))
-        .build()?;
-    let parent_root = parent_note.script().root();
-
-    // The upstream account prices the parent note, and declares what it spawns so that it can price
-    // the spawned note against the downstream account.
-    let upstream = fee_managed_account(
-        8,
-        FeeManager::new(fee_faucet)?
-            .with_fee(parent_root, FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?)
-            .with_spawn(parent_root, P2idNote::script_root()),
-    )?;
-
-    builder.add_account(downstream.clone())?;
-    builder.add_account(upstream.clone())?;
-    builder.add_output_note(RawOutputNote::Full(parent_note.clone()));
-
     // The user funds the whole chain up front: both hops, out of one sponsorship note.
     let total_budget = UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL;
-    let sponsorship_note = Note::from(
-        NetworkSponsorshipNote::builder()
-            .sender(sponsor.id())
-            .target_account(upstream.id())?
-            .feature_note_id(parent_note.id())
-            .asset(fee_asset(total_budget)?)
-            .generate_serial_number(&mut rng)
-            .build()?,
-    );
-    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
-
-    let mut mock_chain = builder.build()?;
+    let c = setup(total_budget, true)?;
+    let (mut mock_chain, upstream, downstream) = (c.mock_chain, c.upstream, c.downstream);
 
     // ---- HOP 1: upstream consumes [sponsorship, parent] ------------------------------------
     let downstream_foreign = mock_chain.get_foreign_account_inputs(downstream.id())?;
     let hop1 = mock_chain
-        .build_tx_context(upstream.id(), &[sponsorship_note.id(), parent_note.id()], &[])?
+        .build_tx_context(upstream.id(), &[c.sponsorship_note.id(), c.parent_note.id()], &[])?
         .foreign_accounts(vec![downstream_foreign])
         // the public notes this transaction creates must be resolvable by the host
         .add_note_script(P2idNote::script())

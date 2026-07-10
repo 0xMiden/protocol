@@ -201,12 +201,16 @@ impl FeeManager {
         self
     }
 
-    /// Declares that a note bearing `parent` spawns a note bearing `child`.
+    /// Declares that a note bearing `parent` may spawn a note bearing `child`.
     ///
     /// The account must declare this rather than derive it: `output_note::create` records only a
     /// recipient, into which the script root is hashed irreversibly, so the kernel never learns an
     /// output note's script root. Without the declaration the account cannot price the note it is
     /// about to spawn, and so cannot sponsor the next hop of a chained network transaction.
+    ///
+    /// The declaration is a permission, not an obligation: a parent that spawns nothing settles as
+    /// a plain feature note. This is what lets a script spawn conditionally, e.g. only while the
+    /// sponsored budget covers another hop.
     pub fn with_spawn(mut self, parent: NoteScriptRoot, child: NoteScriptRoot) -> Self {
         self.spawn.insert(parent, child);
         self

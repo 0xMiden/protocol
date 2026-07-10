@@ -45,6 +45,9 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_schedul
 #! The kernel never learns an output note's script root: `output_note::create` takes only a
 #! recipient, into which the script root is hashed irreversibly. An account that wants to price a
 #! note it is about to spawn must therefore declare what it spawns, which is what this map is.
+#!
+#! An entry declares what a parent MAY spawn, not what it must: a parent that spawns nothing
+#! settles as a plain feature note.
 const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_schedule")
 
 # ERRORS
@@ -57,8 +60,6 @@ const ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT="the fee portions of a schedu
 const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by this account's fee schedule"
 
 const ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP="the feature note is not covered by enough sponsorship"
-
-const ERR_FEE_MANAGER_SPAWNED_NOTE_NOT_FOUND="the spawn schedule declares a downstream note but this transaction created no note targeted at another account"
 
 const ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES="this account cannot settle more than one spawning feature note per transaction"
 
@@ -687,8 +688,7 @@ end
 #! Panics if:
 #! - a feature note's script root is not priced by this account.
 #! - a feature note is not covered by enough sponsorship, including the downstream fee it spawns.
-#! - more than one consumed feature note spawns a downstream note.
-#! - a feature note declares a downstream note that this transaction did not create.
+#! - more than one consumed feature note declares a spawn.
 #!
 #! Invocation: exec
 @locals(24)
@@ -755,27 +755,31 @@ pub proc settle_fees
                 eq.1 assert.err=ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES
                 # => []
 
-                push.1 loc_store.6
-                # => []
-
                 exec.find_downstream_note
                 # => [is_found, note_idx, target_id_suffix, target_id_prefix]
 
-                assert.err=ERR_FEE_MANAGER_SPAWNED_NOTE_NOT_FOUND
-                # => [note_idx, target_id_suffix, target_id_prefix]
+                if.true
+                    push.1 loc_store.6
+                    # => [note_idx, target_id_suffix, target_id_prefix]
 
-                loc_store.7 loc_store.17 loc_store.18
-                # => []
+                    loc_store.7 loc_store.17 loc_store.18
+                    # => []
 
-                loc_load.18 loc_load.17 padw loc_loadw_le.12
-                # => [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
+                    loc_load.18 loc_load.17 padw loc_loadw_le.12
+                    # => [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
 
-                exec.estimate_downstream_fee loc_store.16
-                # => []
+                    exec.estimate_downstream_fee loc_store.16
+                    # => []
 
-                # the sponsorship must cover the downstream leg too, or this account would front it
-                loc_load.16 loc_load.20 add loc_store.20
-                # => []
+                    # the sponsorship must cover the downstream leg too, or this account would front it
+                    loc_load.16 loc_load.20 add loc_store.20
+                    # => []
+                else
+                    # a declared spawn is a permission, not an obligation: the script spawned
+                    # nothing, so there is nothing to price or fund
+                    drop drop drop
+                    # => []
+                end
             end
             # => []
 
