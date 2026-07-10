@@ -145,11 +145,6 @@ impl NetworkSponsorshipNote {
         NETWORK_SPONSORSHIP_SCRIPT.root()
     }
 
-    /// Returns the account ID of the note's sender, which is the sponsor.
-    pub fn sender(&self) -> AccountId {
-        self.sender
-    }
-
     /// Returns the account ID of the network account that may consume the note.
     pub fn target_id(&self) -> AccountId {
         self.target.target_id()
@@ -158,21 +153,6 @@ impl NetworkSponsorshipNote {
     /// Returns the ID of the feature note this note sponsors.
     pub fn feature_note_id(&self) -> NoteId {
         self.feature_note_id
-    }
-
-    /// Returns the note's serial number.
-    pub fn serial_number(&self) -> Word {
-        self.serial_number
-    }
-
-    /// Returns the assets carried by the note.
-    pub fn assets(&self) -> &NoteAssets {
-        &self.assets
-    }
-
-    /// Returns the block height at or after which the sponsor may reclaim the note, if enabled.
-    pub fn reclaim_height(&self) -> Option<BlockNumber> {
-        self.reclaim_height
     }
 }
 

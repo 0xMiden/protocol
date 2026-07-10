@@ -14,11 +14,11 @@ use miden::standards::wallets::basic as basic_wallet
 #! The memory address at which the note storage is written.
 const STORAGE_PTR = 0
 
-#! The memory address of the reclaim block height within the note storage.
-const RECLAIM_BLOCK_HEIGHT_PTR = 0
+#! The memory address of the reclaim block height, the note's only storage item.
+const RECLAIM_BLOCK_HEIGHT_PTR = STORAGE_PTR
 
 #! The number of storage items of a NETWORK_SPONSORSHIP note.
-pub const NUM_STORAGE_ITEMS = 1
+const NUM_STORAGE_ITEMS = 1
 
 # ERRORS
 # =================================================================================================

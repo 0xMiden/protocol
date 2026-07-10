@@ -1,7 +1,7 @@
 use alloc::vec;
 
+use miden_protocol::account::AccountComponent;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountComponentName};
 
 use crate::account::account_component_code;
 
@@ -33,11 +33,6 @@ pub struct FeeAuth;
 impl FeeAuth {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::fees::fee_auth";
-
-    /// Returns the canonical [`AccountComponentName`] of this component.
-    pub const fn name() -> AccountComponentName {
-        AccountComponentName::from_static_str(Self::NAME)
-    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

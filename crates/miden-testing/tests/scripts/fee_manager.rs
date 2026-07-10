@@ -96,6 +96,42 @@ async fn estimate_note_fee_returns_the_scheduled_total() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `get_fee_asset_id` tells a note creator which asset to put in the sponsorship note.
+#[tokio::test]
+async fn get_fee_asset_id_returns_the_accepted_asset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = add_fee_managed_account(&mut builder, 5)?;
+    let mock_chain = builder.build()?;
+
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::core::sys
+        use miden::standards::fees::fee_manager
+
+        @transaction_script
+        pub proc main
+            call.fee_manager::get_fee_asset_id
+            # => [FEE_ASSET_ID, pad(12)]
+
+            push.{fee_asset_id}
+            assert_eqw.err="get_fee_asset_id returned the wrong asset"
+
+            exec.sys::truncate_stack
+        end
+        "#,
+        fee_asset_id = fee_asset_id_word()?,
+    ))?;
+
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 /// An unpriced script root is rejected rather than treated as free.
 #[tokio::test]
 async fn estimate_note_fee_rejects_an_unpriced_script() -> anyhow::Result<()> {

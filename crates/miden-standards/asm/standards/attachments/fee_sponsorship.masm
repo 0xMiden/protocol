@@ -14,11 +14,10 @@ use miden::protocol::input_note
 # ================================================================================================
 
 #! The attachment scheme for FeeSponsorship attachments.
-#! This is a valid u32 that can be compared against an extracted attachment scheme.
-pub const FEE_SPONSORSHIP_ATTACHMENT_SCHEME = 4
+const FEE_SPONSORSHIP_ATTACHMENT_SCHEME = 4
 
 #! The number of words in the fee sponsorship attachment.
-pub const FEE_SPONSORSHIP_ATTACHMENT_NUM_WORDS = 1
+const FEE_SPONSORSHIP_ATTACHMENT_NUM_WORDS = 1
 
 # ERRORS
 # ================================================================================================
@@ -29,18 +28,6 @@ const ERR_FEE_SPONSORSHIP_INCORRECT_NUMBER_OF_WORDS = "fee sponsorship attachmen
 
 # PROCEDURES
 # ================================================================================================
-
-#! Returns a boolean indicating whether the attachment scheme matches the expected scheme for a
-#! FeeSponsorship attachment.
-#!
-#! Inputs:  [attachment_scheme]
-#! Outputs: [is_fee_sponsorship]
-#!
-#! Invocation: exec
-pub proc is_fee_sponsorship
-    eq.FEE_SPONSORSHIP_ATTACHMENT_SCHEME
-    # => [is_fee_sponsorship]
-end
 
 #! Creates a new attachment of type FeeSponsorship binding the sponsorship to the feature note with
 #! the provided ID.

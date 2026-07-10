@@ -49,19 +49,11 @@ static SPAWN_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 });
 
 procedure_root!(
-    FEE_MANAGER_GET_FEE_ASSET_ID_ROOT,
-    FeeManager::NAME,
-    "get_fee_asset_id",
-    FeeManager::code()
-);
-procedure_root!(
     FEE_MANAGER_ESTIMATE_NOTE_FEE_ROOT,
     FeeManager::NAME,
     "estimate_note_fee",
     FeeManager::code()
 );
-procedure_root!(FEE_MANAGER_SET_FEE_ROOT, FeeManager::NAME, "set_fee", FeeManager::code());
-procedure_root!(FEE_MANAGER_REMOVE_FEE_ROOT, FeeManager::NAME, "remove_fee", FeeManager::code());
 
 // FEE SCHEDULE ENTRY
 // ================================================================================================
@@ -225,49 +217,16 @@ impl FeeManager {
         &FEE_MANAGER_CODE
     }
 
-    /// Returns the procedure root of the `get_fee_asset_id` procedure.
-    pub fn get_fee_asset_id_root() -> AccountProcedureRoot {
-        *FEE_MANAGER_GET_FEE_ASSET_ID_ROOT
-    }
-
     /// Returns the procedure root of the `estimate_note_fee` procedure.
+    ///
+    /// An upstream network account needs this to price, over FPI, a note it is about to spawn.
     pub fn estimate_note_fee_root() -> AccountProcedureRoot {
         *FEE_MANAGER_ESTIMATE_NOTE_FEE_ROOT
-    }
-
-    /// Returns the procedure root of the `set_fee` procedure.
-    pub fn set_fee_root() -> AccountProcedureRoot {
-        *FEE_MANAGER_SET_FEE_ROOT
-    }
-
-    /// Returns the procedure root of the `remove_fee` procedure.
-    pub fn remove_fee_root() -> AccountProcedureRoot {
-        *FEE_MANAGER_REMOVE_FEE_ROOT
-    }
-
-    /// Returns the storage slot name of the fee asset ID.
-    pub fn fee_asset_id_slot() -> &'static StorageSlotName {
-        &FEE_ASSET_ID_SLOT_NAME
     }
 
     /// Returns the storage slot name of the fee schedule map.
     pub fn fee_schedule_slot() -> &'static StorageSlotName {
         &FEE_SCHEDULE_SLOT_NAME
-    }
-
-    /// Returns the storage slot name of the spawn schedule map.
-    pub fn spawn_schedule_slot() -> &'static StorageSlotName {
-        &SPAWN_SCHEDULE_SLOT_NAME
-    }
-
-    /// Returns the ASSET_ID word of the asset this account accepts fees in.
-    pub fn fee_asset_id(&self) -> Word {
-        self.fee_asset_id
-    }
-
-    /// Returns the fee schedule entry for the provided script root, if any.
-    pub fn fee(&self, script_root: &NoteScriptRoot) -> Option<FeeScheduleEntry> {
-        self.schedule.get(script_root).copied()
     }
 
     /// Returns the [`AccountComponentMetadata`] of this component.

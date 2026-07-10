@@ -31,11 +31,11 @@ use miden::standards::notes::network_sponsorship
 # ================================================================================================
 
 #! The storage slot holding the ASSET_ID word of the asset this account accepts fees in.
-pub const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
+const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
 
 #! The storage slot holding the fee schedule, a map of
 #! NOTE_SCRIPT_ROOT -> [app_fee, protocol_fee, enabled, 0].
-pub const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_schedule")
+const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_schedule")
 
 #! The storage slot holding the spawn schedule, a map of
 #! PARENT_NOTE_SCRIPT_ROOT -> CHILD_NOTE_SCRIPT_ROOT.
@@ -43,7 +43,7 @@ pub const FEE_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::fee_sch
 #! The kernel never learns an output note's script root: `output_note::create` takes only a
 #! recipient, into which the script root is hashed irreversibly. An account that wants to price a
 #! note it is about to spawn must therefore declare what it spawns, which is what this map is.
-pub const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_schedule")
+const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_schedule")
 
 # ERRORS
 # ================================================================================================
@@ -71,7 +71,7 @@ const ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES="this account cannot settle more t
 #! Outputs: [FEE_ASSET_ID]
 #!
 #! Invocation: exec
-pub proc fee_asset_id
+proc fee_asset_id
     push.FEE_ASSET_ID_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix]
 
@@ -94,7 +94,7 @@ end
 #! - enabled is 1 if the script is priced, 0 if the entry is absent or disabled.
 #!
 #! Invocation: exec
-pub proc fee_entry
+proc fee_entry
     # => [NOTE_SCRIPT_ROOT]
     push.FEE_SCHEDULE_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT]
@@ -110,7 +110,7 @@ end
 #! Outputs: [CHILD_NOTE_SCRIPT_ROOT]
 #!
 #! Invocation: exec
-pub proc spawn_entry
+proc spawn_entry
     push.SPAWN_SCHEDULE_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, PARENT_NOTE_SCRIPT_ROOT]
 
@@ -356,6 +356,34 @@ proc sponsored_amount
     # => [sponsored_amount]
 end
 
+#! Moves `amount` of this account's fee asset out of the vault and into the output note at
+#! `note_idx`.
+#!
+#! Inputs:  [amount, note_idx]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account vault does not hold `amount` of the fee asset.
+#!
+#! Invocation: exec
+@locals(4)
+proc fund_note_with_fee_asset
+    loc_store.0
+    # => [note_idx]
+
+    push.0.0.0 loc_load.0 exec.fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    exec.native_account::remove_asset dropw
+    # => [note_idx]
+
+    push.0.0.0 loc_load.0 exec.fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end
+
 #! Finds the output note this transaction created that is targeted at some *other* network account.
 #!
 #! Inputs:  []
@@ -461,7 +489,8 @@ proc estimate_downstream_fee
     exec.tx::execute_foreign_procedure
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
-    dropw loc_store.6 dropw dropw dropw
+    # the foreign procedure returns 16 elements; drop the asset ID, keep the amount, drop the rest
+    dropw loc_store.6 dropw dropw drop drop drop
     # => []
 
     loc_load.6
@@ -531,16 +560,10 @@ proc sponsor_downstream_note
     # => []
 
     # fund it out of the vault, where the upstream sponsorship was already deposited
-    push.0.0.0 loc_load.0 exec.fee_asset_id
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+    loc_load.12 loc_load.0
+    # => [fee_amount, note_idx]
 
-    exec.native_account::remove_asset dropw
-    # => []
-
-    loc_load.12 push.0.0.0 loc_load.0 exec.fee_asset_id
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
-
-    exec.output_note::add_asset
+    exec.fund_note_with_fee_asset
     # => []
 end
 
@@ -601,24 +624,17 @@ pub proc settle_fees
         sub.1 dup loc_store.5
         # => [note_idx]
 
-        exec.input_note::get_script_root
+        exec.input_note::get_script_root loc_storew_le.8
         # => [NOTE_SCRIPT_ROOT]
 
         procref.network_sponsorship::main
         # => [SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
 
-        exec.word::test_eq
-        # => [is_sponsorship, SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
-
-        movdn.8 dropw
-        # => [NOTE_SCRIPT_ROOT, is_sponsorship]
-
-        movup.4 not
-        # => [is_feature_note, NOTE_SCRIPT_ROOT]
+        exec.word::eq not
+        # => [is_feature_note]
 
         if.true
-            # => [NOTE_SCRIPT_ROOT]
-            loc_storew_le.8
+            padw loc_loadw_le.8
             # => [NOTE_SCRIPT_ROOT]
 
             exec.fee_entry
@@ -688,9 +704,6 @@ pub proc settle_fees
             # => [sponsored, required]
 
             lte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
-            # => []
-        else
-            dropw
             # => []
         end
 
@@ -764,23 +777,9 @@ proc emit_fee_note
     exec.output_note::create
     # => [note_idx]
 
-    # take the protocol portion out of the account vault
-    push.0.0.0 loc_load.4
-    # => [FEE_ASSET_VALUE, note_idx]
+    loc_load.4
+    # => [protocol_owed, note_idx]
 
-    exec.fee_asset_id
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
-
-    exec.native_account::remove_asset dropw
-    # => [note_idx]
-
-    # and put it into the FEE note
-    push.0.0.0 loc_load.4
-    # => [FEE_ASSET_VALUE, note_idx]
-
-    exec.fee_asset_id
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
-
-    exec.output_note::add_asset
+    exec.fund_note_with_fee_asset
     # => []
 end
