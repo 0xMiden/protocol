@@ -55,10 +55,6 @@ const ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT="the fee portions of a schedu
 
 const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by this account's fee schedule"
 
-const ERR_FEE_MANAGER_SPONSORSHIP_NOT_ONE_ASSET="a NETWORK_SPONSORSHIP note must carry exactly one asset"
-
-const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET="a NETWORK_SPONSORSHIP note must carry the fee asset this account accepts"
-
 const ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP="the feature note is not covered by enough sponsorship"
 
 const ERR_FEE_MANAGER_SPAWNED_NOTE_NOT_FOUND="the spawn schedule declares a downstream note but this transaction created no note targeted at another account"
@@ -280,10 +276,18 @@ end
 #! Returns the total sponsorship bound to the provided feature note ID by this transaction's input
 #! notes.
 #!
-#! Every input note carrying the NETWORK_SPONSORSHIP script root, whose fee sponsorship attachment
-#! names FEATURE_NOTE_ID, contributes its single fee asset. Sponsorship is summed rather than
-#! matched one-to-one, which is what makes a second sponsorship note a top-up rather than a way to
-#! block the feature note it names.
+#! Every input note carrying the NETWORK_SPONSORSHIP script root, targeted at this account, whose
+#! fee sponsorship attachment names FEATURE_NOTE_ID, contributes its single fee asset. Sponsorship
+#! is summed rather than matched one-to-one, which is what makes a second sponsorship note a top-up
+#! rather than a way to block the feature note it names.
+#!
+#! Only sponsorships targeted at this account are counted: a sponsorship this account is reclaiming
+#! as the sender in the same transaction deposits its assets through the reclaim path, and must not
+#! double as coverage for a feature note.
+#!
+#! A bound note carrying anything other than exactly one asset of this account's fee asset
+#! contributes nothing rather than aborting settlement: panicking here would let one junk note
+#! bound to a real feature note block that note even when other sponsorships already cover it.
 #!
 #! Inputs:  [FEATURE_NOTE_ID]
 #! Outputs: [sponsored_amount]
@@ -291,10 +295,6 @@ end
 #! Where:
 #! - FEATURE_NOTE_ID is the ID of the feature note whose sponsorship should be summed.
 #! - sponsored_amount is the total amount of the fee asset sponsoring that note.
-#!
-#! Panics if:
-#! - a sponsorship note bound to this feature note carries anything other than exactly one asset.
-#! - that asset is not the fee asset this account accepts.
 #!
 #! Invocation: exec
 @locals(24)
@@ -329,37 +329,53 @@ proc sponsored_amount
         # => [is_sponsorship]
 
         if.true
-            loc_load.9 exec.fee_sponsorship::input_note_bound_note_id
-            # => [BOUND_NOTE_ID]
-
-            padw loc_loadw_le.0
-            # => [FEATURE_NOTE_ID, BOUND_NOTE_ID]
-
-            exec.word::eq
-            # => [is_bound_to_this_feature_note]
+            loc_load.9 exec.network_account_target::input_note_targets_active_account
+            # => [targets_active_account]
 
             if.true
-                loc_load.9 locaddr.12
-                # => [dest_ptr, note_idx]
+                # a targeted sponsorship always carries the binding: its script requires the
+                # attachment on the target path, so a note without one could never be consumed
+                loc_load.9 exec.fee_sponsorship::input_note_bound_note_id
+                # => [BOUND_NOTE_ID]
 
-                exec.input_note::get_assets
-                # => [num_assets]
+                padw loc_loadw_le.0
+                # => [FEATURE_NOTE_ID, BOUND_NOTE_ID]
 
-                eq.1 assert.err=ERR_FEE_MANAGER_SPONSORSHIP_NOT_ONE_ASSET
-                # => []
+                exec.word::eq
+                # => [is_bound_to_this_feature_note]
 
-                padw loc_loadw_le.12
-                # => [SPONSORSHIP_ASSET_ID]
+                if.true
+                    # check the asset count before writing any assets to the local frame: the
+                    # frame has room for exactly one asset, and a hostile note could carry many
+                    loc_load.9 exec.input_note::get_assets_info
+                    # => [ASSETS_COMMITMENT, num_assets]
 
-                padw loc_loadw_le.4
-                # => [FEE_ASSET_ID, SPONSORSHIP_ASSET_ID]
+                    dropw eq.1
+                    # => [has_one_asset]
 
-                exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
-                # => []
+                    if.true
+                        loc_load.9 locaddr.12
+                        # => [dest_ptr, note_idx]
 
-                # the asset value word sits directly after the asset ID word
-                loc_load.16 loc_load.8 add loc_store.8
-                # => []
+                        exec.input_note::get_assets drop
+                        # => []
+
+                        padw loc_loadw_le.12
+                        # => [SPONSORSHIP_ASSET_ID]
+
+                        padw loc_loadw_le.4
+                        # => [FEE_ASSET_ID, SPONSORSHIP_ASSET_ID]
+
+                        exec.word::eq
+                        # => [is_fee_asset]
+
+                        if.true
+                            # the asset value word sits directly after the asset ID word
+                            loc_load.16 loc_load.8 add loc_store.8
+                            # => []
+                        end
+                    end
+                end
             end
         end
 

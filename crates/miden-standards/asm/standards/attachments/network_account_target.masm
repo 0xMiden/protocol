@@ -5,6 +5,7 @@
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::input_note
 
 # CONSTANTS
 # ================================================================================================
@@ -133,4 +134,64 @@ pub proc active_account_matches_target_account
 
     exec.account_id::is_equal
     # => [is_equal]
+end
+
+#! Returns whether the input note at the provided index carries a NetworkAccountTarget attachment
+#! naming the active account.
+#!
+#! A note without the attachment, or with a malformed one, yields 0 rather than panicking, so
+#! callers can use this as a filter while scanning input notes.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [targets_active_account]
+#!
+#! Where:
+#! - note_index is the index of the input note whose target should be checked.
+#! - targets_active_account is 1 if the note's first NetworkAccountTarget attachment names the
+#!   active account, 0 if it names another account, is absent, or is malformed.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc input_note_targets_active_account
+    dup loc_store.4
+    # => [note_index]
+
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [attachment_scheme, note_index]
+
+    exec.input_note::find_attachment
+    # => [is_found, attachment_idx]
+
+    if.true
+        loc_load.4 swap locaddr.0
+        # => [dest_ptr, attachment_idx, note_index]
+
+        exec.input_note::write_attachment_to_memory
+        # => [num_words]
+
+        eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
+        # => [has_expected_num_words]
+
+        padw loc_loadw_le.0
+        # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT, has_expected_num_words]
+
+        exec.into_target_id
+        # => [target_id_suffix, target_id_prefix, has_expected_num_words]
+
+        exec.active_account::get_id
+        # => [active_account_id_suffix, active_account_id_prefix, target_id_suffix, target_id_prefix, has_expected_num_words]
+
+        exec.account_id::is_equal
+        # => [is_equal, has_expected_num_words]
+
+        and
+        # => [targets_active_account]
+    else
+        # the attachment index is meaningless when nothing was found
+        drop push.0
+        # => [0]
+    end
 end
