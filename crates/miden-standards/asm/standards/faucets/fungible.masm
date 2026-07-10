@@ -400,7 +400,7 @@ end
 #!
 #! Panics if:
 #! - active burn policy validation fails.
-#! - the procedure is not called from a note context (active_note::get_assets will fail).
+#! - the procedure is not called from a note context (active_note::remove_all_assets will fail).
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
@@ -413,7 +413,7 @@ pub proc receive_and_burn
     # ---------------------------------------------------------------------------------------------
 
     # this will fail if not called from a note context.
-    push.ASSET_PTR exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(16)]
 
     # Verify we have exactly one asset
