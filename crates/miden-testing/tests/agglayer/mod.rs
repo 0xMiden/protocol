@@ -4,6 +4,7 @@ mod bridge_out;
 mod config_bridge;
 mod eth_address;
 mod faucet_helpers;
+mod fee_sponsored_bridge_out;
 mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
