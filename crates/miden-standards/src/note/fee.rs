@@ -69,9 +69,9 @@ pub struct FeeNote {
 impl FeeNote {
     /// Builds a new [`FeeNote`] carrying `assets`, consumable by any account.
     ///
-    /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand: a
-    /// FEE note's recipient commits only to its serial number and script root, so a repeated serial
-    /// number from the same sender yields a duplicate nullifier.
+    /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand: an
+    /// otherwise identical FEE note (same sender, same assets) reusing a serial number produces a
+    /// duplicate nullifier, leaving the second note permanently unconsumable.
     ///
     /// # Errors
     ///

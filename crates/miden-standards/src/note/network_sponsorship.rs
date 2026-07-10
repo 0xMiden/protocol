@@ -81,8 +81,7 @@ pub struct NetworkSponsorshipNote {
 impl NetworkSponsorshipNote {
     /// Builds a new [`NetworkSponsorshipNote`] sponsoring `feature_note_id` against `target`.
     ///
-    /// Prefer the builder's `generate_serial_number` over supplying a serial
-    /// number by hand.
+    /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
     ///
     /// # Errors
     ///
