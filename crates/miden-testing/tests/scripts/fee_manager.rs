@@ -1,16 +1,24 @@
 //! Tests for the `FeeManager` account component.
 
-use miden_protocol::account::{Account, AccountBuilder, AccountType, StorageMapKey};
+use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::note::{NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::fees::{FeeManager, FeeScheduleEntry};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_FEE_MANAGER_SCRIPT_NOT_PRICED;
+use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN,
+    ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT,
+    ERR_FEE_MANAGER_SCRIPT_NOT_PRICED,
+    ERR_SENDER_NOT_OWNER,
+};
 use miden_standards::note::{FeeNote, NetworkSponsorshipNote};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
     Auth,
@@ -18,6 +26,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
+use rstest::rstest;
 
 const APP_FEE: u64 = 30;
 const PROTOCOL_FEE: u64 = 12;
@@ -288,6 +297,136 @@ async fn set_fee_and_remove_fee_round_trip() -> anyhow::Result<()> {
         StorageMapKey::new(NoteScriptRoot::as_word(&NetworkSponsorshipNote::script_root())),
     )?;
     assert_eq!(entry, Word::from([Felt::ZERO; 4]), "remove_fee should clear the entry");
+
+    Ok(())
+}
+
+/// Compiles a tx script that prices the sponsorship script root with the provided raw entry.
+fn set_fee_tx_script(
+    app_fee: u64,
+    protocol_fee: u64,
+    enabled: u64,
+) -> anyhow::Result<miden_protocol::transaction::TransactionScript> {
+    Ok(CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::core::sys
+        use miden::standards::fees::fee_manager
+
+        @transaction_script
+        pub proc main
+            push.{enabled} push.{protocol_fee} push.{app_fee}
+            push.{target_root}
+            # => [SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+            call.fee_manager::set_fee
+            exec.sys::truncate_stack
+        end
+        "#,
+        target_root = NoteScriptRoot::as_word(&NetworkSponsorshipNote::script_root()),
+    ))?)
+}
+
+/// `set_fee` only accepts 0 or 1 for the enabled flag.
+#[tokio::test]
+async fn set_fee_rejects_a_non_boolean_enabled_flag() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = add_fee_managed_account(&mut builder, 6)?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(set_fee_tx_script(7, 5, 2)?)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN);
+
+    Ok(())
+}
+
+/// `set_fee` bounds the portions by the maximum fungible asset amount, individually and summed,
+/// mirroring the Rust-side validation in `FeeScheduleEntry::new`.
+#[rstest]
+#[case::app_fee_too_large(u64::from(FungibleAsset::MAX_AMOUNT) + 1, 0)]
+#[case::protocol_fee_too_large(0, u64::from(FungibleAsset::MAX_AMOUNT) + 1)]
+#[case::sum_too_large(u64::from(FungibleAsset::MAX_AMOUNT), 1)]
+#[tokio::test]
+async fn set_fee_rejects_portions_exceeding_the_max_asset_amount(
+    #[case] app_fee: u64,
+    #[case] protocol_fee: u64,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = add_fee_managed_account(&mut builder, 7)?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(set_fee_tx_script(app_fee, protocol_fee, 1)?)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT);
+
+    Ok(())
+}
+
+/// `set_fee` is gated by the installed `Authority`: under `Ownable2Step`, a note from a non-owner
+/// sender cannot reprice the schedule.
+#[tokio::test]
+async fn set_fee_rejects_an_unauthorized_sender() -> anyhow::Result<()> {
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([11; 32]);
+    let non_owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([99; 32]);
+
+    let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
+    let fee_manager = FeeManager::new(fee_faucet)?
+        .with_fee(FeeNote::script_root(), FeeScheduleEntry::new(APP_FEE, PROTOCOL_FEE)?);
+
+    let mut builder = MockChain::builder();
+    let account_builder = AccountBuilder::new([8; 32])
+        .account_type(AccountType::Public)
+        .with_component(BasicWallet)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(fee_manager);
+    let account =
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+
+    let seed: [u32; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed));
+    let attacker_note = NoteBuilder::new(non_owner, &mut rng)
+        .note_type(NoteType::Private)
+        .code(format!(
+            r#"
+            use miden::standards::fees::fee_manager
+
+            @note_script
+            pub proc main
+                repeat.16 push.0 end
+                push.1 push.5 push.7
+                push.{target_root}
+                call.fee_manager::set_fee
+                dropw dropw dropw dropw
+            end
+            "#,
+            target_root = NoteScriptRoot::as_word(&NetworkSponsorshipNote::script_root()),
+        ))
+        .build()?;
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[attacker_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }

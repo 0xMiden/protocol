@@ -11,6 +11,7 @@
 
 use miden::core::word
 use miden::protocol::active_account
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::protocol::input_note
 use miden::protocol::native_account
 use miden::protocol::note
@@ -49,6 +50,8 @@ const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_sch
 # ================================================================================================
 
 const ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN="the enabled flag of a fee schedule entry must be 0 or 1"
+
+const ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT="the fee portions of a schedule entry must not exceed the maximum fungible asset amount, individually or summed"
 
 const ERR_FEE_MANAGER_SCRIPT_NOT_PRICED="the note script root is not priced by this account's fee schedule"
 
@@ -200,6 +203,7 @@ end
 #! Panics if:
 #! - the caller is not authorized per the installed [`Authority`].
 #! - enabled is not 0 or 1.
+#! - a fee portion, or the two portions summed, exceeds the maximum fungible asset amount.
 #!
 #! Invocation: call
 @locals(8)
@@ -210,6 +214,14 @@ pub proc set_fee
 
     # enabled must be a boolean, i.e. enabled * (enabled - 1) == 0
     dup.6 dup sub.1 mul assertz.err=ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN
+    # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
+
+    # the portions are charged as a single fungible asset, so they must fit one, individually and
+    # summed; this mirrors the Rust `FeeScheduleEntry::new`. The per-portion checks make the `add`
+    # wrap-free: 2 * FUNGIBLE_ASSET_MAX_AMOUNT = p - 1.
+    dup.4 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
+    dup.5 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
+    dup.5 dup.5 add lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
 
     loc_storew_le.0 dropw

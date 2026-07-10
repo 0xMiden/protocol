@@ -79,6 +79,9 @@ impl FeeScheduleEntry {
     /// Returns an error if the two portions together exceed [`FungibleAsset::MAX_AMOUNT`]. The two
     /// are always charged as a single fungible asset, so a total that cannot be represented as one
     /// is unusable, and a schedule that admits it would only fail later, inside the transaction.
+    ///
+    /// The MASM `set_fee` procedure in `fee_manager.masm` enforces the same bound for entries
+    /// written on chain; keep the two in sync.
     pub fn new(app_fee: u64, protocol_fee: u64) -> Result<Self, AccountError> {
         let total = app_fee.checked_add(protocol_fee).ok_or_else(|| {
             AccountError::other("fee schedule entry overflows when its portions are summed")
