@@ -5,6 +5,7 @@ mod code_inspection;
 mod expiration;
 mod faucet;
 mod fee;
+mod fee_counter_loop;
 mod fee_flow;
 mod fee_flow_double_hop;
 mod fee_manager;
