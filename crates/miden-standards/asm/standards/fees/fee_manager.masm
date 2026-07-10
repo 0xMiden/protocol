@@ -12,7 +12,6 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::active_note
-use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::protocol::input_note
 use miden::protocol::native_account
 use miden::protocol::note
@@ -22,6 +21,7 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::account_id
 use {ALWAYS} from miden::standards::note::execution_hint
 use miden::standards::access::authority
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::attachments::fee_sponsorship
 use miden::standards::attachments::network_account_target
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME} from miden::standards::attachments::network_account_target
