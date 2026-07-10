@@ -368,7 +368,7 @@ async fn test_metadata_into_tag() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_active_note_get_assets() -> anyhow::Result<()> {
+async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
@@ -424,7 +424,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         code
     }
 
-    // calling get_assets should return assets at the specified address
+    // calling remove_all_assets should write the removed assets to the specified address
     let code = format!(
         r#"
         use miden::core::sys
@@ -440,8 +440,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # set the destination pointer for note 0 assets
             push.{DEST_POINTER_NOTE_0}
 
-            # get the assets
-            exec.active_note::get_assets
+            # remove the assets
+            exec.active_note::remove_all_assets
 
             # assert the number of assets is correct
             eq.{note_0_num_assets} assert.err="unexpected num assets for note 0"
@@ -454,6 +454,14 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
 
             # clean pointer
             drop
+
+            # removing the assets again should return no assets since the note is now empty
+            push.{DEST_POINTER_NOTE_0} exec.active_note::remove_all_assets
+            eq.0 assert.err="note 0 should not have any assets left"
+
+            # the initial assets info should be unaffected by the removals
+            exec.active_note::get_initial_num_assets
+            eq.{note_0_num_assets} assert.err="unexpected initial num assets for note 0"
         end
 
         proc process_note_1
@@ -463,8 +471,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # set the destination pointer for note 1 assets
             push.{DEST_POINTER_NOTE_1}
 
-            # get the assets
-            exec.active_note::get_assets
+            # remove the assets
+            exec.active_note::remove_all_assets
 
             # assert the number of assets is correct
             eq.{note_1_num_assets} assert.err="unexpected num assets for note 1"
