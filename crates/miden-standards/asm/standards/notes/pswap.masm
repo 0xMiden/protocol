@@ -436,7 +436,7 @@ end
 #!
 @locals(8)
 proc load_offered_asset
-    locaddr.0 exec.active_note::get_assets
+    locaddr.0 exec.active_note::remove_all_assets
     # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS

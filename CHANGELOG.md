@@ -116,6 +116,8 @@
 - [BREAKING] Renamed and generalized `miden::protocol::active_account::has_non_fungible_asset` to `has_asset`, which now accepts any asset ID instead of only non-fungible assets ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 - Added `miden::protocol::native_account::has_initial_asset` procedure returning whether the native account's vault contained an asset at the beginning of the transaction ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 - Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
+- [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/issues/3272)).
+  - Replaced the `active_note::get_assets` / `input_note::get_assets` and `input_note::get_assets_info` procedures with `remove_all_assets`, `get_initial_assets` and `get_initial_assets_info`, and added `get_initial_num_assets`, `get_asset` and `remove_asset`.
 
 ### Fixes
 

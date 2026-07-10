@@ -42,7 +42,7 @@ const STATUS_BURNED = 2
 
 # The local memory address holding the asset commitment across the mint flow.
 const ASSET_VALUE_LOCAL = 0
-# The memory address at which a note's assets are written by `active_note::get_assets`.
+# The memory address at which a note's assets are written by `active_note::remove_all_assets`.
 const ASSET_PTR = 0
 
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
@@ -264,7 +264,7 @@ end
 @account_procedure
 pub proc receive_and_burn
     # get the single asset from the note (fails if not called from a note context)
-    push.ASSET_PTR exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(16)]
 
     eq.1 assert.err=ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS
