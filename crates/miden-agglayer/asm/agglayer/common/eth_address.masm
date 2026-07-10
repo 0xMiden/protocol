@@ -1,6 +1,7 @@
 use agglayer::common::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
+use miden::protocol::account_id
 
 # TYPE ALIASES
 # =================================================================================================
@@ -38,12 +39,17 @@ const TWO_POW_32=4294967296
 #!   prefix = (bswap(limb1) << 32) | bswap(limb2)   # bytes[4..12]
 #!   suffix = (bswap(limb3) << 32) | bswap(limb4)   # bytes[12..20]
 #!
-#! These 8-byte words are represented as field elements by packing two u32 limbs into a felt.
-#! The packing is done via build_felt, which validates limbs are u32 and checks the packed value
-#! did not reduce mod p (i.e. the word fits in the field).
+#! These 8-byte words are packed into field elements via build_felt.
+#!
+#! The decoded (suffix, prefix) is validated as a structurally valid AccountId.
 #!
 #! Inputs:  [limb0, limb1, limb2, limb3, limb4]
 #! Outputs: [suffix, prefix]
+#!
+#! Panics if:
+#! - the most-significant 4 bytes (limb0) are non-zero.
+#! - any limb is not a valid u32, or a packed 8-byte word does not fit in the field.
+#! - the decoded (suffix, prefix) is not a valid AccountId.
 #!
 #! Invocation: exec
 pub proc to_account_id
@@ -66,6 +72,13 @@ pub proc to_account_id
     # => [prefix, suffix]
 
     swap
+    # => [suffix, prefix]
+
+    # Validate the decoded id is a structurally valid AccountId.
+    dup.1 dup.1
+    # => [suffix, prefix, suffix, prefix]
+
+    exec.account_id::validate
     # => [suffix, prefix]
 end
 
