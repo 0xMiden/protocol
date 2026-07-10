@@ -425,7 +425,7 @@ proc is_consumer_creator
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_creator]
 end
 

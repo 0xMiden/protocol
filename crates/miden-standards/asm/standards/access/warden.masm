@@ -83,7 +83,7 @@ proc is_warden_internal
     exec.get_warden_internal
     # => [warden_suffix, warden_prefix, account_id_suffix, account_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_warden]
 end
 

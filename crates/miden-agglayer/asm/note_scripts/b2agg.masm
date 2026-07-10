@@ -64,7 +64,7 @@ pub proc main
     exec.active_note::get_sender
     # => [sender_id_prefix, sender_id_suffix, account_id_prefix, account_id_suffix, pad(16)]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [reclaim, pad(16)]
 
     # B2AGG note is being reclaimed; adding note assets to account
