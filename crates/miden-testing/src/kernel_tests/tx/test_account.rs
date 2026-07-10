@@ -57,6 +57,10 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
+use miden_protocol::transaction::memory::{
+    CODE_UPGRADE_COMMITMENT_PTR,
+    STORAGE_UPGRADE_COMMITMENT_PTR,
+};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
@@ -791,6 +795,51 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that `native_account::upgrade` stores the code and storage upgrade commitments in the
+/// dedicated kernel memory region.
+#[tokio::test]
+async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
+    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    let code = format!(
+        r#"
+        use miden::protocol::native_account
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            exec.native_account::upgrade
+            # => []
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+
+    let exec_output = &tx_context.execute_code(&code).await?;
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
+        code_upgrade_commitment,
+        "code upgrade commitment should be stored in kernel memory"
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
+        storage_upgrade_commitment,
+        "storage upgrade commitment should be stored in kernel memory"
+    );
+
+    Ok(())
+}
+
 /// This test creates an account with mock storage slots and calls the
 /// `compute_storage_commitment` procedure each time the storage is updated.
 ///
@@ -1019,13 +1068,14 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
-/// procedure in two cases:
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure in two
+/// cases:
 /// - when a note adds the asset which already exists in the account vault.
 /// - when a note adds the asset which doesn't exist in the account vault.
 ///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // prepare the testing data
@@ -1079,14 +1129,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_existing_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
+        use miden::standards::assets::fungible_asset
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1096,7 +1145,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1130,14 +1179,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_new_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
+        use miden::standards::assets::fungible_asset
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1147,7 +1195,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1172,11 +1220,12 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::native_account::get_initial_balance`
-/// procedure in case when we create a note which removes an asset from the account vault.
-///  
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure when an
+/// asset is moved from the vault to a note.
+///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1209,9 +1258,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
     let remove_existing_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
+        use miden::standards::assets::fungible_asset
         use mock::util
 
         @transaction_script
@@ -1227,7 +1274,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the current asset balance
             push.{ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [final_balance]
 
             # assert final balance is correct
@@ -1237,7 +1284,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.native_account::get_initial_balance
+            exec.fungible_asset::get_initial_native_account_balance
             # => [init_balance]
 
             # assert initial balance is correct
@@ -1305,7 +1352,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         r#"
         use miden::protocol::active_account
         use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
+        use miden::standards::assets::fungible_asset
         use mock::util
 
         @transaction_script

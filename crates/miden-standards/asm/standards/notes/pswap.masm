@@ -6,7 +6,8 @@ use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
-use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use miden::standards::assets::fungible_asset
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
@@ -276,7 +277,7 @@ proc create_p2id_note
         loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_account_fill]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE]
 
         # pad the stack for the call
@@ -305,7 +306,7 @@ proc create_p2id_note
         loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
@@ -408,7 +409,7 @@ proc create_remainder_note
     loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
     # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
 
-    exec.asset::create_fungible_asset
+    exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -570,7 +571,7 @@ proc execute_pswap
     # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
-    exec.asset::fungible_to_amount
+    exec.fungible_asset::to_amount
     # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
@@ -680,7 +681,7 @@ proc execute_pswap
         loc_load.EXEC_OFFERED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_payout_account_fill, pad(8)]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
         call.wallet::receive_asset
