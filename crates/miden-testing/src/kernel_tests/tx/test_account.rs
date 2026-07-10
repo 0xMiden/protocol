@@ -352,61 +352,60 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
     Ok(())
 }
 
-/// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program
-/// that leaves every result on the stack, so all six cases are asserted from one execution.
+/// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program.
 ///
 /// The operands for all cases are provided as the 16 stack inputs and consumed top-first. Each
-/// result is tucked beneath the remaining operands with `movdn` so it survives to the end, and the
-/// program finishes with a net-consuming `eqz` so the final stack stays within the 16-element limit
-/// (`testz` grows the stack, so it cannot be the last operation). The final stack, from the top,
-/// is:   `[eqz(id_1), testz(id_1), suffix_1, prefix_1, eq(id_1, id_1), eq(id_1, id_2), eqz(0),
-///     testz(0)]`
+/// boolean result is asserted inside the program with `assert`/`assertz`, which consumes it (both
+/// exposing the next case's operands and keeping the stack within the 16-element limit -- `testz`
+/// grows the stack, but the following `assert`/`assertz` shrinks it right back). The final `testz`
+/// leaves the preserved ID `[suffix_1, prefix_1]` on the stack, which is asserted from Rust.
 #[tokio::test]
 async fn test_account_id_comparison() -> anyhow::Result<()> {
     let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
     let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
 
-    // Operands consumed top-first: eq(id_1, id_1), eq(id_1, id_2), eqz(0), testz(0), testz(id_1),
-    // eqz(id_1).
+    // Operands consumed top-first: eq(id_1, id_1), eq(id_1, id_2), eqz(0), eqz(id_1), testz(0),
+    // testz(id_1).
     let stack_inputs = StackInputs::new(&[
         suffix_1, prefix_1, suffix_1, prefix_1, // eq(id_1, id_1)
         suffix_1, prefix_1, suffix_2, prefix_2, // eq(id_1, id_2)
         ZERO, ZERO, // eqz(0)
+        suffix_1, prefix_1, // eqz(id_1)
         ZERO, ZERO, // testz(0)
         suffix_1, prefix_1, // testz(id_1)
-        suffix_1, prefix_1, // eqz(id_1)
     ])
     .unwrap();
 
-    let code = "
+    let code = r#"
         use miden::protocol::account_id
 
         begin
-            # eq(id_1, id_1) -> 1
+            # eq: identical IDs are equal
             exec.account_id::eq
-            movdn.12
+            assert.err="eq: identical IDs should be equal"
 
-            # eq(id_1, id_2) -> 0
+            # eq: different IDs are not equal
             exec.account_id::eq
-            movdn.9
+            assertz.err="eq: different IDs should not be equal"
 
-            # eqz(0) -> 1
+            # eqz: the zero address is zero
             exec.account_id::eqz
-            movdn.8
+            assert.err="eqz: the zero address should be zero"
 
-            # testz(0) -> 1; drop the preserved zeros, keeping only the flag
-            exec.account_id::testz
-            movdn.2 drop drop
-            movdn.7
-
-            # testz(id_1) -> 0; keep [is_zero, suffix_1, prefix_1] and tuck it beneath the operands
-            exec.account_id::testz
-            movdn.4 movdn.4 movdn.4
-
-            # eqz(id_1) -> 0
+            # eqz: a valid ID is not zero
             exec.account_id::eqz
+            assertz.err="eqz: a valid ID should not be zero"
+
+            # testz: the zero address is zero; drop the preserved zeros
+            exec.account_id::testz
+            assert.err="testz: the zero address should be zero"
+            drop drop
+
+            # testz: a valid ID is not zero, leaving [suffix_1, prefix_1] on the stack
+            exec.account_id::testz
+            assertz.err="testz: a valid ID should not be zero"
         end
-        ";
+        "#;
 
     let exec_output = CodeExecutor::with_default_host()
         .stack_inputs(stack_inputs)
@@ -414,45 +413,9 @@ async fn test_account_id_comparison() -> anyhow::Result<()> {
         .await
         .map_err(ExecError::into_execution_error)?;
 
-    // eqz(id_1): a valid ID is not zero.
-    assert_eq!(
-        exec_output.get_stack_element(0).as_canonical_u64(),
-        0,
-        "eqz: valid ID is not zero"
-    );
-
-    // testz(id_1): a valid ID is not zero and is preserved beneath the flag.
-    assert_eq!(
-        exec_output.get_stack_element(1).as_canonical_u64(),
-        0,
-        "testz: valid ID is not zero"
-    );
-    assert_eq!(exec_output.get_stack_element(2), suffix_1, "testz must preserve the ID suffix");
-    assert_eq!(exec_output.get_stack_element(3), prefix_1, "testz must preserve the ID prefix");
-
-    // eq: identical IDs are equal, different IDs are not.
-    assert_eq!(
-        exec_output.get_stack_element(4).as_canonical_u64(),
-        1,
-        "eq: identical IDs are equal"
-    );
-    assert_eq!(
-        exec_output.get_stack_element(5).as_canonical_u64(),
-        0,
-        "eq: different IDs differ"
-    );
-
-    // eqz(0) and testz(0): the zero address is zero.
-    assert_eq!(
-        exec_output.get_stack_element(6).as_canonical_u64(),
-        1,
-        "eqz: zero address is zero"
-    );
-    assert_eq!(
-        exec_output.get_stack_element(7).as_canonical_u64(),
-        1,
-        "testz: zero address is zero"
-    );
+    // testz must preserve the account ID beneath the (already consumed) flag.
+    assert_eq!(exec_output.get_stack_element(0), suffix_1, "testz must preserve the ID suffix");
+    assert_eq!(exec_output.get_stack_element(1), prefix_1, "testz must preserve the ID prefix");
 
     Ok(())
 }
