@@ -55,6 +55,74 @@ const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_sch
 #! consume it. 0 disables reclaim.
 const RECLAIM_DELTA_SLOT = word("miden::standards::fees::fee_manager::reclaim_delta")
 
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
+
+# set_fee memory locals
+const SET_FEE_SCRIPT_ROOT_LOC = 0
+const SET_FEE_ENTRY_LOC = 4
+
+# sponsored_amount memory locals
+const SPONSORED_FEATURE_ID_LOC = 0
+const SPONSORED_TOTAL_LOC = 4
+const SPONSORED_NOTE_IDX_LOC = 5
+
+# sponsorship_contribution memory locals
+const CONTRIBUTION_NOTE_IDX_LOC = 0
+const CONTRIBUTION_FEATURE_ID_LOC = 4
+const CONTRIBUTION_ASSET_ID_LOC = 8
+const CONTRIBUTION_ASSET_VALUE_LOC = 12
+
+# active_note_remainder memory locals
+const REMAINDER_OWN_FEE_LOC = 0
+
+# fund_note_with_fee_asset memory locals
+const FUND_NOTE_IDX_LOC = 0
+
+# find_downstream_note memory locals
+const FIND_TARGET_SUFFIX_LOC = 0
+const FIND_TARGET_PREFIX_LOC = 1
+const FIND_NUM_NOTES_LOC = 4
+const FIND_NOTE_IDX_LOC = 5
+const FIND_IS_FOUND_LOC = 6
+const FIND_FOUND_IDX_LOC = 7
+const FIND_ATTACHMENT_LOC = 8
+
+# estimate_downstream_fee memory locals
+const ESTIMATE_CHILD_ROOT_LOC = 0
+const ESTIMATE_TARGET_SUFFIX_LOC = 4
+const ESTIMATE_TARGET_PREFIX_LOC = 5
+const ESTIMATE_AMOUNT_LOC = 6
+
+# sponsor_downstream_note memory locals
+const SPONSOR_FEE_AMOUNT_LOC = 0
+const SPONSOR_CHILD_IDX_LOC = 1
+const SPONSOR_TARGET_SUFFIX_LOC = 2
+const SPONSOR_TARGET_PREFIX_LOC = 3
+const SPONSOR_CHILD_NOTE_ID_LOC = 4
+const SPONSOR_RECLAIM_HEIGHT_LOC = 8
+const SPONSOR_NOTE_IDX_LOC = 12
+
+# settle_feature_note memory locals
+const FEATURE_NOTE_IDX_LOC = 0
+const FEATURE_SPAWN_COUNT_LOC = 1
+const FEATURE_PROTOCOL_FEE_LOC = 2
+const FEATURE_REMAINDER_LOC = 3
+const FEATURE_SCRIPT_ROOT_LOC = 4
+const FEATURE_CHILD_ROOT_LOC = 8
+const FEATURE_CHILD_IDX_LOC = 12
+const FEATURE_TARGET_SUFFIX_LOC = 13
+const FEATURE_TARGET_PREFIX_LOC = 14
+
+# settle_fees memory locals
+const SETTLE_FEES_PROTOCOL_TOTAL_LOC = 0
+const SETTLE_FEES_SPAWN_COUNT_LOC = 1
+const SETTLE_FEES_NOTE_IDX_LOC = 2
+
+# emit_fee_note memory locals
+const EMIT_NOTE_STORAGE_LOC = 0
+const EMIT_PROTOCOL_OWED_LOC = 4
+
 # ERRORS
 # ================================================================================================
 
@@ -103,7 +171,6 @@ end
 #!
 #! Invocation: exec
 proc fee_entry
-    # => [NOTE_SCRIPT_ROOT]
     push.FEE_SCHEDULE_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT]
 
@@ -161,7 +228,7 @@ pub proc get_fee_asset_id
     exec.fee_asset_id
     # => [FEE_ASSET_ID, pad(16)]
 
-    # a call must return with a stack depth of exactly 16, so drop the word the read pushed us over by
+    # a call must return with a stack depth of exactly 16, so drop the word the read pushed
     swapw dropw
     # => [FEE_ASSET_ID, pad(12)]
 end
@@ -187,7 +254,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc estimate_note_fee
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
     swapw dropw
     # => [NOTE_SCRIPT_ROOT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
 
@@ -206,13 +272,19 @@ pub proc estimate_note_fee
     exec.fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(15)]
 
-    # A call must return with a stack depth of exactly 16. Dropping an operand never shrinks the
-    # stack below 16 (a zero shifts in from below), so the reads above left us eight elements over.
+    # a call must return with a stack depth of exactly 16; the reads left us eight elements over
     swapdw dropw dropw
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
 
 #! Prices the note script with the provided root.
+#!
+#! Each fee portion must fit a fungible asset amount on its own -- settlement materializes the
+#! protocol portion as a standalone asset, and the application portion stays in the vault as one --
+#! and so must their sum, which the sponsorship charges as a single asset. The per-portion checks
+#! run before the summed check to make the `add` provably wrap-free over the field:
+#! 2 * FUNGIBLE_ASSET_MAX_AMOUNT = p - 1, where p = 2^64 - 2^32 + 1, so a sum-only check would
+#! accept two portions that wrap past p. Mirrors the Rust `FeeScheduleEntry::new`.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
 #! Outputs: [pad(16)]
@@ -233,31 +305,25 @@ pub proc set_fee
     dup.6 dup sub.1 mul assertz.err=ERR_FEE_MANAGER_ENABLED_NOT_BOOLEAN
     # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
 
-    # Each portion must fit a fungible asset amount on its own: settlement materializes the
-    # protocol portion as a standalone asset, and the application portion stays in the vault as
-    # one. Their sum must fit too, because the sponsorship charges them as a single asset. This
-    # mirrors the Rust `FeeScheduleEntry::new`. The ordering is load-bearing: the per-portion
-    # checks are what make the `add` provably wrap-free over the field, since
-    # 2 * FUNGIBLE_ASSET_MAX_AMOUNT = p - 1, where p = 2^64 - 2^32 + 1 is the Goldilocks modulus.
-    # A sum-only check would accept two portions that wrap past p.
+    # the per-portion checks make the summed `add` wrap-free; see the procedure doc
     dup.4 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     dup.5 lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     dup.5 dup.5 add lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_MANAGER_FEE_EXCEEDS_MAX_ASSET_AMOUNT
     # => [NOTE_SCRIPT_ROOT, app_fee, protocol_fee, enabled, pad(9)]
 
-    loc_storew_le.0 dropw
+    loc_storew_le.SET_FEE_SCRIPT_ROOT_LOC dropw
     # => [app_fee, protocol_fee, enabled, pad(9)]
 
     push.0 movdn.3
     # => [app_fee, protocol_fee, enabled, 0, pad(9)]
 
-    loc_storew_le.4 dropw
+    loc_storew_le.SET_FEE_ENTRY_LOC dropw
     # => [pad(9)]
 
-    padw loc_loadw_le.4
+    padw loc_loadw_le.SET_FEE_ENTRY_LOC
     # => [FEE_ENTRY, pad(9)]
 
-    padw loc_loadw_le.0
+    padw loc_loadw_le.SET_FEE_SCRIPT_ROOT_LOC
     # => [NOTE_SCRIPT_ROOT, FEE_ENTRY, pad(9)]
 
     push.FEE_SCHEDULE_SLOT[0..2]
@@ -294,21 +360,73 @@ end
 # FEE SETTLEMENT
 # ================================================================================================
 
+#! Returns the fee-asset amount the input note at `note_idx` contributes towards sponsoring the
+#! feature note with the provided ID.
+#!
+#! Only a NETWORK_SPONSORSHIP note targeted at this account and bound to FEATURE_NOTE_ID
+#! contributes. The target check excludes a sponsorship this account is reclaiming as the sender
+#! in the same transaction, whose reclaim deposit must not double as coverage. A bound note
+#! carrying anything other than exactly one asset of this account's fee asset contributes 0 rather
+#! than panicking: aborting here would let one junk note bound to a real feature note block that
+#! note even when other sponsorships cover it.
+#!
+#! The asset count is checked before any assets are written to the local frame, which has room for
+#! exactly one asset while a hostile note could carry many. A targeted sponsorship always carries
+#! the binding attachment, because its script requires it on the target path.
+#!
+#! Inputs:  [note_idx, FEATURE_NOTE_ID]
+#! Outputs: [amount]
+#!
+#! Invocation: exec
+@locals(16)
+proc sponsorship_contribution
+    loc_store.CONTRIBUTION_NOTE_IDX_LOC
+    loc_storew_le.CONTRIBUTION_FEATURE_ID_LOC dropw
+    # => []
+
+    loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.input_note::get_script_root
+    procref.network_sponsorship::main exec.word::eq
+    # => [is_sponsorship]
+
+    loc_load.CONTRIBUTION_NOTE_IDX_LOC
+    exec.network_account_target::input_note_targets_active_account and
+    # => [is_targeted_sponsorship]
+
+    if.true
+        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.fee_sponsorship::input_note_bound_note_id
+        padw loc_loadw_le.CONTRIBUTION_FEATURE_ID_LOC exec.word::eq
+        # => [is_bound_to_feature_note]
+
+        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.input_note::get_assets_info dropw eq.1 and
+        # => [is_bound_with_one_asset]
+
+        if.true
+            loc_load.CONTRIBUTION_NOTE_IDX_LOC locaddr.CONTRIBUTION_ASSET_ID_LOC
+            exec.input_note::get_assets drop
+            # => []
+
+            padw loc_loadw_le.CONTRIBUTION_ASSET_ID_LOC exec.fee_asset_id exec.word::eq
+            # => [is_fee_asset]
+
+            # the asset value word sits directly after the asset ID word
+            push.0 loc_load.CONTRIBUTION_ASSET_VALUE_LOC movup.2 cdrop
+            # => [amount]
+        else
+            push.0
+            # => [0]
+        end
+    else
+        push.0
+        # => [0]
+    end
+end
+
 #! Returns the total sponsorship bound to the provided feature note ID by this transaction's input
 #! notes.
 #!
-#! Every input note carrying the NETWORK_SPONSORSHIP script root, targeted at this account, whose
-#! fee sponsorship attachment names FEATURE_NOTE_ID, contributes its single fee asset. Sponsorship
-#! is summed rather than matched one-to-one, which is what makes a second sponsorship note a top-up
-#! rather than a way to block the feature note it names.
-#!
-#! Only sponsorships targeted at this account are counted: a sponsorship this account is reclaiming
-#! as the sender in the same transaction deposits its assets through the reclaim path, and must not
-#! double as coverage for a feature note.
-#!
-#! A bound note carrying anything other than exactly one asset of this account's fee asset
-#! contributes nothing rather than aborting settlement: panicking here would let one junk note
-#! bound to a real feature note block that note even when other sponsorships already cover it.
+#! Sums each input note's `sponsorship_contribution` rather than matching one-to-one, which is
+#! what makes a second sponsorship note a top-up rather than a way to block the feature note it
+#! names.
 #!
 #! Inputs:  [FEATURE_NOTE_ID]
 #! Outputs: [sponsored_amount]
@@ -318,15 +436,10 @@ end
 #! - sponsored_amount is the total amount of the fee asset sponsoring that note.
 #!
 #! Invocation: exec
-@locals(24)
+@locals(8)
 pub proc sponsored_amount
-    loc_storew_le.0 dropw
-    # => []
-
-    exec.fee_asset_id loc_storew_le.4 dropw
-    # => []
-
-    push.0 loc_store.8
+    loc_storew_le.SPONSORED_FEATURE_ID_LOC dropw
+    push.0 loc_store.SPONSORED_TOTAL_LOC
     # => []
 
     exec.tx::get_num_input_notes
@@ -336,76 +449,24 @@ pub proc sponsored_amount
     # => [should_loop, note_idx]
 
     while.true
+        sub.1 dup loc_store.SPONSORED_NOTE_IDX_LOC
         # => [note_idx]
-        sub.1 dup loc_store.9
-        # => [note_idx]
 
-        exec.input_note::get_script_root
-        # => [NOTE_SCRIPT_ROOT]
+        padw loc_loadw_le.SPONSORED_FEATURE_ID_LOC movup.4
+        # => [note_idx, FEATURE_NOTE_ID]
 
-        procref.network_sponsorship::main
-        # => [SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
+        exec.sponsorship_contribution
+        # => [amount]
 
-        exec.word::eq
-        # => [is_sponsorship]
+        loc_load.SPONSORED_TOTAL_LOC add loc_store.SPONSORED_TOTAL_LOC
+        # => []
 
-        if.true
-            loc_load.9 exec.network_account_target::input_note_targets_active_account
-            # => [targets_active_account]
-
-            if.true
-                # a targeted sponsorship always carries the binding: its script requires the
-                # attachment on the target path, so a note without one could never be consumed
-                loc_load.9 exec.fee_sponsorship::input_note_bound_note_id
-                # => [BOUND_NOTE_ID]
-
-                padw loc_loadw_le.0
-                # => [FEATURE_NOTE_ID, BOUND_NOTE_ID]
-
-                exec.word::eq
-                # => [is_bound_to_this_feature_note]
-
-                if.true
-                    # check the asset count before writing any assets to the local frame: the
-                    # frame has room for exactly one asset, and a hostile note could carry many
-                    loc_load.9 exec.input_note::get_assets_info
-                    # => [ASSETS_COMMITMENT, num_assets]
-
-                    dropw eq.1
-                    # => [has_one_asset]
-
-                    if.true
-                        loc_load.9 locaddr.12
-                        # => [dest_ptr, note_idx]
-
-                        exec.input_note::get_assets drop
-                        # => []
-
-                        padw loc_loadw_le.12
-                        # => [SPONSORSHIP_ASSET_ID]
-
-                        padw loc_loadw_le.4
-                        # => [FEE_ASSET_ID, SPONSORSHIP_ASSET_ID]
-
-                        exec.word::eq
-                        # => [is_fee_asset]
-
-                        if.true
-                            # the asset value word sits directly after the asset ID word
-                            loc_load.16 loc_load.8 add loc_store.8
-                            # => []
-                        end
-                    end
-                end
-            end
-        end
-
-        loc_load.9 dup neq.0
+        loc_load.SPONSORED_NOTE_IDX_LOC dup neq.0
         # => [should_loop, note_idx]
     end
     # => [note_idx]
 
-    drop loc_load.8
+    drop loc_load.SPONSORED_TOTAL_LOC
     # => [sponsored_amount]
 end
 
@@ -428,20 +489,20 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc active_note_remainder
-    exec.active_note::get_script_root exec.fee_total loc_store.0
+    exec.active_note::get_script_root exec.fee_total loc_store.REMAINDER_OWN_FEE_LOC
     # => []
 
     exec.note_id::compute_active_note_id exec.sponsored_amount
     # => [sponsored]
 
-    dup loc_load.0
+    dup loc_load.REMAINDER_OWN_FEE_LOC
     # => [own_fee, sponsored, sponsored]
 
     gte
     # => [sponsored >= own_fee, sponsored]
 
     if.true
-        loc_load.0 sub
+        loc_load.REMAINDER_OWN_FEE_LOC sub
         # => [remainder]
     else
         drop push.0
@@ -461,16 +522,16 @@ end
 #! Invocation: exec
 @locals(4)
 proc fund_note_with_fee_asset
-    loc_store.0
+    loc_store.FUND_NOTE_IDX_LOC
     # => [note_idx]
 
-    push.0.0.0 loc_load.0 exec.fee_asset_id
+    push.0.0.0 loc_load.FUND_NOTE_IDX_LOC exec.fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
     exec.native_account::remove_asset dropw
     # => [note_idx]
 
-    push.0.0.0 loc_load.0 exec.fee_asset_id
+    push.0.0.0 loc_load.FUND_NOTE_IDX_LOC exec.fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -495,16 +556,16 @@ end
 #! Invocation: exec
 @locals(12)
 proc find_downstream_note
-    exec.tx::get_num_output_notes loc_store.4
-    push.0 loc_store.5
-    push.0 loc_store.6
+    exec.tx::get_num_output_notes loc_store.FIND_NUM_NOTES_LOC
+    push.0 loc_store.FIND_NOTE_IDX_LOC
+    push.0 loc_store.FIND_IS_FOUND_LOC
     # => []
 
-    loc_load.4 neq.0
+    loc_load.FIND_NUM_NOTES_LOC neq.0
     # => [should_loop]
 
     while.true
-        loc_load.5
+        loc_load.FIND_NOTE_IDX_LOC
         # => [note_idx]
 
         push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
@@ -514,38 +575,39 @@ proc find_downstream_note
         # => [is_found, attachment_idx]
 
         if.true
-            loc_load.5 swap locaddr.8
+            loc_load.FIND_NOTE_IDX_LOC swap locaddr.FIND_ATTACHMENT_LOC
             # => [dest_ptr, attachment_idx, note_idx]
 
             exec.output_note::write_attachment_to_memory drop
             # => []
 
-            padw loc_loadw_le.8
+            padw loc_loadw_le.FIND_ATTACHMENT_LOC
             # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
 
             exec.network_account_target::into_target_id
             # => [target_id_suffix, target_id_prefix]
 
-            loc_store.0 loc_store.1
-            loc_load.5 loc_store.7
-            push.1 loc_store.6
+            loc_store.FIND_TARGET_SUFFIX_LOC loc_store.FIND_TARGET_PREFIX_LOC
+            loc_load.FIND_NOTE_IDX_LOC loc_store.FIND_FOUND_IDX_LOC
+            push.1 loc_store.FIND_IS_FOUND_LOC
             # => []
         else
             drop
             # => []
         end
 
-        loc_load.5 add.1 loc_store.5
+        loc_load.FIND_NOTE_IDX_LOC add.1 loc_store.FIND_NOTE_IDX_LOC
         # => []
 
-        loc_load.6 not
-        loc_load.5 loc_load.4 lt
+        loc_load.FIND_IS_FOUND_LOC not
+        loc_load.FIND_NOTE_IDX_LOC loc_load.FIND_NUM_NOTES_LOC lt
         and
         # => [should_loop]
     end
     # => []
 
-    loc_load.1 loc_load.0 loc_load.7 loc_load.6
+    loc_load.FIND_TARGET_PREFIX_LOC loc_load.FIND_TARGET_SUFFIX_LOC
+    loc_load.FIND_FOUND_IDX_LOC loc_load.FIND_IS_FOUND_LOC
     # => [is_found, note_idx, target_id_suffix, target_id_prefix]
 end
 
@@ -562,27 +624,27 @@ end
 #! Invocation: exec
 @locals(8)
 proc estimate_downstream_fee
-    loc_storew_le.0 dropw
-    loc_store.4 loc_store.5
+    loc_storew_le.ESTIMATE_CHILD_ROOT_LOC dropw
+    loc_store.ESTIMATE_TARGET_SUFFIX_LOC loc_store.ESTIMATE_TARGET_PREFIX_LOC
     # => []
 
-    push.0 padw padw padw loc_loadw_le.0
+    push.0 padw padw padw loc_loadw_le.ESTIMATE_CHILD_ROOT_LOC
     # => [CHILD_NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe]
 
     procref.estimate_note_fee
     # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(13)]
 
-    loc_load.5 loc_load.4
+    loc_load.ESTIMATE_TARGET_PREFIX_LOC loc_load.ESTIMATE_TARGET_SUFFIX_LOC
     # => [foreign_id_suffix, foreign_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(13)]
 
     exec.tx::execute_foreign_procedure
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
     # the foreign procedure returns 16 elements; drop the asset ID, keep the amount, drop the rest
-    dropw loc_store.6 dropw dropw drop drop drop
+    dropw loc_store.ESTIMATE_AMOUNT_LOC dropw dropw drop drop drop
     # => []
 
-    loc_load.6
+    loc_load.ESTIMATE_AMOUNT_LOC
     # => [fee_amount]
 end
 
@@ -628,15 +690,16 @@ end
 #! Invocation: exec
 @locals(16)
 proc sponsor_downstream_note
-    loc_store.0 loc_store.1 loc_store.2 loc_store.3
+    loc_store.SPONSOR_FEE_AMOUNT_LOC loc_store.SPONSOR_CHILD_IDX_LOC
+    loc_store.SPONSOR_TARGET_SUFFIX_LOC loc_store.SPONSOR_TARGET_PREFIX_LOC
     # => []
 
-    loc_load.1 exec.note_id::compute_output_note_id
-    loc_storew_le.4 dropw
+    loc_load.SPONSOR_CHILD_IDX_LOC exec.note_id::compute_output_note_id
+    loc_storew_le.SPONSOR_CHILD_NOTE_ID_LOC dropw
     # => []
 
-    # the chained sponsorship's reclaim height derives from the configured delta, letting this
-    # account recover the budget if the downstream account never consumes the note; 0 disables it
+    # the reclaim height derives from the configured delta, letting this account recover the
+    # budget if the downstream account never consumes the note; a delta of 0 disables reclaim
     push.RECLAIM_DELTA_SLOT[0..2] exec.active_account::get_item
     # => [reclaim_delta, 0, 0, 0]
 
@@ -650,16 +713,17 @@ proc sponsor_downstream_note
         exec.tx::get_block_number add
         # => [reclaim_block_height]
     end
-    loc_store.8
+    loc_store.SPONSOR_RECLAIM_HEIGHT_LOC
     # => []
 
     procref.network_sponsorship::main
     # => [SPONSORSHIP_SCRIPT_ROOT]
 
-    loc_load.1 add.1 exec.active_account::get_nonce exec.active_account::get_id
+    loc_load.SPONSOR_CHILD_IDX_LOC add.1
+    exec.active_account::get_nonce exec.active_account::get_id
     # => [SERIAL_NUM, SPONSORSHIP_SCRIPT_ROOT]
 
-    push.1 locaddr.8
+    push.1 locaddr.SPONSOR_RECLAIM_HEIGHT_LOC
     # => [storage_ptr, num_storage_items, SERIAL_NUM, SPONSORSHIP_SCRIPT_ROOT]
 
     exec.note::compute_and_store_recipient
@@ -668,11 +732,12 @@ proc sponsor_downstream_note
     push.NOTE_TYPE_PUBLIC push.0
     # => [tag, note_type, RECIPIENT]
 
-    exec.output_note::create loc_store.12
+    exec.output_note::create loc_store.SPONSOR_NOTE_IDX_LOC
     # => []
 
     # route the sponsorship at the downstream account
-    loc_load.12 push.ALWAYS loc_load.3 loc_load.2
+    loc_load.SPONSOR_NOTE_IDX_LOC push.ALWAYS
+    loc_load.SPONSOR_TARGET_PREFIX_LOC loc_load.SPONSOR_TARGET_SUFFIX_LOC
     # => [target_id_suffix, target_id_prefix, exec_hint_tag, note_idx]
 
     exec.network_account_target::new
@@ -682,7 +747,7 @@ proc sponsor_downstream_note
     # => []
 
     # bind it to the note it pays for
-    loc_load.12 padw loc_loadw_le.4
+    loc_load.SPONSOR_NOTE_IDX_LOC padw loc_loadw_le.SPONSOR_CHILD_NOTE_ID_LOC
     # => [CHILD_NOTE_ID, note_idx]
 
     exec.fee_sponsorship::new
@@ -692,28 +757,130 @@ proc sponsor_downstream_note
     # => []
 
     # fund it out of the vault, where the upstream sponsorship was already deposited
-    loc_load.12 loc_load.0
+    loc_load.SPONSOR_NOTE_IDX_LOC loc_load.SPONSOR_FEE_AMOUNT_LOC
     # => [fee_amount, note_idx]
 
     exec.fund_note_with_fee_asset
     # => []
 end
 
+#! Settles one feature note: asserts its schedule entry is enabled and its sponsorship covers
+#! `app_fee + protocol_fee`, then, when the note declares and created a downstream spawn, prices
+#! the spawned note and mints its sponsorship funded with the entire remainder of the parent's
+#! budget.
+#!
+#! The coverage assert precedes the remainder subtraction, which would otherwise wrap over the
+#! field. Checking the downstream estimate against the remainder before paying out keeps this
+#! account from fronting the next hop's liquidity, and bounds the payout a hostile downstream
+#! account can name: an inflated estimate fails the check rather than draining the vault. A
+#! declared spawn is a permission, not an obligation: when the script spawned nothing there is
+#! nothing to price or fund, and the remainder stays with the account.
+#!
+#! Inputs:  [note_idx, spawn_count]
+#! Outputs: [protocol_fee, spawn_count']
+#!
+#! Where:
+#! - note_idx is the index of the feature note to settle.
+#! - spawn_count counts the spawn-declaring feature notes settled so far; at most one is supported
+#!   per transaction, because the downstream note is located by attachment, not by script root.
+#! - protocol_fee is the portion of this note's fee owed to the batch builder.
+#!
+#! Panics if:
+#! - the feature note's script root is not priced by this account.
+#! - the feature note is not covered by enough sponsorship for its own fee.
+#! - the note declares a spawn and the sponsorship remainder does not cover the downstream estimate.
+#! - the note declares a spawn and another settled feature note already did.
+#!
+#! Invocation: exec
+@locals(16)
+proc settle_feature_note
+    loc_store.FEATURE_NOTE_IDX_LOC loc_store.FEATURE_SPAWN_COUNT_LOC
+    # => []
+
+    loc_load.FEATURE_NOTE_IDX_LOC exec.input_note::get_script_root
+    loc_storew_le.FEATURE_SCRIPT_ROOT_LOC
+    # => [NOTE_SCRIPT_ROOT]
+
+    exec.fee_entry
+    # => [app_fee, protocol_fee, enabled, 0]
+
+    movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
+    # => [app_fee, protocol_fee, 0]
+
+    movup.2 drop dup.1 loc_store.FEATURE_PROTOCOL_FEE_LOC add
+    # => [own_fee]
+
+    loc_load.FEATURE_NOTE_IDX_LOC exec.note_id::compute_input_note_id
+    # => [FEATURE_NOTE_ID, own_fee]
+
+    exec.sponsored_amount
+    # => [sponsored, own_fee]
+
+    # the coverage assert must precede the subtraction, which would otherwise wrap over the field
+    dup dup.2 gte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
+    # => [sponsored, own_fee]
+
+    swap sub loc_store.FEATURE_REMAINDER_LOC
+    # => []
+
+    # does this feature note declare a downstream spawn?
+    padw loc_loadw_le.FEATURE_SCRIPT_ROOT_LOC exec.spawn_entry
+    # => [CHILD_NOTE_SCRIPT_ROOT]
+
+    loc_storew_le.FEATURE_CHILD_ROOT_LOC exec.word::eqz not
+    # => [declares_spawn]
+
+    if.true
+        # at most one spawn-declaring feature note per transaction; see the procedure doc
+        loc_load.FEATURE_SPAWN_COUNT_LOC add.1 dup loc_store.FEATURE_SPAWN_COUNT_LOC
+        eq.1 assert.err=ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES
+        # => []
+
+        exec.find_downstream_note
+        # => [is_found, child_note_idx, target_id_suffix, target_id_prefix]
+
+        if.true
+            loc_store.FEATURE_CHILD_IDX_LOC
+            loc_store.FEATURE_TARGET_SUFFIX_LOC loc_store.FEATURE_TARGET_PREFIX_LOC
+            # => []
+
+            loc_load.FEATURE_TARGET_PREFIX_LOC loc_load.FEATURE_TARGET_SUFFIX_LOC
+            padw loc_loadw_le.FEATURE_CHILD_ROOT_LOC
+            # => [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
+
+            exec.estimate_child_fee
+            # => [estimate]
+
+            # the entire remainder funds the downstream sponsorship and must cover the estimate
+            loc_load.FEATURE_REMAINDER_LOC lte
+            assert.err=ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP
+            # => []
+
+            loc_load.FEATURE_TARGET_PREFIX_LOC loc_load.FEATURE_TARGET_SUFFIX_LOC
+            loc_load.FEATURE_CHILD_IDX_LOC loc_load.FEATURE_REMAINDER_LOC
+            # => [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
+
+            exec.sponsor_downstream_note
+            # => []
+        else
+            # a declared spawn is a permission, not an obligation: the remainder stays here
+            drop drop drop
+            # => []
+        end
+    end
+
+    loc_load.FEATURE_SPAWN_COUNT_LOC loc_load.FEATURE_PROTOCOL_FEE_LOC
+    # => [protocol_fee, spawn_count']
+end
+
 #! Settles the fees of the current transaction.
 #!
 #! Asserts that every feature note this account consumed is covered by enough sponsorship, then
 #! forwards the summed protocol portion to the batch builder in a single FEE note. The application
-#! portion stays with the account, as does the surplus of a non-spawning note.
-#!
-#! A feature note that spawns a downstream network note funds that note out of its sponsorship
-#! remainder: everything left of its sponsored budget after its own `app_fee + protocol_fee` flows
-#! into a fresh sponsorship for the spawned note. The remainder must cover what the downstream
-#! account charges -- asked over FPI, or read from the local schedule when the note is targeted
-#! back at this account. Checking the estimate against the remainder *before* paying out is what
-#! keeps this account from fronting the next hop's liquidity, and what bounds the payout a hostile
-#! downstream account can name: an inflated estimate fails the check rather than draining the
-#! vault. Passing the entire remainder, rather than the exact estimate, is what lets a chain of
-#! self-spawning notes keep running until the budget is exhausted.
+#! portion stays with the account, as does the surplus of a non-spawning note. A feature note that
+#! spawns a downstream network note funds that note out of its sponsorship remainder; passing the
+#! entire remainder, rather than the exact estimate, is what lets a chain of self-spawning notes
+#! keep running until the budget is exhausted. Per-note settlement lives in `settle_feature_note`.
 #!
 #! This is the mirror image of the check inside the sponsorship note's own script. Consuming a
 #! sponsorship without its feature note costs the *sponsor*, so that note guards it. Consuming a
@@ -740,11 +907,10 @@ end
 #! - more than one consumed feature note declares a spawn.
 #!
 #! Invocation: exec
-@locals(24)
+@locals(4)
 pub proc settle_fees
-    push.0 loc_store.4
-    push.0 loc_store.6
-    push.0 loc_store.19
+    push.0 loc_store.SETTLE_FEES_PROTOCOL_TOTAL_LOC
+    push.0 loc_store.SETTLE_FEES_SPAWN_COUNT_LOC
     # => []
 
     exec.tx::get_num_input_notes
@@ -754,105 +920,28 @@ pub proc settle_fees
     # => [should_loop, note_idx]
 
     while.true
+        sub.1 dup loc_store.SETTLE_FEES_NOTE_IDX_LOC
         # => [note_idx]
-        sub.1 dup loc_store.5
-        # => [note_idx]
 
-        exec.input_note::get_script_root loc_storew_le.8
-        # => [NOTE_SCRIPT_ROOT]
-
-        procref.network_sponsorship::main
-        # => [SPONSORSHIP_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
-
-        exec.word::eq not
+        exec.input_note::get_script_root
+        procref.network_sponsorship::main exec.word::eq not
         # => [is_feature_note]
 
         if.true
-            padw loc_loadw_le.8
-            # => [NOTE_SCRIPT_ROOT]
+            loc_load.SETTLE_FEES_SPAWN_COUNT_LOC loc_load.SETTLE_FEES_NOTE_IDX_LOC
+            # => [note_idx, spawn_count]
 
-            exec.fee_entry
-            # => [app_fee, protocol_fee, enabled, 0]
+            exec.settle_feature_note
+            # => [protocol_fee, spawn_count]
 
-            movup.2 assert.err=ERR_FEE_MANAGER_SCRIPT_NOT_PRICED
-            # => [app_fee, protocol_fee, 0]
+            loc_load.SETTLE_FEES_PROTOCOL_TOTAL_LOC add loc_store.SETTLE_FEES_PROTOCOL_TOTAL_LOC
+            # => [spawn_count]
 
-            movup.2 drop swap
-            # => [protocol_fee, app_fee]
-
-            dup loc_load.4 add loc_store.4
-            # => [protocol_fee, app_fee]
-
-            add loc_store.20
+            loc_store.SETTLE_FEES_SPAWN_COUNT_LOC
             # => []
-
-            # the sponsorship must cover the note's own fee before any remainder exists; the
-            # assert must precede the subtraction, which would otherwise wrap over the field
-            loc_load.5 exec.note_id::compute_input_note_id
-            # => [FEATURE_NOTE_ID]
-
-            exec.sponsored_amount
-            # => [sponsored]
-
-            dup loc_load.20 gte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP
-            # => [sponsored]
-
-            loc_load.20 sub loc_store.21
-            # => []
-
-            # does this feature note spawn a downstream network note?
-            padw loc_loadw_le.8 exec.spawn_entry
-            # => [CHILD_NOTE_SCRIPT_ROOT]
-
-            loc_storew_le.12
-            # => [CHILD_NOTE_SCRIPT_ROOT]
-
-            exec.word::eqz not
-            # => [spawns_downstream_note]
-
-            if.true
-                # only one spawning feature note per transaction is supported: the downstream note
-                # is located by attachment rather than by script root, so a second one could not be
-                # matched to its parent
-                loc_load.19 add.1 dup loc_store.19
-                eq.1 assert.err=ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES
-                # => []
-
-                exec.find_downstream_note
-                # => [is_found, note_idx, target_id_suffix, target_id_prefix]
-
-                if.true
-                    push.1 loc_store.6
-                    # => [note_idx, target_id_suffix, target_id_prefix]
-
-                    loc_store.7 loc_store.17 loc_store.18
-                    # => []
-
-                    loc_load.18 loc_load.17 padw loc_loadw_le.12
-                    # => [CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
-
-                    exec.estimate_child_fee
-                    # => [estimate]
-
-                    # the entire remainder funds the downstream sponsorship, and must cover what
-                    # the downstream account charges, or this account would front the difference
-                    loc_load.21 loc_store.16
-                    # => [estimate]
-
-                    loc_load.21 lte assert.err=ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP
-                    # => []
-                else
-                    # a declared spawn is a permission, not an obligation: the script spawned
-                    # nothing, so there is nothing to price or fund, and the remainder stays with
-                    # the account
-                    drop drop drop
-                    # => []
-                end
-            end
-            # a non-spawning note's remainder stays with the account
         end
 
-        loc_load.5 dup neq.0
+        loc_load.SETTLE_FEES_NOTE_IDX_LOC dup neq.0
         # => [should_loop, note_idx]
     end
     # => [note_idx]
@@ -860,19 +949,7 @@ pub proc settle_fees
     drop
     # => []
 
-    # sponsor the downstream note, if any, before emitting the FEE note
-    loc_load.6
-    # => [spawns_downstream_note]
-
-    if.true
-        loc_load.18 loc_load.17 loc_load.7 loc_load.16
-        # => [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
-
-        exec.sponsor_downstream_note
-    end
-    # => []
-
-    loc_load.4 dup neq.0
+    loc_load.SETTLE_FEES_PROTOCOL_TOTAL_LOC dup neq.0
     # => [has_protocol_fee, protocol_owed]
 
     if.true
@@ -901,7 +978,7 @@ end
 #! Invocation: exec
 @locals(8)
 proc emit_fee_note
-    loc_store.4
+    loc_store.EMIT_PROTOCOL_OWED_LOC
     # => []
 
     procref.fee_note::main
@@ -910,7 +987,7 @@ proc emit_fee_note
     push.0 exec.active_account::get_nonce exec.active_account::get_id
     # => [SERIAL_NUM, FEE_NOTE_SCRIPT_ROOT]
 
-    push.0 locaddr.0
+    push.0 locaddr.EMIT_NOTE_STORAGE_LOC
     # => [storage_ptr, num_storage_items, SERIAL_NUM, FEE_NOTE_SCRIPT_ROOT]
 
     exec.note::compute_and_store_recipient
@@ -922,7 +999,7 @@ proc emit_fee_note
     exec.output_note::create
     # => [note_idx]
 
-    loc_load.4
+    loc_load.EMIT_PROTOCOL_OWED_LOC
     # => [protocol_owed, note_idx]
 
     exec.fund_note_with_fee_asset
