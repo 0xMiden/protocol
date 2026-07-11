@@ -240,10 +240,10 @@ impl From<P2ideNote> for Note {
 /// and timelock constraints controlling when the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2ideNoteStorage {
-    pub reclaimer: AccountId,
-    pub target: AccountId,
-    pub reclaim_height: Option<BlockNumber>,
-    pub timelock_height: Option<BlockNumber>,
+    reclaimer: AccountId,
+    target: AccountId,
+    reclaim_height: Option<BlockNumber>,
+    timelock_height: Option<BlockNumber>,
 }
 
 impl P2ideNoteStorage {

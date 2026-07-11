@@ -193,21 +193,23 @@ impl StandardNote {
                 }
             },
             StandardNote::P2IDE => {
-                let P2ideNoteStorage {
-                    reclaimer: reclaimer_account_id,
-                    target: receiver_account_id,
-                    reclaim_height,
-                    timelock_height,
-                } = P2ideNoteStorage::try_from(note.storage().items())
+                let storage = P2ideNoteStorage::try_from(note.storage().items())
                     .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
-                let current_block_height = block_ref.as_u32();
-                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
-                let timelock_height = timelock_height.unwrap_or_default().as_u32();
+                let reclaimer_account_id = storage.reclaimer();
+                let receiver_account_id = storage.target();
 
+                let current_block_height = block_ref.as_u32();
+                let reclaim_height = storage.reclaim_height().unwrap_or_default().as_u32();
+                let timelock_height = storage.timelock_height().unwrap_or_default().as_u32();
+
+                // block height after which the reclaimer account can consume the note
                 let consumable_after = reclaim_height.max(timelock_height);
 
+                // handle the case when the target account of the transaction is the reclaimer
                 if target_account_id == reclaimer_account_id {
+                    // For the reclaimer, the current block height needs to have reached both
+                    // reclaim and timelock height to be consumable.
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
