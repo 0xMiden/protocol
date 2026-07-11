@@ -45,7 +45,7 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// A P2IDE note enables transferring assets to a target account specified in the note storage.
 /// The note may optionally include:
 ///
-/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
+/// - A reclaim height allowing the reclaimer to recover assets if the note remains unconsumed
 /// - A timelock height preventing consumption before a given block
 ///
 /// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
@@ -75,7 +75,7 @@ impl P2ideNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        reclaim_authority: Option<AccountId>,
+        reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
         serial_number: Word,
@@ -85,11 +85,9 @@ impl P2ideNote {
             return Err(NoteError::other("a P2IDE note must contain at least one asset"));
         }
 
-        // The reclaim authority is the account allowed to reclaim the note; it defaults to the
-        // sender.
-        let reclaim_authority = reclaim_authority.unwrap_or(sender);
-        let storage =
-            P2ideNoteStorage::new(reclaim_authority, target, reclaim_height, timelock_height);
+        // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
+        let reclaimer = reclaimer.unwrap_or(sender);
+        let storage = P2ideNoteStorage::new(reclaimer, target, reclaim_height, timelock_height);
         let assets = NoteAssets::new(assets)?;
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -139,9 +137,9 @@ impl P2ideNote {
         self.storage.target()
     }
 
-    /// Returns the account ID of the note's reclaim authority.
-    pub fn reclaim_authority(&self) -> AccountId {
-        self.storage.reclaim_authority()
+    /// Returns the account ID of the note's reclaimer.
+    pub fn reclaimer(&self) -> AccountId {
+        self.storage.reclaimer()
     }
 
     /// Returns the reclaim block height (if any).
@@ -238,12 +236,11 @@ impl From<P2ideNote> for Note {
 
 /// Canonical storage representation for a P2IDE note.
 ///
-/// Stores the reclaim authority account ID and the
-/// target account ID together with optional reclaim and timelock constraints controlling when
-/// the note can be spent or reclaimed.
+/// Stores the reclaimer account ID and the target account ID together with optional reclaim
+/// and timelock constraints controlling when the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2ideNoteStorage {
-    pub reclaim_authority: AccountId,
+    pub reclaimer: AccountId,
     pub target: AccountId,
     pub reclaim_height: Option<BlockNumber>,
     pub timelock_height: Option<BlockNumber>,
@@ -258,8 +255,8 @@ impl P2ideNoteStorage {
 
     // Indices of the storage items. Must match the `*_ITEM` offsets from `STORAGE_PTR` in
     // `asm/standards/notes/p2ide.masm`.
-    const RECLAIM_AUTHORITY_SUFFIX_IDX: usize = 0;
-    const RECLAIM_AUTHORITY_PREFIX_IDX: usize = 1;
+    const RECLAIMER_SUFFIX_IDX: usize = 0;
+    const RECLAIMER_PREFIX_IDX: usize = 1;
     const TARGET_SUFFIX_IDX: usize = 2;
     const TARGET_PREFIX_IDX: usize = 3;
     const RECLAIM_HEIGHT_IDX: usize = 4;
@@ -267,13 +264,13 @@ impl P2ideNoteStorage {
 
     /// Creates new P2IDE note storage.
     pub fn new(
-        reclaim_authority: AccountId,
+        reclaimer: AccountId,
         target: AccountId,
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Self {
         Self {
-            reclaim_authority,
+            reclaimer,
             target,
             reclaim_height,
             timelock_height,
@@ -285,9 +282,9 @@ impl P2ideNoteStorage {
         NoteRecipient::new(serial_num, P2ideNote::script(), self.into())
     }
 
-    /// Returns the reclaim authority account ID.
-    pub fn reclaim_authority(&self) -> AccountId {
-        self.reclaim_authority
+    /// Returns the reclaimer account ID.
+    pub fn reclaimer(&self) -> AccountId {
+        self.reclaimer
     }
 
     /// Returns the target account ID.
@@ -314,8 +311,8 @@ impl From<P2ideNoteStorage> for NoteStorage {
 
         // the item order must match the `*_IDX` constants that `try_from` decodes with
         NoteStorage::new(vec![
-            storage.reclaim_authority.suffix(),
-            storage.reclaim_authority.prefix().as_felt(),
+            storage.reclaimer.suffix(),
+            storage.reclaimer.prefix().as_felt(),
             storage.target.suffix(),
             storage.target.prefix().as_felt(),
             reclaim,
@@ -336,12 +333,12 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             });
         }
 
-        let reclaim_authority = AccountId::try_from_elements(
-            note_storage[Self::RECLAIM_AUTHORITY_SUFFIX_IDX],
-            note_storage[Self::RECLAIM_AUTHORITY_PREFIX_IDX],
+        let reclaimer = AccountId::try_from_elements(
+            note_storage[Self::RECLAIMER_SUFFIX_IDX],
+            note_storage[Self::RECLAIMER_PREFIX_IDX],
         )
         .map_err(|err| {
-            NoteError::other_with_source("failed to create reclaim authority account id", err)
+            NoteError::other_with_source("failed to create reclaimer account id", err)
         })?;
 
         let target = AccountId::try_from_elements(
@@ -360,7 +357,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         )?;
 
         Ok(Self {
-            reclaim_authority,
+            reclaimer,
             target,
             reclaim_height,
             timelock_height,
@@ -420,12 +417,12 @@ mod tests {
 
     #[test]
     fn try_from_valid_storage_with_all_fields_succeeds() {
-        let reclaim_authority = sender();
+        let reclaimer = sender();
         let target = dummy_account();
 
         let storage = vec![
-            reclaim_authority.suffix(),
-            reclaim_authority.prefix().as_felt(),
+            reclaimer.suffix(),
+            reclaimer.prefix().as_felt(),
             target.suffix(),
             target.prefix().as_felt(),
             Felt::from(42u32),
@@ -435,7 +432,7 @@ mod tests {
         let decoded = P2ideNoteStorage::try_from(storage.as_slice())
             .expect("valid P2IDE storage should decode");
 
-        assert_eq!(decoded.reclaim_authority(), reclaim_authority);
+        assert_eq!(decoded.reclaimer(), reclaimer);
         assert_eq!(decoded.target(), target);
         assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
         assert_eq!(decoded.timelock_height(), Some(BlockNumber::from(100u32)));
@@ -443,12 +440,12 @@ mod tests {
 
     #[test]
     fn try_from_zero_heights_map_to_none() {
-        let reclaim_authority = sender();
+        let reclaimer = sender();
         let target = dummy_account();
 
         let storage = vec![
-            reclaim_authority.suffix(),
-            reclaim_authority.prefix().as_felt(),
+            reclaimer.suffix(),
+            reclaimer.prefix().as_felt(),
             target.suffix(),
             target.prefix().as_felt(),
             Felt::ZERO,
@@ -477,10 +474,10 @@ mod tests {
         ));
     }
 
-    /// The reclaim authority and the target are decoded from different storage items, so each must
+    /// The reclaimer and the target are decoded from different storage items, so each must
     /// be validated on its own.
     #[test]
-    fn try_from_invalid_reclaim_authority_fails() {
+    fn try_from_invalid_reclaimer_fails() {
         let target = dummy_account();
 
         let storage = vec![
@@ -493,20 +490,20 @@ mod tests {
         ];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
-            .expect_err("invalid reclaim authority encoding must fail");
+            .expect_err("invalid reclaimer encoding must fail");
 
         assert_matches!(err, NoteError::Other { error_msg, source: Some(_), .. } => {
-            assert!(error_msg.contains("reclaim authority"));
+            assert!(error_msg.contains("reclaimer"));
         });
     }
 
     #[test]
     fn try_from_invalid_target_fails() {
-        let reclaim_authority = sender();
+        let reclaimer = sender();
 
         let storage = vec![
-            reclaim_authority.suffix(),
-            reclaim_authority.prefix().as_felt(),
+            reclaimer.suffix(),
+            reclaimer.prefix().as_felt(),
             INVALID_ID_SUFFIX,
             INVALID_ID_PREFIX,
             Felt::ZERO,
@@ -558,15 +555,15 @@ mod tests {
 
     #[test]
     fn try_from_reclaim_height_overflow_fails() {
-        let reclaim_authority = sender();
+        let reclaimer = sender();
         let target = dummy_account();
 
         // > u32::MAX
         let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 1);
 
         let storage = vec![
-            reclaim_authority.suffix(),
-            reclaim_authority.prefix().as_felt(),
+            reclaimer.suffix(),
+            reclaimer.prefix().as_felt(),
             target.suffix(),
             target.prefix().as_felt(),
             overflow,
@@ -583,14 +580,14 @@ mod tests {
 
     #[test]
     fn try_from_timelock_height_overflow_fails() {
-        let reclaim_authority = sender();
+        let reclaimer = sender();
         let target = dummy_account();
 
         let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 10);
 
         let storage = vec![
-            reclaim_authority.suffix(),
-            reclaim_authority.prefix().as_felt(),
+            reclaimer.suffix(),
+            reclaimer.prefix().as_felt(),
             target.suffix(),
             target.prefix().as_felt(),
             Felt::ZERO,
@@ -646,8 +643,8 @@ mod tests {
 
         assert_eq!(note.sender(), sender());
         assert_eq!(note.target(), target());
-        // the reclaim authority defaults to the sender when not set explicitly
-        assert_eq!(note.reclaim_authority(), sender());
+        // the reclaimer defaults to the sender when not set explicitly
+        assert_eq!(note.reclaimer(), sender());
         assert_eq!(note.note_type(), NoteType::default());
         assert_eq!(note.reclaim_height(), None);
         assert_eq!(note.timelock_height(), None);
@@ -704,27 +701,27 @@ mod tests {
         assert_eq!(note.timelock_height(), Some(BlockNumber::from(100u32)));
     }
 
-    /// An explicit reclaim authority (distinct from the sender) is stored and surfaced via
-    /// `reclaim_authority()`, and round-trips through the note storage.
+    /// An explicit reclaimer (distinct from the sender) is stored and surfaced via
+    /// `reclaimer()`, and round-trips through the note storage.
     #[test]
-    fn builder_explicit_reclaim_authority_differs_from_sender() {
+    fn builder_explicit_reclaimer_differs_from_sender() {
         let note = P2ideNote::builder()
             .sender(sender())
             .target(target())
-            .reclaim_authority(dummy_account())
+            .reclaimer(dummy_account())
             .serial_number(Word::empty())
             .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
             .build()
             .unwrap();
 
         assert_eq!(note.sender(), sender());
-        assert_eq!(note.reclaim_authority(), dummy_account());
-        assert_ne!(note.reclaim_authority(), note.sender());
+        assert_eq!(note.reclaimer(), dummy_account());
+        assert_ne!(note.reclaimer(), note.sender());
 
-        // the explicit reclaim authority round-trips through the encoded note storage
+        // the explicit reclaimer round-trips through the encoded note storage
         let storage: NoteStorage = note.storage().into();
         let decoded = P2ideNoteStorage::try_from(storage.items()).unwrap();
-        assert_eq!(decoded.reclaim_authority(), dummy_account());
+        assert_eq!(decoded.reclaimer(), dummy_account());
         assert_eq!(decoded.target(), target());
     }
 }

@@ -171,11 +171,10 @@ impl StandardNote {
     ///       account ID.
     /// - for `P2IDE` note:
     ///     - check that note storage has correct number of values.
-    ///     - check that the target account is either the receiver account or the reclaim authority
-    ///       account.
-    ///     - check that depending on whether the target account is reclaim authority or receiver,
-    ///       it could be either consumed, or consumed after timelock height, or consumed after
-    ///       reclaim height.
+    ///     - check that the target account is either the receiver account or the reclaimer account.
+    ///     - check that depending on whether the target account is reclaimer or receiver, it could
+    ///       be either consumed, or consumed after timelock height, or consumed after reclaim
+    ///       height.
     fn is_consumable_inner(
         &self,
         note: &Note,
@@ -195,7 +194,7 @@ impl StandardNote {
             },
             StandardNote::P2IDE => {
                 let P2ideNoteStorage {
-                    reclaim_authority: reclaim_authority_account_id,
+                    reclaimer: reclaimer_account_id,
                     target: receiver_account_id,
                     reclaim_height,
                     timelock_height,
@@ -208,7 +207,7 @@ impl StandardNote {
 
                 let consumable_after = reclaim_height.max(timelock_height);
 
-                if target_account_id == reclaim_authority_account_id {
+                if target_account_id == reclaimer_account_id {
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
@@ -228,11 +227,11 @@ impl StandardNote {
                             timelock_height,
                         ))))
                     }
-                // if the target account is neither the reclaim authority nor the receiver (from the
+                // if the target account is neither the reclaimer nor the receiver (from the
                 // note's storage), then this account cannot consume the note
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
-            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaim authority account".into()
+            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account".into()
         )))
                 }
             },

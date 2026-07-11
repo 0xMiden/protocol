@@ -6,7 +6,7 @@ use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteType};
 use miden_standards::errors::standards::{
-    ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY,
+    ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_P2IDE_RECLAIM_DISABLED,
     ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED,
     ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED,
@@ -170,7 +170,7 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that an attempted reclaim of the P2IDE note fails if consumed by the reclaim authority
+/// Test that an attempted reclaim of the P2IDE note fails if consumed by the reclaimer
 /// before the timelock expires. Creating a P2IDE note with a reclaim block height that is
 /// less than the timelock block height would be the same as creating a P2IDE note
 /// where the reclaim block height is equal to the timelock block height
@@ -290,7 +290,7 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     assert_transaction_executor_error!(
         executed_transaction_1,
-        ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
+        ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER
     );
 
     // ───────────────────── target spends successfully ───────────────────────
@@ -362,10 +362,10 @@ async fn p2ide_script_reclaim_success_after_timelock() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that when the reclaim authority is distinct from the note's metadata sender, only the
-/// reclaim authority (stored in note storage) can reclaim the note - the metadata sender cannot.
+/// Test that when the reclaimer is distinct from the note's metadata sender, only the
+/// reclaimer (stored in note storage) can reclaim the note - the metadata sender cannot.
 #[tokio::test]
-async fn p2ide_script_reclaim_by_distinct_reclaim_authority() -> anyhow::Result<()> {
+async fn p2ide_script_reclaim_by_distinct_reclaimer() -> anyhow::Result<()> {
     let reclaim_height = BlockNumber::from(5u32);
 
     let fungible_asset: Asset = FungibleAsset::mock(100);
@@ -374,18 +374,18 @@ async fn p2ide_script_reclaim_by_distinct_reclaim_authority() -> anyhow::Result<
     let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let reclaim_authority_account = builder.add_existing_wallet(Auth::BasicAuth {
+    let reclaimer_account = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let target_account = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    // the reclaim authority (allowed to reclaim) is distinct from the metadata sender
+    // the reclaimer (allowed to reclaim) is distinct from the metadata sender
     let p2ide_note = builder.add_p2ide_note(
         sender_account.id(),
         target_account.id(),
-        Some(reclaim_authority_account.id()),
+        Some(reclaimer_account.id()),
         &[fungible_asset],
         NoteType::Public,
         Some(reclaim_height),
@@ -395,7 +395,7 @@ async fn p2ide_script_reclaim_by_distinct_reclaim_authority() -> anyhow::Result<
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(reclaim_height + 1)?;
 
-    // ───────────────────── sender (not the reclaim authority) cannot reclaim → FAIL ────────────
+    // ───────────────────── sender (not the reclaimer) cannot reclaim → FAIL ────────────
     let sender_reclaim = mock_chain
         .build_transaction(sender_account.id())
         .authenticated_input_note(p2ide_note.id())
@@ -403,31 +403,25 @@ async fn p2ide_script_reclaim_by_distinct_reclaim_authority() -> anyhow::Result<
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        sender_reclaim,
-        ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
-    );
+    assert_transaction_executor_error!(sender_reclaim, ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER);
 
-    // ───────────────────── reclaim authority reclaims successfully ───────────────────────
+    // ───────────────────── reclaimer reclaims successfully ───────────────────────
     let final_tx = mock_chain
-        .build_transaction(reclaim_authority_account.id())
+        .build_transaction(reclaimer_account.id())
         .authenticated_input_note(p2ide_note.id())
         .build()?
         .execute()
         .await?;
 
-    let reclaim_authority_after = Account::new_existing(
-        reclaim_authority_account.id(),
+    let reclaimer_after = Account::new_existing(
+        reclaimer_account.id(),
         AssetVault::new(&[fungible_asset])?,
-        reclaim_authority_account.storage().clone(),
-        reclaim_authority_account.code().clone(),
+        reclaimer_account.storage().clone(),
+        reclaimer_account.code().clone(),
         Felt::new_unchecked(2),
     );
 
-    assert_eq!(
-        final_tx.final_account().to_commitment(),
-        reclaim_authority_after.to_commitment()
-    );
+    assert_eq!(final_tx.final_account().to_commitment(), reclaimer_after.to_commitment());
 
     Ok(())
 }

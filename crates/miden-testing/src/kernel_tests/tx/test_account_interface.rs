@@ -535,7 +535,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         assert!(reason.to_string().contains("invalid P2IDE note storage"));
     });
 
-    // check the note with a wrong target account ID (target is neither the reclaim authority nor
+    // check the note with a wrong target account ID (target is neither the reclaimer nor
     // the receiver)
     // --------------------------------------------------------------------------------------------
     let consumability_info: NoteConsumptionStatus = notes_checker
@@ -547,7 +547,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaim authority account");
+        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account");
     });
 
     // check the note with an invalid reclaim height
@@ -674,7 +674,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
 
 /// Tests the correctness of the [`NoteConsumptionChecker::can_consume()`] procedure.
 ///
-/// In this test the target account is the reclaim authority (the account allowed to reclaim the
+/// In this test the target account is the reclaimer (the account allowed to reclaim the
 /// note).
 ///
 /// It is expected that the current block height is 3.
@@ -710,7 +710,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
 // tl < curr = rc
 #[case(3, 2, String::from("Ok(ConsumableWithAuthorization)"))]
 #[tokio::test]
-async fn test_check_note_consumability_static_analysis_reclaim_authority(
+async fn test_check_note_consumability_static_analysis_reclaimer(
     #[case] reclaim_height: u64,
     #[case] timelock_height: u64,
     #[case] expected: String,
@@ -718,20 +718,20 @@ async fn test_check_note_consumability_static_analysis_reclaim_authority(
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet(Auth::Noop)?;
-    let reclaim_authority_account_id = account.id();
+    let reclaimer_account_id = account.id();
     let target_account_id: AccountId =
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
 
     let p2ide = create_p2ide_note_with_storage(
         [
-            reclaim_authority_account_id.suffix().as_canonical_u64(),
-            reclaim_authority_account_id.prefix().as_u64(),
+            reclaimer_account_id.suffix().as_canonical_u64(),
+            reclaimer_account_id.prefix().as_u64(),
             target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,
         ],
-        reclaim_authority_account_id,
+        reclaimer_account_id,
     );
     builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
@@ -752,7 +752,7 @@ async fn test_check_note_consumability_static_analysis_reclaim_authority(
     // --------------------------------------------------------------------------------------------
     let consumption_check_result = notes_checker
         .can_consume(
-            reclaim_authority_account_id,
+            reclaimer_account_id,
             block_ref,
             InputNote::Unauthenticated { note: p2ide },
             tx_args.clone(),

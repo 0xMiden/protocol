@@ -10,17 +10,17 @@ use miden::standards::wallets::basic as basic_wallet
 const NUM_STORAGE_ITEMS=6
 
 # Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
-# - reclaim_authority_suffix  [0]  : suffix of the account allowed to reclaim the note
-# - reclaim_authority_prefix  [1]  : prefix of the account allowed to reclaim the note
-# - target_suffix             [2]  : suffix of the account for which the note is intended
-# - target_prefix             [3]  : prefix of the account for which the note is intended
-# - reclaim_block_height      [4]  : block height at which the reclaim authority may reclaim (0 = disabled)
-# - timelock_block_height     [5]  : block height before which the note cannot be consumed (0 = none)
+# - reclaimer_suffix        [0]  : suffix of the account allowed to reclaim the note
+# - reclaimer_prefix        [1]  : prefix of the account allowed to reclaim the note
+# - target_suffix           [2]  : suffix of the account for which the note is intended
+# - target_prefix           [3]  : prefix of the account for which the note is intended
+# - reclaim_block_height    [4]  : block height at which the reclaimer may reclaim (0 = disabled)
+# - timelock_block_height   [5]  : block height before which the note cannot be consumed (0 = none)
 #
-# The reclaim authority is the account allowed to reclaim the note.
+# The reclaimer is the account allowed to reclaim the note.
 const STORAGE_PTR = 0
-const RECLAIM_AUTHORITY_SUFFIX_ITEM = STORAGE_PTR
-const RECLAIM_AUTHORITY_PREFIX_ITEM = STORAGE_PTR + 1
+const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR
+const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 1
 const TARGET_SUFFIX_ITEM = STORAGE_PTR + 2
 const TARGET_PREFIX_ITEM = STORAGE_PTR + 3
 const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 4
@@ -31,7 +31,7 @@ const TIMELOCK_HEIGHT_ITEM = STORAGE_PTR + 5
 
 const ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2IDE note expects exactly 6 note storage items"
 
-const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY="failed to reclaim P2IDE note because the reclaiming account is not the reclaim authority"
+const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER="failed to reclaim P2IDE note because the reclaiming account is not the reclaimer"
 
 const ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED="failed to reclaim P2IDE note because the reclaim block height is not reached yet"
 
@@ -55,38 +55,38 @@ proc assert_unlocked
     # => [current_block_height]
 end
 
-#! Helper procedure which adds the note assets to the reclaim authority account.
+#! Helper procedure which adds the note assets to the reclaimer account.
 #!
 #! Checks if P2IDE reclaim is enabled and if true, if reclaim height has been reached, and that
-#! the active account is the note's reclaim authority.
+#! the active account is the note's reclaimer.
 #!
-#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 #! Outputs: []
 #!
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the active account ID.
 #! - current_block_height is the transaction's reference block number.
 #! - reclaim_block_height is the block height at which the note becomes reclaimable (0 = reclaim disabled).
-#! - reclaim_authority_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to reclaim the note.
+#! - reclaimer_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to reclaim the note.
 #!
 #! Panics if:
 #! - the reclaim of the active note is disabled.
 #! - the reclaim block height is not reached yet.
-#! - the account attempting to reclaim the note is not the reclaim authority account.
+#! - the account attempting to reclaim the note is not the reclaimer account.
 proc reclaim_note
     # check that the reclaim of the active note is enabled
     movup.3 dup neq.0 assert.err=ERR_P2IDE_RECLAIM_DISABLED
-    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    # now check that reclaim authority is allowed to reclaim, reclaim block height <= current block height
+    # now check that reclaimer is allowed to reclaim, reclaim block height <= current block height
     movup.3
-    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
 
     lte assert.err=ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED
-    # => [account_id_suffix, account_id_prefix, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+    # => [account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    # ensure active account ID = reclaim authority account ID
-    exec.account_id::eq assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
+    # ensure active account ID = reclaimer account ID
+    exec.account_id::eq assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER
     # => []
 
     # add note assets to account
@@ -100,7 +100,7 @@ end
 #! - The transaction's reference block number is greater than or equal to the note's timelock block height.
 #! - Any of the following conditions is true:
 #!   - The account ID against which the transaction is executed matches the note's target account id.
-#!   - The account ID against which the transaction is executed matches the note's reclaim authority account id
+#!   - The account ID against which the transaction is executed matches the note's reclaimer account id
 #!     and the transaction's reference block number is greater than or equal to the note's reclaim block height.
 #!
 #! Requires that the account exposes:
@@ -110,9 +110,9 @@ end
 #! Outputs: []
 #!
 #! Note storage is assumed to be as follows:
-#! - reclaim_authority_account_id is the ID of the account allowed to reclaim the note.
+#! - reclaimer_account_id is the ID of the account allowed to reclaim the note.
 #! - target_account_id is the ID of the account for which the note is intended.
-#! - reclaim_block_height is the block height at which the note can be reclaimed by the reclaim authority.
+#! - reclaim_block_height is the block height at which the note can be reclaimed by the reclaimer.
 #! - timelock_block_height is the block height at which the note can be consumed by the target.
 #!
 #! Panics if:
@@ -122,7 +122,7 @@ end
 #! - Before reclaim block height: the account ID of the executing account is not equal to the target
 #!   account ID.
 #! - At and after reclaim block height: the account ID of the executing account is not equal to
-#!   the target account ID or reclaim authority account ID.
+#!   the target account ID or reclaimer account ID.
 #! - The same non-fungible asset already exists in the account.
 #! - Adding a fungible asset would result in an amount overflow, i.e., the total amount would be
 #!   greater than 2^63.
@@ -161,15 +161,15 @@ pub proc main
         # => []
 
     else
-        # load the reclaim authority account ID from note storage
-        mem_load.RECLAIM_AUTHORITY_PREFIX_ITEM movdn.3 mem_load.RECLAIM_AUTHORITY_SUFFIX_ITEM movdn.3
-        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+        # load the reclaimer account ID from note storage
+        mem_load.RECLAIMER_PREFIX_ITEM movdn.3 mem_load.RECLAIMER_SUFFIX_ITEM movdn.3
+        # => [account_id_suffix, account_id_prefix, current_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
         # load the reclaim block height from note storage
         mem_load.RECLAIM_HEIGHT_ITEM movdn.3
-        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
-        # checks if active account is the reclaim authority and if reclaim is enabled
+        # checks if active account is the reclaimer and if reclaim is enabled
         exec.reclaim_note
         # => []
     end

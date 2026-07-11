@@ -2,7 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
-- [BREAKING] P2IDE now reclaims against a `reclaim_authority` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
+- [BREAKING] P2IDE now reclaims against a `reclaimer` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
 - Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
 - [BREAKING] Unified the MINT and BURN note scripts to serve both fungible and non-fungible faucets: the single `mint` / `burn` note now detects the faucet kind by reflection (the `CodeInspection` component's `has_procedure`, which the fungible and non-fungible faucet components now expose) and calls the matching `mint_and_send` / `receive_and_burn`. Removed the `mint_nft` / `burn_nft` note scripts and the `NonFungibleMintNote` / `NonFungibleBurnNote` / `NonFungibleMintNoteStorage` types; `MintNote` / `BurnNote` and `MintNoteStorage` (with fungible and non-fungible variants) now cover both faucet kinds ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Renamed the `miden::standards::metadata` module to `miden::standards::inspection` (in MASM, the `miden-standards` account components, and the `miden_standards::account::inspection` Rust module), scoping it as the home of `CodeInspection`, the storage schema, and future inspection components ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
