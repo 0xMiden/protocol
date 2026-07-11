@@ -174,7 +174,7 @@ pub fn create_p2any_note(
         @note_script
         pub proc main
             # fetch pointer & number of assets
-            push.0 exec.active_note::get_assets     # [num_assets]
+            push.0 exec.active_note::remove_all_assets     # [num_assets]
 
             # runtime-check we got the expected count
             push.{num_assets} assert_eq.err="unexpected number of assets"             # []

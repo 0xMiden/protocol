@@ -84,7 +84,7 @@ proc reclaim_note
     # => [reclaim_authority_suffix, reclaim_authority_prefix, account_id_suffix, account_id_prefix]
 
     # ensure active account ID = reclaim authority account ID
-    exec.account_id::is_equal assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
+    exec.account_id::eq assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
     # => []
 
     # add note assets to account
@@ -150,7 +150,7 @@ pub proc main
     # => [target_account_id_suffix, target_account_id_prefix, account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, current_block_height]
 
     # determine if the active account is the target account
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_target, account_id_suffix, account_id_prefix, current_block_height]
 
     if.true

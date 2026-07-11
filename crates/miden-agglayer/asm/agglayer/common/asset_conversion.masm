@@ -1,7 +1,7 @@
 use miden::core::math::u64
 use miden::core::word
 use agglayer::common::utils
-use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 
 # ERRORS
 # =================================================================================================

@@ -14,7 +14,6 @@ use miden_processor::{
     Program,
     StackInputs,
 };
-use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
@@ -25,6 +24,7 @@ use miden_protocol::testing::account_id::{
     AccountIdBuilder,
 };
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::{Felt, ProtocolLib};
 
 /// Execute a program with default host
 async fn execute_program_with_default_host(
@@ -41,6 +41,9 @@ async fn execute_program_with_default_host(
     for (event_name, handler) in std_lib.handlers() {
         host.register_handler(event_name, handler)?;
     }
+
+    let protocol_lib = ProtocolLib::default();
+    host.load_library(protocol_lib.mast_forest()).unwrap();
 
     let asset_conversion_lib = agglayer_library();
     host.load_library(asset_conversion_lib.mast_forest()).unwrap();
