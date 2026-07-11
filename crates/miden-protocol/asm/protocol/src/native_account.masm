@@ -2,12 +2,21 @@ use {
     ACCOUNT_ADD_ASSET_OFFSET,
     ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET,
     ACCOUNT_GET_ID_OFFSET,
+    ACCOUNT_GET_INITIAL_ASSET_OFFSET,
+    ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET,
+    ACCOUNT_GET_INITIAL_ITEM_OFFSET,
+    ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET,
+    ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET,
+    ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET,
     ACCOUNT_INCR_NONCE_OFFSET,
     ACCOUNT_REMOVE_ASSET_OFFSET,
     ACCOUNT_SET_ITEM_OFFSET,
     ACCOUNT_SET_MAP_ITEM_OFFSET,
+    ACCOUNT_UPGRADE_OFFSET,
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
+use miden::core::word
+use { AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -25,7 +34,7 @@ use {
 #!   transaction.
 #!
 #! Invocation: exec
-pub proc get_id
+pub proc get_id() -> AccountId
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -61,7 +70,7 @@ end
 #! - the nonce has already been incremented.
 #!
 #! Invocation: exec
-pub proc incr_nonce
+pub proc incr_nonce() -> felt
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -102,7 +111,7 @@ end
 #!
 #! Panics if:
 #! - the vault or storage patch is not empty but the nonce increment is zero.
-pub proc compute_delta_commitment
+pub proc compute_delta_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -116,6 +125,128 @@ pub proc compute_delta_commitment
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [DELTA_COMMITMENT]
+end
+
+#! Records the commitments describing an upgrade of the native account's code and storage.
+#!
+#! This procedure is currently a no-op beyond storing the two commitments in kernel memory; the
+#! actual application of the upgrade is not yet implemented, and the commitment formats are not yet
+#! defined.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
+    # pad the stack
+    padw push.0.0.0 push.ACCOUNT_UPGRADE_OFFSET
+    swapdw
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, offset, pad(7)]
+
+    movup.8
+    # => [offset, CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(7)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    # clean the stack
+    dropw dropw dropw dropw
+end
+
+#! Returns the commitment of the native account at the beginning of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_COMMITMENT]
+#!
+#! Where:
+#! - INIT_COMMITMENT is the initial account commitment.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_commitment() -> word
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [INIT_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [INIT_COMMITMENT]
+end
+
+#! Returns the storage commitment of the native account at the beginning of the transaction.
+#!
+#! During an account-creating transaction (when the initial nonce is 0), this procedure and
+#! active_account::compute_storage_commitment will return the same value at the beginning of the
+#! transaction (before any note or transaction scripts were executed). Despite that, the account
+#! delta may not be empty. See compute_delta_commitment for more.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_storage_commitment() -> word
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [INIT_STORAGE_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [INIT_STORAGE_COMMITMENT]
+end
+
+#! Returns the vault root of the native account at the beginning of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_VAULT_ROOT]
+#!
+#! Where:
+#! - INIT_VAULT_ROOT is the initial account vault root.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_vault_root() -> word
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [INIT_VAULT_ROOT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [INIT_VAULT_ROOT]
 end
 
 # STORAGE
@@ -137,7 +268,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_item
+pub proc set_item(slot_id: StorageSlotId, value: word) -> word
     push.ACCOUNT_SET_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, VALUE]
 
@@ -173,7 +304,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_map_item
+pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, value: word) -> word
     push.ACCOUNT_SET_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
@@ -193,6 +324,74 @@ pub proc set_map_item
     # drop pad(12)
     movdnw.3 dropw dropw dropw
     # => [OLD_VALUE]
+end
+
+#! Gets the initial item from the native account storage slot as it was at the beginning of the
+#! transaction.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [INIT_VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_item(slot_id: StorageSlotId) -> word
+    push.0 movdn.2
+    # => [slot_id_suffix, slot_id_prefix, 0]
+
+    push.ACCOUNT_GET_INITIAL_ITEM_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [INIT_VALUE, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [INIT_VALUE]
+end
+
+#! Gets the initial VALUE from the native account storage map as it was at the beginning of the
+#! transaction.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
+#! Outputs: [INIT_VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - KEY is the key of the item to get.
+#! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the slot item at index is not a map.
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
+    push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY]
+
+    push.0 movdn.7 padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY, pad(9)]
+
+    syscall.exec_kernel_proc
+    # => [INIT_VALUE, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [INIT_VALUE]
 end
 
 # VAULT
@@ -217,7 +416,7 @@ end
 #! - the vault already contains the same non-fungible asset.
 #!
 #! Invocation: exec
-pub proc add_asset
+pub proc add_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -250,7 +449,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: exec
-pub proc remove_asset
+pub proc remove_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -264,6 +463,61 @@ pub proc remove_asset
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [FINAL_ASSET_VALUE]
+end
+
+#! Returns the asset associated with the provided asset ID in the native account's vault at
+#! the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to fetch.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
+    push.ACCOUNT_GET_INITIAL_ASSET_OFFSET
+    # => [offset, ASSET_ID]
+
+    # pad the stack
+    push.0 movdn.5 push.0 movdn.5 push.0 movdn.5
+    padw padw swapdw
+    # => [offset, ASSET_ID, pad(11)]
+
+    syscall.exec_kernel_proc
+    # => [ASSET_VALUE, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [ASSET_VALUE]
+end
+
+#! Returns a boolean indicating whether the native account's vault contained an asset with the
+#! provided asset ID at the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [has_asset]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to check.
+#! - has_asset is a boolean indicating whether the account vault had the asset.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc has_initial_asset(asset_id: AssetId) -> Bool
+    exec.get_initial_asset
+    # => [ASSET_VALUE]
+
+    # compare with EMPTY_WORD to assess if the asset existed in the vault
+    exec.word::eqz not
+    # => [has_asset]
 end
 
 # CODE
@@ -283,7 +537,7 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc was_procedure_called
+pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
     # => [offset, PROC_ROOT]
 

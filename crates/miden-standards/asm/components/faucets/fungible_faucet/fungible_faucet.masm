@@ -17,6 +17,9 @@ pub use {set_max_supply} from miden::standards::faucets::fungible
 pub use {is_max_supply_mutable} from miden::standards::faucets::fungible
 pub use {get_token_config} from miden::standards::faucets::fungible
 
+# Code inspection
+pub use {has_procedure} from miden::standards::inspection::code_inspection
+
 # Token metadata: mandatory name + optional description, logo, external link.
 pub use {get_name} from miden::standards::faucets
 pub use {get_mutability_config} from miden::standards::faucets

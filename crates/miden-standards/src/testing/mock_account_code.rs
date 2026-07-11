@@ -68,7 +68,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_item
-        exec.active_account::get_initial_item
+        exec.native_account::get_initial_item
         # => [VALUE, pad(14)]
 
         # truncate the stack
@@ -96,7 +96,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [INIT_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_map_item
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [INIT_VALUE, pad(12)]
     end
 

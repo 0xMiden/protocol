@@ -33,8 +33,8 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/standards directory into a package. Note scripts are included in
-///   this library.
+/// - Compiles the contents of asm/standards directory into a package. Note scripts and transaction
+///   scripts are included in this library.
 /// - Compiles the contents of asm/components directory into individual packages.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
@@ -56,7 +56,8 @@ fn main() -> Result<()> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
     let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
-    // compile standards library (includes note scripts) and seed it into the registry
+    // compile standards library (includes note scripts and transaction scripts) and seed it into
+    // the registry
     compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
 
     // compile account components
