@@ -54,9 +54,6 @@ fn fee_asset_id_word() -> anyhow::Result<Word> {
 }
 
 /// `estimate_note_fee` returns `app_fee + protocol_fee`, denominated in the account's fee asset.
-///
-/// The estimator ignores the storage and attachments commitments and the timeframe, but takes them
-/// so that a richer estimator can replace it without changing any caller.
 #[tokio::test]
 async fn estimate_note_fee_returns_the_scheduled_total() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -70,11 +67,8 @@ async fn estimate_note_fee_returns_the_scheduled_total() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            push.0
-            padw
-            padw
             push.{script_root}
-            # => [SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
+            # => [SCRIPT_ROOT, pad(12)]
 
             call.fee_manager::estimate_note_fee
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -155,9 +149,6 @@ async fn estimate_note_fee_rejects_an_unpriced_script() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            push.0
-            padw
-            padw
             push.{unpriced_root}
             call.fee_manager::estimate_note_fee
             exec.sys::truncate_stack
@@ -198,12 +189,8 @@ async fn estimate_note_fee_is_callable_over_fpi() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # inputs of the foreign procedure, deepest first
-            push.0
-            padw
-            padw
             push.{script_root}
-            # => [SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe]
+            # => [SCRIPT_ROOT]
 
             push.{estimate_root}
             push.{foreign_prefix} push.{foreign_suffix}
@@ -263,7 +250,7 @@ async fn set_fee_and_remove_fee_round_trip() -> anyhow::Result<()> {
             call.fee_manager::set_fee
             dropw dropw dropw dropw
 
-            push.0 padw padw push.{target_root}
+            push.{target_root}
             call.fee_manager::estimate_note_fee
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
             dropw

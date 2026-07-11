@@ -10,21 +10,23 @@
 #! gates the admin procedures.
 
 use miden::core::word
+
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::native_account
 use miden::protocol::note
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::tx
-use {NOTE_TYPE_PUBLIC} from miden::protocol::note
-use miden::protocol::account_id
-use {ALWAYS} from miden::standards::note::execution_hint
+
 use miden::standards::access::authority
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::attachments::fee_sponsorship
 use miden::standards::attachments::network_account_target
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME} from miden::standards::attachments::network_account_target
+use {ALWAYS} from miden::standards::note::execution_hint
 use miden::standards::note::note_id
 use miden::standards::notes::fee as fee_note
 use miden::standards::notes::network_sponsorship
@@ -233,19 +235,15 @@ pub proc get_fee_asset_id
     # => [FEE_ASSET_ID, pad(12)]
 end
 
-#! Returns the fee this account requires to accept the note with the provided parameters.
+#! Returns the fee this account requires to accept a note bearing the provided script root.
 #!
-#! The estimator is flat: it looks the script root up in the fee schedule and ignores the storage
-#! commitment, the attachments commitment and the timeframe. Those parameters are nonetheless part
-#! of the signature, so that a richer estimator can replace this one without changing any caller,
-#! and so that the procedure remains callable over a foreign procedure invocation to price a note
-#! that does not exist yet.
+#! Callable over a foreign procedure invocation, so a note creator -- or an upstream network
+#! account pricing a note it is about to spawn -- can size the sponsorship before the note exists.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
+#! Inputs:  [NOTE_SCRIPT_ROOT, pad(12)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
-#! - timeframe is the number of blocks for which the estimate should remain valid. Ignored.
 #! - FEE_ASSET_VALUE is `[fee_amount, 0, 0, 0]`, the value word of the required fungible asset.
 #!
 #! Panics if:
@@ -254,17 +252,8 @@ end
 #! Invocation: call
 @account_procedure
 pub proc estimate_note_fee
-    swapw dropw
-    # => [NOTE_SCRIPT_ROOT, ATTACHMENTS_COMMITMENT, timeframe, pad(3)]
-
-    swapw dropw
-    # => [NOTE_SCRIPT_ROOT, timeframe, pad(3)]
-
-    movup.4 drop
-    # => [NOTE_SCRIPT_ROOT, pad(3)]
-
     exec.fee_total
-    # => [fee_amount, pad(3)]
+    # => [fee_amount, pad(12)]
 
     push.0.0.0 movup.3
     # => [FEE_ASSET_VALUE, pad(15)]
@@ -628,14 +617,14 @@ proc estimate_downstream_fee
     loc_store.ESTIMATE_TARGET_SUFFIX_LOC loc_store.ESTIMATE_TARGET_PREFIX_LOC
     # => []
 
-    push.0 padw padw padw loc_loadw_le.ESTIMATE_CHILD_ROOT_LOC
-    # => [CHILD_NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe]
+    padw loc_loadw_le.ESTIMATE_CHILD_ROOT_LOC
+    # => [CHILD_NOTE_SCRIPT_ROOT]
 
     procref.estimate_note_fee
-    # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(13)]
+    # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(4)]
 
     loc_load.ESTIMATE_TARGET_PREFIX_LOC loc_load.ESTIMATE_TARGET_SUFFIX_LOC
-    # => [foreign_id_suffix, foreign_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(13)]
+    # => [foreign_id_suffix, foreign_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(4)]
 
     exec.tx::execute_foreign_procedure
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]

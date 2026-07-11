@@ -3,8 +3,10 @@
 # See the `AuthNetworkAccountWithFees` Rust type's documentation for more details.
 
 use miden::core::word
+
 use miden::protocol::active_account
 use miden::protocol::native_account
+
 use miden::standards::auth::note_script_allowlist
 use miden::standards::auth::tx_script_allowlist
 use miden::standards::fees::fee_manager

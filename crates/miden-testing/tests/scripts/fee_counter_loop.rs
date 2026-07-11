@@ -47,12 +47,14 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 /// note-time decision to spawn is always funded at auth time.
 const COUNTER_COMPONENT_CODE: &str = r#"
     use miden::core::crypto::hashes::poseidon2
+
     use miden::protocol::active_account
     use miden::protocol::active_note
     use miden::protocol::native_account
     use miden::protocol::note
     use miden::protocol::output_note
     use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+
     use {ALWAYS} from miden::standards::note::execution_hint
     use miden::standards::attachments::network_account_target
     use miden::standards::fees::fee_manager

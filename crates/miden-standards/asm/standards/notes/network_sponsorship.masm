@@ -1,8 +1,10 @@
 use miden::core::word
+
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::tx
+
 use miden::standards::attachments::fee_sponsorship
 use miden::standards::attachments::network_account_target
 use miden::standards::note::note_id
