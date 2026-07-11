@@ -18,9 +18,10 @@ pub type StorageSlot = u8;
 // | Global inputs      | 400           | 40               |                                            |
 // | Block header       | 800           | 44               |                                            |
 // | Partial blockchain | 1_200         | 132              |                                            |
-// | Kernel data        | 1_600         | 140              | 34 procedures in total, 4 elements each    |
+// | Kernel data        | 1_600         | 224              | 56 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
-// | Account delta      | 532_480       | 263              |                                            |
+// | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches  |
+// | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment          |
 // | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)    |
 // |                    |               |                  | + 1024 input notes max, 1024 elements each |
 // | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
@@ -339,6 +340,15 @@ pub const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 3360;
 /// account.
 pub const NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR: MemoryAddress =
     NATIVE_ACCOUNT_DATA_PTR + ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET;
+
+// UPGRADE COMMITMENTS
+// ------------------------------------------------------------------------------------------------
+
+/// The memory address at which the native account code upgrade commitment is stored.
+pub const CODE_UPGRADE_COMMITMENT_PTR: MemoryAddress = 532_744;
+
+/// The memory address at which the native account storage upgrade commitment is stored.
+pub const STORAGE_UPGRADE_COMMITMENT_PTR: MemoryAddress = 532_748;
 
 // NOTES DATA
 // ================================================================================================

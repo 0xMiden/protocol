@@ -666,16 +666,16 @@ pub proc lookup_faucet_by_token_address
     exec.active_account::get_map_item
     # => [0, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
-    dup.3 dup.3 push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix]
-
-    exec.account_id::is_equal
-    # => [is_id_zero, 0, 0, faucet_id_suffix, faucet_id_prefix]
-
-    # If AccountId returned from map is zero, it means the (address, network) pair is not registered.
-    assertz.err=ERR_TOKEN_NOT_REGISTERED
     drop drop
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Assert the token is registered: faucet_id is always non-zero for valid account IDs.
+    exec.account_id::testz
+    # => [is_id_zero, faucet_id_suffix, faucet_id_prefix]
+
+    # If the AccountId returned from the map is zero, it means the (address, network) pair is not
+    # registered.
+    assertz.err=ERR_TOKEN_NOT_REGISTERED
     # => [faucet_id_suffix, faucet_id_prefix]
 end
 
@@ -727,7 +727,7 @@ proc assert_sender_is_bridge_admin
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, admin_suffix, admin_prefix, pad(16)]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
     # => [pad(16)]
 end
@@ -755,7 +755,7 @@ proc assert_sender_is_ger_injector
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     assert.err=ERR_SENDER_NOT_GER_INJECTOR
     # => [pad(16)]
 end
@@ -783,7 +783,7 @@ proc assert_sender_is_ger_remover
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, rem_suffix, rem_prefix, pad(16)]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     assert.err=ERR_SENDER_NOT_GER_REMOVER
     # => [pad(16)]
 end

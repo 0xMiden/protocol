@@ -761,17 +761,18 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let foreign_account_code_source = format!(
         "
         use miden::protocol::active_account
+        use miden::standards::assets::fungible_asset
 
         @account_procedure
         pub proc get_asset_balance
             # get balance of first asset
             push.{FUNGIBLE_ASSET_ID}
-            exec.active_account::get_balance
+            exec.fungible_asset::get_active_account_balance
             # => [balance]
 
             # check presence of non fungible asset
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.active_account::has_non_fungible_asset
+            exec.active_account::has_asset
             # => [has_asset, balance]
 
             # add the balance and the bool
@@ -1736,14 +1737,14 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
             # push the expected native account ID and check that it is equal to the one returned
             # from the FPI
             push.{expected_native_prefix} push.{expected_native_suffix}
-            exec.account_id::is_equal
+            exec.account_id::eq
             assert.err="native account ID returned from the FPI is not equal to the expected one"
             # => [acct_id_suffix, acct_id_prefix]
 
             # push the expected foreign account ID and check that it is equal to the one returned
             # from the FPI
             push.{foreign_prefix} push.{foreign_suffix}
-            exec.account_id::is_equal
+            exec.account_id::eq
             assert.err="foreign account ID returned from the FPI is not equal to the expected one"
             # => []
 
