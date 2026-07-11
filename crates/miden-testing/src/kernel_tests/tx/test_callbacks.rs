@@ -446,7 +446,9 @@ async fn test_blocked_account_cannot_add_asset_to_note(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Only `create_note` is needed here, so a `NoteCreator` account suffices instead of a full
+    // basic wallet.
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
     let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
     let asset = create_asset(faucet.id())?;
 

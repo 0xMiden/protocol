@@ -63,7 +63,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
+use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
@@ -338,6 +338,19 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(BasicWallet)
             .with_assets(assets);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+    }
+
+    /// Adds an existing public [`NoteCreator`] account to the initial chain state and registers the
+    /// authenticator (if any).
+    ///
+    /// Unlike [`add_existing_wallet`](Self::add_existing_wallet), the account exposes only the
+    /// `create_note` procedure, which is enough for tests that only create output notes.
+    pub fn add_existing_note_creator(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
+        let account_builder = Account::builder(self.rng.random())
+            .account_type(AccountType::Public)
+            .with_component(NoteCreator);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }

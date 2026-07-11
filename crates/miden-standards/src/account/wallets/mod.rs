@@ -24,6 +24,9 @@ use crate::account::auth::{
 };
 use crate::procedure_root;
 
+mod note_creator;
+pub use note_creator::NoteCreator;
+
 // BASIC WALLET
 // ================================================================================================
 

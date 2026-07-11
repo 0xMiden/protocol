@@ -1,0 +1,5 @@
+# The MASM code of the Note Creator Account Component.
+#
+# See the `NoteCreator` Rust type's documentation for more details.
+
+pub use {create_note} from miden::standards::wallets::basic

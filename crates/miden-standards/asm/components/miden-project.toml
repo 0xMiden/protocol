@@ -29,6 +29,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "wallets/basic_wallet",
+  "wallets/note_creator",
 ]
 
 [workspace.package]
