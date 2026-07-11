@@ -1,4 +1,3 @@
-use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
@@ -105,7 +104,7 @@ proc get_delayed_execution_config
     push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
-    exec.active_account::get_initial_item
+    exec.native_account::get_initial_item
     # => [min_delay, propose_expiration_delta, 0, 0]
 
     movup.3 drop movup.2 drop
@@ -165,7 +164,7 @@ proc get_tx_proposal(tx_summary_commitment: word)
 
     # Read the proposal from the transaction's initial state, so proposal checks cannot be
     # influenced by map mutations made earlier in the same transaction.
-    exec.active_account::get_initial_map_item
+    exec.native_account::get_initial_map_item
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     movup.3 drop
