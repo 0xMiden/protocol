@@ -60,6 +60,9 @@ const COUNTER_COMPONENT_CODE: &str = r#"
     #! The storage slot holding the count as [count, 0, 0, 0].
     const COUNT_SLOT = word("test::counter::count")
 
+    #! Local memory offset passed as the (empty) note storage region of the spawned note.
+    const CHILD_NOTE_STORAGE_LOC = 0
+
     #! Increments the count, then spawns the next increment note -- same script, targeted at this
     #! account -- iff the sponsorship budget left after this note's own fee covers the next hop.
     #!
@@ -100,7 +103,7 @@ const COUNTER_COMPONENT_CODE: &str = r#"
             exec.poseidon2::merge
             # => [CHILD_SERIAL, SCRIPT_ROOT, pad(16)]
 
-            push.0 locaddr.0
+            push.0 locaddr.CHILD_NOTE_STORAGE_LOC
             # => [storage_ptr, num_storage_items, CHILD_SERIAL, SCRIPT_ROOT, pad(16)]
 
             exec.note::compute_and_store_recipient

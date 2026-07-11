@@ -17,6 +17,15 @@ pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME = 2
 #! The number of words in the network account target attachment.
 pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS = 1
 
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
+
+#! Local memory offset at which the attachment data is staged.
+const ATTACHMENT_DATA_LOC = 0
+
+#! Local memory offset at which input_note_targets_active_account stages the note index.
+const NOTE_INDEX_LOC = 4
+
 # ERRORS
 # ================================================================================================
 
@@ -58,9 +67,6 @@ end
 #!
 #! Invocation: exec
 pub proc into_target_id
-    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-    # => [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
-
     movup.2 drop movup.2 drop
     # => [account_id_suffix, account_id_prefix]
 end
@@ -78,7 +84,6 @@ end
 #!
 #! Invocation: exec
 pub proc new
-    # => [account_id_suffix, account_id_prefix, exec_hint_tag]
     push.0 movdn.3
     # => [NOTE_ATTACHMENT] = [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
@@ -112,7 +117,7 @@ pub proc active_account_matches_target_account
 
     # write the attachment data to local memory
     # we allocate one word of local memory matching NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
-    locaddr.0
+    locaddr.ATTACHMENT_DATA_LOC
     # => [dest_ptr, attachment_idx]
 
     exec.active_note::write_attachment_to_memory
@@ -122,7 +127,7 @@ pub proc active_account_matches_target_account
     assert.err=ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS
     # => []
 
-    padw loc_loadw_le.0
+    padw loc_loadw_le.ATTACHMENT_DATA_LOC
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
     # => [target_id_suffix, target_id_prefix, exec_hint_tag, 0]
 
@@ -156,7 +161,7 @@ end
 #! Invocation: exec
 @locals(8)
 pub proc input_note_targets_active_account
-    dup loc_store.4
+    dup loc_store.NOTE_INDEX_LOC
     # => [note_index]
 
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
@@ -166,7 +171,7 @@ pub proc input_note_targets_active_account
     # => [is_found, attachment_idx]
 
     if.true
-        loc_load.4 swap locaddr.0
+        loc_load.NOTE_INDEX_LOC swap locaddr.ATTACHMENT_DATA_LOC
         # => [dest_ptr, attachment_idx, note_index]
 
         exec.input_note::write_attachment_to_memory
@@ -175,7 +180,7 @@ pub proc input_note_targets_active_account
         eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
         # => [has_expected_num_words]
 
-        padw loc_loadw_le.0
+        padw loc_loadw_le.ATTACHMENT_DATA_LOC
         # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT, has_expected_num_words]
 
         exec.into_target_id

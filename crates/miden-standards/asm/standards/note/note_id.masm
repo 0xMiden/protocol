@@ -31,6 +31,13 @@ const ATTACHMENTS_COMMITMENT_PTR = 12
 #! Local memory offset at which the note index is staged.
 const NOTE_INDEX_PTR = 16
 
+#! Local memory offset at which compute_active_note_id stages the matched note index. The offset
+#! value overlaps the staging constants above deliberately: each procedure has its own local frame.
+const MATCHED_INDEX_PTR = 4
+
+#! Local memory offset at which compute_active_note_id stages the loop's note index.
+const LOOP_INDEX_PTR = 5
+
 # PROCEDURES
 # ================================================================================================
 
@@ -53,7 +60,6 @@ const NOTE_INDEX_PTR = 16
 #!
 #! Invocation: exec
 proc merge_note_commitments
-    # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
     exec.poseidon2::merge
     # => [NOTE_DETAILS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
 
@@ -85,7 +91,6 @@ end
 #! Invocation: exec
 @locals(20)
 pub proc compute_input_note_id
-    # => [note_index]
     dup loc_store.NOTE_INDEX_PTR
     # => [note_index]
 
@@ -133,10 +138,10 @@ end
 #! Invocation: exec
 @locals(8)
 pub proc compute_active_note_id
-    exec.active_note::get_recipient loc_storew_le.0 dropw
+    exec.active_note::get_recipient loc_storew_le.RECIPIENT_PTR dropw
     # => []
 
-    push.0 loc_store.4
+    push.0 loc_store.MATCHED_INDEX_PTR
     exec.tx::get_num_input_notes
     # => [note_idx]
 
@@ -144,25 +149,25 @@ pub proc compute_active_note_id
     # => [should_loop, note_idx]
 
     while.true
-        sub.1 dup loc_store.5
+        sub.1 dup loc_store.LOOP_INDEX_PTR
         # => [note_idx]
 
         exec.input_note::get_recipient
-        padw loc_loadw_le.0
+        padw loc_loadw_le.RECIPIENT_PTR
         exec.word::eq
         # => [is_match]
 
         if.true
-            loc_load.5 loc_store.4
+            loc_load.LOOP_INDEX_PTR loc_store.MATCHED_INDEX_PTR
         end
 
-        loc_load.5 dup neq.0
+        loc_load.LOOP_INDEX_PTR dup neq.0
         # => [should_loop, note_idx]
     end
     drop
     # => []
 
-    loc_load.4 exec.compute_input_note_id
+    loc_load.MATCHED_INDEX_PTR exec.compute_input_note_id
     # => [NOTE_ID]
 end
 
@@ -184,7 +189,6 @@ end
 #! Invocation: exec
 @locals(20)
 pub proc compute_output_note_id
-    # => [note_index]
     dup loc_store.NOTE_INDEX_PTR
     # => [note_index]
 

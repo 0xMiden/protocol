@@ -19,6 +19,15 @@ const FEE_SPONSORSHIP_ATTACHMENT_SCHEME = 4
 #! The number of words in the fee sponsorship attachment.
 const FEE_SPONSORSHIP_ATTACHMENT_NUM_WORDS = 1
 
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
+
+#! Local memory offset at which the attachment data is staged.
+const ATTACHMENT_DATA_LOC = 0
+
+#! Local memory offset at which input_note_bound_note_id stages the note index.
+const NOTE_INDEX_LOC = 4
+
 # ERRORS
 # ================================================================================================
 
@@ -41,7 +50,6 @@ const ERR_FEE_SPONSORSHIP_INCORRECT_NUMBER_OF_WORDS = "fee sponsorship attachmen
 #!
 #! Invocation: exec
 pub proc new
-    # => [FEATURE_NOTE_ID]
     push.FEE_SPONSORSHIP_ATTACHMENT_SCHEME
     # => [attachment_scheme, NOTE_ATTACHMENT]
 end
@@ -72,7 +80,7 @@ pub proc active_note_bound_note_id
 
     # write the attachment data to local memory
     # we allocate one word of local memory matching FEE_SPONSORSHIP_ATTACHMENT_NUM_WORDS
-    locaddr.0
+    locaddr.ATTACHMENT_DATA_LOC
     # => [dest_ptr, attachment_idx]
 
     exec.active_note::write_attachment_to_memory
@@ -82,7 +90,7 @@ pub proc active_note_bound_note_id
     assert.err=ERR_FEE_SPONSORSHIP_INCORRECT_NUMBER_OF_WORDS
     # => []
 
-    padw loc_loadw_le.0
+    padw loc_loadw_le.ATTACHMENT_DATA_LOC
     # => [FEATURE_NOTE_ID]
 end
 
@@ -103,8 +111,7 @@ end
 #! Invocation: exec
 @locals(8)
 pub proc input_note_bound_note_id
-    # => [note_index]
-    dup loc_store.4
+    dup loc_store.NOTE_INDEX_LOC
     # => [note_index]
 
     push.FEE_SPONSORSHIP_ATTACHMENT_SCHEME
@@ -116,7 +123,7 @@ pub proc input_note_bound_note_id
     assert.err=ERR_FEE_SPONSORSHIP_MISSING
     # => [attachment_idx]
 
-    loc_load.4 swap locaddr.0
+    loc_load.NOTE_INDEX_LOC swap locaddr.ATTACHMENT_DATA_LOC
     # => [dest_ptr, attachment_idx, note_index]
 
     exec.input_note::write_attachment_to_memory
@@ -126,6 +133,6 @@ pub proc input_note_bound_note_id
     assert.err=ERR_FEE_SPONSORSHIP_INCORRECT_NUMBER_OF_WORDS
     # => []
 
-    padw loc_loadw_le.0
+    padw loc_loadw_le.ATTACHMENT_DATA_LOC
     # => [FEATURE_NOTE_ID]
 end
