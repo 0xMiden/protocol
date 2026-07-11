@@ -14,8 +14,7 @@ use {
     UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 } from miden::tx_kernel_core::memory
-
-pub type AccountId = struct { prefix: felt, suffix: felt }
+use { AccountId } from miden::protocol_utils::types
 
 # NOTE
 # =================================================================================================
@@ -999,7 +998,10 @@ end
 # INPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the assets information of the specified input note.
+#! Returns the initial assets information of the specified input note.
+#!
+#! The returned commitment and number of assets are the ones the note was created with; they do
+#! not change when assets are removed from the note during transaction execution.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
@@ -1007,20 +1009,20 @@ end
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
-#! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified input note.
-#! - num_assets is the number of assets in the specified input note.
+#! - note_index is the index of the input note whose assets info should be returned.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets the specified input note was created
+#!   with.
+#! - num_assets is the number of assets the specified input note was created with.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_assets_info
-    # get the input note pointer depending on whether the requested note is current or it was 
-    # requested by index.
+pub proc input_note_get_initial_assets_info
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
 
@@ -1029,8 +1031,157 @@ pub proc input_note_get_assets_info
     dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
     # => [input_note_ptr, pad(15)]
 
-    # get the assets info
-    exec.input_note::get_assets_info
+    # get the initial assets info
+    exec.input_note::get_initial_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, pad(15)]
+
+    # truncate the stack
+    movupw.2 dropw
+    # => [ASSETS_COMMITMENT, num_assets, pad(11)]
+end
+
+#! Returns the asset at the specified index in the specified input note.
+#!
+#! The asset is returned as it currently is: if it was removed from the note, the returned
+#! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
+#!
+#! Inputs:  [is_active_note, asset_index, note_index, pad(13)]
+#! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether we should return the asset from the
+#!   active note or from the note with the specified index.
+#! - asset_index is the index of the asset to return.
+#! - note_index is the index of the input note whose asset should be returned.
+#! - ASSET_ID is the asset ID of the asset at the specified index.
+#! - ASSET_VALUE is the value of the asset at the specified index.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the asset index is greater or equal to the number of assets in the note.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_get_asset
+    # bring note_index directly above is_active_note so the note pointer can be resolved
+    movup.2 swap
+    # => [is_active_note, note_index, asset_index, pad(13)]
+
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, asset_index, pad(13)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, asset_index, pad(13)]
+
+    # get the asset
+    exec.input_note::get_asset
+    # => [ASSET_ID, ASSET_VALUE, pad(14)]
+
+    # truncate the stack
+    movupw.2 dropw movup.8 drop movup.8 drop
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+end
+
+#! Removes an asset from the specified input note.
+#!
+#! For instance, if the note holds a fungible asset with amount 100 under ASSET_ID, and
+#! ASSET_VALUE has amount 30, then the value remaining in the note has amount 70.
+#!
+#! If the entire asset value is removed, the asset's slot in the note is cleared, i.e. set to
+#! (EMPTY_WORD, EMPTY_WORD). This is always the case for non-composable assets.
+#!
+#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+#! Outputs: [FINAL_ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether the asset should be removed from the
+#!   active note or from the note with the specified index.
+#! - ASSET_ID is the asset ID of the asset to remove from the note.
+#! - ASSET_VALUE is the value of the asset to remove from the note.
+#! - note_index is the index of the input note from which the asset should be removed.
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
+#!   the EMPTY_WORD if the entire asset was removed.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#! - the asset's composition is Custom (not yet supported).
+#! - the asset is not present in the note.
+#! - the asset is not composable and is not present in the note with the exact value.
+#! - the amount of the fungible asset in the note is less than the amount to be removed.
+#!
+#! Invocation: dynexec
+pub proc input_note_remove_asset
+    # bring note_index directly above is_active_note so the note pointer can be resolved
+    movup.9 swap
+    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr, pad(7)]
+
+    # remove the asset from the note
+    exec.input_note::remove_asset
+    # => [FINAL_ASSET_VALUE, pad(14)]
+
+    movup.4 drop movup.4 drop
+    # => [FINAL_ASSET_VALUE, pad(12)]
+end
+
+#! Removes all remaining assets from the specified input note.
+#!
+#! Returns a commitment to the removed assets and stores them in the advice map under that
+#! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
+#! the assets that remained in the note at the time of the call, i.e. excluding assets that were
+#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#!
+#! The note's initial assets info (see input_note_get_initial_assets_info) is not affected by this
+#! procedure.
+#!
+#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether the assets should be removed from the
+#!   active note or from the note with the specified index.
+#! - note_index is the index of the input note from which the assets should be removed.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets removed by this procedure.
+#! - num_assets is the number of assets removed by this procedure.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_remove_all_assets
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, pad(15)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, pad(15)]
+
+    # remove all remaining assets from the note
+    exec.input_note::remove_all_assets
     # => [ASSETS_COMMITMENT, num_assets, pad(15)]
 
     # truncate the stack

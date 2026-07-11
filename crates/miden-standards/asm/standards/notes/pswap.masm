@@ -430,7 +430,7 @@ proc is_consumer_creator
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_creator]
 end
 
@@ -441,7 +441,7 @@ end
 #!
 @locals(8)
 proc load_offered_asset
-    locaddr.0 exec.active_note::get_assets
+    locaddr.0 exec.active_note::remove_all_assets
     # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS

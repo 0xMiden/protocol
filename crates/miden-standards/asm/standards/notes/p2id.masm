@@ -58,7 +58,7 @@ pub proc main
     # => [account_id_suffix, account_id_prefix, target_account_id_suffix, target_account_id_prefix]
 
     # ensure account_id = target_account_id, fails otherwise
-    exec.account_id::is_equal assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
+    exec.account_id::eq assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
     # => []
 
     exec.basic_wallet::add_assets_to_account

@@ -245,7 +245,7 @@ proc should_start_foreign_context
     # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
     # start a foreign context if the IDs are *not* equal
-    exec.account_id::is_equal
+    exec.account_id::eq
     not
     # => [should_start_foreign_context]
 end
