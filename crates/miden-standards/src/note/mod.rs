@@ -12,6 +12,9 @@ pub use burn::BurnNote;
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
+mod fee_sponsorship;
+pub use fee_sponsorship::{FeeSponsorship, FeeSponsorshipError};
+
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
@@ -29,6 +32,9 @@ pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
+
+mod network_sponsorship;
+pub use network_sponsorship::NetworkSponsorshipNote;
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
