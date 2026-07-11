@@ -63,10 +63,11 @@ static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// # Reclaim
 ///
-/// Anyone other than the target may only reclaim the note back to its sponsor, once
+/// Anyone other than the target may only reclaim the note back to its `reclaimer`, once
 /// `reclaim_height` is reached. This is load-bearing rather than a convenience: if the bound
 /// feature note is consumed by some other transaction, this note's presence check can never pass
-/// again, and reclaim is the only way to recover the assets.
+/// again, and reclaim is the only way to recover the assets. The reclaimer is stored in the note
+/// and defaults to the sender.
 #[derive(Debug, Clone)]
 pub struct NetworkSponsorshipNote {
     sender: AccountId,
@@ -74,6 +75,7 @@ pub struct NetworkSponsorshipNote {
     assets: NoteAssets,
     target: NetworkAccountTarget,
     feature_note_id: NoteId,
+    reclaimer: AccountId,
     reclaim_height: Option<BlockNumber>,
 }
 
@@ -82,6 +84,9 @@ impl NetworkSponsorshipNote {
     /// Builds a new [`NetworkSponsorshipNote`] sponsoring `feature_note_id` against `target`.
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
+    ///
+    /// The reclaimer, the account allowed to reclaim the note after `reclaim_height`, defaults to
+    /// `sender` when left unset.
     ///
     /// # Errors
     ///
@@ -103,6 +108,7 @@ impl NetworkSponsorshipNote {
         target: NetworkAccountTarget,
         feature_note_id: NoteId,
         serial_number: Word,
+        reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
@@ -112,6 +118,8 @@ impl NetworkSponsorshipNote {
         }
 
         let assets = NoteAssets::new(assets)?;
+        // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
+        let reclaimer = reclaimer.unwrap_or(sender);
 
         Ok(Self {
             sender,
@@ -119,6 +127,7 @@ impl NetworkSponsorshipNote {
             assets,
             target,
             feature_note_id,
+            reclaimer,
             reclaim_height,
         })
     }
@@ -129,7 +138,10 @@ impl NetworkSponsorshipNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the NETWORK_SPONSORSHIP note.
-    pub const NUM_STORAGE_ITEMS: usize = 1;
+    ///
+    /// The layout is `[reclaimer_suffix, reclaimer_prefix, reclaim_block_height]`, matching the
+    /// `*_PTR` offsets in `asm/standards/notes/network_sponsorship.masm`.
+    pub const NUM_STORAGE_ITEMS: usize = 3;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -152,6 +164,17 @@ impl NetworkSponsorshipNote {
     /// Returns the ID of the feature note this note sponsors.
     pub fn feature_note_id(&self) -> NoteId {
         self.feature_note_id
+    }
+
+    /// Returns the account ID allowed to reclaim the note after `reclaim_height`.
+    pub fn reclaimer(&self) -> AccountId {
+        self.reclaimer
+    }
+
+    /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
+    /// enabled.
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.reclaim_height
     }
 }
 
@@ -195,9 +218,15 @@ impl From<NetworkSponsorshipNote> for Note {
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target.target_id()));
 
-        let storage =
-            NoteStorage::new(vec![Felt::from(note.reclaim_height.unwrap_or_default().as_u32())])
-                .expect("a single storage item never exceeds the note storage limit");
+        // Storage layout must match the `*_PTR` offsets in the note's MASM script:
+        // [reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent reclaim height is
+        // encoded as 0, which the script reads as "reclaim disabled".
+        let storage = NoteStorage::new(vec![
+            note.reclaimer.suffix(),
+            note.reclaimer.prefix().as_felt(),
+            Felt::from(note.reclaim_height.unwrap_or_default().as_u32()),
+        ])
+        .expect("three storage items never exceed the note storage limit");
 
         let recipient =
             NoteRecipient::new(note.serial_number, NetworkSponsorshipNote::script(), storage);
@@ -240,8 +269,8 @@ mod tests {
         NoteId::from_raw(Word::from([7, 8, 9, 10u32]))
     }
 
-    /// The builder produces a public note tagged for the target, carrying both attachments and one
-    /// storage item.
+    /// The builder produces a public note tagged for the target, carrying both attachments and the
+    /// three storage items.
     #[test]
     fn builder_builds_public_sponsorship_note() {
         let mut rng = RandomCoin::new(Word::empty());
@@ -265,7 +294,10 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(note.storage().num_items(), NetworkSponsorshipNote::NUM_STORAGE_ITEMS as u16);
-        assert_eq!(note.storage().items()[0], Felt::from(42u32));
+        // The reclaimer defaults to the sender, followed by the reclaim height.
+        assert_eq!(note.storage().items()[0], sponsor().suffix());
+        assert_eq!(note.storage().items()[1], sponsor().prefix().as_felt());
+        assert_eq!(note.storage().items()[2], Felt::from(42u32));
         assert_eq!(note.attachments().num_attachments(), 2);
 
         // Both attachments must decode back to what was put in.
@@ -293,7 +325,33 @@ mod tests {
             .unwrap();
 
         let note = Note::from(sponsorship);
-        assert_eq!(note.storage().items()[0], Felt::from(0u32));
+        assert_eq!(note.storage().items()[2], Felt::from(0u32));
+    }
+
+    /// An explicit reclaimer overrides the sender in the note storage.
+    #[test]
+    fn explicit_reclaimer_is_stored() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let asset = FungibleAsset::new(faucet(), 100).unwrap();
+        let reclaimer =
+            AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
+
+        let sponsorship = NetworkSponsorshipNote::builder()
+            .sender(sponsor())
+            .target_account(network_account())
+            .unwrap()
+            .feature_note_id(feature_note_id())
+            .asset(asset)
+            .reclaimer(reclaimer)
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        assert_eq!(sponsorship.reclaimer(), reclaimer);
+
+        let note = Note::from(sponsorship);
+        assert_eq!(note.storage().items()[0], reclaimer.suffix());
+        assert_eq!(note.storage().items()[1], reclaimer.prefix().as_felt());
     }
 
     /// A sponsorship that pays nothing is never intended, so the constructor rejects it.

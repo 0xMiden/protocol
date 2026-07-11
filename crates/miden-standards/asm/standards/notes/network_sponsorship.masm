@@ -16,11 +16,16 @@ use miden::standards::wallets::basic as basic_wallet
 #! The memory address at which the note storage is written.
 const STORAGE_PTR = 0
 
-#! The memory address of the reclaim block height, the note's only storage item.
-const RECLAIM_BLOCK_HEIGHT_PTR = STORAGE_PTR
+# Note storage layout (3 items, loaded at STORAGE_PTR by get_storage):
+# - reclaimer_suffix      [0] : suffix of the account allowed to reclaim the note
+# - reclaimer_prefix      [1] : prefix of the account allowed to reclaim the note
+# - reclaim_block_height  [2] : block height at or after which the reclaimer may reclaim (0 = disabled)
+const RECLAIMER_SUFFIX_PTR = STORAGE_PTR
+const RECLAIMER_PREFIX_PTR = STORAGE_PTR + 1
+const RECLAIM_BLOCK_HEIGHT_PTR = STORAGE_PTR + 2
 
 #! The number of storage items of a NETWORK_SPONSORSHIP note.
-const NUM_STORAGE_ITEMS = 1
+const NUM_STORAGE_ITEMS = 3
 
 #! Local memory offset at which is_bound_feature_note_present stages the bound note ID.
 const BOUND_NOTE_ID_LOC = 0
@@ -28,7 +33,7 @@ const BOUND_NOTE_ID_LOC = 0
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="NETWORK_SPONSORSHIP note expects exactly 1 note storage item"
+const ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="NETWORK_SPONSORSHIP note expects exactly 3 note storage items"
 
 const ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT="the feature note bound by the NETWORK_SPONSORSHIP note is not consumed by this transaction"
 
@@ -36,7 +41,7 @@ const ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED="NETWORK_SPONSORSHIP reclaim is d
 
 const ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED="failed to reclaim NETWORK_SPONSORSHIP note because the reclaim block height is not reached yet"
 
-const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR="failed to reclaim NETWORK_SPONSORSHIP note because the reclaiming account is not the sponsor"
+const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER="failed to reclaim NETWORK_SPONSORSHIP note because the reclaiming account is not the reclaimer"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -73,7 +78,6 @@ proc is_bound_feature_note_present
     # => [should_loop, note_idx, is_found]
 
     while.true
-        # => [note_idx, is_found]
         sub.1
         # => [note_idx, is_found]
 
@@ -101,20 +105,20 @@ proc is_bound_feature_note_present
     # => [is_found]
 end
 
-#! Returns the sponsorship assets to the sponsor, provided reclaim is enabled and its block height
+#! Returns the sponsorship assets to the reclaimer, provided reclaim is enabled and its block height
 #! has been reached.
 #!
 #! Inputs:  [reclaim_block_height]
 #! Outputs: []
 #!
 #! Where:
-#! - reclaim_block_height is the block height at or after which the sponsor may reclaim the note.
+#! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note.
 #!   A value of 0 means reclaim is disabled.
 #!
 #! Panics if:
 #! - reclaim is disabled.
 #! - the reclaim block height has not been reached.
-#! - the active account is not the note's sponsor.
+#! - the active account is not the note's reclaimer.
 proc reclaim_note
     dup neq.0 assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED
     # => [reclaim_block_height]
@@ -125,14 +129,15 @@ proc reclaim_note
     lte assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
     # => []
 
-    # the sponsor is the note's sender, which is authenticated as part of the note metadata
-    exec.active_note::get_sender
-    # => [sponsor_id_suffix, sponsor_id_prefix]
+    # only the reclaimer named in the note storage may reclaim it; the creator sets this, defaulting
+    # to the sender
+    mem_load.RECLAIMER_PREFIX_PTR mem_load.RECLAIMER_SUFFIX_PTR
+    # => [reclaimer_id_suffix, reclaimer_id_prefix]
 
     exec.active_account::get_id
-    # => [account_id_suffix, account_id_prefix, sponsor_id_suffix, sponsor_id_prefix]
+    # => [account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    exec.account_id::eq assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR
+    exec.account_id::eq assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
     # => []
 
     exec.basic_wallet::add_assets_to_account
@@ -154,11 +159,12 @@ end
 #! - Consuming a feature note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
-#! If the target account never consumes the note, the sponsor may reclaim it once the reclaim block
-#! height is reached. That path is not a nicety: once the bound feature note is consumed by some
-#! other transaction, the presence check can never pass again and reclaim is the only way out. When
-#! the sponsor is also the target -- a self-spawning chain sponsoring its own next hop -- the same
-#! reclaim applies once the feature note can no longer be presented.
+#! If the target account never consumes the note, the reclaimer may reclaim it once the reclaim
+#! block height is reached. That path is not a nicety: once the bound feature note is consumed by
+#! some other transaction, the presence check can never pass again and reclaim is the only way out.
+#! When the reclaimer is also the target -- a self-spawning chain sponsoring its own next hop -- the
+#! same reclaim applies once the feature note can no longer be presented. The reclaimer is named in
+#! the note storage; the creator sets it, defaulting to the sender.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -170,14 +176,15 @@ end
 #! - ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
-#! - reclaim_block_height is the block height at or after which the sponsor may reclaim the note,
+#! - reclaimer_{suffix, prefix} identify the account allowed to reclaim the note.
+#! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note,
 #!   or 0 if reclaim is disabled.
 #!
 #! Panics if:
-#! - the number of note storage items is not 1.
+#! - the number of note storage items is not 3.
 #! - the note carries no network account target attachment or no fee sponsorship attachment.
 #! - the active account is the target but the bound feature note is not consumed, and the account
-#!   is not the sponsor either.
+#!   is not the reclaimer either.
 #! - the active account is not the target and cannot reclaim the note.
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
 @note_script
@@ -204,10 +211,11 @@ pub proc main
             exec.basic_wallet::add_assets_to_account
             # => [pad(16)]
         else
-            # without the feature note, the target may only proceed as the sponsor of its own
+            # without the feature note, the target may only proceed as the reclaimer of its own
             # chained sponsorship, through the reclaim path
-            exec.active_note::get_sender exec.active_account::get_id exec.account_id::eq
-            # => [is_sponsor, pad(16)]
+            mem_load.RECLAIMER_PREFIX_PTR mem_load.RECLAIMER_SUFFIX_PTR
+            exec.active_account::get_id exec.account_id::eq
+            # => [is_reclaimer, pad(16)]
 
             assert.err=ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT
             # => [pad(16)]
@@ -219,7 +227,7 @@ pub proc main
             # => [pad(16)]
         end
     else
-        # anybody else may only reclaim the note back to its sponsor
+        # anybody else may only reclaim the note back to its reclaimer
         mem_load.RECLAIM_BLOCK_HEIGHT_PTR
         # => [reclaim_block_height, pad(16)]
 

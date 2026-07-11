@@ -8,7 +8,7 @@ use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::{
     ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT,
-    ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR,
+    ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED,
     ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
 };
@@ -158,7 +158,10 @@ async fn stranger_cannot_consume_sponsorship() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
+    );
 
     Ok(())
 }
@@ -288,6 +291,93 @@ async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()>
         .await;
 
     assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED);
+
+    Ok(())
+}
+
+/// Builds a fixture whose sponsorship names the stranger as an explicit reclaimer, distinct from
+/// the sender.
+fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture> {
+    let fee_asset: Asset = FungibleAsset::mock(FEE_AMOUNT);
+    let mut rng = RandomCoin::new(Word::empty());
+
+    let mut builder = MockChain::builder();
+    let network_account = builder.add_existing_wallet(auth())?;
+    let sponsor = builder.add_existing_wallet(auth())?;
+    let stranger = builder.add_existing_wallet(auth())?;
+
+    let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+
+    let sponsorship_note = Note::from(
+        NetworkSponsorshipNote::builder()
+            .sender(sponsor.id())
+            .target_account(network_account.id())?
+            .feature_note_id(feature_note.id())
+            .asset(fee_asset)
+            .reclaimer(stranger.id())
+            .reclaim_height(reclaim_height)
+            .generate_serial_number(&mut rng)
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    Ok(Fixture {
+        mock_chain,
+        network_account,
+        sponsor,
+        stranger,
+        feature_note,
+        sponsorship_note,
+        fee_asset,
+    })
+}
+
+/// Reclaim keys on the stored reclaimer, not the sender: a named reclaimer distinct from the sender
+/// can reclaim the note once the reclaim height is reached.
+#[tokio::test]
+async fn named_reclaimer_reclaims_after_reclaim_height() -> anyhow::Result<()> {
+    let f = named_reclaimer_setup(BlockNumber::from(1u32))?;
+
+    let executed = f
+        .mock_chain
+        .build_transaction(f.stranger.id())
+        .authenticated_input_note(f.sponsorship_note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let mut reclaimer = f.stranger;
+    reclaimer.apply_patch(executed.account_patch())?;
+    assert_eq!(
+        reclaimer.vault().get_balance(f.fee_asset.id())?.as_u64(),
+        FEE_AMOUNT,
+        "the named reclaimer should get the unused fee back",
+    );
+
+    Ok(())
+}
+
+/// The sender cannot reclaim once a different reclaimer is named: this is what makes the reclaimer,
+/// not the sender, the authority.
+#[tokio::test]
+async fn sender_cannot_reclaim_when_a_different_reclaimer_is_named() -> anyhow::Result<()> {
+    let f = named_reclaimer_setup(BlockNumber::from(1u32))?;
+
+    let result = f
+        .mock_chain
+        .build_transaction(f.sponsor.id())
+        .authenticated_input_note(f.sponsorship_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
+    );
 
     Ok(())
 }
