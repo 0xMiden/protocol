@@ -11,6 +11,7 @@ use {
     INPUT_NOTE_REMOVE_ASSET_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::protocol::note
+use { AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot } from miden::protocol::types
 
 # PROCEDURES
 # =================================================================================================
@@ -100,7 +101,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_initial_assets_info
+pub proc get_initial_assets_info(note_index: u16) -> (word, u8)
     push.0
     # => [is_active_note = 0, note_index]
 
@@ -369,7 +370,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc remove_all_assets_raw
+pub proc remove_all_assets_raw(is_active_note: Bool, dest_ptr: MemoryAddress, note_index: u16) -> u8
     push.0 movdn.2
     # => [is_active_note, note_index, 0, dest_ptr]
 
@@ -412,7 +413,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_recipient
+pub proc get_recipient(note_index: u16) -> NoteRecipient
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -450,7 +451,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_metadata
+pub proc get_metadata(note_index: u16) -> NoteMetadata
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -488,7 +489,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_sender
+pub proc get_sender(note_index: u16) -> AccountId
     exec.get_metadata
     # => [METADATA]
 
@@ -511,7 +512,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_storage_info
+pub proc get_storage_info(note_index: u16) -> (word, u16)
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -552,7 +553,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_script_root
+pub proc get_script_root(note_index: u16) -> NoteScriptRoot
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -590,7 +591,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_serial_number
+pub proc get_serial_number(note_index: u16) -> word
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -632,7 +633,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment
+pub proc get_attachments_commitment(note_index: u16) -> word
     push.0
     # => [is_active_note = 0, note_index]
 
@@ -659,7 +660,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment_raw
+pub proc get_attachments_commitment_raw(is_active_note: Bool, note_index: u16) -> word
     push.0 movdn.2
     # => [is_active_note, note_index, 0]
 
@@ -694,7 +695,7 @@ end
 #!   attachments commitment.
 #!
 #! Invocation: exec
-pub proc write_attachment_commitments_to_memory
+pub proc write_attachment_commitments_to_memory(dest_ptr: MemoryAddress, note_index: u16) -> u8
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
@@ -722,7 +723,7 @@ end
 #!
 #! Invocation: exec
 @locals(16)
-pub proc write_attachment_to_memory
+pub proc write_attachment_to_memory(dest_ptr: MemoryAddress, attachment_idx: u8, note_index: u16) -> u16
     # set up call to write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments
@@ -755,7 +756,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc find_attachment
+pub proc find_attachment(attachment_scheme: u16, note_index: u16) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 

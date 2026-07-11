@@ -9,6 +9,7 @@ use {
 use miden::protocol::note
 use miden::protocol::input_note
 use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
+use { AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot } from miden::protocol::types
 
 # ERRORS
 # =================================================================================================
@@ -47,7 +48,7 @@ const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note sto
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_initial_assets
+pub proc get_initial_assets(dest_ptr: MemoryAddress) -> u8
     # push a placeholder note_index and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0, dest_ptr]
@@ -214,7 +215,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_recipient
+pub proc get_recipient() -> NoteRecipient
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -251,7 +252,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_storage
+pub proc get_storage(dest_ptr: MemoryAddress) -> u16
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14), dest_ptr]
@@ -292,7 +293,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_metadata
+pub proc get_metadata() -> NoteMetadata
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -324,7 +325,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc is_public
+pub proc is_public() -> Bool
     exec.get_metadata
     # => [METADATA]
 
@@ -347,7 +348,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc is_private
+pub proc is_private() -> Bool
     exec.get_metadata
     # => [METADATA]
 
@@ -370,7 +371,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_sender
+pub proc get_sender() -> AccountId
     exec.get_metadata
     # => [METADATA]
 
@@ -391,7 +392,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_serial_number
+pub proc get_serial_number() -> word
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -423,7 +424,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_script_root
+pub proc get_script_root() -> NoteScriptRoot
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -501,7 +502,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment
+pub proc get_attachments_commitment() -> word
     # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0]
@@ -525,7 +526,7 @@ end
 #!   attachments commitment.
 #!
 #! Invocation: exec
-pub proc write_attachment_commitments_to_memory
+pub proc write_attachment_commitments_to_memory(dest_ptr: MemoryAddress) -> u8
     exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
@@ -552,7 +553,7 @@ end
 #!
 #! Invocation: exec
 @locals(16)
-pub proc write_attachment_to_memory
+pub proc write_attachment_to_memory(dest_ptr: MemoryAddress, attachment_idx: u8) -> u16
     # write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments
@@ -584,7 +585,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc find_attachment
+pub proc find_attachment(attachment_scheme: u16) -> (Bool, u8)
     exec.get_metadata
     # => [METADATA, attachment_scheme]
 
