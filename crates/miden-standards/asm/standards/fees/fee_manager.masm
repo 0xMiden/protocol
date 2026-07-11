@@ -397,12 +397,12 @@ proc sponsorship_contribution
         padw loc_loadw_le.CONTRIBUTION_FEATURE_ID_LOC exec.word::eq
         # => [is_bound_to_feature_note]
 
-        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.input_note::get_assets_info dropw eq.1 and
+        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.input_note::get_initial_assets_info dropw eq.1 and
         # => [is_bound_with_one_asset]
 
         if.true
             loc_load.CONTRIBUTION_NOTE_IDX_LOC locaddr.CONTRIBUTION_ASSET_ID_LOC
-            exec.input_note::get_assets drop
+            exec.input_note::get_initial_assets drop
             # => []
 
             padw loc_loadw_le.CONTRIBUTION_ASSET_ID_LOC exec.fee_asset_id exec.word::eq
@@ -662,7 +662,7 @@ end
 #!
 #! Invocation: exec
 proc estimate_child_fee
-    dup.5 dup.5 exec.active_account::get_id exec.account_id::is_equal
+    dup.5 dup.5 exec.active_account::get_id exec.account_id::eq
     # => [is_self, CHILD_NOTE_SCRIPT_ROOT, target_id_suffix, target_id_prefix]
 
     if.true

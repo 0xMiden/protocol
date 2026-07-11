@@ -5,8 +5,7 @@ use {
     NOTE_MEM_SIZE,
     WORD_NUM_ELEMENTS,
 } from miden::tx_kernel_core::constants
-
-pub type AccountId = struct { prefix: felt, suffix: felt }
+use { AccountId } from miden::protocol_utils::types
 
 # ERRORS
 # =================================================================================================

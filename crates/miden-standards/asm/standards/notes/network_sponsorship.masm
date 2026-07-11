@@ -130,7 +130,7 @@ proc reclaim_note
     exec.active_account::get_id
     # => [account_id_suffix, account_id_prefix, sponsor_id_suffix, sponsor_id_prefix]
 
-    exec.account_id::is_equal assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR
+    exec.account_id::eq assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_SPONSOR
     # => []
 
     exec.basic_wallet::add_assets_to_account
@@ -204,7 +204,7 @@ pub proc main
         else
             # without the feature note, the target may only proceed as the sponsor of its own
             # chained sponsorship, through the reclaim path
-            exec.active_note::get_sender exec.active_account::get_id exec.account_id::is_equal
+            exec.active_note::get_sender exec.active_account::get_id exec.account_id::eq
             # => [is_sponsor, pad(16)]
 
             assert.err=ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT

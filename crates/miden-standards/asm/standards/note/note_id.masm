@@ -98,7 +98,7 @@ pub proc compute_input_note_id
     loc_storew_le.RECIPIENT_PTR dropw
     # => []
 
-    loc_load.NOTE_INDEX_PTR exec.input_note::get_assets_info
+    loc_load.NOTE_INDEX_PTR exec.input_note::get_initial_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 
     movup.4 drop

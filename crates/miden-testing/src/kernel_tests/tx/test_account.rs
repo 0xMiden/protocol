@@ -172,6 +172,13 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 // ACCOUNT ID TESTS
 // ================================================================================================
 
+/// Splits a raw account ID into its suffix and prefix felts.
+fn account_id_felts(account_id: &u128) -> anyhow::Result<(Felt, Felt)> {
+    let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+    let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+    Ok((prefix, suffix))
+}
+
 #[tokio::test]
 async fn test_account_validate_id() -> anyhow::Result<()> {
     let test_cases = [
@@ -204,8 +211,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+        let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
             use miden::protocol::account_id
@@ -290,8 +296,7 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+        let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
             use miden::protocol::account_id
@@ -343,6 +348,72 @@ async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()>
             },
         }
     }
+
+    Ok(())
+}
+
+/// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program.
+#[tokio::test]
+async fn test_account_id_comparison() -> anyhow::Result<()> {
+    let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+    let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
+
+    let code = format!(
+        r#"
+        use miden::protocol::account_id
+
+        begin
+            # eq: identical IDs are equal
+            push.{prefix_1}.{suffix_1}.{prefix_1}.{suffix_1}
+            exec.account_id::eq
+            assert.err="eq: identical IDs should be equal"
+            # => [pad(16)]
+
+            # eq: different IDs are not equal
+            push.{prefix_1}.{suffix_1}.{prefix_2}.{suffix_2}
+            exec.account_id::eq
+            assertz.err="eq: different IDs should not be equal"
+            # => [pad(16)]
+
+            # eqz: the zero address is zero
+            push.0.0
+            exec.account_id::eqz
+            assert.err="eqz: the zero address should be zero"
+            # => [pad(16)]
+
+            # eqz: a valid ID is not zero
+            push.{prefix_1}.{suffix_1}
+            exec.account_id::eqz
+            assertz.err="eqz: a valid ID should not be zero"
+            # => [pad(16)]
+
+            # testz: the zero address is zero
+            push.0.0
+            exec.account_id::testz
+            assert.err="testz: the zero address should be zero"
+            # => [pad(18)]
+
+            # testz: a valid ID is not zero, leaving [suffix_1, prefix_1] on the stack
+            push.{prefix_1}.{suffix_1}
+            exec.account_id::testz
+            assertz.err="testz: a valid ID should not be zero"
+            # => [suffix_1, prefix_1, pad(18)]
+
+            # truncate the stack
+            swapw dropw
+            # => [suffix_1, prefix_1, pad(14)]
+        end
+        "#
+    );
+
+    let exec_output = CodeExecutor::with_default_host()
+        .run(&code)
+        .await
+        .map_err(ExecError::into_execution_error)?;
+
+    // testz must preserve the account ID beneath the (already consumed) flag.
+    assert_eq!(exec_output.get_stack_element(0), suffix_1, "testz must preserve the ID suffix");
+    assert_eq!(exec_output.get_stack_element(1), prefix_1, "testz must preserve the ID prefix");
 
     Ok(())
 }

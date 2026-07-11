@@ -137,7 +137,7 @@ pub proc active_account_matches_target_account
     exec.active_account::get_id
     # => [active_account_id_suffix, active_account_id_prefix, target_id_suffix, target_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_equal]
 end
 
@@ -189,7 +189,7 @@ pub proc input_note_targets_active_account
         exec.active_account::get_id
         # => [active_account_id_suffix, active_account_id_prefix, target_id_suffix, target_id_prefix, has_expected_num_words]
 
-        exec.account_id::is_equal
+        exec.account_id::eq
         # => [is_equal, has_expected_num_words]
 
         and
