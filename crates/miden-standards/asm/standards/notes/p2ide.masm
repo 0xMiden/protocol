@@ -58,10 +58,16 @@ end
 #! Helper procedure which adds the note assets to the reclaim authority account.
 #!
 #! Checks if P2IDE reclaim is enabled and if true, if reclaim height has been reached, and that
-#! the active account is the note's reclaim authority (read from note storage).
+#! the active account is the note's reclaim authority.
 #!
-#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height]
+#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
 #! Outputs: []
+#!
+#! Where:
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the active account ID.
+#! - current_block_height is the transaction's reference block number.
+#! - reclaim_block_height is the block height at which the note becomes reclaimable (0 = reclaim disabled).
+#! - reclaim_authority_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to reclaim the note.
 #!
 #! Panics if:
 #! - the reclaim of the active note is disabled.
@@ -69,19 +75,15 @@ end
 #! - the account attempting to reclaim the note is not the reclaim authority account.
 proc reclaim_note
     # check that the reclaim of the active note is enabled
-    mem_load.RECLAIM_HEIGHT_ITEM dup neq.0 assert.err=ERR_P2IDE_RECLAIM_DISABLED
-    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height]
+    movup.3 dup neq.0 assert.err=ERR_P2IDE_RECLAIM_DISABLED
+    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
 
     # now check that reclaim authority is allowed to reclaim, reclaim block height <= current block height
     movup.3
-    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix]
+    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
 
     lte assert.err=ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED
-    # => [account_id_suffix, account_id_prefix]
-
-    # if active account is not the target, we need to ensure it is the reclaim authority
-    mem_load.RECLAIM_AUTHORITY_PREFIX_ITEM mem_load.RECLAIM_AUTHORITY_SUFFIX_ITEM
-    # => [reclaim_authority_suffix, reclaim_authority_prefix, account_id_suffix, account_id_prefix]
+    # => [account_id_suffix, account_id_prefix, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
 
     # ensure active account ID = reclaim authority account ID
     exec.account_id::eq assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIM_AUTHORITY
@@ -159,6 +161,14 @@ pub proc main
         # => []
 
     else
+        # load the reclaim authority account ID from note storage
+        mem_load.RECLAIM_AUTHORITY_PREFIX_ITEM movdn.3 mem_load.RECLAIM_AUTHORITY_SUFFIX_ITEM movdn.3
+        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+
+        # load the reclaim block height from note storage
+        mem_load.RECLAIM_HEIGHT_ITEM movdn.3
+        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaim_authority_id_suffix, reclaim_authority_id_prefix]
+
         # checks if active account is the reclaim authority and if reclaim is enabled
         exec.reclaim_note
         # => []
