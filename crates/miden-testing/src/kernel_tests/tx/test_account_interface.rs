@@ -423,18 +423,32 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let account = builder.add_existing_wallet(Auth::Noop)?;
     let target_account_id = account.id();
-    let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
+    let sender_account_id: AccountId =
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
     let wrong_target_id: AccountId =
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
 
     // create notes for testing
     // --------------------------------------------------------------------------------------------
-    let p2ide_wrong_inputs_number = create_p2ide_note_with_storage([1, 2, 3], sender_account_id);
+    let p2ide_wrong_inputs_number =
+        create_p2ide_note_with_storage([1, 2, 3, 4, 5], sender_account_id);
 
-    let p2ide_invalid_target_id = create_p2ide_note_with_storage([1, 2, 3, 4], sender_account_id);
+    let p2ide_invalid_target_id = create_p2ide_note_with_storage(
+        [
+            sender_account_id.suffix().as_canonical_u64(),
+            sender_account_id.prefix().as_u64(),
+            1,
+            2,
+            3,
+            4,
+        ],
+        sender_account_id,
+    );
 
     let p2ide_wrong_target = create_p2ide_note_with_storage(
         [
+            sender_account_id.suffix().as_canonical_u64(),
+            sender_account_id.prefix().as_u64(),
             wrong_target_id.suffix().as_canonical_u64(),
             wrong_target_id.prefix().as_u64(),
             3,
@@ -445,6 +459,8 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let p2ide_invalid_reclaim = create_p2ide_note_with_storage(
         [
+            sender_account_id.suffix().as_canonical_u64(),
+            sender_account_id.prefix().as_u64(),
             target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             Felt::ORDER_U64 - 1,
@@ -455,6 +471,8 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let p2ide_invalid_timelock = create_p2ide_note_with_storage(
         [
+            sender_account_id.suffix().as_canonical_u64(),
+            sender_account_id.prefix().as_u64(),
             target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             3,
@@ -517,7 +535,8 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         assert!(reason.to_string().contains("invalid P2IDE note storage"));
     });
 
-    // check the note with a wrong target account ID (target is neither the sender nor the receiver)
+    // check the note with a wrong target account ID (target is neither the reclaimer nor
+    // the receiver)
     // --------------------------------------------------------------------------------------------
     let consumability_info: NoteConsumptionStatus = notes_checker
         .can_consume(
@@ -528,7 +547,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account");
+        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account");
     });
 
     // check the note with an invalid reclaim height
@@ -608,10 +627,13 @@ async fn test_check_note_consumability_static_analysis_receiver(
 
     let account = builder.add_existing_wallet(Auth::Noop)?;
     let target_account_id = account.id();
-    let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
+    let sender_account_id: AccountId =
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
 
     let p2ide = create_p2ide_note_with_storage(
         [
+            sender_account_id.suffix().as_canonical_u64(),
+            sender_account_id.prefix().as_u64(),
             target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
@@ -652,7 +674,8 @@ async fn test_check_note_consumability_static_analysis_receiver(
 
 /// Tests the correctness of the [`NoteConsumptionChecker::can_consume()`] procedure.
 ///
-/// In this test the target account is the sender.
+/// In this test the target account is the reclaimer (the account allowed to reclaim the
+/// note).
 ///
 /// It is expected that the current block height is 3.
 #[rstest::rstest]
@@ -687,7 +710,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
 // tl < curr = rc
 #[case(3, 2, String::from("Ok(ConsumableWithAuthorization)"))]
 #[tokio::test]
-async fn test_check_note_consumability_static_analysis_sender(
+async fn test_check_note_consumability_static_analysis_reclaimer(
     #[case] reclaim_height: u64,
     #[case] timelock_height: u64,
     #[case] expected: String,
@@ -695,18 +718,20 @@ async fn test_check_note_consumability_static_analysis_sender(
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet(Auth::Noop)?;
-    let sender_account_id = account.id();
+    let reclaimer_account_id = account.id();
     let target_account_id: AccountId =
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
 
     let p2ide = create_p2ide_note_with_storage(
         [
+            reclaimer_account_id.suffix().as_canonical_u64(),
+            reclaimer_account_id.prefix().as_u64(),
             target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,
         ],
-        sender_account_id,
+        reclaimer_account_id,
     );
     builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
@@ -727,7 +752,7 @@ async fn test_check_note_consumability_static_analysis_sender(
     // --------------------------------------------------------------------------------------------
     let consumption_check_result = notes_checker
         .can_consume(
-            sender_account_id,
+            reclaimer_account_id,
             block_ref,
             InputNote::Unauthenticated { note: p2ide },
             tx_args.clone(),

@@ -18,6 +18,9 @@ pub use file::{NoteFile, NoteSyncHint};
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
+mod owner_action;
+pub use owner_action::{OwnerAction, OwnerActionNote};
+
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
 
@@ -29,6 +32,9 @@ pub use pause_action::{PauseAction, PauseActionNote};
 
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
+
+mod rbac_action;
+pub use rbac_action::{RbacAction, RbacActionNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
@@ -46,6 +52,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 // ================================================================================================
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
+#[allow(non_camel_case_types)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -53,10 +60,9 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    // Two-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
-    // uppercase convention of the others (P2ID, MINT, ...).
-    #[allow(non_camel_case_types)]
     PAUSE_ACTION,
+    OWNER_ACTION,
+    RBAC_ACTION,
 }
 
 impl StandardNote {
@@ -93,6 +99,12 @@ impl StandardNote {
         if root == PauseActionNote::script_root() {
             return Some(Self::PAUSE_ACTION);
         }
+        if root == OwnerActionNote::script_root() {
+            return Some(Self::OWNER_ACTION);
+        }
+        if root == RbacActionNote::script_root() {
+            return Some(Self::RBAC_ACTION);
+        }
 
         None
     }
@@ -110,6 +122,8 @@ impl StandardNote {
             Self::MINT => "MINT",
             Self::BURN => "BURN",
             Self::PAUSE_ACTION => "PAUSE_ACTION",
+            Self::OWNER_ACTION => "OWNER_ACTION",
+            Self::RBAC_ACTION => "RBAC_ACTION",
         }
     }
 
@@ -123,6 +137,10 @@ impl StandardNote {
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
+            // OwnerAction storage is variable per action; this returns the upper bound.
+            Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
+            // RbacAction storage is variable per action; this returns the upper bound.
+            Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
         }
     }
 
@@ -136,6 +154,8 @@ impl StandardNote {
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
             Self::PAUSE_ACTION => PauseActionNote::script(),
+            Self::OWNER_ACTION => OwnerActionNote::script(),
+            Self::RBAC_ACTION => RbacActionNote::script(),
         }
     }
 
@@ -149,6 +169,8 @@ impl StandardNote {
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
+            Self::OWNER_ACTION => OwnerActionNote::script_root(),
+            Self::RBAC_ACTION => RbacActionNote::script_root(),
         }
     }
 
@@ -185,9 +207,10 @@ impl StandardNote {
     ///       account ID.
     /// - for `P2IDE` note:
     ///     - check that note storage has correct number of values.
-    ///     - check that the target account is either the receiver account or the sender account.
-    ///     - check that depending on whether the target account is sender or receiver, it could be
-    ///       either consumed, or consumed after timelock height, or consumed after reclaim height.
+    ///     - check that the target account is either the receiver account or the reclaimer account.
+    ///     - check that depending on whether the target account is reclaimer or receiver, it could
+    ///       be either consumed, or consumed after timelock height, or consumed after reclaim
+    ///       height.
     fn is_consumable_inner(
         &self,
         note: &Note,
@@ -206,24 +229,23 @@ impl StandardNote {
                 }
             },
             StandardNote::P2IDE => {
-                let P2ideNoteStorage {
-                    target: receiver_account_id,
-                    reclaim_height,
-                    timelock_height,
-                } = P2ideNoteStorage::try_from(note.storage().items())
+                let storage = P2ideNoteStorage::try_from(note.storage().items())
                     .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
-                let current_block_height = block_ref.as_u32();
-                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
-                let timelock_height = timelock_height.unwrap_or_default().as_u32();
+                let reclaimer_account_id = storage.reclaimer();
+                let receiver_account_id = storage.target();
 
-                // block height after which sender account can consume the note
+                let current_block_height = block_ref.as_u32();
+                let reclaim_height = storage.reclaim_height().unwrap_or_default().as_u32();
+                let timelock_height = storage.timelock_height().unwrap_or_default().as_u32();
+
+                // block height after which the reclaimer account can consume the note
                 let consumable_after = reclaim_height.max(timelock_height);
 
-                // handle the case when the target account of the transaction is sender
-                if target_account_id == note.metadata().sender() {
-                    // For the sender, the current block height needs to have reached both reclaim
-                    // and timelock height to be consumable.
+                // handle the case when the target account of the transaction is the reclaimer
+                if target_account_id == reclaimer_account_id {
+                    // For the reclaimer, the current block height needs to have reached both
+                    // reclaim and timelock height to be consumable.
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
@@ -243,11 +265,11 @@ impl StandardNote {
                             timelock_height,
                         ))))
                     }
-                // if the target account is neither the sender nor the receiver (from the note's
-                // storage), then this account cannot consume the note
+                // if the target account is neither the reclaimer nor the receiver (from the
+                // note's storage), then this account cannot consume the note
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
-            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
+            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account".into()
         )))
                 }
             },

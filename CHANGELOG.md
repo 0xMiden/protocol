@@ -3,18 +3,22 @@
 
 ### Changes
 - Added the `PauseActionNote` (`PauseAction`) for triggering `PausableManager` admin actions (pause / unpause) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes the note sender through the account-wide `Authority` component ([#3258](https://github.com/0xMiden/protocol/pull/3258)).
+- [BREAKING] P2IDE now reclaims against a `reclaimer` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
+- Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
 - [BREAKING] Unified the MINT and BURN note scripts to serve both fungible and non-fungible faucets: the single `mint` / `burn` note now detects the faucet kind by reflection (the `CodeInspection` component's `has_procedure`, which the fungible and non-fungible faucet components now expose) and calls the matching `mint_and_send` / `receive_and_burn`. Removed the `mint_nft` / `burn_nft` note scripts and the `NonFungibleMintNote` / `NonFungibleBurnNote` / `NonFungibleMintNoteStorage` types; `MintNote` / `BurnNote` and `MintNoteStorage` (with fungible and non-fungible variants) now cover both faucet kinds ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Renamed the `miden::standards::metadata` module to `miden::standards::inspection` (in MASM, the `miden-standards` account components, and the `miden_standards::account::inspection` Rust module), scoping it as the home of `CodeInspection`, the storage schema, and future inspection components ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - Added `NonFungibleFaucet::asset_status` API and `AssetStatus` enum (`NotIssued` / `Issued` / `Burned`) for querying a commitment's issuance status from account storage, mirroring the on-chain `get_asset_status` procedure ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Moved the initial-state account getters (`get_initial_*`) from `miden::protocol::active_account` to `miden::protocol::native_account`. They now always operate on the native account and panic with `ERR_ACCOUNT_IS_NOT_NATIVE` when invoked from a foreign procedure invocation (FPI) context ([#2034](https://github.com/0xMiden/protocol/issues/2034)).
 - Cleaned up `signature.masm` by removing redundant scheme-id validation and duplication, dropping the `neq.0` double-negation in `assert_supported_scheme_word`, and eliminating the unused `NUM_OF_APPROVERS_LOC` slot; also optimized `verify_signatures` to reuse the signer index and approver public key from the operand stack instead of round-tripping them through local memory ([#3230](https://github.com/0xMiden/protocol/pull/3230)).
 - Fixed the transaction executor host honoring `AuthRequest` events emitted outside the registered auth procedure, which let untrusted note or transaction scripts force the host to sign; signature production is now restricted to the authentication procedure ([#3233](https://github.com/0xMiden/protocol/pull/3233)).
+- Added an enforcement for `TransactionEventId::is_privileged` in the host, rejecting any privileged event emitted outside the root context ([#3251](https://github.com/0xMiden/protocol/pull/3251)).
 - Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
 - [BREAKING] Refactored RBAC role administration to be fully role-based, removing the `Ownable2Step` owner as an unconditional super-admin over the role graph. Replaced `RoleBasedAccessControl::empty()` with `RoleBasedAccessControl::new(initial_admin)` / `with_admins(..)` (which seed the `ADMIN` role), and renamed the `ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN` abort to `ERR_SENDER_NOT_ROLE_ADMIN` ([#3215](https://github.com/0xMiden/protocol/pull/3215)).
 - Re-exported `LoadedMastForest` from `miden-tx` so consumers implementing the re-exported `MastForestStore` trait can name its return type without depending on `miden-processor` directly ([#3236](https://github.com/0xMiden/protocol/pull/3237)).
 - Refactored to use `neq.1` instead of `not` in `AuthSingleSigAcl` exempt-map marker check so a non-binary marker (only reachable via storage authored outside the typed API) degrades to "authentication required" rather than aborting and permanently bricking the account ([#3206](https://github.com/0xMiden/protocol/pull/3206)).
 - Split `account_id::validate` into `account_id::validate_structure` (version-independent structural checks) and `account_id::validate` (structure and the version check) ([#3188](https://github.com/0xMiden/protocol/pull/3188)).
 - Added a non-zero version check to `account_id::validate_structure` so the zero account ID no longer passes structural validation ([#3216](https://github.com/0xMiden/protocol/pull/3216)).
+- Renamed the `account_id::is_equal` procedure to `account_id::eq` for consistency with the `account_id::eqz`/`testz` zero-test helpers ([#3271](https://github.com/0xMiden/protocol/pull/3271)).
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
@@ -69,6 +73,7 @@
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
 - [BREAKING] Migrated the `miden-standards` library to a `miden-project.toml` project ([#3107](https://github.com/0xMiden/protocol/pull/3107)).
 - [BREAKING] Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
+- Added `ExpirationTransactionScript` to standards package and assemble it at build-time ([#3111](https://github.com/0xMiden/protocol/pull/3111)).
 - [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
@@ -101,6 +106,23 @@
 - Refactor `asset_vault::add_asset` and `faucet::mint` to use a unified path for all asset types, in preparation of custom asset ([#3217](https://github.com/0xMiden/protocol/pull/3217)).
 - Refactor `asset_vault::remove_asset` and `faucet::burn` to use a unified path for all asset types, in preparation of custom assets ([#3078](https://github.com/0xMiden/protocol/issues/3078)).
 - [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
+- [BREAKING] Moved the following fungible asset procedures out of the protocol layer into the new `miden::standards::assets::fungible_asset` module ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+  - Moved `protocol::asset::create_fungible_id` -> `create_id`
+  - Moved `protocol::asset::create_fungible_asset` -> `create`
+  - Moved `protocol::active_account::get_balance` -> `get_active_account_balance`
+  - Moved `protocol::native_account::get_initial_balance` -> `get_initial_native_account_balance`
+  - Moved `protocol::asset::fungible_to_amount` -> `to_amount`
+- [BREAKING] Moved the non-fungible asset procedures out of the protocol layer into the new `miden::standards::assets::non_fungible_asset` module ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+  - Moved `protocol::asset::create_non_fungible_asset` -> `create`
+  - Moved `protocol::asset::non_fungible_value_into_asset_class` -> `value_into_asset_class`
+- [BREAKING] Removed the faucet-relative `create` variants (`protocol::faucet::{create_fungible_asset, create_non_fungible_asset}`); callers now push the faucet ID via `active_account::get_id` and call `{fungible_asset, non_fungible_asset}::create` ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+- [BREAKING] Renamed and generalized `miden::protocol::active_account::has_non_fungible_asset` to `has_asset`, which now accepts any asset ID instead of only non-fungible assets ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+- Added `miden::protocol::native_account::has_initial_asset` procedure returning whether the native account's vault contained an asset at the beginning of the transaction ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
+- Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
+- [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/issues/3272)).
+  - Replaced the `active_note::get_assets` / `input_note::get_assets` and `input_note::get_assets_info` procedures with `remove_all_assets`, `get_initial_assets` and `get_initial_assets_info`, and added `get_initial_num_assets`, `get_asset` and `remove_asset`.
+- Added the `OwnerActionNote` (`OwnerAction`) for triggering `Ownable2Step` management actions (transfer / accept / renounce ownership) on an account via a note ([#3245](https://github.com/0xMiden/protocol/pull/3245)).
+- Added the `RbacActionNote` (`RbacAction`) for triggering `RoleBasedAccessControl` management actions (grant / revoke role, set role admin, renounce role) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes against the note sender ([#3248](https://github.com/0xMiden/protocol/pull/3248)).
 
 ### Fixes
 
@@ -110,6 +132,7 @@
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 - Simplified the `ownable2step` ownership transitions ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Fixed `note_script_allowlist::assert_all_input_notes_allowed` and `tx_script_allowlist::assert_tx_script_allowed` to read the allowlist from the transaction's initial storage state via `active_account::get_initial_map_item` ([#3182](https://github.com/0xMiden/protocol/pull/3182)).
+- Fixed `eth_address::to_account_id` to validate the decoded `AccountId` structural invariants, preventing a malformed bridge-in destination address from being routed into an unspendable P2ID/MINT output ([#3243](https://github.com/0xMiden/protocol/pull/3243)).
 - Fixed `set_procedure_threshold` now asserts `PROC_ROOT` is one of the account's procedures (`ERR_PROC_ROOT_NOT_IN_ACCOUNT`) before storing an override, and corrected the inaccurate `assert_new_tx`, `update_signers_and_threshold`, and `get_signer_at` stack-layout and advice-map comments ([#3211](https://github.com/0xMiden/protocol/pull/3211)).
 
 ## v0.15.2 (2026-06-05)
