@@ -196,9 +196,10 @@ impl StandardNote {
     ///       account ID.
     /// - for `P2IDE` note:
     ///     - check that note storage has correct number of values.
-    ///     - check that the target account is either the receiver account or the sender account.
-    ///     - check that depending on whether the target account is sender or receiver, it could be
-    ///       either consumed, or consumed after timelock height, or consumed after reclaim height.
+    ///     - check that the target account is either the receiver account or the reclaimer account.
+    ///     - check that depending on whether the target account is reclaimer or receiver, it could
+    ///       be either consumed, or consumed after timelock height, or consumed after reclaim
+    ///       height.
     fn is_consumable_inner(
         &self,
         note: &Note,
@@ -217,24 +218,23 @@ impl StandardNote {
                 }
             },
             StandardNote::P2IDE => {
-                let P2ideNoteStorage {
-                    target: receiver_account_id,
-                    reclaim_height,
-                    timelock_height,
-                } = P2ideNoteStorage::try_from(note.storage().items())
+                let storage = P2ideNoteStorage::try_from(note.storage().items())
                     .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
-                let current_block_height = block_ref.as_u32();
-                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
-                let timelock_height = timelock_height.unwrap_or_default().as_u32();
+                let reclaimer_account_id = storage.reclaimer();
+                let receiver_account_id = storage.target();
 
-                // block height after which sender account can consume the note
+                let current_block_height = block_ref.as_u32();
+                let reclaim_height = storage.reclaim_height().unwrap_or_default().as_u32();
+                let timelock_height = storage.timelock_height().unwrap_or_default().as_u32();
+
+                // block height after which the reclaimer account can consume the note
                 let consumable_after = reclaim_height.max(timelock_height);
 
-                // handle the case when the target account of the transaction is sender
-                if target_account_id == note.metadata().sender() {
-                    // For the sender, the current block height needs to have reached both reclaim
-                    // and timelock height to be consumable.
+                // handle the case when the target account of the transaction is the reclaimer
+                if target_account_id == reclaimer_account_id {
+                    // For the reclaimer, the current block height needs to have reached both
+                    // reclaim and timelock height to be consumable.
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
@@ -254,11 +254,11 @@ impl StandardNote {
                             timelock_height,
                         ))))
                     }
-                // if the target account is neither the sender nor the receiver (from the note's
-                // storage), then this account cannot consume the note
+                // if the target account is neither the reclaimer nor the receiver (from the
+                // note's storage), then this account cannot consume the note
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
-            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
+            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account".into()
         )))
                 }
             },
