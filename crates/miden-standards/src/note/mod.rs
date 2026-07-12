@@ -30,6 +30,9 @@ pub use p2ide::{P2ideNote, P2ideNoteStorage};
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
+mod rbac_action;
+pub use rbac_action::{RbacAction, RbacActionNote};
+
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
 
@@ -46,6 +49,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 // ================================================================================================
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
+#[allow(non_camel_case_types)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -53,10 +57,8 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    // Two-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
-    // uppercase convention of the others (P2ID, MINT, ...).
-    #[allow(non_camel_case_types)]
     OWNER_ACTION,
+    RBAC_ACTION,
 }
 
 impl StandardNote {
@@ -93,6 +95,9 @@ impl StandardNote {
         if root == OwnerActionNote::script_root() {
             return Some(Self::OWNER_ACTION);
         }
+        if root == RbacActionNote::script_root() {
+            return Some(Self::RBAC_ACTION);
+        }
 
         None
     }
@@ -110,6 +115,7 @@ impl StandardNote {
             Self::MINT => "MINT",
             Self::BURN => "BURN",
             Self::OWNER_ACTION => "OWNER_ACTION",
+            Self::RBAC_ACTION => "RBAC_ACTION",
         }
     }
 
@@ -124,6 +130,8 @@ impl StandardNote {
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             // OwnerAction storage is variable per action; this returns the upper bound.
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
+            // RbacAction storage is variable per action; this returns the upper bound.
+            Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
         }
     }
 
@@ -137,6 +145,7 @@ impl StandardNote {
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
+            Self::RBAC_ACTION => RbacActionNote::script(),
         }
     }
 
@@ -150,6 +159,7 @@ impl StandardNote {
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
+            Self::RBAC_ACTION => RbacActionNote::script_root(),
         }
     }
 
