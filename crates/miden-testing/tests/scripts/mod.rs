@@ -4,6 +4,7 @@ mod blocklist;
 mod code_inspection;
 mod expiration;
 mod faucet;
+mod faucet_policy_action;
 mod non_fungible_faucet;
 mod ownable2step;
 mod owner_action;
