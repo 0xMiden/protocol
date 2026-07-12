@@ -5,8 +5,8 @@
 # the procedures available under the public `miden::protocol::account_id` path.
 
 pub use {
+    eq,
     eqz,
-    is_equal,
     shape_suffix,
     testz,
     validate,

@@ -10,7 +10,7 @@
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the procedure is not called from a note context (active_note::get_assets will fail).
+#! - the procedure is not called from a note context (active_note::remove_all_assets will fail).
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
