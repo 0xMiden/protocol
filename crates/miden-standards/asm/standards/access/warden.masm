@@ -34,59 +34,6 @@ const WARDEN_SLOT = word("miden::standards::access::warden::warden_id")
 
 const ERR_SENDER_NOT_WARDEN = "note sender is not the warden"
 
-# INTERNAL PROCEDURES
-# ================================================================================================
-
-#! Returns the warden account ID from storage.
-#!
-#! Inputs:  []
-#! Outputs: [warden_suffix, warden_prefix]
-#!
-#! Where:
-#! - warden_{suffix, prefix} are the suffix and prefix felts of the warden account ID. Both
-#!   are zero if no warden is assigned.
-proc get_warden_internal
-    push.WARDEN_SLOT[0..2] exec.active_account::get_item
-    # => [warden_suffix, warden_prefix, 0, 0]
-
-    movup.2 drop movup.2 drop
-    # => [warden_suffix, warden_prefix]
-end
-
-#! Builds the warden word, writes it to storage and drops the old value.
-#!
-#! Inputs:  [warden_suffix, warden_prefix]
-#! Outputs: []
-proc save_warden_info
-    push.0.0 movup.3 movup.3
-    # => [warden_suffix, warden_prefix, 0, 0]
-
-    push.WARDEN_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, warden_suffix, warden_prefix, 0, 0]
-
-    exec.native_account::set_item
-    # => [OLD_WARDEN_WORD]
-
-    dropw
-    # => []
-end
-
-#! Checks if the given account ID is the warden.
-#!
-#! Inputs:  [account_id_suffix, account_id_prefix]
-#! Outputs: [is_warden]
-#!
-#! Where:
-#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
-#! - is_warden is 1 if the account is the warden, 0 otherwise.
-proc is_warden_internal
-    exec.get_warden_internal
-    # => [warden_suffix, warden_prefix, account_id_suffix, account_id_prefix]
-
-    exec.account_id::eq
-    # => [is_warden]
-end
-
 # PUBLIC INTERFACE
 # ================================================================================================
 
@@ -184,4 +131,57 @@ pub proc assert_sender_is_warden
 
     assert.err=ERR_SENDER_NOT_WARDEN
     # => []
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Returns the warden account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [warden_suffix, warden_prefix]
+#!
+#! Where:
+#! - warden_{suffix, prefix} are the suffix and prefix felts of the warden account ID. Both
+#!   are zero if no warden is assigned.
+proc get_warden_internal
+    push.WARDEN_SLOT[0..2] exec.active_account::get_item
+    # => [warden_suffix, warden_prefix, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [warden_suffix, warden_prefix]
+end
+
+#! Builds the warden word, writes it to storage and drops the old value.
+#!
+#! Inputs:  [warden_suffix, warden_prefix]
+#! Outputs: []
+proc save_warden_info
+    push.0.0 movup.3 movup.3
+    # => [warden_suffix, warden_prefix, 0, 0]
+
+    push.WARDEN_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, warden_suffix, warden_prefix, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WARDEN_WORD]
+
+    dropw
+    # => []
+end
+
+#! Checks if the given account ID is the warden.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_warden]
+#!
+#! Where:
+#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
+#! - is_warden is 1 if the account is the warden, 0 otherwise.
+proc is_warden_internal
+    exec.get_warden_internal
+    # => [warden_suffix, warden_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::eq
+    # => [is_warden]
 end

@@ -150,7 +150,7 @@ pub proc assert_authorized
     end
 end
 
-# PRIVATE PROCEDURES
+# HELPER PROCEDURES
 # =================================================================================================
 
 #! Asserts the sender may toggle the emergency switch.
