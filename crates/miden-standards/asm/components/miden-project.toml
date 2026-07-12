@@ -28,6 +28,7 @@ members = [
   "faucets/policies/transfer/blocklist/owner_controlled",
   "inspection/code_inspection",
   "inspection/schema_commitment",
+  "note/note_creator",
   "wallets/basic_wallet",
 ]
 

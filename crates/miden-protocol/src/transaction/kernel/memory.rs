@@ -444,7 +444,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, num_assets,                  │
 // │  COMMITMENT  │          │           │  num_attachments, total_attachment_words] │
 // ├──────────────┼──────────┼───────────┼───────────────────────────────────────────┼
-// 0      4          8           12
+// 0              4          8           12
 //
 // ┬────────────┬────────────┬────────────┬────────────┬────────────┬
 // │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │   ASSETS   │
