@@ -1355,7 +1355,6 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::core::sys
         use miden::protocol::active_account
         use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
         use mock::account as mock_account
         use mock::util
 
@@ -1454,7 +1453,6 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         use miden::core::sys
         use miden::protocol::active_account
         use miden::protocol::native_account
-        use miden::standards::wallets::basic as wallet
         use mock::account as mock_account
         use mock::util
 

@@ -164,7 +164,7 @@ fn move_asset_to_note_body(
         // wallet's `create_note` procedure rather than the kernel procedure directly
         body.push_str(
             "
-            call.::miden::standards::wallets::basic::create_note
+            call.::miden::standards::note::note_creator::create_note
             # => [note_idx, pad(21)]\n
             ",
         );

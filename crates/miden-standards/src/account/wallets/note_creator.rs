@@ -19,13 +19,6 @@ procedure_root!(
 
 /// An [`AccountComponent`] exposing only the `create_note` procedure.
 ///
-/// It reexports `create_note` from `miden::standards::wallets::basic` - the exact same procedure
-/// that [`BasicWallet`][crate::account::wallets::BasicWallet] exposes - so both components produce
-/// the identical `create_note` MAST root. This lets an account opt into note creation without
-/// pulling in the rest of the basic wallet (`receive_asset`, `move_asset_to_note`). Note scripts
-/// that call `create_note` resolve to that shared root and therefore work against accounts carrying
-/// either component.
-///
 /// When linking against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder].
@@ -41,7 +34,7 @@ impl NoteCreator {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::wallets::note_creator";
+    pub const NAME: &'static str = "miden::standards::components::note::note_creator";
 
     const CREATE_NOTE_PROC_NAME: &str = "create_note";
 

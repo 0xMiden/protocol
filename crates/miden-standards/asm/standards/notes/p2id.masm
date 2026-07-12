@@ -3,6 +3,7 @@ use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::wallets::basic as basic_wallet
+use miden::standards::note::note_creator
 
 # ERRORS
 # =================================================================================================
@@ -119,12 +120,13 @@ end
 #! Creates a new P2ID output note from the given inputs and returns its index.
 #!
 #! Note creation must originate from the account context, so this procedure routes creation through
-#! the account's `basic_wallet::create_note` procedure. This lets `p2id::new` be used from contexts
+#! the account's `note_creator::create_note` procedure. This lets `p2id::new` be used from contexts
 #! outside the account code, such as note or transaction scripts. Callers that are already inside an
-#! account procedure should instead use `p2id::create_parts` together with `exec.output_note::create`.
+#! account procedure should instead use `p2id::create_parts` together with
+#! `exec.output_note::create`.
 #!
 #! Requires that the account exposes:
-#! - miden::standards::wallets::basic::create_note procedure.
+#! - miden::standards::note::note_creator::create_note procedure.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [note_idx]
@@ -146,7 +148,7 @@ pub proc new
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.basic_wallet::create_note
+    call.note_creator::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop

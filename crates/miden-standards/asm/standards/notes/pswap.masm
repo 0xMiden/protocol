@@ -11,6 +11,7 @@ use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fun
 use miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
+use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
@@ -374,7 +375,7 @@ proc create_remainder_note
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.wallet::create_note
+    call.note_creator::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop
@@ -763,7 +764,7 @@ end
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
-#! - `miden::standards::wallets::basic::create_note` procedure.
+#! - `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []

@@ -284,7 +284,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::miden::standards::wallets::basic::create_note
+            call.::miden::standards::note::note_creator::create_note
             movdn.15 dropw dropw dropw drop drop drop
 
             push.{asset_value}

@@ -39,7 +39,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::miden::standards::wallets::basic::create_note
+            call.::miden::standards::note::note_creator::create_note
             movdn.15 dropw dropw dropw drop drop drop
 
             push.{ASSET_VALUE}

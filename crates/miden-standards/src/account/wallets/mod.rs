@@ -59,13 +59,14 @@ procedure_root!(
 
 /// An [`AccountComponent`] implementing a basic wallet.
 ///
-/// It reexports the procedures from `miden::standards::wallets::basic`. When linking against this
-/// component, the `miden` library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be
-/// available to the assembler which is the case when using [`CodeBuilder`][builder]. The procedures
-/// of this component are:
+/// It reexports the procedures from `miden::standards::wallets::basic` and
+/// `miden::standards::note::create_note` modules. When linking against this component, the `miden`
+/// library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler
+/// which is the case when using [`CodeBuilder`][builder]. The procedures of this component are:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
+/// - `create_note`, which can be used to create a new output note and return its index.
 ///
 /// All methods require authentication. Thus, this component must be combined with a component
 /// providing authentication.

@@ -276,7 +276,6 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let tx_script_src = format!(
         "\
         use miden::core::sys
-        use miden::standards::wallets::basic as wallet
         use miden::protocol::output_note
         use mock::util
 

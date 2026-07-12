@@ -252,7 +252,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{recipient_1}
                 push.{note_type_1}
                 push.{tag_1}
-                call.::miden::standards::wallets::basic::create_note
+                call.::miden::standards::note::note_creator::create_note
                 movdn.15 dropw dropw dropw drop drop drop
 
                 push.{ASSET_VALUE_1}
@@ -263,7 +263,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{recipient_2}
                 push.{note_type_2}
                 push.{tag_2}
-                call.::miden::standards::wallets::basic::create_note
+                call.::miden::standards::note::note_creator::create_note
                 movdn.15 dropw dropw dropw drop drop drop
 
                 push.{ASSET_VALUE_2}

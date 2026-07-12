@@ -2,4 +2,4 @@
 #
 # See the `NoteCreator` Rust type's documentation for more details.
 
-pub use {create_note} from miden::standards::wallets::basic
+pub use {create_note} from miden::standards::note::note_creator
