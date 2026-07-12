@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Separated exec-only helpers from the public interface of the standard access components (`authority`, `rbac`, `pausable`, `ownable2step`, `warden`): `exec`-invoked `pub proc` helpers (e.g. `assert_authorized`, `assert_sender_has_role`, `assert_not_paused`, `assert_sender_is_owner`) moved out of the `PUBLIC INTERFACE` section into a dedicated `PUBLIC HELPERS` section, so only `@account_procedure` (call) procedures form a component's public interface. Structural only — no bytecode or behavior change ([#3276](https://github.com/0xMiden/protocol/pull/3276)).
 - Added the `FaucetPolicyActionNote` (`FaucetPolicyAction`) for switching a faucet's active `TokenPolicyManager` policy (mint / burn / send / receive) to an allowed alternative via a note. A selector in the note storage dispatches to the matching `set_*_policy` procedure, which authorizes the note sender through the account-wide `Authority` component ([#3260](https://github.com/0xMiden/protocol/pull/3260)).
 - Added the `PauseActionNote` (`PauseAction`) for triggering `PausableManager` admin actions (pause / unpause) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes the note sender through the account-wide `Authority` component ([#3258](https://github.com/0xMiden/protocol/pull/3258)).
 - [BREAKING] P2IDE now reclaims against a `reclaimer` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
