@@ -27,6 +27,9 @@ pub use p2ide::{P2ideNote, P2ideNoteStorage};
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
+mod rbac_action;
+pub use rbac_action::{RbacAction, RbacActionNote};
+
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
 
@@ -50,6 +53,10 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    // Multi-word name requires the escape from the SCREAMING_CASE lint; the variant follows the
+    // uppercase convention of the others (P2ID, MINT, ...).
+    #[allow(non_camel_case_types)]
+    RBAC_ACTION,
 }
 
 impl StandardNote {
@@ -83,6 +90,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == RbacActionNote::script_root() {
+            return Some(Self::RBAC_ACTION);
+        }
 
         None
     }
@@ -99,6 +109,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::RBAC_ACTION => "RBAC_ACTION",
         }
     }
 
@@ -111,6 +122,8 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            // RbacAction storage is variable per action; this returns the upper bound.
+            Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
         }
     }
 
@@ -123,6 +136,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::RBAC_ACTION => RbacActionNote::script(),
         }
     }
 
@@ -135,6 +149,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::RBAC_ACTION => RbacActionNote::script_root(),
         }
     }
 
