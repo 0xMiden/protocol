@@ -7,7 +7,7 @@
 # - Storage: `blocked_accounts` map keyed by account ID; entry word `[1, 0, 0, 0]` means blocked.
 # - Helpers (`block_account` / `unblock_account` / `is_blocked` / `assert_not_blocked`) perform
 #   NO authorization — they are low-level building blocks meant to be called by
-#   `Invocation: call` wrappers in auth-checking account components (see `owner_controlled.masm`).
+#   `Invocation: call` wrappers in auth-checking account components (see `manager.masm`).
 #   Tx scripts cannot invoke them directly — they go through the wrapper component installed on
 #   the faucet.
 
@@ -15,7 +15,7 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 
-pub mod owner_controlled
+pub mod manager
 
 # CONSTANTS
 # ================================================================================================

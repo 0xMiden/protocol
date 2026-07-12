@@ -6,9 +6,9 @@ use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot,
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::utils::sync::LazyLock;
 
-mod owner_controlled;
+mod manager;
 
-pub use owner_controlled::AllowlistOwnerControlled;
+pub use manager::AllowlistManager;
 
 // ALLOWED ACCOUNTS STORAGE
 // ================================================================================================

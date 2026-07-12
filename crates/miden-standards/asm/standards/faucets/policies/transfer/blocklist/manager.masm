@@ -1,0 +1,56 @@
+# miden::standards::faucets::policies::transfer::blocklist::manager
+#
+# Authority-gated blocklist admin: wraps the `Invocation: exec` helpers from
+# `miden::standards::faucets::policies::transfer::blocklist` with the account-wide `Authority`
+# component via `exec.authority::assert_authorized` — the same pattern that `PausableManager` and
+# `TokenPolicyManager::set_*_policy` use. This makes a single manager work uniformly with
+# `Authority::OwnerControlled` (Ownable2Step owner), `Authority::AuthControlled` (account auth
+# scheme), and `Authority::RbacControlled` (per-procedure roles: `block_account` and
+# `unblock_account` can share one role, e.g. a BLOCKLISTER role, or be gated by distinct roles).
+#
+# Companion components required on the faucet:
+# - `Authority` — provides the auth dispatch the body calls into.
+# - `BasicBlocklist` (or any other component that installs the `blocked_accounts` storage slot)
+#   — provides the storage that `block_account` / `unblock_account` write to.
+
+use miden::standards::access::authority
+use miden::standards::faucets::policies::transfer::blocklist
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Block an account, gated by the account-wide `Authority` component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc block_account
+    exec.authority::assert_authorized
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.blocklist::block_account
+    # => [pad(16)]
+end
+
+#! Unblock an account, gated by the account-wide `Authority` component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc unblock_account
+    exec.authority::assert_authorized
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.blocklist::unblock_account
+    # => [pad(16)]
+end
