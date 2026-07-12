@@ -27,6 +27,9 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
+mod pause_action;
+pub use pause_action::{PauseAction, PauseActionNote};
+
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
@@ -57,6 +60,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    PAUSE_ACTION,
     OWNER_ACTION,
     RBAC_ACTION,
 }
@@ -92,6 +96,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == PauseActionNote::script_root() {
+            return Some(Self::PAUSE_ACTION);
+        }
         if root == OwnerActionNote::script_root() {
             return Some(Self::OWNER_ACTION);
         }
@@ -114,6 +121,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
         }
@@ -128,6 +136,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
             // OwnerAction storage is variable per action; this returns the upper bound.
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
             // RbacAction storage is variable per action; this returns the upper bound.
@@ -144,6 +153,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
         }
@@ -158,6 +168,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),
         }

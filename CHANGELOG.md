@@ -2,6 +2,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added the `PauseActionNote` (`PauseAction`) for triggering `PausableManager` admin actions (pause / unpause) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes the note sender through the account-wide `Authority` component ([#3258](https://github.com/0xMiden/protocol/pull/3258)).
 - [BREAKING] P2IDE now reclaims against a `reclaimer` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
 - Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
 - [BREAKING] Unified the MINT and BURN note scripts to serve both fungible and non-fungible faucets: the single `mint` / `burn` note now detects the faucet kind by reflection (the `CodeInspection` component's `has_procedure`, which the fungible and non-fungible faucet components now expose) and calls the matching `mint_and_send` / `receive_and_burn`. Removed the `mint_nft` / `burn_nft` note scripts and the `NonFungibleMintNote` / `NonFungibleBurnNote` / `NonFungibleMintNoteStorage` types; `MintNote` / `BurnNote` and `MintNoteStorage` (with fungible and non-fungible variants) now cover both faucet kinds ([#3222](https://github.com/0xMiden/protocol/pull/3222)).

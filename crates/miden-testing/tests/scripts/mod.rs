@@ -10,6 +10,7 @@ mod owner_action;
 mod p2id;
 mod p2ide;
 mod pausable;
+mod pause_action;
 mod pswap;
 mod rbac;
 mod rbac_action;
