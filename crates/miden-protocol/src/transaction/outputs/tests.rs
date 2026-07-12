@@ -4,12 +4,7 @@ use assert_matches::assert_matches;
 
 use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
-use crate::assembly::mast::{
-    ExternalNodeBuilder,
-    JoinNodeBuilder,
-    MastForest,
-    MastForestContributor,
-};
+use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};

@@ -64,9 +64,9 @@ impl NoteRecipient {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Reduces the size of the note script by compacting its MAST forest.
+    /// Removes debug info associated with the script, if any.
     pub fn minify_script(&mut self) {
-        self.script.compact();
+        self.script.clear_debug_info();
     }
 
     /// Consumes self and returns the underlying parts of the [`NoteRecipient`].
