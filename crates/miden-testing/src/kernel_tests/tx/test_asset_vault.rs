@@ -46,7 +46,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{ASSET_ID}
-            call.mock_account::get_balance
+            call.mock_account::get_active_account_balance
             # => [balance, pad(15)]
 
             # truncate the stack
@@ -166,7 +166,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_ID}
-            call.mock_account::has_non_fungible_asset
+            call.mock_account::has_asset
 
             # truncate the stack
             exec.sys::truncate_stack

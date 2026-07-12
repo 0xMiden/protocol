@@ -35,7 +35,6 @@ const MOCK_ACCOUNT_CODE: &str = "
 
     pub use {receive_asset} from miden::standards::wallets::basic
     pub use {move_asset_to_note} from miden::standards::wallets::basic
-    pub use {create_note} from miden::standards::note::note_creator
 
     # Note: all account's export procedures below should be only called or dyncall'ed, so it
     # is assumed that the operand stack at the beginning of their execution is pad'ed and
@@ -207,7 +206,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET_ID, pad(12)]
     #! Outputs: [balance, pad(15)]
     @account_procedure
-    pub proc get_balance
+    pub proc get_active_account_balance
         exec.fungible_asset::get_active_account_balance
         # => [balance, pad(15)]
     end
@@ -215,7 +214,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET_ID, pad(12)]
     #! Outputs: [init_balance, pad(15)]
     @account_procedure
-    pub proc get_initial_balance
+    pub proc get_initial_native_account_balance
         exec.fungible_asset::get_initial_native_account_balance
         # => [init_balance, pad(15)]
     end
@@ -223,7 +222,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET_ID, pad(12)]
     #! Outputs: [has_asset, pad(15)]
     @account_procedure
-    pub proc has_non_fungible_asset
+    pub proc has_asset
         exec.active_account::has_asset
         # => [has_asset, pad(15)]
     end
@@ -312,56 +311,12 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [FINAL_ASSET_VALUE, pad(12)]
     end
 
-    #! Creates a note with hardcoded default recipient/type/tag from the account context.
-    #!
-    #! Inputs:  [pad(16)]
-    #! Outputs: [note_idx, pad(15)]
+    #! Inputs:  [tag, note_type, RECIPIENT, pad(10)]
+    #! Outputs: [note_idx]
     @account_procedure
-    pub proc create_default_note
-        push.1.2.3.4           # = RECIPIENT
-        push.NOTE_TYPE_PRIVATE # = NoteType::Private
-        push.0                 # = NoteTag
-        # => [tag, note_type, RECIPIENT, pad(16)]
-
+    pub proc create_note
         exec.output_note::create
-        # => [note_idx, pad(16)]
-
-        # the pushes above overflow the 16-element window; truncate so the account procedure
-        # returns at most 16 elements as required by the `call` convention
-        exec.sys::truncate_stack
         # => [note_idx, pad(15)]
-    end
-
-    #! Creates a default note and adds the provided asset to it from the account context.
-    #!
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [pad(16)]
-    @account_procedure
-    pub proc create_default_note_with_asset
-        exec.create_default_note
-        # => [note_idx, ASSET_ID, ASSET_VALUE, pad(7)]
-
-        movdn.8
-        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-        exec.output_note::add_asset
-        # => [pad(16)]
-    end
-
-    #! Creates a default note and moves the provided asset to it from the account context.
-    #!
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [pad(16)]
-    @account_procedure
-    pub proc create_default_note_with_moved_asset
-        exec.create_default_note
-        # => [note_idx, ASSET_ID, ASSET_VALUE, pad(7)]
-
-        movdn.8
-        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-        call.wallet::move_asset_to_note
-        # => [pad(16)]
     end
 
     #! Inputs:  [pad(16)]

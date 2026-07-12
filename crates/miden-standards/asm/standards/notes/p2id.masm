@@ -135,7 +135,8 @@ end
 #! - target_id_suffix is the suffix felt of the target account ID.
 #! - target_id_prefix is the prefix felt of the target account ID.
 #! - tag is the note tag to be included in the note.
-#! - note_type is the storage type of the note (1 = public, 2 = private).
+#! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
+#!   or off-chain).
 #! - SERIAL_NUM is the serial number of the note (4 elements).
 #! - note_idx is the index of the created note.
 #!

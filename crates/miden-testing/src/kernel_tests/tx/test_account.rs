@@ -1222,7 +1222,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            call.mock_account::get_balance
+            call.mock_account::get_active_account_balance
             # => [final_balance, pad(15)]
 
             # assert final balance is correct
@@ -1232,7 +1232,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            call.mock_account::get_initial_balance
+            call.mock_account::get_initial_native_account_balance
             # => [init_balance, pad(15)]
 
             # assert initial balance is correct
@@ -1276,7 +1276,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            call.mock_account::get_balance
+            call.mock_account::get_active_account_balance
             # => [final_balance, pad(15)]
 
             # assert final balance is correct
@@ -1286,7 +1286,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            call.mock_account::get_initial_balance
+            call.mock_account::get_initial_native_account_balance
             # => [init_balance, pad(15)]
 
             # assert initial balance is correct
@@ -1353,8 +1353,6 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let remove_existing_source = format!(
         r#"
         use miden::core::sys
-        use miden::protocol::active_account
-        use miden::protocol::native_account
         use mock::account as mock_account
         use mock::util
 
@@ -1371,7 +1369,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the current asset balance
             push.{ASSET_ID}
-            call.mock_account::get_balance
+            call.mock_account::get_active_account_balance
             # => [final_balance, pad(15)]
 
             # assert final balance is correct
@@ -1381,7 +1379,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            call.mock_account::get_initial_balance
+            call.mock_account::get_initial_native_account_balance
             # => [init_balance, pad(15)]
 
             # assert initial balance is correct

@@ -18,14 +18,22 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 // Note: note creation must originate from the account context. These helpers therefore delegate to
 // the account procedures exposed by the mock account, which perform the actual creation.
 const MOCK_UTIL_LIBRARY_CODE: &str = "
+    use miden::protocol::output_note
+    use {NOTE_TYPE_PRIVATE} from miden::protocol::note
     use miden::standards::wallets::basic as wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
     pub proc create_default_note
-        call.::mock::account::create_default_note
+        padw padw push.0.0
+        push.1.2.3.4           # = RECIPIENT
+        push.NOTE_TYPE_PRIVATE # = NoteType::Private
+        push.0                 # = NoteTag
+        # => [tag, note_type, RECIPIENT, pad(16)]
 
-        # drop the 15 pad elements the account-procedure call convention leaves
+        call.::mock::account::create_note
+        # => [note_idx, pad(16)]
+
         movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx]
     end
@@ -33,20 +41,26 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_asset
-        call.::mock::account::create_default_note_with_asset
+        exec.create_default_note
+        # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-        # drop the pad elements the account-procedure call convention leaves
-        dropw dropw dropw dropw
+        movdn.8
+        # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+        exec.output_note::add_asset
         # => []
     end
 
     #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_moved_asset
-        call.::mock::account::create_default_note_with_moved_asset
+        exec.create_default_note
+        # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-        # drop the pad elements the account-procedure call convention leaves
-        dropw dropw dropw dropw
+        movdn.8
+        # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+        exec.move_asset_to_note
         # => []
     end
 
