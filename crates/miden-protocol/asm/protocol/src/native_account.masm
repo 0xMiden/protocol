@@ -1,5 +1,3 @@
-use miden::protocol::asset
-use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
 use {
     ACCOUNT_ADD_ASSET_OFFSET,
     ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET,
@@ -14,16 +12,14 @@ use {
     ACCOUNT_REMOVE_ASSET_OFFSET,
     ACCOUNT_SET_ITEM_OFFSET,
     ACCOUNT_SET_MAP_ITEM_OFFSET,
+    ACCOUNT_UPGRADE_OFFSET,
     ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET,
 } from miden::protocol::kernel_proc_offsets
+use miden::core::word
+use { AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
-
-# ERRORS
-# -------------------------------------------------------------------------------------------------
-
-const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
 
 # ID AND NONCE
 # -------------------------------------------------------------------------------------------------
@@ -38,7 +34,7 @@ const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance ca
 #!   transaction.
 #!
 #! Invocation: exec
-pub proc get_id
+pub proc get_id() -> AccountId
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -74,7 +70,7 @@ end
 #! - the nonce has already been incremented.
 #!
 #! Invocation: exec
-pub proc incr_nonce
+pub proc incr_nonce() -> felt
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -115,7 +111,7 @@ end
 #!
 #! Panics if:
 #! - the vault or storage patch is not empty but the nonce increment is zero.
-pub proc compute_delta_commitment
+pub proc compute_delta_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -131,6 +127,39 @@ pub proc compute_delta_commitment
     # => [DELTA_COMMITMENT]
 end
 
+#! Records the commitments describing an upgrade of the native account's code and storage.
+#!
+#! This procedure is currently a no-op beyond storing the two commitments in kernel memory; the
+#! actual application of the upgrade is not yet implemented, and the commitment formats are not yet
+#! defined.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
+    # pad the stack
+    padw push.0.0.0 push.ACCOUNT_UPGRADE_OFFSET
+    swapdw
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, offset, pad(7)]
+
+    movup.8
+    # => [offset, CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(7)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    # clean the stack
+    dropw dropw dropw dropw
+end
+
 #! Returns the commitment of the native account at the beginning of the transaction.
 #!
 #! Inputs:  []
@@ -143,7 +172,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_commitment
+pub proc get_initial_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -176,7 +205,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_storage_commitment
+pub proc get_initial_storage_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -204,7 +233,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_vault_root
+pub proc get_initial_vault_root() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -239,7 +268,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_item
+pub proc set_item(slot_id: StorageSlotId, value: word) -> word
     push.ACCOUNT_SET_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, VALUE]
 
@@ -275,7 +304,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc set_map_item
+pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, value: word) -> word
     push.ACCOUNT_SET_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
@@ -313,7 +342,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_item
+pub proc get_initial_item(slot_id: StorageSlotId) -> word
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -350,7 +379,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_map_item
+pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY]
 
@@ -387,7 +416,7 @@ end
 #! - the vault already contains the same non-fungible asset.
 #!
 #! Invocation: exec
-pub proc add_asset
+pub proc add_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -420,7 +449,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: exec
-pub proc remove_asset
+pub proc remove_asset(asset: Asset) -> AssetValue
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -451,7 +480,7 @@ end
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_asset
+pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
     push.ACCOUNT_GET_INITIAL_ASSET_OFFSET
     # => [offset, ASSET_ID]
 
@@ -468,34 +497,27 @@ pub proc get_initial_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the balance of the fungible asset associated with the provided asset ID in the
-#! native account's vault at the beginning of the transaction.
+#! Returns a boolean indicating whether the native account's vault contained an asset with the
+#! provided asset ID at the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_ID]
-#! Outputs: [init_balance]
+#! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET_ID is the asset ID of the fungible asset of interest.
-#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
+#! - ASSET_ID is the asset ID of the asset to check.
+#! - has_asset is a boolean indicating whether the account vault had the asset.
 #!
 #! Panics if:
-#! - the asset composition encoded in ASSET_ID is not fungible.
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: exec
-pub proc get_initial_balance
-    # assert that the asset composition is fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_FUNGIBLE
-    assert_eq.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
+pub proc has_initial_asset(asset_id: AssetId) -> Bool
     exec.get_initial_asset
     # => [ASSET_VALUE]
 
-    # extract the asset's balance
-    exec.asset::fungible_value_into_amount
-    # => [balance]
+    # compare with EMPTY_WORD to assess if the asset existed in the vault
+    exec.word::eqz not
+    # => [has_asset]
 end
 
 # CODE
@@ -515,7 +537,7 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc was_procedure_called
+pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
     # => [offset, PROC_ROOT]
 

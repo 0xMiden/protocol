@@ -87,6 +87,6 @@ pub proc validate_origin
     movup.11 movup.11
     # => [faucet_id_suffix, faucet_id_prefix, asset_faucet_id_suffix, asset_faucet_id_prefix, ASSET_ID, ASSET_VALUE]
 
-    exec.account_id::is_equal assert.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
+    exec.account_id::eq assert.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
     # => [ASSET_ID, ASSET_VALUE]
 end

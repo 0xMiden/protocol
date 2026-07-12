@@ -4,22 +4,13 @@ use alloc::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountType,
-    StorageSlot,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NO_NOMINATED_OWNER,
     ERR_SENDER_NOT_NOMINATED_OWNER,
@@ -31,37 +22,26 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 // HELPERS
 // ================================================================================================
 
-fn create_ownable_account(
-    owner: AccountId,
-    initial_storage: Vec<StorageSlot>,
-) -> anyhow::Result<Account> {
-    let component_code = r#"
-        use miden::standards::access::ownable2step
-        pub use {get_owner, get_nominated_owner, transfer_ownership, accept_ownership, renounce_ownership} from miden::standards::access::ownable2step
-    "#;
-    let component_code_obj =
-        CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
-
-    let mut storage_slots = initial_storage;
-    storage_slots.push(Ownable2Step::new(owner).to_storage_slot());
-
+/// Builds an account carrying the `Ownable2Step` component, owned by `owner`.
+///
+/// Shared with the `owner_action` note test suite.
+pub(super) fn create_ownable_account(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_component({
-            let metadata = AccountComponentMetadata::new("test::ownable");
-            AccountComponent::new(component_code_obj, storage_slots, metadata)?
-        })
+        .with_component(Ownable2Step::new(owner))
         .build_existing()?;
     Ok(account)
 }
 
-fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
+pub(super) fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
     let ownable = Ownable2Step::try_from_storage(account.storage())?;
     Ok(ownable.owner())
 }
 
-fn get_nominated_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
+pub(super) fn get_nominated_owner_from_storage(
+    account: &Account,
+) -> anyhow::Result<Option<AccountId>> {
     let ownable = Ownable2Step::try_from_storage(account.storage())?;
     Ok(ownable.nominated_owner())
 }
@@ -177,7 +157,7 @@ async fn test_transfer_ownership_only_owner() -> anyhow::Result<()> {
     let non_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([3; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -204,7 +184,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
 
     // Step 1: transfer ownership
     let mut builder = MockChain::builder();
@@ -260,7 +240,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
     let wrong = AccountIdBuilder::new().build_with_seed([3; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
 
     // Step 1: transfer
     let mut builder = MockChain::builder();
@@ -306,7 +286,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
 async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -333,7 +313,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
 
     // Step 1: transfer
     let mut builder = MockChain::builder();
@@ -385,7 +365,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
 async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -415,7 +395,7 @@ async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
 async fn test_renounce_ownership() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -449,7 +429,7 @@ async fn test_renounce_ownership_clears_pending_nomination() -> anyhow::Result<(
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
 
     // Step 1: nominate a new owner (pending transfer).
     let mut builder = MockChain::builder();
@@ -503,7 +483,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
 
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
-    let account = create_ownable_account(owner, vec![])?;
+    let account = create_ownable_account(owner)?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 

@@ -384,7 +384,7 @@ proc process_account_data
     # assert the account ID matches the account ID in global inputs
     exec.memory::get_global_account_id
     exec.memory::get_account_id
-    exec.account_id::is_equal assert.err=ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER
+    exec.account_id::eq assert.err=ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER
     # => [ACCOUNT_COMMITMENT]
 
     # store a copy of the initial nonce in global inputs
