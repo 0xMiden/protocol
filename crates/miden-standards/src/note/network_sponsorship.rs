@@ -63,11 +63,12 @@ static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// # Reclaim
 ///
-/// Anyone other than the target may only reclaim the note back to its `reclaimer`, once
-/// `reclaim_height` is reached. This is load-bearing rather than a convenience: if the bound
-/// feature note is consumed by some other transaction, this note's presence check can never pass
-/// again, and reclaim is the only way to recover the assets. The reclaimer is stored in the note
-/// and defaults to the sender.
+/// Every consumption other than the target-with-feature-note path is a reclaim: the note returns
+/// to its `reclaimer`, once `reclaim_height` is reached. This applies to the target itself when
+/// the feature note is absent (a self-targeted chained sponsorship reclaims this way). Reclaim is
+/// load-bearing rather than a convenience: if the bound feature note is consumed by some other
+/// transaction, this note's presence check can never pass again, and reclaim is the only way to
+/// recover the assets. The reclaimer is stored in the note and defaults to the sender.
 #[derive(Debug, Clone)]
 pub struct NetworkSponsorshipNote {
     sender: AccountId,

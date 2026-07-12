@@ -7,7 +7,6 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::{
-    ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT,
     ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED,
     ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
@@ -107,6 +106,8 @@ async fn target_consumes_sponsorship_with_feature_note() -> anyhow::Result<()> {
 ///
 /// This is the check that protects the sponsor. Without it, the network account (or the transaction
 /// builder that assembles the transaction) could pocket the fee and never run the feature note.
+/// A target without the feature note gets no special treatment: it falls into the reclaim path,
+/// which is disabled here.
 #[tokio::test]
 async fn target_cannot_consume_sponsorship_without_feature_note() -> anyhow::Result<()> {
     let f = setup(None)?;
@@ -119,7 +120,29 @@ async fn target_cannot_consume_sponsorship_without_feature_note() -> anyhow::Res
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_FEATURE_NOTE_ABSENT);
+    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED);
+
+    Ok(())
+}
+
+/// Even with reclaim enabled and its height reached, a target without the feature note cannot take
+/// the assets: the reclaim path returns them to the reclaimer, and the target is not the reclaimer.
+#[tokio::test]
+async fn target_without_feature_note_is_not_the_reclaimer() -> anyhow::Result<()> {
+    let f = setup(Some(BlockNumber::from(1u32)))?;
+
+    let result = f
+        .mock_chain
+        .build_transaction(f.network_account.id())
+        .authenticated_input_note(f.sponsorship_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
+    );
 
     Ok(())
 }
