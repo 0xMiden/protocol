@@ -1,57 +1,8 @@
-use miden::protocol::asset
-use miden::protocol::active_account
 use {
     FAUCET_BURN_ASSET_OFFSET,
     FAUCET_MINT_ASSET_OFFSET,
 } from miden::protocol::kernel_proc_offsets
-
-#! Creates a fungible asset for the faucet the transaction is being executed against.
-#!
-#! Inputs:  [amount]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - amount is the amount of the asset to create.
-#! - ASSET_ID is the asset ID of the created fungible asset.
-#! - ASSET_VALUE is the value of the created fungible asset.
-#!
-#! Panics if:
-#! - the active account is not a fungible faucet.
-#!
-#! Invocation: exec
-pub proc create_fungible_asset
-    # fetch the id of the faucet the transaction is being executed against.
-    exec.active_account::get_id
-    # => [id_suffix, id_prefix, amount]
-
-    # create the fungible asset
-    exec.asset::create_fungible_asset
-    # => [ASSET_ID, ASSET_VALUE]
-end
-
-#! Creates a non-fungible asset for the faucet the transaction is being executed against.
-#!
-#! Inputs:  [DATA_HASH]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
-#!
-#! Where:
-#! - DATA_HASH is the data hash of the non-fungible asset to create.
-#! - ASSET_ID is the asset ID of the created non-fungible asset.
-#! - ASSET_VALUE is the value of the created non-fungible asset.
-#!
-#! Panics if:
-#! - the active account is not a non-fungible faucet.
-#!
-#! Invocation: exec
-pub proc create_non_fungible_asset
-    # fetch the id of the faucet the transaction is being executed against
-    exec.active_account::get_id
-    # => [id_suffix, id_prefix, DATA_HASH]
-
-    # build the non-fungible asset
-    exec.asset::create_non_fungible_asset
-    # => [ASSET_ID, ASSET_VALUE]
-end
+use { Asset } from miden::protocol::types
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
@@ -70,7 +21,7 @@ end
 #! - for non-fungible faucets if the non-fungible asset being minted already exists.
 #!
 #! Invocation: exec
-pub proc mint
+pub proc mint(asset: Asset)
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]
@@ -96,9 +47,7 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
-#! - the transaction is not being executed against a faucet.
-#! - the asset being burned is not associated with the faucet the transaction is being executed
-#!   against.
+#! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - for fungible faucets if the amount being burned is greater than the total input to the
 #!   transaction.
@@ -106,7 +55,7 @@ end
 #!   provided as input to the transaction via a note or the accounts vault.
 #!
 #! Invocation: exec
-pub proc burn
+pub proc burn(asset: Asset)
     # pad the stack
     padw padw swapdw movup.8 drop
     # => [ASSET_ID, ASSET_VALUE, pad(7)]

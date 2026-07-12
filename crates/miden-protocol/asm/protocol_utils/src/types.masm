@@ -1,0 +1,5 @@
+# TYPE ALIASES
+# =================================================================================================
+
+# Two-felt identifier (suffix on top of the stack, prefix below).
+pub type AccountId = struct { suffix: felt, prefix: felt }

@@ -82,8 +82,13 @@ pub enum TransactionEventId {
 impl TransactionEventId {
     /// Returns `true` if the event is privileged, i.e. it is only allowed to be emitted from the
     /// root context of the VM, which is where the transaction kernel executes.
+    ///
+    /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged = matches!(self, Self::AuthRequest | Self::Unauthorized);
+        let is_unprivileged = matches!(
+            self,
+            Self::AuthRequest | Self::Unauthorized | Self::LinkMapSet | Self::LinkMapGet
+        );
         !is_unprivileged
     }
 

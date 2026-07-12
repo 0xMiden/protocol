@@ -203,7 +203,7 @@ pub proc accept_ownership
     # => [sender_suffix, sender_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     dup.3 dup.3
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_sender_nominated_owner, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
     assert.err=ERR_SENDER_NOT_NOMINATED_OWNER
@@ -324,7 +324,7 @@ proc is_owner_internal
     exec.get_owner_internal
     # => [owner_suffix, owner_prefix, account_id_suffix, account_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_owner]
 end
 
@@ -340,6 +340,6 @@ proc is_nominated_owner_internal
     exec.get_nominated_owner_internal
     # => [nominated_owner_suffix, nominated_owner_prefix, account_id_suffix, account_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_nominated_owner]
 end

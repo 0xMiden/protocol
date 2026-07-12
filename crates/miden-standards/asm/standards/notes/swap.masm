@@ -134,7 +134,7 @@ pub proc main
     # --- move offered asset from the SWAP note into the consumer's account
 
     # store the number of note assets to memory starting at address ASSET_PTR
-    push.ASSET_PTR exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(8)]
 
     # make sure the number of assets is 1
