@@ -207,7 +207,7 @@ end
 #! Creates a P2ID output note for the swap creator.
 #!
 #! Derives a unique serial number by incrementing the least significant element
-#! of the provided serial, creates the output note using p2id::new, sets the
+#! of the provided serial, creates the output note using p2id::create_output_note, sets the
 #! attachment, and adds the requested assets (from the consumer's account vault
 #! and/or from another note in the same transaction).
 #!
@@ -235,7 +235,7 @@ proc create_p2id_note
     movdn.2
     # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
 
-    exec.p2id::new
+    exec.p2id::create_output_note
     # => [note_idx, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     loc_store.P2ID_NOTE_IDX

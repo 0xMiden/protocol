@@ -76,8 +76,9 @@ end
 #!
 #! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
 #! already inside an account procedure and can create the note directly via
-#! `exec.output_note::create`. Otherwise use `p2id::new`, which routes creation through the
-#! account's `create_note` procedure and can therefore be used from note or transaction scripts.
+#! `exec.output_note::create`. Otherwise use `p2id::create_output_note`, which routes creation
+#! through the account's `create_note` procedure and can therefore be used from note or transaction
+#! scripts.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [tag, note_type, RECIPIENT]
@@ -92,7 +93,7 @@ end
 #!
 #! Invocation: exec
 @locals(2)
-pub proc create_parts
+pub proc prepare_note
     # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
     loc_store.TARGET_ACCOUNT_ID_SUFFIX_PTR loc_store.TARGET_ACCOUNT_ID_PREFIX_PTR
@@ -120,9 +121,9 @@ end
 #! Creates a new P2ID output note from the given inputs and returns its index.
 #!
 #! Note creation must originate from the account context, so this procedure routes creation through
-#! the account's `note_creator::create_note` procedure. This lets `p2id::new` be used from contexts
-#! outside the account code, such as note or transaction scripts. Callers that are already inside an
-#! account procedure should instead use `p2id::create_parts` together with
+#! the account's `note_creator::create_note` procedure. This lets `p2id::create_output_note` be used
+#! from contexts outside the account code, such as note or transaction scripts. Callers that are
+#! already inside an account procedure should instead use `p2id::prepare_note` together with
 #! `exec.output_note::create`.
 #!
 #! Requires that the account exposes:
@@ -141,8 +142,8 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Invocation: exec
-pub proc new
-    exec.create_parts
+pub proc create_output_note
+    exec.prepare_note
     # => [tag, note_type, RECIPIENT]
 
     # pad the stack before `call`

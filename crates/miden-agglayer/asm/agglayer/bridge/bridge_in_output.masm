@@ -127,7 +127,7 @@ pub proc unlock_and_send
     dropw
     # => []
 
-    # Build p2id::create_parts's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from
+    # Build p2id::prepare_note's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from
     # the bottom up.
     padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
@@ -144,7 +144,7 @@ pub proc unlock_and_send
     loc_load.UNLOCK_DEST_PREFIX_LOC loc_load.UNLOCK_DEST_SUFFIX_LOC
     # => [dest_suffix, dest_prefix, dest_tag, note_type, SERIAL_NUM]
 
-    exec.p2id::create_parts
+    exec.p2id::prepare_note
     # => [tag, note_type, RECIPIENT]
 
     exec.output_note::create

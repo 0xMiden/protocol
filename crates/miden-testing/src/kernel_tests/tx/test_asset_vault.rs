@@ -191,7 +191,7 @@ async fn test_has_initial_asset() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use mock::account
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
@@ -199,20 +199,20 @@ async fn test_has_initial_asset() -> anyhow::Result<()> {
             # the asset is present in the initial vault. `has_initial_asset` reads the account's
             # initial vault, so it must be invoked from the account context via `call`.
             push.{NON_FUNGIBLE_ASSET_ID}
-            call.account::has_initial_asset
+            call.mock_account::has_initial_asset
             # => [has_asset_before, pad(15)]
 
             # remove the asset from the account's current vault
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_ID}
-            call.account::remove_asset
+            call.mock_account::remove_asset
             # => [FINAL_ASSET_VALUE, has_asset_before]
             dropw
             # => [has_asset_before]
 
             # has_initial_asset still reports it since it reads the initial vault
             push.{NON_FUNGIBLE_ASSET_ID}
-            call.account::has_initial_asset
+            call.mock_account::has_initial_asset
             # => [has_asset_after, has_asset_before]
 
             # truncate the stack

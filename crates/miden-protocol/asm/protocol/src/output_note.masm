@@ -27,8 +27,7 @@ use {
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.

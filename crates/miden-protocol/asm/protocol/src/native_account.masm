@@ -112,8 +112,7 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the native account.
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment() -> word
     # pad the stack
@@ -541,8 +540,7 @@ end
 #! - was_called is 1 if the procedure was called, 0 otherwise.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool

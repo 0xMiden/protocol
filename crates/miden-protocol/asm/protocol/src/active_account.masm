@@ -64,8 +64,7 @@ end
 #! - nonce is the active account's nonce.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc get_nonce() -> felt
@@ -96,8 +95,7 @@ end
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc compute_commitment() -> word
@@ -197,8 +195,7 @@ end
 #! - VAULT_ROOT is the root of the account vault.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc get_vault_root() -> word
@@ -333,8 +330,7 @@ end
 #!   present.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc get_asset(asset_id: AssetId) -> AssetValue
@@ -365,8 +361,7 @@ end
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc has_asset(asset_id: AssetId) -> Bool
@@ -387,8 +382,7 @@ end
 #! - num_procedures is the number of procedures in the active account.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc get_num_procedures() -> u16
@@ -417,8 +411,7 @@ end
 #! - PROC_ROOT is the hash of the procedure.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: exec
@@ -455,8 +448,7 @@ end
 #!   available on the active account.
 #!
 #! Panics if:
-#! - the procedure is not invoked from the account context (it was called outside of the account
-#!   code).
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool

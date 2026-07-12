@@ -29,8 +29,8 @@ use miden_standards::account::auth::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -428,7 +428,13 @@ async fn test_guarded_multisig_update_guardian_public_key(
     Ok(())
 }
 
-/// Tests that `update_guardian_public_key` must be the only account action in the transaction.
+/// Tests that a `update_guardian_public_key` rotation must not touch notes, and that a valid
+/// guardian signature does not bypass that requirement.
+///
+/// The rotation is combined with an input note (which invokes `receive_asset`) and, separately,
+/// with an output note (created via `create_note`). Both are rejected: `guardian.masm` checks the
+/// input- and output-note guards before `assert_only_one_non_auth_procedure_called`, so the
+/// note-specific errors surface first.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -514,7 +520,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .await;
     assert_transaction_executor_error!(
         without_guardian_result,
-        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
     );
 
     let old_guardian_signature = old_guardian_authenticator
@@ -531,7 +537,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 
     assert_transaction_executor_error!(
         with_guardian_result,
-        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
     );
 
     // Also reject rotation transactions that touch notes even when no other account procedure is
@@ -594,10 +600,9 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .execute()
         .await;
 
-    // Creating the output note requires calling the account's `create_note` procedure, which is a
-    // second non-auth procedure. `assert_only_one_non_auth_procedure_called` therefore fires before
-    // the output-note check is ever reached.
-    assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+    // The rotation creates an output note (and no input notes), so the output-note guard - which
+    // runs before `assert_only_one_non_auth_procedure_called` - rejects it.
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES);
 
     Ok(())
 }
@@ -738,21 +743,18 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .execute()
         .await;
 
-    // A consumed input note that does not invoke an account procedure trips
-    // `assert_no_input_notes`. An output note, however, can only be created by calling the
-    // account's `create_note` procedure, which counts as a second non-auth procedure, so
-    // `assert_only_one_non_auth_procedure_called` fires before the output-note check (and, when
-    // both are present, before the input check) is reached.
+    // Input check fires first, output check fires only when no input notes are present.
     match (include_input_note, include_output_note) {
         (false, false) => {
             result.expect("tx must succeed when neither input nor output notes are present");
         },
-        (_, true) => {
-            assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE)
-        },
-        (true, false) => assert_transaction_executor_error!(
+        (true, _) => assert_transaction_executor_error!(
             result,
             ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
+        ),
+        (false, true) => assert_transaction_executor_error!(
+            result,
+            ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
         ),
     }
 
