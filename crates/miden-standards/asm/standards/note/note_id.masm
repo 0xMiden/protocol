@@ -42,7 +42,7 @@ const LOOP_INDEX_PTR = 5
 # PROCEDURES
 # ================================================================================================
 
-#! Merges the four note commitments into the note ID.
+#! Computes the note ID from the four note commitments.
 #!
 #! The note ID is computed as:
 #! - NOTE_DETAILS_COMMITMENT  = hash(RECIPIENT || ASSETS_COMMITMENT)
@@ -60,7 +60,7 @@ const LOOP_INDEX_PTR = 5
 #! - NOTE_ID is the resulting note ID.
 #!
 #! Invocation: exec
-proc merge_note_commitments
+proc compute_note_id
     exec.poseidon2::merge
     # => [NOTE_DETAILS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
 
@@ -79,11 +79,11 @@ end
 
 #! Computes the ID of the input note at the provided index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
-#! - note_index is the index of the input note whose ID should be computed.
+#! - note_idx is the index of the input note whose ID should be computed.
 #! - NOTE_ID is the ID of the specified input note.
 #!
 #! Panics if:
@@ -93,7 +93,7 @@ end
 @locals(20)
 pub proc compute_input_note_id
     dup loc_store.NOTE_INDEX_PTR
-    # => [note_index]
+    # => [note_idx]
 
     exec.input_note::get_recipient
     loc_storew_le.RECIPIENT_PTR dropw
@@ -120,7 +120,7 @@ pub proc compute_input_note_id
     padw loc_loadw_le.RECIPIENT_PTR
     # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
 
-    exec.merge_note_commitments
+    exec.compute_note_id
     # => [NOTE_ID]
 end
 
@@ -177,11 +177,11 @@ end
 #! The returned ID is only final once the note has been fully constructed, that is, once all of its
 #! assets and attachments have been added.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
-#! - note_index is the index of the output note whose ID should be computed.
+#! - note_idx is the index of the output note whose ID should be computed.
 #! - NOTE_ID is the ID of the specified output note.
 #!
 #! Panics if:
@@ -191,7 +191,7 @@ end
 @locals(20)
 pub proc compute_output_note_id
     dup loc_store.NOTE_INDEX_PTR
-    # => [note_index]
+    # => [note_idx]
 
     exec.output_note::get_recipient
     loc_storew_le.RECIPIENT_PTR dropw
@@ -218,6 +218,6 @@ pub proc compute_output_note_id
     padw loc_loadw_le.RECIPIENT_PTR
     # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
 
-    exec.merge_note_commitments
+    exec.compute_note_id
     # => [NOTE_ID]
 end

@@ -58,7 +58,7 @@ static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// sponsor trusts neither the network account nor the transaction builder, but does choose the
 /// note's script root.
 ///
-/// The mirror-image check -- that a feature note is not consumed *without* sponsorship -- costs the
+/// The mirror-image check (that a feature note is not consumed *without* sponsorship) costs the
 /// account rather than the sponsor, and so lives in the account's auth procedure.
 ///
 /// # Reclaim

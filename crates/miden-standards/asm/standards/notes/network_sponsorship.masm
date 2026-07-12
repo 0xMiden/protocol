@@ -151,27 +151,28 @@ end
 #! The note carries the fee for exactly one feature note, named by the note ID in its fee
 #! sponsorship attachment. The feature note itself stays entirely fee-unaware.
 #!
-#! Two checks guard the two ways the pair can come apart, and each sits with the party it protects:
+#! The sponsorship and the feature note it sponsors must be consumed together. Two checks enforce
+#! this, and each sits with the party it protects:
 #! - Consuming the sponsorship without its feature note costs the *sponsor*, so this script rejects
 #!   it.
 #! - Consuming a feature note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
 #! If the target account never consumes the note, the reclaimer may reclaim it once the reclaim
-#! block height is reached. That path is not a nicety: once the bound feature note is consumed by
-#! some other transaction, the presence check can never pass again and reclaim is the only way out.
-#! When the reclaimer is also the target -- a self-spawning chain sponsoring its own next hop -- the
-#! same reclaim applies once the feature note can no longer be presented. The reclaimer is named in
-#! the note storage; the creator sets it, defaulting to the sender.
+#! block height is reached. Once the bound feature note is consumed by some other transaction, the
+#! presence check can never pass again and reclaim is the only way to recover the assets. When the
+#! reclaimer is also the target (a self-spawning chain sponsoring its own next hop), the same
+#! reclaim applies once the feature note can no longer be presented. The reclaimer is named in the
+#! note storage; the creator sets it, defaulting to the sender.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
-#! Inputs:  [ARGS, pad(12)]
+#! Inputs:  [NOTE_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ARGS are the note arguments, which this script ignores.
+#! - NOTE_ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
 #! - reclaimer_{suffix, prefix} identify the account allowed to reclaim the note.
@@ -199,6 +200,8 @@ pub proc main
     exec.network_account_target::active_account_matches_target_account
     # => [is_target, pad(16)]
 
+    # only the target scans the input notes for the bound feature note; for anyone else the
+    # sponsorship path is closed
     if.true
         exec.is_bound_feature_note_present
         # => [is_present, pad(16)]
@@ -206,16 +209,15 @@ pub proc main
         push.0
         # => [is_present = 0, pad(16)]
     end
-    # => [is_sponsorship, pad(16)]
+    # => [is_sponsorship = is_target AND is_present, pad(16)]
 
+    # sponsorship path: the target keeps the assets alongside the feature note it pays for
     if.true
-        # the targeted network account is consuming the note: it may keep the sponsorship alongside
-        # the feature note it pays for
         exec.basic_wallet::add_assets_to_account
         # => [pad(16)]
     else
-        # everyone else -- including the target without the feature note -- may only reclaim the
-        # note back to its reclaimer
+        # reclaim path: everyone else, including the target without the feature note, may only
+        # reclaim the note back to its reclaimer
         mem_load.RECLAIM_HEIGHT_ITEM
         # => [reclaim_block_height, pad(16)]
 

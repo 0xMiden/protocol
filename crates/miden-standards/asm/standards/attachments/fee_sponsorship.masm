@@ -70,7 +70,6 @@ end
 @locals(4)
 pub proc active_note_bound_note_id
     # find the fee sponsorship attachment, if any
-    # if there are multiple, we consider the first one the canonical one
     push.FEE_SPONSORSHIP_ATTACHMENT_SCHEME
     exec.active_note::find_attachment
     # => [is_found, attachment_idx]

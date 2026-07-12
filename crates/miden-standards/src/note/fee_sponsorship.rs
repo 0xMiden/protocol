@@ -10,7 +10,7 @@ use crate::note::StandardNoteAttachment;
 /// It carries a single word: the [`NoteId`] of the bound feature note.
 ///
 /// The binding must be on an attachment rather than in note storage because the kernel exposes no
-/// indexed accessor for an input note's storage items -- only its storage commitment. Attachments,
+/// indexed accessor for an input note's storage items, only its storage commitment. Attachments,
 /// by contrast, *are* readable by index (`input_note::write_attachment_to_memory`), which is what
 /// lets a network account's auth procedure inspect the sponsorship carried by every input note.
 ///
