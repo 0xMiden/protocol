@@ -717,12 +717,15 @@ impl MockChainBuilder {
     /// Adds a P2IDE note (pay‑to‑ID‑extended) to the list of genesis notes.
     ///
     /// A P2IDE note can include an optional `timelock_height` and/or an optional
-    /// `reclaim_height` after which the `sender_account_id` may reclaim the
-    /// funds.
+    /// `reclaim_height` after which the note's reclaimer may reclaim the funds.
+    ///
+    /// The `reclaimer` is the account allowed to reclaim the note; when `None` it
+    /// defaults to `sender_account_id`.
     pub fn add_p2ide_note(
         &mut self,
         sender_account_id: AccountId,
         target_account_id: AccountId,
+        reclaimer: Option<AccountId>,
         asset: &[Asset],
         note_type: NoteType,
         reclaim_height: Option<BlockNumber>,
@@ -731,6 +734,7 @@ impl MockChainBuilder {
         let note: Note = P2ideNote::builder()
             .sender(sender_account_id)
             .target(target_account_id)
+            .maybe_reclaimer(reclaimer)
             .assets(asset.iter().copied())
             .note_type(note_type)
             .maybe_reclaim_height(reclaim_height)

@@ -14,6 +14,7 @@ use {
     ACCOUNT_HAS_PROCEDURE_OFFSET,
 } from miden::protocol::kernel_proc_offsets
 use miden::core::word
+use { AccountId, AccountProcedureRoot, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId } from miden::protocol::types
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -30,7 +31,7 @@ use miden::core::word
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the ID of the active account.
 #!
 #! Invocation: exec
-pub proc get_id
+pub proc get_id() -> AccountId
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -63,7 +64,7 @@ end
 #! - nonce is the active account's nonce.
 #!
 #! Invocation: exec
-pub proc get_nonce
+pub proc get_nonce() -> felt
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -91,7 +92,7 @@ end
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
 #!
 #! Invocation: exec
-pub proc compute_commitment
+pub proc compute_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -129,7 +130,7 @@ end
 #! - CODE_COMMITMENT is the commitment of the account code.
 #!
 #! Invocation: exec
-pub proc get_code_commitment
+pub proc get_code_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -163,7 +164,7 @@ end
 #! - STORAGE_COMMITMENT is the commitment of the account storage.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment
+pub proc compute_storage_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -188,7 +189,7 @@ end
 #! - VAULT_ROOT is the root of the account vault.
 #!
 #! Invocation: exec
-pub proc get_vault_root
+pub proc get_vault_root() -> word
     # pad the stack for syscall invocation
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -221,7 +222,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #!
 #! Invocation: exec
-pub proc get_item
+pub proc get_item(slot_id: StorageSlotId) -> word
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -254,7 +255,7 @@ end
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc has_storage_slot
+pub proc has_storage_slot(slot_id: StorageSlotId) -> Bool
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -290,7 +291,7 @@ end
 #! - the slot item at index is not a map.
 #!
 #! Invocation: exec
-pub proc get_map_item
+pub proc get_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     push.ACCOUNT_GET_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY]
 
@@ -320,7 +321,7 @@ end
 #!   present.
 #!
 #! Invocation: exec
-pub proc get_asset
+pub proc get_asset(asset_id: AssetId) -> AssetValue
     push.ACCOUNT_GET_ASSET_OFFSET
     # => [offset, ASSET_ID]
 
@@ -348,7 +349,7 @@ end
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Invocation: exec
-pub proc has_asset
+pub proc has_asset(asset_id: AssetId) -> Bool
     exec.get_asset
     # => [ASSET_VALUE]
 
@@ -366,7 +367,7 @@ end
 #! - num_procedures is the number of procedures in the active account.
 #!
 #! Invocation: exec
-pub proc get_num_procedures
+pub proc get_num_procedures() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -395,7 +396,7 @@ end
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: exec
-pub proc get_procedure_root
+pub proc get_procedure_root(index: u8) -> AccountProcedureRoot
     # => [index]
 
     push.0.0 movup.2
@@ -428,7 +429,7 @@ end
 #!   available on the active account.
 #!
 #! Invocation: exec
-pub proc has_procedure
+pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_HAS_PROCEDURE_OFFSET
     # => [offset, PROC_ROOT]
 

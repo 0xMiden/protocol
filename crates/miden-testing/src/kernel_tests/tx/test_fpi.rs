@@ -1737,14 +1737,14 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
             # push the expected native account ID and check that it is equal to the one returned
             # from the FPI
             push.{expected_native_prefix} push.{expected_native_suffix}
-            exec.account_id::is_equal
+            exec.account_id::eq
             assert.err="native account ID returned from the FPI is not equal to the expected one"
             # => [acct_id_suffix, acct_id_prefix]
 
             # push the expected foreign account ID and check that it is equal to the one returned
             # from the FPI
             push.{foreign_prefix} push.{foreign_suffix}
-            exec.account_id::is_equal
+            exec.account_id::eq
             assert.err="foreign account ID returned from the FPI is not equal to the expected one"
             # => []
 
