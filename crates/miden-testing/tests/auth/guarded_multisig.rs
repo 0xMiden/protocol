@@ -323,7 +323,15 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "
+            @transaction_script
+            pub proc main
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                drop dropw
+            end
+            "
         ))?;
 
     let update_salt = Word::from([Felt::new_unchecked(991); 4]);
@@ -478,7 +486,15 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "
+            @transaction_script
+            pub proc main
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                drop dropw
+            end
+            "
         ))?;
 
     let mut mock_chain_builder =
@@ -560,7 +576,23 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_with_output_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "@transaction_script\npub proc main\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    call.::miden::standards::note::note_creator::create_note\n    movdn.15 dropw dropw dropw drop drop drop\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
+            "
+            @transaction_script
+            pub proc main
+                push.{recipient}
+                push.{note_type}
+                push.{tag}
+                call.::miden::standards::note::note_creator::create_note
+                drop
+                # => [pad(21)]
+                
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+
+                dropw dropw drop drop
+            end
+            ",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
@@ -616,7 +648,24 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_with_receive_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "use miden::standards::wallets::basic as wallet\nuse miden::core::sys\n@transaction_script\npub proc main\n    push.{asset_value}\n    push.{asset_id}\n    padw padw swapdw\n    call.wallet::receive_asset\n    dropw dropw dropw dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop dropw\n    exec.sys::truncate_stack\nend",
+            "
+            use miden::standards::wallets::basic as wallet
+            
+            @transaction_script
+            pub proc main
+                push.{asset_value}
+                push.{asset_id}
+                call.wallet::receive_asset
+                # => [pad(24)]
+
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                # => [pad(29)]
+                
+                dropw dropw dropw dropw drop
+            end
+            ",
             asset_value = extra_asset.to_value_word(),
             asset_id = extra_asset.to_id_word(),
         ))?;
