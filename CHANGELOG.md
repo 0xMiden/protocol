@@ -2,7 +2,6 @@
 ## v0.16.0 (TBD)
 
 ### Changes
-- Added the `RbacActionNote` (`RbacAction`) for triggering `RoleBasedAccessControl` management actions (grant / revoke role, set role admin, renounce role) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes against the note sender ([#3248](https://github.com/0xMiden/protocol/pull/3248)).
 - Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
 - [BREAKING] Unified the MINT and BURN note scripts to serve both fungible and non-fungible faucets: the single `mint` / `burn` note now detects the faucet kind by reflection (the `CodeInspection` component's `has_procedure`, which the fungible and non-fungible faucet components now expose) and calls the matching `mint_and_send` / `receive_and_burn`. Removed the `mint_nft` / `burn_nft` note scripts and the `NonFungibleMintNote` / `NonFungibleBurnNote` / `NonFungibleMintNoteStorage` types; `MintNote` / `BurnNote` and `MintNoteStorage` (with fungible and non-fungible variants) now cover both faucet kinds ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Renamed the `miden::standards::metadata` module to `miden::standards::inspection` (in MASM, the `miden-standards` account components, and the `miden_standards::account::inspection` Rust module), scoping it as the home of `CodeInspection`, the storage schema, and future inspection components ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
@@ -120,6 +119,8 @@
 - Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
 - [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/issues/3272)).
   - Replaced the `active_note::get_assets` / `input_note::get_assets` and `input_note::get_assets_info` procedures with `remove_all_assets`, `get_initial_assets` and `get_initial_assets_info`, and added `get_initial_num_assets`, `get_asset` and `remove_asset`.
+- Added the `OwnerActionNote` (`OwnerAction`) for triggering `Ownable2Step` management actions (transfer / accept / renounce ownership) on an account via a note ([#3245](https://github.com/0xMiden/protocol/pull/3245)).
+- Added the `RbacActionNote` (`RbacAction`) for triggering `RoleBasedAccessControl` management actions (grant / revoke role, set role admin, renounce role) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes against the note sender ([#3248](https://github.com/0xMiden/protocol/pull/3248)).
 
 ### Fixes
 
