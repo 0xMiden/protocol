@@ -72,6 +72,12 @@ const NOTE_RESTRICTIONS_LOC = 2
 const EXECUTION_MODE_LOC = 0
 const DEFAULT_THRESHOLD_LOC = 1
 
+# LOCAL ADDRESSES (update_signers_and_threshold)
+# =================================================================================================
+
+const NEW_NUM_OF_APPROVERS_LOC = 0
+const INIT_NUM_OF_APPROVERS_LOC = 1
+
 #! Gets the procedure policy entry for PROC_ROOT from the account's initial state.
 #!
 #! Inputs:  [PROC_ROOT]
@@ -667,7 +673,7 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     # => [MULTISIG_CONFIG, pad(12)]
 
     # store new_num_of_approvers for later
-    exec.multisig_config_to_num_approvers loc_store.0
+    exec.multisig_config_to_num_approvers loc_store.NEW_NUM_OF_APPROVERS_LOC
     # => [MULTISIG_CONFIG, pad(12)]
 
     dup dup.2
@@ -684,7 +690,7 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
     # => [MULTISIG_CONFIG, pad(12)]
 
-    loc_load.0
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
     exec.assert_proc_policies_lte_num_approvers
@@ -698,10 +704,10 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
 
     # Save the old num_of_approvers for the post-loop scheme/pubkey cleanup, then drop the rest
     # of OLD_THRESHOLD_CONFIG.
-    drop loc_store.1 drop drop
+    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
     # => [pad(12)]
 
-    loc_load.0
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers, pad(12)]
 
     dup neq.0
@@ -751,11 +757,11 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     # => [pad(12)]
 
     # assert all approver public keys are unique.
-    loc_load.0
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
     exec.multisig::assert_unique_approver_public_keys
     # => [pad(12)]
 
-    loc_load.0 loc_load.1
+    loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
     exec.multisig::cleanup_pubkey_and_scheme_id_mapping

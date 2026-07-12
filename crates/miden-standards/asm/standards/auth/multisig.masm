@@ -80,8 +80,6 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
 
-const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
-
 const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
 
 const ERR_SIGNER_INDEX_OUT_OF_BOUNDS = "signer index must be less than the number of approvers"
@@ -716,9 +714,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc get_signer_at
-    u32assert.err=ERR_SIGNER_INDEX_NOT_U32
-    # => [index]
-
     # Bounds check: index must be < num_approvers
     dup exec.get_initial_threshold_and_num_approvers drop
     # => [num_approvers, index, index]
