@@ -29,6 +29,7 @@ use miden_standards::account::auth::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
@@ -431,10 +432,12 @@ async fn test_guarded_multisig_update_guardian_public_key(
 /// Tests that a `update_guardian_public_key` rotation must not touch notes, and that a valid
 /// guardian signature does not bypass that requirement.
 ///
-/// The rotation is combined with an input note (which invokes `receive_asset`) and, separately,
-/// with an output note (created via `create_note`). Both are rejected: `guardian.masm` checks the
-/// input- and output-note guards before `assert_only_one_non_auth_procedure_called`, so the
-/// note-specific errors surface first.
+/// Three ways to violate the "called alone" requirement are exercised: an input note (which invokes
+/// `receive_asset`), an output note (created via `create_note`), and a note-free second procedure
+/// (a direct `receive_asset` vault write). Because `guardian.masm` runs the input- and output-note
+/// guards before `assert_only_one_non_auth_procedure_called`, the note cases surface the specific
+/// note errors, while the note-free case is what actually trips
+/// `assert_only_one_non_auth_procedure_called`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -603,6 +606,57 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     // The rotation creates an output note (and no input notes), so the output-note guard - which
     // runs before `assert_only_one_non_auth_procedure_called` - rejects it.
     assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES);
+
+    // Finally, combine the rotation with a note-free second procedure: a direct `receive_asset`
+    // vault write. With no input or output notes, both note guards pass and
+    // `assert_only_one_non_auth_procedure_called` is the guard that fires. (The unsourced asset
+    // would break asset preservation, but the auth procedure runs before that check in the
+    // epilogue, so the "called alone" error surfaces first.)
+    let extra_asset = FungibleAsset::mock(1);
+    let update_guardian_with_receive_script = CodeBuilder::new()
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .compile_tx_script(format!(
+            "use miden::standards::wallets::basic as wallet\nuse miden::core::sys\n@transaction_script\npub proc main\n    push.{asset_value}\n    push.{asset_id}\n    padw padw swapdw\n    call.wallet::receive_asset\n    dropw dropw dropw dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop dropw\n    exec.sys::truncate_stack\nend",
+            asset_value = extra_asset.to_value_word(),
+            asset_id = extra_asset.to_id_word(),
+        ))?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new_unchecked(995); 4]);
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_guardian_with_receive_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let result = tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
 
     Ok(())
 }
