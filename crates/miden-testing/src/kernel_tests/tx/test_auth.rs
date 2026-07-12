@@ -1,18 +1,17 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_processor::ExecutionError;
-use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-use miden_protocol::{Felt, ONE};
+use miden_protocol::{Felt, ONE, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{ConditionalAuthComponent, ERR_WRONG_ARGS_MSG};
-use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
+use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 
 use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
@@ -106,18 +105,14 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
 /// Regression test: an untrusted transaction script must not be able to force the host to produce a
 /// signature.
 ///
-/// A script fabricates the auth procedure's signature request by building the transaction summary
-/// and emitting `AUTH_REQUEST`. Building the summary requires `auth::create_tx_summary`, which
-/// computes `account::compute_delta_commitment` - now gated to the account context. The gate
-/// rejects the script before it can reach the `AUTH_REQUEST` event, so the transaction aborts with
-/// an `UnknownAccountProcedure` event error (the script's root is not an account procedure).
-///
-/// Note: this is a deliberate canary. If the account-context gate on `compute_delta_commitment` is
-/// ever removed, `create_tx_summary` will once again succeed from a script (an empty delta commits
-/// to the empty word), execution will reach `AUTH_REQUEST`, and the host will instead reject it
-/// with `AuthRequestOutsideAuthProcedure`. That would flip the error and fail this assertion, which
-/// is intended: whoever removes the gate must revisit this test (and the second layer of defence it
-/// exercises).
+/// The script emits `AUTH_REQUEST` directly, supplying a precomputed message on the stack and a
+/// matching signature in the advice map. This deliberately bypasses `auth::create_tx_summary`
+/// (which computes `account::compute_delta_commitment` and is now gated to the account context, so
+/// it cannot be called from a script) and exercises the host's context check in isolation: the
+/// request must be rejected with `AuthRequestOutsideAuthProcedure` because it originates outside
+/// the authentication procedure. The check runs before the signature is validated, so a throwaway
+/// key is sufficient - the test is intentionally artificial and only asserts that the original
+/// error path is still reachable.
 #[tokio::test]
 async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -126,27 +121,27 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     })?;
     let chain = builder.build()?;
 
-    let pub_keys = get_public_keys_from_account(&account);
-    let pub_key = pub_keys.first().expect("expected at least one public key");
+    // Precompute the AUTH_REQUEST inputs instead of building the summary on-chain. A throwaway key
+    // signs an arbitrary message; the resulting signature is placed in the advice map keyed by
+    // `merge(pub_key_commitment, message)`, which is exactly where the host looks it up.
+    let message = Word::from([1u32, 2, 3, 4]);
+    let secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let pub_key_commitment = secret_key.public_key().to_commitment();
+    let authenticator = BasicAuthenticator::new(core::slice::from_ref(&secret_key));
+    let signature = authenticator
+        .get_signature(pub_key_commitment, &SigningInputs::Blind(message))
+        .await?;
 
-    // Mirror `auth::authenticate_transaction`'s signature request, minus the nonce increment.
+    // Mirror `auth::authenticate_transaction`'s signature request: [MESSAGE, PK_COMM, scheme_id].
     let tx_script_source = format!(
         "
-        use miden::standards::auth
         use {{AUTH_REQUEST_EVENT}} from miden::protocol::auth
 
         @transaction_script
         pub proc main
-            # [PK_COMM, scheme_id] mirrors the auth procedure's inputs
             push.2
-            push.{pub_key}
-            # arbitrary salt
-            push.0.0.0.0
-            # => [SALT, PK_COMM, scheme_id]
-
-            exec.auth::create_tx_summary
-            adv.insert_hqword
-            exec.auth::hash_tx_summary
+            push.{pub_key_commitment}
+            push.{message}
             # => [MESSAGE, PK_COMM, scheme_id]
 
             emit.AUTH_REQUEST_EVENT
@@ -162,15 +157,14 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     let execution_result = chain
         .build_tx_context(account.id(), &[], &[])?
         .tx_script(tx_script)
+        .add_signature(pub_key_commitment, message, signature)
         .build()?
         .execute()
         .await;
 
-    // The account-context gate on `compute_delta_commitment` (reached via `create_tx_summary`)
-    // rejects the script before `AUTH_REQUEST` is emitted. See the canary note in the doc comment.
-    assert_transaction_executor_error!(
+    assert_matches!(
         execution_result,
-        matches ExecutionError::EventError { .. }
+        Err(TransactionExecutorError::AuthRequestOutsideAuthProcedure)
     );
 
     Ok(())
