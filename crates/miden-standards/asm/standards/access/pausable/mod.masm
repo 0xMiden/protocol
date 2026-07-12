@@ -57,6 +57,9 @@ pub proc is_paused
     # => [is_paused, pad(15)]
 end
 
+# PUBLIC HELPERS
+# ================================================================================================
+
 #! Sets the paused flag.
 #!
 #! This procedure does not verify the caller. Compose with access control in a wrapper component

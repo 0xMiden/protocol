@@ -90,40 +90,6 @@ end
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Returns 1 if the note sender is the warden, otherwise 0.
-#!
-#! Inputs:  []
-#! Outputs: [is_sender_warden]
-#!
-#! Where:
-#! - is_sender_warden is 1 if the note sender is the warden, otherwise 0.
-#!
-#! Invocation: exec
-pub proc is_sender_warden
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix]
-
-    exec.is_warden_internal
-    # => [is_sender_warden]
-end
-
-#! Asserts that the note sender is the warden.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the note sender is not the warden.
-#!
-#! Invocation: exec
-pub proc assert_sender_is_warden
-    exec.is_sender_warden
-    # => [is_sender_warden]
-
-    assert.err=ERR_SENDER_NOT_WARDEN
-    # => []
-end
-
 #! Returns the warden account ID.
 #!
 #! Inputs:  [pad(16)]
@@ -181,4 +147,41 @@ pub proc set_warden
 
     exec.save_warden_info
     # => [pad(16)]
+end
+
+# PUBLIC HELPERS
+# ================================================================================================
+
+#! Returns 1 if the note sender is the warden, otherwise 0.
+#!
+#! Inputs:  []
+#! Outputs: [is_sender_warden]
+#!
+#! Where:
+#! - is_sender_warden is 1 if the note sender is the warden, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_sender_warden
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix]
+
+    exec.is_warden_internal
+    # => [is_sender_warden]
+end
+
+#! Asserts that the note sender is the warden.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the warden.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_warden
+    exec.is_sender_warden
+    # => [is_sender_warden]
+
+    assert.err=ERR_SENDER_NOT_WARDEN
+    # => []
 end
