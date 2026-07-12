@@ -106,12 +106,14 @@ end
 #! Returns the sponsorship assets to the reclaimer, provided reclaim is enabled and its block height
 #! has been reached.
 #!
-#! Inputs:  [reclaim_block_height]
+#! Inputs:  [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 #! Outputs: []
 #!
 #! Where:
 #! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note.
 #!   A value of 0 means reclaim is disabled.
+#! - reclaimer_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to
+#!   reclaim the note.
 #!
 #! Panics if:
 #! - reclaim is disabled.
@@ -119,17 +121,12 @@ end
 #! - the active account is not the note's reclaimer.
 proc reclaim_note
     dup neq.0 assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED
-    # => [reclaim_block_height]
+    # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
     exec.tx::get_block_number
-    # => [current_block_height, reclaim_block_height]
+    # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
     lte assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
-    # => []
-
-    # only the reclaimer named in the note storage may reclaim it; the creator sets this, defaulting
-    # to the sender
-    mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM
     # => [reclaimer_id_suffix, reclaimer_id_prefix]
 
     exec.active_account::get_id
@@ -217,9 +214,9 @@ pub proc main
         # => [pad(16)]
     else
         # reclaim path: everyone else, including the target without the feature note, may only
-        # reclaim the note back to its reclaimer
-        mem_load.RECLAIM_HEIGHT_ITEM
-        # => [reclaim_block_height, pad(16)]
+        # reclaim the note back to its reclaimer named in the note storage
+        mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
+        # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]
 
         exec.reclaim_note
         # => [pad(16)]

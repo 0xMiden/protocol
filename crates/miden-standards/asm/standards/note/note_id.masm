@@ -29,15 +29,9 @@ const METADATA_PTR = 8
 #! Local memory offset at which a note's ATTACHMENTS_COMMITMENT is staged.
 const ATTACHMENTS_COMMITMENT_PTR = 12
 
-#! Local memory offset at which the note index is staged.
-const NOTE_INDEX_PTR = 16
-
 #! Local memory offset at which compute_active_note_id stages the matched note index. The offset
 #! value overlaps the staging constants above deliberately: each procedure has its own local frame.
 const MATCHED_INDEX_PTR = 4
-
-#! Local memory offset at which compute_active_note_id stages the loop's note index.
-const LOOP_INDEX_PTR = 5
 
 # PROCEDURES
 # ================================================================================================
@@ -90,27 +84,24 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-@locals(20)
+@locals(16)
 pub proc compute_input_note_id
-    dup loc_store.NOTE_INDEX_PTR
+    dup exec.input_note::get_recipient
+    loc_storew_le.RECIPIENT_PTR dropw
     # => [note_idx]
 
-    exec.input_note::get_recipient
-    loc_storew_le.RECIPIENT_PTR dropw
-    # => []
-
-    loc_load.NOTE_INDEX_PTR exec.input_note::get_initial_assets_info
-    # => [ASSETS_COMMITMENT, num_assets]
+    dup exec.input_note::get_initial_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
     movup.4 drop
     loc_storew_le.ASSETS_COMMITMENT_PTR dropw
-    # => []
+    # => [note_idx]
 
-    loc_load.NOTE_INDEX_PTR exec.input_note::get_metadata
+    dup exec.input_note::get_metadata
     loc_storew_le.METADATA_PTR dropw
-    # => []
+    # => [note_idx]
 
-    loc_load.NOTE_INDEX_PTR exec.input_note::get_attachments_commitment
+    exec.input_note::get_attachments_commitment
     loc_storew_le.ATTACHMENTS_COMMITMENT_PTR dropw
     # => []
 
@@ -150,19 +141,19 @@ pub proc compute_active_note_id
     # => [should_loop, note_idx]
 
     while.true
-        sub.1 dup loc_store.LOOP_INDEX_PTR
+        sub.1
         # => [note_idx]
 
-        exec.input_note::get_recipient
+        dup exec.input_note::get_recipient
         padw loc_loadw_le.RECIPIENT_PTR
         exec.word::eq
-        # => [is_match]
+        # => [is_match, note_idx]
 
         if.true
-            loc_load.LOOP_INDEX_PTR loc_store.MATCHED_INDEX_PTR
+            dup loc_store.MATCHED_INDEX_PTR
         end
 
-        loc_load.LOOP_INDEX_PTR dup neq.0
+        dup neq.0
         # => [should_loop, note_idx]
     end
     drop
@@ -188,27 +179,24 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-@locals(20)
+@locals(16)
 pub proc compute_output_note_id
-    dup loc_store.NOTE_INDEX_PTR
+    dup exec.output_note::get_recipient
+    loc_storew_le.RECIPIENT_PTR dropw
     # => [note_idx]
 
-    exec.output_note::get_recipient
-    loc_storew_le.RECIPIENT_PTR dropw
-    # => []
-
-    loc_load.NOTE_INDEX_PTR exec.output_note::get_assets_info
-    # => [ASSETS_COMMITMENT, num_assets]
+    dup exec.output_note::get_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
     movup.4 drop
     loc_storew_le.ASSETS_COMMITMENT_PTR dropw
-    # => []
+    # => [note_idx]
 
-    loc_load.NOTE_INDEX_PTR exec.output_note::get_metadata
+    dup exec.output_note::get_metadata
     loc_storew_le.METADATA_PTR dropw
-    # => []
+    # => [note_idx]
 
-    loc_load.NOTE_INDEX_PTR exec.output_note::get_attachments_commitment
+    exec.output_note::get_attachments_commitment
     loc_storew_le.ATTACHMENTS_COMMITMENT_PTR dropw
     # => []
 
