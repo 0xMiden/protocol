@@ -32,7 +32,7 @@ use miden::protocol::active_note
 use miden::protocol::native_account
 
 # CONSTANTS
-# ================================================================================================
+# =================================================================================================
 
 # Ownership config value representing renounced ownership (all zeros).
 const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
@@ -42,7 +42,7 @@ const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
 const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_config")
 
 # ERRORS
-# ================================================================================================
+# =================================================================================================
 
 const ERR_NO_OWNER = "component has no owner"
 const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
@@ -50,7 +50,7 @@ const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
 const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
 
 # PUBLIC INTERFACE
-# ================================================================================================
+# =================================================================================================
 
 #! Returns the owner account ID.
 #!
@@ -213,7 +213,7 @@ pub proc renounce_ownership
 end
 
 # PUBLIC HELPERS
-# ================================================================================================
+# =================================================================================================
 
 #! Returns 1 if the note sender is the current owner, otherwise 0.
 #!
@@ -250,7 +250,7 @@ pub proc assert_sender_is_owner
 end
 
 # HELPER PROCEDURES
-# ================================================================================================
+# =================================================================================================
 
 #! Returns the full ownership word from storage.
 #!
