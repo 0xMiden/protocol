@@ -9,6 +9,9 @@ use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 mod burn;
 pub use burn::BurnNote;
 
+mod faucet_policy_action;
+pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
+
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
@@ -60,6 +63,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    FAUCET_POLICY_ACTION,
     PAUSE_ACTION,
     OWNER_ACTION,
     RBAC_ACTION,
@@ -96,6 +100,9 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == FaucetPolicyActionNote::script_root() {
+            return Some(Self::FAUCET_POLICY_ACTION);
+        }
         if root == PauseActionNote::script_root() {
             return Some(Self::PAUSE_ACTION);
         }
@@ -121,6 +128,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
             Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
@@ -136,6 +144,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
             // OwnerAction storage is variable per action; this returns the upper bound.
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
@@ -153,6 +162,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
             Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
@@ -168,6 +178,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),

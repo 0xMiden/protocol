@@ -3,6 +3,7 @@
 
 ### Changes
 - [BREAKING] Restricted `output_note::create` and account read/update kernel procedures to only be invoked from the active account's own procedures, requiring standard note scripts (`p2id`, `swap`, `pswap`) and wallets to create notes via `basic_wallet::create_note` ([#3204](https://github.com/0xMiden/protocol/pull/3204)).
+- Added the `FaucetPolicyActionNote` (`FaucetPolicyAction`) for switching a faucet's active `TokenPolicyManager` policy (mint / burn / send / receive) to an allowed alternative via a note. A selector in the note storage dispatches to the matching `set_*_policy` procedure, which authorizes the note sender through the account-wide `Authority` component ([#3260](https://github.com/0xMiden/protocol/pull/3260)).
 - Added the `PauseActionNote` (`PauseAction`) for triggering `PausableManager` admin actions (pause / unpause) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes the note sender through the account-wide `Authority` component ([#3258](https://github.com/0xMiden/protocol/pull/3258)).
 - [BREAKING] P2IDE now reclaims against a `reclaimer` stored in note storage (builder-settable, defaults to `sender`) ([#3239](https://github.com/0xMiden/protocol/pull/3239)).
 - Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
