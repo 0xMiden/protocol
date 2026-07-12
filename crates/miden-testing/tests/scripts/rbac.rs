@@ -38,7 +38,8 @@ fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
     Ok(account)
 }
 
-fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
+// Shared with the `rbac_action` note test suite.
+pub(super) fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
     let account = create_rbac_account_with_admin(admin)?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -46,13 +47,13 @@ fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
     Ok((account, builder.build()?))
 }
 
-fn test_account_id(seed: u8) -> AccountId {
+pub(super) fn test_account_id(seed: u8) -> AccountId {
     AccountId::builder()
         .account_type(AccountType::Private)
         .build_with_seed([seed; 32])
 }
 
-fn role(name: &str) -> RoleSymbol {
+pub(super) fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
@@ -70,14 +71,17 @@ fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKe
 }
 
 /// Returns the role's `(member_count, admin_role_symbol)` from on-chain storage.
-fn get_role_config(account: &Account, role: &RoleSymbol) -> anyhow::Result<(Felt, Felt)> {
+pub(super) fn get_role_config(
+    account: &Account,
+    role: &RoleSymbol,
+) -> anyhow::Result<(Felt, Felt)> {
     let word = account
         .storage()
         .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?;
     Ok((word[0], word[1]))
 }
 
-fn is_role_member(
+pub(super) fn is_role_member(
     account: &Account,
     role: &RoleSymbol,
     account_id: AccountId,

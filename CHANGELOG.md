@@ -120,6 +120,8 @@
 - Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
 - [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/issues/3272)).
   - Replaced the `active_note::get_assets` / `input_note::get_assets` and `input_note::get_assets_info` procedures with `remove_all_assets`, `get_initial_assets` and `get_initial_assets_info`, and added `get_initial_num_assets`, `get_asset` and `remove_asset`.
+- Added the `OwnerActionNote` (`OwnerAction`) for triggering `Ownable2Step` management actions (transfer / accept / renounce ownership) on an account via a note ([#3245](https://github.com/0xMiden/protocol/pull/3245)).
+- Added the `RbacActionNote` (`RbacAction`) for triggering `RoleBasedAccessControl` management actions (grant / revoke role, set role admin, renounce role) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes against the note sender ([#3248](https://github.com/0xMiden/protocol/pull/3248)).
 
 ### Fixes
 
