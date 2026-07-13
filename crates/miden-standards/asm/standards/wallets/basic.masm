@@ -4,7 +4,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
 
-# PUBLIC API
+# PUBLIC INTERFACE
 # =================================================================================================
 
 #! Adds the provided asset to the active account.
@@ -67,10 +67,15 @@ pub proc move_asset_to_note
     # => [pad(16)]
 end
 
+# PUBLIC HELPERS
+# =================================================================================================
+
 #! Adds all assets from the active note to the native account's vault.
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Invocation: exec
 @locals(512)
 pub proc add_assets_to_account
     # write assets to local memory starting at offset 0
