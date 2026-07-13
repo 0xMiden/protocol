@@ -45,6 +45,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::rbac::{build_grant_role_note, role, test_account_id};
+
 // HELPERS
 // ================================================================================================
 
@@ -511,16 +513,6 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
 // TESTS — BLOCKLIST MANAGER WITH PER-PROCEDURE RBAC ROLES
 // ================================================================================================
 
-fn role(name: &str) -> RoleSymbol {
-    RoleSymbol::new(name).expect("role symbol should be valid")
-}
-
-fn test_account_id(seed: u8) -> AccountId {
-    AccountId::builder()
-        .account_type(AccountType::Private)
-        .build_with_seed([seed; 32])
-}
-
 /// Maps both `block_account` and `unblock_account` to a single `BLOCKLISTER` role, so one role
 /// gates both operations.
 fn blocklister_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
@@ -568,39 +560,6 @@ fn add_rbac_faucet_with_blocklist(
     )
 }
 
-/// Builds an admin-authored note that grants `role` to `account_id` via `rbac::grant_role`.
-fn build_grant_role_note(
-    sender: AccountId,
-    role: &RoleSymbol,
-    account_id: AccountId,
-    rng_seed: u32,
-) -> anyhow::Result<Note> {
-    let script_code = format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.rbac::grant_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = account_id.suffix(),
-        role = Felt::from(role),
-    );
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
-    NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Private)
-        .code(script_code.as_str())
-        .build()
-        .map_err(Into::into)
-}
-
 /// A single `BLOCKLISTER` role holder can both block and unblock accounts, and the effect is
 /// observable through the transfer policy.
 #[tokio::test]
@@ -626,7 +585,7 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
         NoteType::Public,
     )?;
 
-    let grant = build_grant_role_note(admin, &role("BLOCKLISTER"), blocklister, 40)?;
+    let grant = build_grant_role_note(admin, &role("BLOCKLISTER"), blocklister)?;
     let block = build_admin_note(blocklister, target_account.id(), "block_account", 41)?;
     let unblock = build_admin_note(blocklister, target_account.id(), "unblock_account", 42)?;
     for note in [&grant, &block, &unblock] {
