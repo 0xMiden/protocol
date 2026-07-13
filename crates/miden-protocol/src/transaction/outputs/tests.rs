@@ -4,12 +4,7 @@ use assert_matches::assert_matches;
 
 use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
-use crate::assembly::mast::{
-    ExternalNodeBuilder,
-    JoinNodeBuilder,
-    MastForest,
-    MastForestContributor,
-};
+use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
@@ -142,7 +137,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
         "Expected note size ({computed_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
     );
     let mut minified_note = oversized_note.clone();
-    minified_note.minify_script();
+    minified_note.clear_debug_info();
     let minified_note_size = minified_note.get_size_hint();
     assert!(
         minified_note_size > NOTE_MAX_SIZE as usize,

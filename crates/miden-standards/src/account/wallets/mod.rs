@@ -24,6 +24,9 @@ use crate::account::auth::{
 };
 use crate::procedure_root;
 
+mod note_creator;
+pub use note_creator::NoteCreator;
+
 // BASIC WALLET
 // ================================================================================================
 
@@ -46,15 +49,24 @@ procedure_root!(
     BasicWallet::code()
 );
 
+// Initialize the procedure root of the `create_note` procedure of the Basic Wallet only once.
+procedure_root!(
+    BASIC_WALLET_CREATE_NOTE,
+    BasicWallet::NAME,
+    BasicWallet::CREATE_NOTE_PROC_NAME,
+    BasicWallet::code()
+);
+
 /// An [`AccountComponent`] implementing a basic wallet.
 ///
-/// It reexports the procedures from `miden::standards::wallets::basic`. When linking against this
-/// component, the `miden` library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be
-/// available to the assembler which is the case when using [`CodeBuilder`][builder]. The procedures
-/// of this component are:
+/// It reexports the procedures from `miden::standards::wallets::basic` and
+/// `miden::standards::note::create_note` modules. When linking against this component, the `miden`
+/// library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler
+/// which is the case when using [`CodeBuilder`][builder]. The procedures of this component are:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
+/// - `create_note`, which can be used to create a new output note and return its index.
 ///
 /// All methods require authentication. Thus, this component must be combined with a component
 /// providing authentication.
@@ -71,6 +83,7 @@ impl BasicWallet {
 
     const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
+    const CREATE_NOTE_PROC_NAME: &str = "create_note";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -93,6 +106,11 @@ impl BasicWallet {
     /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
     pub fn move_asset_to_note_root() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
+    }
+
+    /// Returns the procedure root of the `create_note` wallet procedure.
+    pub fn create_note_root() -> AccountProcedureRoot {
+        *BASIC_WALLET_CREATE_NOTE
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
