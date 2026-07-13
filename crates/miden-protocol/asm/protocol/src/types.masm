@@ -4,7 +4,7 @@
 # corresponding Rust types so signatures read as the Rust API does.
 
 # AccountId is shared with the transaction kernel, so it lives in the common base library.
-pub use { AccountId } from miden::protocol_utils::types
+pub use {AccountId} from miden::protocol_utils::types
 
 # Two-felt identifier (suffix on top of the stack, prefix below).
 pub type StorageSlotId = struct { suffix: felt, prefix: felt }

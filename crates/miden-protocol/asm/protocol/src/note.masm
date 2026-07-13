@@ -2,22 +2,17 @@ use miden::protocol::account_id
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use { AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType } from miden::protocol::types
+use {AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType}
+    from miden::protocol::types
 
-pub use {
-    ATTACHMENT_SCHEME_NONE,
-    MAX_ATTACHMENT_SCHEME,
-    MAX_ATTACHMENT_TOTAL_WORDS,
-    MAX_ATTACHMENT_WORDS,
-    MAX_NOTE_STORAGE_ITEMS,
-    NOTE_TYPE_PRIVATE,
-    NOTE_TYPE_PUBLIC,
-} from miden::protocol_utils::note
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+    from miden::protocol_utils::note
 
 # ERRORS
 # =================================================================================================
 
-const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage exceeded the maximum limit of 1024"
+const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
+    "number of note storage exceeded the maximum limit of 1024"
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
 
@@ -45,7 +40,8 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bo
 #! Invocation: exec
 pub proc compute_storage_commitment(storage_ptr: MemoryAddress, num_storage_items: u16) -> word
     # check that number of storage items is less than or equal to MAX_NOTE_STORAGE_ITEMS
-    dup.1 push.MAX_NOTE_STORAGE_ITEMS u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
+    dup.1 push.MAX_NOTE_STORAGE_ITEMS
+    u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     # => [storage_ptr, num_storage_items]
 
@@ -96,7 +92,10 @@ end
 #!   }
 #! Outputs:
 #!   Operand stack: [num_attachments]
-pub proc write_attachment_commitments_to_memory(attachments_commitment: word, dest_ptr: MemoryAddress) -> u8
+pub proc write_attachment_commitments_to_memory(
+    attachments_commitment: word,
+    dest_ptr: MemoryAddress
+) -> u8
     # push the individual ATTACHMENT commitments from the advice map onto the advice stack
     adv.push_mapvaln
     # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
@@ -187,7 +186,12 @@ end
 #!   attachment commitment.
 #!
 #! Invocation: exec
-pub proc write_indexed_attachment_to_memory(num_attachments: u8, attachment_commitments_ptr: MemoryAddress, attachment_idx: u8, dest_ptr: MemoryAddress) -> u16
+pub proc write_indexed_attachment_to_memory(
+    num_attachments: u8,
+    attachment_commitments_ptr: MemoryAddress,
+    attachment_idx: u8,
+    dest_ptr: MemoryAddress
+) -> u16
     # assert attachment_idx < num_attachments
     dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
@@ -238,7 +242,12 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_and_store_recipient(storage_ptr: MemoryAddress, num_storage_items: u16, serial_num: word, script_root: NoteScriptRoot) -> NoteRecipient
+pub proc compute_and_store_recipient(
+    storage_ptr: MemoryAddress,
+    num_storage_items: u16,
+    serial_num: word,
+    script_root: NoteScriptRoot
+) -> NoteRecipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -288,7 +297,11 @@ end
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
-pub proc compute_recipient(serial_num: word, script_root: NoteScriptRoot, storage_commitment: word) -> NoteRecipient
+pub proc compute_recipient(
+    serial_num: word,
+    script_root: NoteScriptRoot,
+    storage_commitment: word
+) -> NoteRecipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
