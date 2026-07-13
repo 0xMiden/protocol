@@ -4,13 +4,17 @@ use miden::tx_kernel_core::asset
 # ERRORS
 # =================================================================================================
 
-const ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE = "non-fungible asset ID's composition must be non-fungible"
+const ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE =
+    "non-fungible asset ID's composition must be non-fungible"
 
-const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungible asset is not this faucet"
+const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN =
+    "the origin of the non-fungible asset is not this faucet"
 
-const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0="the asset class suffix in a non-fungible asset ID must match hash0 of the asset value"
+const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0 =
+    "the asset class suffix in a non-fungible asset ID must match hash0 of the asset value"
 
-const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1="the asset class prefix in a non-fungible asset ID must match hash1 of the asset value"
+const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1 =
+    "the asset class prefix in a non-fungible asset ID must match hash1 of the asset value"
 
 # PROCEDURES
 # =================================================================================================

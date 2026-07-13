@@ -11,19 +11,26 @@ pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol_utils::as
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the vault would exceed the max amount"
+const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED =
+    "adding the fungible asset to the vault would exceed the max amount"
 
-const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset ID's composition must be fungible"
+const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE =
+    "fungible asset ID's composition must be fungible"
 
-const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the fungible asset is not this faucet"
+const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN =
+    "the origin of the fungible asset is not this faucet"
 
-const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT="fungible asset amount exceeds the maximum allowed amount"
+const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT =
+    "fungible asset amount exceeds the maximum allowed amount"
 
-const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO="fungible asset value elements 1, 2 and 3 must be zeros"
+const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO =
+    "fungible asset value elements 1, 2 and 3 must be zeros"
 
-const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO="fungible asset ID asset class prefix and suffix must be zero"
+const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO =
+    "fungible asset ID asset class prefix and suffix must be zero"
 
-const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
+const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW =
+    "failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
 
 # PROCEDURES
 # =================================================================================================

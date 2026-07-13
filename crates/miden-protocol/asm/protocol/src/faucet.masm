@@ -1,8 +1,5 @@
-use {
-    FAUCET_BURN_ASSET_OFFSET,
-    FAUCET_MINT_ASSET_OFFSET,
-} from miden::protocol::kernel_proc_offsets
-use { Asset } from miden::protocol::types
+use {FAUCET_BURN_ASSET_OFFSET, FAUCET_MINT_ASSET_OFFSET} from miden::protocol::kernel_proc_offsets
+use {Asset} from miden::protocol::types
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
