@@ -77,9 +77,7 @@ pub proc to_account_id
     swap
     # => [suffix, prefix]
 
-    # Validate the decoded id is a structurally valid AccountId. Only structural requirements are
-    # checked, not the ID version, so the component does not hard-code the set of supported
-    # versions into its code commitment.
+    # Validate the decoded id is a structurally valid AccountId.
     dup.1 dup.1
     # => [suffix, prefix, suffix, prefix]
 
