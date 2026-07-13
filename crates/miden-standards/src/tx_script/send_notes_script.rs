@@ -121,14 +121,12 @@ impl SendNotesTransactionScript {
         &self.script
     }
 
-    /// The [`TransactionScriptRoot`] of the canonical wallet script, to be allowlisted on a
-    /// network account exposing the [`BasicWallet`] interface.
+    /// The [`TransactionScriptRoot`] of the canonical wallet script.
     pub fn wallet_script_root() -> TransactionScriptRoot {
         SEND_NOTES_WALLET_TX_SCRIPT.root()
     }
 
-    /// The [`TransactionScriptRoot`] of the canonical faucet script, to be allowlisted on a
-    /// network account exposing the [`FungibleFaucet`] interface.
+    /// The [`TransactionScriptRoot`] of the canonical faucet script.
     pub fn faucet_script_root() -> TransactionScriptRoot {
         SEND_NOTES_FAUCET_TX_SCRIPT.root()
     }

@@ -3,8 +3,7 @@
 #
 # The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
 # parameters (the payload) from the advice map, so a single script root covers every possible
-# set of output notes. This lets network accounts allowlist the root while the transaction
-# author authenticates the concrete notes through the commitment.
+# set of output notes.
 #
 # The payload is a word-aligned element stream with the following layout:
 #
@@ -187,9 +186,6 @@ proc process_notes
 
         # create the note from the record's RECIPIENT, note_type, and tag
         # -----------------------------------------------------------------------------------------
-        # note creation is only accessible from the account context, so it goes through the
-        # wallet's `create_note` procedure rather than the kernel procedure directly
-
         # pad so the call inputs fill the top 16 elements and notes_left moves into the overflow
         push.0.0.0.0 push.0.0.0.0 push.0.0
         # => [pad(10), notes_left, pad(16)]

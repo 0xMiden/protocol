@@ -3,8 +3,7 @@
 #
 # The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
 # parameters (the payload) from the advice map, so a single script root covers every possible
-# set of output notes. This lets network accounts allowlist the root while the transaction
-# author authenticates the concrete notes through the commitment.
+# set of output notes.
 #
 # The payload is a word-aligned element stream with the following layout:
 #
