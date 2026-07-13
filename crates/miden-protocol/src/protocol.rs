@@ -26,6 +26,11 @@ static PROTOCOL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
 pub struct ProtocolLib(Arc<Package>);
 
 impl ProtocolLib {
+    /// Returns the underlying [`Arc<Package>`]
+    pub fn package(&self) -> Arc<Package> {
+        self.0.clone()
+    }
+
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
