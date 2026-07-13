@@ -1,16 +1,10 @@
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use { Asset, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteTag, NoteType } from miden::protocol::types
-use {
-    OUTPUT_NOTE_ADD_ASSET_OFFSET,
-    OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET,
-    OUTPUT_NOTE_CREATE_OFFSET,
-    OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET,
-    OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET,
-    OUTPUT_NOTE_GET_METADATA_OFFSET,
-    OUTPUT_NOTE_GET_RECIPIENT_OFFSET,
-} from miden::protocol::kernel_proc_offsets
+use {Asset, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteTag, NoteType}
+    from miden::protocol::types
+use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET}
+    from miden::protocol::kernel_proc_offsets
 
 # PROCEDURES
 # =================================================================================================
@@ -179,7 +173,9 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx]
 
     # pad the stack
-    repeat.6 push.0 movdn.10 end
+    repeat.6
+        push.0 movdn.10
+    end
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
 
     syscall.exec_kernel_proc
@@ -315,7 +311,12 @@ end
 #! - the total number of attachment words in the note exceeds 512.
 #!
 #! Invocation: exec
-pub proc add_attachment_from_memory(attachment_scheme: u16, num_words: u16, attachment_ptr: MemoryAddress, note_idx: u16)
+pub proc add_attachment_from_memory(
+    attachment_scheme: u16,
+    num_words: u16,
+    attachment_ptr: MemoryAddress,
+    note_idx: u16
+)
     # Compute num_elements = num_words * WORD_NUM_ELEMENTS
     movdn.3 mul.WORD_NUM_ELEMENTS
     # => [num_elements, attachment_ptr, note_idx, attachment_scheme]
@@ -483,7 +484,11 @@ end
 #!
 #! Invocation: exec
 @locals(16)
-pub proc write_attachment_to_memory(dest_ptr: MemoryAddress, attachment_idx: u8, note_index: u16) -> u16
+pub proc write_attachment_to_memory(
+    dest_ptr: MemoryAddress,
+    attachment_idx: u8,
+    note_index: u16
+) -> u16
     # set up call to write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments

@@ -1,27 +1,29 @@
 # ERRORS
 # =================================================================================================
 
-const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
+const ERR_ACCOUNT_ID_UNKNOWN_VERSION = "unknown version in account ID"
 
-const ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO="most significant bit of the account ID suffix must be zero"
+const ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO =
+    "most significant bit of the account ID suffix must be zero"
 
-const ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO="least significant byte of the account ID suffix must be zero"
+const ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO =
+    "least significant byte of the account ID suffix must be zero"
 
-const ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO="account ID version must be non-zero"
+const ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO = "account ID version must be non-zero"
 
 # CONSTANTS
 # =================================================================================================
 
 # Given the least significant 32 bits of an account id's prefix, this mask defines the bits used
 # to determine the account version.
-const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
+const ACCOUNT_VERSION_MASK_U32 = 0x0f # 0b1111
 
 # Given the least significant 32 bits of an account id's prefix, this mask defines the bit used to
 # determine whether assets issued by the account trigger callbacks.
-const ACCOUNT_ASSET_CALLBACK_FLAG_MASK_U32=0x20 # 0b10_0000
+const ACCOUNT_ASSET_CALLBACK_FLAG_MASK_U32 = 0x20 # 0b10_0000
 
 # Version 1 of the account ID.
-const VERSION_1=1
+const VERSION_1 = 1
 
 # PROCEDURES
 # =================================================================================================
@@ -94,7 +96,6 @@ end
 pub proc validate_structure
     # Validate the version is non-zero, so that the zero account ID remains invalid.
     # ---------------------------------------------------------------------------------------------
-
     dup.1 exec.id_version neq.0
     # => [is_version_nonzero, account_id_suffix, account_id_prefix]
     assert.err=ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
@@ -140,7 +141,6 @@ end
 pub proc validate
     # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
-
     dup.1 exec.id_version
     # => [id_version, account_id_suffix, account_id_prefix]
     eq.VERSION_1

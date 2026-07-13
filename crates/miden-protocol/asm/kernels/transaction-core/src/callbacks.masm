@@ -12,11 +12,17 @@ const CALLBACK_PROC_ROOT_LOC = 0
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
-pub const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+pub const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT =
+    word(
+        "miden::protocol::faucet::callback::on_before_asset_added_to_account"
+    )
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_note callback
 # is stored.
-pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
+pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT =
+    word(
+        "miden::protocol::faucet::callback::on_before_asset_added_to_note"
+    )
 
 # PROCEDURES
 # ==================================================================================================
@@ -125,7 +131,9 @@ proc invoke_callback
         # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # pad the stack to 16 for the call
-        repeat.7 push.0 movdn.9 end
+        repeat.7
+            push.0 movdn.9
+        end
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
 
         # invoke the callback
