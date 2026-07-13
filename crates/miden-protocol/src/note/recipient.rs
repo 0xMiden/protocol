@@ -65,7 +65,7 @@ impl NoteRecipient {
     // --------------------------------------------------------------------------------------------
 
     /// Removes debug info associated with the script, if any.
-    pub fn minify_script(&mut self) {
+    pub fn clear_debug_info(&mut self) {
         self.script.clear_debug_info();
     }
 
