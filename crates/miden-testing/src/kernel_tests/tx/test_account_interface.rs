@@ -34,7 +34,7 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, TxContextInput};
+use crate::{Auth, MockChain, MockTransactionInput, TestTransactionBuilder};
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
@@ -172,7 +172,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         successful_note_3.clone(),
     ];
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+        .build_tx_context(MockTransactionInput::Account(account), &[], &notes)?
         .build()?;
 
     let account_id = tx_context.account().id();
@@ -244,7 +244,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+        .build_tx_context(MockTransactionInput::Account(account), &[], &notes)?
         .build()?;
 
     let account_id = tx_context.account().id();
@@ -319,7 +319,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         successful_note_3.clone(),
     ];
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+        .build_tx_context(MockTransactionInput::Account(account), &[], &notes)?
         .build()?;
 
     let account_id = tx_context.account().id();
@@ -392,7 +392,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+        .build_tx_context(MockTransactionInput::Account(account), &[], &notes)?
         .build()?;
 
     let account_id = tx_context.account().id();
@@ -488,7 +488,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let tx_context = mock_chain
         .build_tx_context(
-            TxContextInput::Account(account),
+            MockTransactionInput::Account(account),
             &[],
             &[
                 p2ide_wrong_inputs_number.clone(),
@@ -647,7 +647,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     mock_chain.prove_until_block(3)?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[p2ide.id()], &[])?
+        .build_tx_context(MockTransactionInput::Account(account), &[p2ide.id()], &[])?
         .build()?;
 
     let block_ref = tx_context.tx_inputs().block_header().block_num();
@@ -739,7 +739,7 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     mock_chain.prove_until_block(3)?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[p2ide.id()], &[])?
+        .build_tx_context(MockTransactionInput::Account(account), &[p2ide.id()], &[])?
         .build()?;
 
     let block_ref = tx_context.tx_inputs().block_header().block_num();

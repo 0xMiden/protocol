@@ -23,23 +23,23 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
-use miden_testing::{Auth, MockChain, TransactionContext};
+use miden_testing::{Auth, MockChain, MockTransaction};
 use rand::RngExt;
 
 // P2ID NOTE SETUPS
 // ================================================================================================
 
-pub fn tx_create_single_p2id_note_falcon() -> Result<TransactionContext> {
+pub fn tx_create_single_p2id_note_falcon() -> Result<MockTransaction> {
     tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_create_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+pub fn tx_create_single_p2id_note_ecdsa() -> Result<MockTransaction> {
     tx_create_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
 /// Returns the transaction context which could be used to run the transaction which creates a
 /// single P2ID note.
-fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
     let account = builder
@@ -104,17 +104,17 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
         .build()
 }
 
-pub fn tx_consume_single_p2id_note_falcon() -> Result<TransactionContext> {
+pub fn tx_consume_single_p2id_note_falcon() -> Result<MockTransaction> {
     tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_consume_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+pub fn tx_consume_single_p2id_note_ecdsa() -> Result<MockTransaction> {
     tx_consume_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
 /// Returns the transaction context which could be used to run the transaction which consumes a
 /// single P2ID note into a new basic wallet.
-fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     // Create assets
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
@@ -139,17 +139,17 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Tran
     mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
 }
 
-pub fn tx_consume_two_p2id_notes_falcon() -> Result<TransactionContext> {
+pub fn tx_consume_two_p2id_notes_falcon() -> Result<MockTransaction> {
     tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<TransactionContext> {
+pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<MockTransaction> {
     tx_consume_two_p2id_notes_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
 /// Returns the transaction context which could be used to run the transaction which consumes two
 /// P2ID notes into an existing basic wallet.
-fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme })?;
@@ -188,7 +188,7 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
 /// benchmarked — the prerequisite transactions are not included in cycle/time measurements.
 ///
 /// The `data_source` parameter selects between L1-to-Miden and L2-to-Miden test vectors.
-pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<TransactionContext> {
+pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<MockTransaction> {
     let mut builder = MockChain::builder();
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -404,7 +404,7 @@ fn populate_let_frontier(bridge: &mut Account, num_leaves: u32) {
 ///
 /// The setup uses the first entry from the MTF (Merkle Tree Frontier) test vectors for destination
 /// data.
-pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<TransactionContext> {
+pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<MockTransaction> {
     let vectors = &*miden_agglayer::testing::SOLIDITY_MTF_VECTORS;
 
     let mut builder = MockChain::builder();

@@ -52,7 +52,7 @@ use crate::tx_context::ExecError;
 ///
 /// It implements [`DataStore`], so transactions may be executed with
 /// [TransactionExecutor](miden_tx::TransactionExecutor)
-pub struct TransactionContext {
+pub struct MockTransaction {
     pub(super) account: Account,
     pub(super) expected_output_notes: Vec<Note>,
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
@@ -64,7 +64,7 @@ pub struct TransactionContext {
     pub(super) is_lazy_loading_enabled: bool,
 }
 
-impl TransactionContext {
+impl MockTransaction {
     /// Executes arbitrary code within the context of a mocked transaction environment and returns
     /// the resulting [`ExecutionOutput`].
     ///
@@ -212,7 +212,7 @@ impl TransactionContext {
     }
 }
 
-impl DataStore for TransactionContext {
+impl DataStore for MockTransaction {
     fn get_transaction_inputs(
         &self,
         account_id: AccountId,
@@ -372,7 +372,7 @@ impl DataStore for TransactionContext {
     }
 }
 
-impl MastForestStore for TransactionContext {
+impl MastForestStore for MockTransaction {
     fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }

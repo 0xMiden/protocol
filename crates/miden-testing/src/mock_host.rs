@@ -11,7 +11,7 @@ use miden_protocol::{CoreLibrary, Word};
 use miden_tx::TransactionExecutorHost;
 use miden_tx::auth::UnreachableAuth;
 
-use crate::TransactionContext;
+use crate::MockTransaction;
 
 // MOCK HOST
 // ================================================================================================
@@ -20,7 +20,7 @@ use crate::TransactionContext;
 /// with the difference that it only handles a subset of the events that the executor host handles.
 ///
 /// Why don't we always forward requests to the executor host? In some tests, when using
-/// [`TransactionContext::execute_code`], we want to test that the transaction kernel fails
+/// [`MockTransaction::execute_code`], we want to test that the transaction kernel fails
 /// with a certain error when given invalid inputs, but the event handler in the executor host would
 /// prematurely abort the transaction due to the invalid inputs. To avoid this situation, the event
 /// handler can be disabled and we can test that the transaction kernel has the expected behavior
@@ -30,7 +30,7 @@ use crate::TransactionContext;
 /// testing a procedure in isolation and these are also turned off in this host.
 pub(crate) struct MockHost<'store> {
     /// The underlying [`TransactionExecutorHost`] that the mock host will forward requests to.
-    exec_host: TransactionExecutorHost<'store, 'static, TransactionContext, UnreachableAuth>,
+    exec_host: TransactionExecutorHost<'store, 'static, MockTransaction, UnreachableAuth>,
 
     /// The set of event IDs that the mock host will forward to the [`TransactionExecutorHost`].
     ///
@@ -42,7 +42,7 @@ pub(crate) struct MockHost<'store> {
 impl<'store> MockHost<'store> {
     /// Returns a new [`MockHost`] instance with the provided inputs.
     pub fn new(
-        exec_host: TransactionExecutorHost<'store, 'static, TransactionContext, UnreachableAuth>,
+        exec_host: TransactionExecutorHost<'store, 'static, MockTransaction, UnreachableAuth>,
     ) -> Self {
         // CoreLibrary events are always handled.
         let core_lib_handlers = CoreLibrary::default()

@@ -35,8 +35,8 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
+    MockTransactionInput,
     TestTransactionBuilder,
-    TxContextInput,
     assert_execution_error,
     assert_transaction_executor_error,
 };
@@ -283,7 +283,7 @@ async fn epilogue_fails_when_assets_arent_preserved(
     let tx_script = builder.compile_tx_script(code)?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[input_note])?
+        .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[input_note])?
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
@@ -493,7 +493,7 @@ async fn epilogue_fails_when_nonce_not_incremented() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &[])?
+        .build_tx_context(MockTransactionInput::Account(account), &[], &[])?
         .build()?
         .execute()
         .await;

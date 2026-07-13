@@ -13,7 +13,7 @@ pub use mock_chain::{
     MockChain,
     MockChainBuilder,
     MockChainNote,
-    TxContextInput,
+    MockTransactionInput,
 };
 
 mod tx_context;
@@ -21,8 +21,8 @@ mod tx_context;
 pub(crate) use tx_context::TestTransactionBuilder;
 pub use tx_context::{
     ExecError,
+    MockTransaction,
     MockTransactionBuilder,
-    TransactionContext,
     TransactionContextBuilder,
 };
 

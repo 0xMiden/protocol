@@ -86,7 +86,7 @@ use miden_tx::TransactionExecutorError;
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, TransactionContext, assert_execution_error};
+use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_transaction_prologue() -> anyhow::Result<()> {
@@ -150,7 +150,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -205,7 +205,7 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 }
 
-fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -305,7 +305,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
 fn partial_blockchain_memory_assertions(
     exec_output: &ExecutionOutput,
-    prepared_tx: &TransactionContext,
+    prepared_tx: &MockTransaction,
 ) {
     // update the partial blockchain to point to the block against which this transaction is being
     // executed
@@ -351,7 +351,7 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     }
 }
 
-fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     let header = AccountHeader::from(inputs.account());
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
@@ -423,7 +423,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 
 fn input_notes_memory_assertions(
     exec_output: &ExecutionOutput,
-    inputs: &TransactionContext,
+    inputs: &MockTransaction,
     note_args: &BTreeMap<NoteId, Word>,
 ) {
     assert_eq!(
@@ -529,7 +529,7 @@ fn input_notes_memory_assertions(
 // ================================================================================================
 
 /// Tests that a simple account can be created in a complete transaction execution (not using
-/// [`TransactionContext::execute_code`]).
+/// [`MockTransaction::execute_code`]).
 #[tokio::test]
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])

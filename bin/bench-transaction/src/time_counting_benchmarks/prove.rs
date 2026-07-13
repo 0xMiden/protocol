@@ -14,7 +14,7 @@ use bench_transaction::context_setups::{
 };
 use criterion::{BatchSize, Bencher, Criterion, SamplingMode, criterion_group, criterion_main};
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
-use miden_testing::TransactionContext;
+use miden_testing::MockTransaction;
 use miden_tx::LocalTransactionProver;
 
 // BENCHMARK IDS
@@ -285,7 +285,7 @@ fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
 fn bench_async_execute<F, Fut>(b: &mut Bencher<'_>, build_context: F)
 where
     F: Fn() -> Fut,
-    Fut: Future<Output = Result<TransactionContext>>,
+    Fut: Future<Output = Result<MockTransaction>>,
 {
     b.iter_custom(|iters| {
         let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
@@ -306,7 +306,7 @@ where
 fn bench_async_execute_and_prove<F, Fut>(b: &mut Bencher<'_>, build_context: F)
 where
     F: Fn() -> Fut,
-    Fut: Future<Output = Result<TransactionContext>>,
+    Fut: Future<Output = Result<MockTransaction>>,
 {
     b.iter_custom(|iters| {
         let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();

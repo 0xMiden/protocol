@@ -6,7 +6,7 @@ use anyhow::{Context as _, Result};
 use miden_processor::FastProcessor;
 use miden_processor::trace::{TraceLenSummary, build_trace};
 use miden_protocol::transaction::{TransactionInputs, TransactionKernel, TransactionMeasurements};
-use miden_testing::TransactionContext;
+use miden_testing::MockTransaction;
 use miden_tx::{
     AccountProcedureIndexMap,
     ExecutionOptions,
@@ -23,7 +23,7 @@ use miden_tx::{
 /// setup against those inputs (minus the prove step). The duplicate run is per-bench, not
 /// per-iteration.
 pub async fn capture_measurements_and_trace_summary(
-    context: TransactionContext,
+    context: MockTransaction,
 ) -> Result<(TransactionMeasurements, TraceLenSummary)> {
     let executed = context
         .execute()

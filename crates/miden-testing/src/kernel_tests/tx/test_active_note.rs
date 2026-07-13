@@ -36,8 +36,8 @@ use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
+    MockTransactionInput,
     TestTransactionBuilder,
-    TxContextInput,
     assert_transaction_executor_error,
 };
 
@@ -71,7 +71,7 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
         .context("failed to parse tx script")?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[p2id_note.id()], &[])?
+        .build_tx_context(MockTransactionInput::AccountId(account.id()), &[p2id_note.id()], &[])?
         .tx_script(tx_script)
         .build()?;
 
@@ -392,7 +392,7 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
 
         mock_chain
             .build_tx_context(
-                TxContextInput::AccountId(account.id()),
+                MockTransactionInput::AccountId(account.id()),
                 &[],
                 &[p2id_note_1, p2id_note_2],
             )?
@@ -538,7 +538,7 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note])?
+            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note])?
             .build()?
     };
 
@@ -700,7 +700,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
             .build()?
     };
 
@@ -741,7 +741,7 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
             .build()?
     };
 

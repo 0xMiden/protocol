@@ -43,9 +43,9 @@ use crate::{
     AccountState,
     Auth,
     MockChain,
+    MockTransaction,
+    MockTransactionInput,
     TestTransactionBuilder,
-    TransactionContext,
-    TxContextInput,
     assert_transaction_executor_error,
 };
 
@@ -66,7 +66,7 @@ async fn test_note_setup() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
             .build()?
     };
 
@@ -117,7 +117,7 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
 
         mock_chain
             .build_tx_context(
-                TxContextInput::AccountId(account.id()),
+                MockTransactionInput::AccountId(account.id()),
                 &[],
                 &[p2id_note_1, p2id_note_2],
             )
@@ -170,7 +170,7 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     // assert that the stack contains the note storage at the end of execution
     assert_eq!(
         exec_output.get_stack_word(0),

@@ -76,8 +76,8 @@ use crate::{
     Auth,
     ExecError,
     MockChain,
+    MockTransactionInput,
     TestTransactionBuilder,
-    TxContextInput,
     assert_transaction_executor_error,
 };
 
@@ -1252,7 +1252,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let tx_context = mock_chain
         .build_tx_context(
-            TxContextInput::AccountId(account.id()),
+            MockTransactionInput::AccountId(account.id()),
             &[],
             &[p2id_note_existing_asset],
         )?
@@ -1305,7 +1305,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_new_asset])?
+        .build_tx_context(
+            MockTransactionInput::AccountId(account.id()),
+            &[],
+            &[p2id_note_new_asset],
+        )?
         .tx_script(tx_script)
         .build()?;
 
@@ -1400,7 +1404,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
     let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+        .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[])?
         .tx_script(tx_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .build()?;
@@ -1493,7 +1497,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
     mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+        .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[])?
         .tx_script(tx_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .build()?

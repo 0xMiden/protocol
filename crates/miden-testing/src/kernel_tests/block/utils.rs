@@ -8,7 +8,7 @@ use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, Transa
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::LocalTransactionProver;
 
-use crate::{MockChain, TxContextInput};
+use crate::{MockChain, MockTransactionInput};
 
 // MOCK CHAIN BUILDER EXTENSION
 // ================================================================================================
@@ -17,13 +17,13 @@ use crate::{MockChain, TxContextInput};
 pub trait MockChainBlockExt {
     async fn create_authenticated_notes_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ExecutedTransaction>;
 
     async fn create_authenticated_notes_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ProvenTransaction>;
 
@@ -35,7 +35,7 @@ pub trait MockChainBlockExt {
 
     async fn create_expiring_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         expiration_block: BlockNumber,
     ) -> anyhow::Result<ProvenTransaction>;
 
@@ -45,7 +45,7 @@ pub trait MockChainBlockExt {
 impl MockChainBlockExt for MockChain {
     async fn create_authenticated_notes_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ExecutedTransaction> {
         let notes = notes.into_iter().collect::<Vec<_>>();
@@ -55,7 +55,7 @@ impl MockChainBlockExt for MockChain {
 
     async fn create_authenticated_notes_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ProvenTransaction> {
         let executed_tx = self.create_authenticated_notes_tx(input, notes).await?;
@@ -74,7 +74,7 @@ impl MockChainBlockExt for MockChain {
 
     async fn create_expiring_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         expiration_block: BlockNumber,
     ) -> anyhow::Result<ProvenTransaction> {
         let expiration_delta = expiration_block
