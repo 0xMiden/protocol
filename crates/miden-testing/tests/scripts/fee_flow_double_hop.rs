@@ -17,7 +17,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -28,6 +28,7 @@ use miden_standards::account::auth::AuthNetworkAccountWithFees;
 use miden_standards::account::fees::{FeeManager, FeeScheduleEntry};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_AMBIGUOUS_DOWNSTREAM_NOTE,
     ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP,
     ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP,
     ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES,
@@ -354,6 +355,13 @@ async fn double_hop_settles_both_fees(#[case] surplus: u64) -> anyhow::Result<()
         Some(fee_asset(DOWNSTREAM_TOTAL + surplus)?),
     );
 
+    // The minted child sponsorship is routed at the downstream account by tag, matching the Rust
+    // builder, so the network can discover it.
+    assert_eq!(
+        child_sponsorship.metadata().tag(),
+        NoteTag::with_account_target(downstream.id()),
+    );
+
     let (spawned_note_id, child_sponsorship_id) = (spawned_note.id(), child_sponsorship.id());
 
     // Upstream kept its application fee, and nothing more: the downstream budget left in the child
@@ -450,8 +458,10 @@ async fn upstream_reclaims_chained_sponsorship_after_delta() -> anyhow::Result<(
     Ok(())
 }
 
-/// At most one consumed feature note may declare a spawn: the downstream note is located by
-/// attachment rather than script root, so a second spawner could not be matched to its parent.
+/// Two feature notes that each spawn a downstream note produce two network-targeted output notes.
+/// The settlement locates the spawned note by its target attachment, so two candidates make it
+/// ambiguous: it is rejected rather than letting one note's remainder be routed to the other's
+/// child.
 #[tokio::test]
 async fn two_spawning_notes_are_rejected() -> anyhow::Result<()> {
     let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
@@ -493,6 +503,103 @@ async fn two_spawning_notes_are_rejected() -> anyhow::Result<()> {
 
     let mut note_ids = Vec::new();
     for parent in &parents {
+        builder.add_output_note(RawOutputNote::Full(parent.clone()));
+        let sponsorship = Note::from(
+            NetworkSponsorshipNote::builder()
+                .sender(sponsor.id())
+                .target_account(upstream.id())?
+                .feature_note_id(parent.id())
+                .asset(fee_asset(UPSTREAM_APP_FEE + UPSTREAM_PROTOCOL_FEE + DOWNSTREAM_TOTAL)?)
+                .generate_serial_number(&mut rng)
+                .build()?,
+        );
+        builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+        note_ids.extend([sponsorship.id(), parent.id()]);
+    }
+
+    let mock_chain = builder.build()?;
+    let downstream_foreign = mock_chain.get_foreign_account_inputs(downstream.id())?;
+    let result = mock_chain
+        .build_tx_context(upstream.id(), &note_ids, &[])?
+        .foreign_accounts(vec![downstream_foreign])
+        .add_note_script(P2idNote::script())
+        .add_note_script(NetworkSponsorshipNote::script())
+        .add_note_script(FeeNote::script())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_AMBIGUOUS_DOWNSTREAM_NOTE);
+
+    Ok(())
+}
+
+/// At most one consumed feature note may declare a spawn, even when only one of them actually
+/// spawns: the second declaring note would otherwise fund the single child again out of its own
+/// remainder. This is caught by the spawner-count limit rather than the ambiguity check, since only
+/// one network-targeted output note exists.
+#[tokio::test]
+async fn second_declared_spawn_is_rejected() -> anyhow::Result<()> {
+    let fee_faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
+    let mut rng = RandomCoin::new(Word::empty());
+    let mut builder = MockChain::builder();
+
+    let downstream = fee_managed_account(
+        9,
+        FeeManager::new(fee_faucet)?.with_fee(
+            P2idNote::script_root(),
+            FeeScheduleEntry::new(DOWNSTREAM_APP_FEE, DOWNSTREAM_PROTOCOL_FEE)?,
+        ),
+        P2idNote::script_root(),
+    )?;
+
+    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // One parent actually spawns the downstream note; the other only declares that it may (its root
+    // is in the spawn schedule) but sweeps and spawns nothing.
+    let spawning_parent = NoteBuilder::new(sponsor.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .add_assets([business_asset()?])
+        .code(parent_note_code(&downstream))
+        .build()?;
+    let sweeping_parent = NoteBuilder::new(sponsor.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .add_assets([business_asset()?])
+        .code(SWEEP_ONLY_NOTE_CODE)
+        .build()?;
+    let spawning_root = spawning_parent.script().root();
+    let sweeping_root = sweeping_parent.script().root();
+
+    // The upstream account prices and allowlists both parents, and declares a spawn for each.
+    let auth = AuthNetworkAccountWithFees::with_allowed_notes(BTreeSet::from([
+        spawning_root,
+        sweeping_root,
+    ]))?;
+    let upstream = AccountBuilder::new([8; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(auth)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_component(
+            FeeManager::new(fee_faucet)?
+                .with_fee(
+                    spawning_root,
+                    FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?,
+                )
+                .with_fee(
+                    sweeping_root,
+                    FeeScheduleEntry::new(UPSTREAM_APP_FEE, UPSTREAM_PROTOCOL_FEE)?,
+                )
+                .with_spawn(spawning_root, P2idNote::script_root())
+                .with_spawn(sweeping_root, P2idNote::script_root()),
+        )
+        .build_existing()?;
+
+    builder.add_account(downstream.clone())?;
+    builder.add_account(upstream.clone())?;
+
+    let mut note_ids = Vec::new();
+    for parent in [&spawning_parent, &sweeping_parent] {
         builder.add_output_note(RawOutputNote::Full(parent.clone()));
         let sponsorship = Note::from(
             NetworkSponsorshipNote::builder()

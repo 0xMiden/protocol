@@ -101,15 +101,6 @@ impl FeeScheduleEntry {
         Ok(Self { app_fee, protocol_fee, enabled: true })
     }
 
-    /// Creates a disabled entry, which prices its script as denied rather than absent.
-    pub const fn disabled() -> Self {
-        Self {
-            app_fee: 0,
-            protocol_fee: 0,
-            enabled: false,
-        }
-    }
-
     /// Returns the portion the account keeps.
     pub const fn app_fee(&self) -> u64 {
         self.app_fee

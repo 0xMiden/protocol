@@ -26,6 +26,7 @@ use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fun
 use miden::standards::attachments::network_account_target
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME} from miden::standards::attachments::network_account_target
 use miden::standards::note::note_id
+use miden::standards::note_tag
 use miden::standards::notes::fee as fee_note
 use miden::standards::notes::network_sponsorship
 
@@ -52,7 +53,9 @@ const SPAWN_SCHEDULE_SLOT = word("miden::standards::fees::fee_manager::spawn_sch
 
 #! The storage slot holding [reclaim_delta_blocks, 0, 0, 0]: the number of blocks after which this
 #! account may reclaim a chained sponsorship it created, should the downstream account never
-#! consume it. 0 disables reclaim.
+#! consume it. 0 disables reclaim. The reclaim height is `block_number + reclaim_delta` over the
+#! field; the operator (gated by [`Authority`]) sets the delta, so an unreasonably large value only
+#! wraps this account's own reclaim height.
 const RECLAIM_DELTA_SLOT = word("miden::standards::fees::fee_manager::reclaim_delta")
 
 # Local memory offsets
@@ -85,11 +88,12 @@ const SPONSORSHIP_NUM_STORAGE_ITEMS = 7
 const REMAINDER_OWN_FEE_LOC = 0
 
 # fund_note_with_fee_asset memory locals
-const FUND_NOTE_IDX_LOC = 0
+const FUND_AMOUNT_LOC = 0
 
 # find_downstream_note memory locals
 const FIND_TARGET_SUFFIX_LOC = 0
 const FIND_TARGET_PREFIX_LOC = 1
+const FIND_COUNT_LOC = 2
 const FIND_NUM_NOTES_LOC = 4
 const FIND_NOTE_IDX_LOC = 5
 const FIND_IS_FOUND_LOC = 6
@@ -105,6 +109,8 @@ const ESTIMATE_AMOUNT_LOC = 6
 # sponsor_downstream_note memory locals
 const SPONSOR_FEE_AMOUNT_LOC = 0
 const SPONSOR_CHILD_IDX_LOC = 1
+const SPONSOR_TARGET_SUFFIX_LOC = 2
+const SPONSOR_TARGET_PREFIX_LOC = 3
 # The 7-item sponsorship note storage is staged contiguously at the word-aligned offset 4:
 # [CHILD_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height].
 const SPONSOR_STORAGE_LOC = 4
@@ -151,6 +157,8 @@ const ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES="this account cannot settle more t
 const ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_STORAGE="the sponsorship note storage does not hold the expected number of items"
 
 const ERR_FEE_MANAGER_SPONSORSHIP_STORAGE_MISMATCH="the opened sponsorship note storage does not match its commitment"
+
+const ERR_FEE_MANAGER_AMBIGUOUS_DOWNSTREAM_NOTE="more than one output note is routed at a network account, so the spawned downstream note cannot be identified unambiguously"
 
 # PROCEDURES
 # ================================================================================================
@@ -577,16 +585,16 @@ end
 #! Invocation: exec
 @locals(4)
 proc fund_note_with_fee_asset
-    loc_store.FUND_NOTE_IDX_LOC
+    loc_store.FUND_AMOUNT_LOC
     # => [note_idx]
 
-    push.0.0.0 loc_load.FUND_NOTE_IDX_LOC exec.fee_asset_id
+    push.0.0.0 loc_load.FUND_AMOUNT_LOC exec.fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
     exec.native_account::remove_asset dropw
     # => [note_idx]
 
-    push.0.0.0 loc_load.FUND_NOTE_IDX_LOC exec.fee_asset_id
+    push.0.0.0 loc_load.FUND_AMOUNT_LOC exec.fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -599,21 +607,29 @@ end
 #! Safe to call from settlement: the notes settlement itself creates (the downstream sponsorship
 #! and the FEE note) are only emitted after this scan.
 #!
+#! Scans every output note and requires the network-targeted one to be unique. Settlement funds the
+#! located note with the settling feature note's entire remainder, bound to that note; taking the
+#! first match instead would let a note co-batched with an honest spawner emit its own
+#! network-targeted output note at a lower index and hijack the remainder.
+#!
 #! Inputs:  []
 #! Outputs: [is_found, note_idx, target_id_suffix, target_id_prefix]
 #!
 #! Where:
 #! - is_found is 1 if such a note exists, 0 otherwise, in which case the remaining outputs are
 #!   meaningless.
-#! - note_idx is the index of the first such output note.
+#! - note_idx is the index of the network-targeted output note.
 #! - target_id_{suffix, prefix} identify the network account it is routed at.
+#!
+#! Panics if:
+#! - more than one output note is routed at a network account.
 #!
 #! Invocation: exec
 @locals(12)
 proc find_downstream_note
     exec.tx::get_num_output_notes loc_store.FIND_NUM_NOTES_LOC
     push.0 loc_store.FIND_NOTE_IDX_LOC
-    push.0 loc_store.FIND_IS_FOUND_LOC
+    push.0 loc_store.FIND_COUNT_LOC
     # => []
 
     loc_load.FIND_NUM_NOTES_LOC neq.0
@@ -644,21 +660,26 @@ proc find_downstream_note
 
             loc_store.FIND_TARGET_SUFFIX_LOC loc_store.FIND_TARGET_PREFIX_LOC
             loc_load.FIND_NOTE_IDX_LOC loc_store.FIND_FOUND_IDX_LOC
-            push.1 loc_store.FIND_IS_FOUND_LOC
+            loc_load.FIND_COUNT_LOC add.1 loc_store.FIND_COUNT_LOC
             # => []
         else
             drop
             # => []
         end
 
-        loc_load.FIND_NOTE_IDX_LOC add.1 loc_store.FIND_NOTE_IDX_LOC
-        # => []
-
-        loc_load.FIND_IS_FOUND_LOC not
-        loc_load.FIND_NOTE_IDX_LOC loc_load.FIND_NUM_NOTES_LOC lt
-        and
+        loc_load.FIND_NOTE_IDX_LOC add.1 dup loc_store.FIND_NOTE_IDX_LOC
+        loc_load.FIND_NUM_NOTES_LOC lt
         # => [should_loop]
     end
+    # => []
+
+    # the located child must be unique; a second network-targeted output note would make first-match
+    # ambiguous and let a co-batched note hijack the remainder
+    loc_load.FIND_COUNT_LOC dup lte.1
+    assert.err=ERR_FEE_MANAGER_AMBIGUOUS_DOWNSTREAM_NOTE
+    # => [count]
+
+    neq.0 loc_store.FIND_IS_FOUND_LOC
     # => []
 
     loc_load.FIND_TARGET_PREFIX_LOC loc_load.FIND_TARGET_SUFFIX_LOC
@@ -737,21 +758,21 @@ end
 #!
 #! The new sponsorship carries no attachments: the binding and the reclaim data live in its note
 #! storage, and this account names itself the reclaimer so it can recover the budget after the
-#! configured reclaim delta if the downstream account never consumes the note. The note is minted
-#! with tag 0: sponsorship notes are discovered by script root and matched to their feature note
-#! by the bound ID, so no routing tag is required.
+#! configured reclaim delta if the downstream account never consumes the note. The note's tag
+#! routes it at the downstream account as a discovery hint, matching the Rust builder.
 #!
 #! The caller must already have established that the upstream sponsorship covers `fee_amount`, since
 #! the asset is taken out of the vault. Without that check the account would front the downstream
 #! leg's liquidity, and a hostile downstream account could name an arbitrary amount.
 #!
-#! Inputs:  [fee_amount, child_note_idx]
+#! Inputs:  [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 @locals(16)
 proc sponsor_downstream_note
     loc_store.SPONSOR_FEE_AMOUNT_LOC loc_store.SPONSOR_CHILD_IDX_LOC
+    loc_store.SPONSOR_TARGET_SUFFIX_LOC loc_store.SPONSOR_TARGET_PREFIX_LOC
     # => []
 
     # stage the new note's storage, the child binding first; the note ID of the just-created
@@ -759,13 +780,6 @@ proc sponsor_downstream_note
     # is finalized
     loc_load.SPONSOR_CHILD_IDX_LOC exec.note_id::compute_output_note_id
     loc_storew_le.SPONSOR_STORAGE_LOC dropw
-    # => []
-
-    # this account reclaims its own chained sponsorship
-    exec.active_account::get_id
-    # => [account_id_suffix, account_id_prefix]
-
-    loc_store.SPONSOR_RECLAIMER_SUFFIX_LOC loc_store.SPONSOR_RECLAIMER_PREFIX_LOC
     # => []
 
     # the reclaim height derives from the configured delta, letting this account recover the
@@ -786,6 +800,14 @@ proc sponsor_downstream_note
     loc_store.SPONSOR_RECLAIM_HEIGHT_LOC
     # => []
 
+    # the reclaimer is this account, which created and funds the sponsorship; storing it lets only
+    # this account recover the budget should the downstream account never consume the note
+    exec.active_account::get_id
+    # => [reclaimer_suffix, reclaimer_prefix]
+
+    loc_store.SPONSOR_RECLAIMER_SUFFIX_LOC loc_store.SPONSOR_RECLAIMER_PREFIX_LOC
+    # => []
+
     procref.network_sponsorship::main
     # => [SPONSORSHIP_SCRIPT_ROOT]
 
@@ -799,7 +821,11 @@ proc sponsor_downstream_note
     exec.note::compute_and_store_recipient
     # => [RECIPIENT]
 
-    push.NOTE_TYPE_PUBLIC push.0
+    # route the sponsorship at the downstream account by tag, as its Rust builder does, so the
+    # network can discover it; the tag is a discovery hint, the enforced binding is the child
+    # note ID in storage
+    push.NOTE_TYPE_PUBLIC
+    loc_load.SPONSOR_TARGET_PREFIX_LOC exec.note_tag::create_account_target
     # => [tag, note_type, RECIPIENT]
 
     exec.output_note::create loc_store.SPONSOR_NOTE_IDX_LOC
@@ -905,8 +931,9 @@ proc settle_feature_note
             assert.err=ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP
             # => []
 
+            loc_load.FEATURE_TARGET_PREFIX_LOC loc_load.FEATURE_TARGET_SUFFIX_LOC
             loc_load.FEATURE_CHILD_IDX_LOC loc_load.FEATURE_REMAINDER_LOC
-            # => [fee_amount, child_note_idx]
+            # => [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
 
             exec.sponsor_downstream_note
             # => []
@@ -941,9 +968,11 @@ end
 #! Note that the downstream note is located by its network account target attachment, not by its
 #! script root, which the kernel does not record for output notes. A parent note that spawns a note
 #! other than the one it declared in the spawn schedule is therefore mispriced rather than rejected.
-#! Only script roots the account operator has priced can be consumed at all, so the parent script is
-#! reviewed before it is priced; that review must confirm it spawns what it declares, and routes it
-#! at an honest account.
+#! Only script roots the account operator has priced can be consumed at all, so every priced script
+#! is reviewed before it is priced; that review must confirm the spawner spawns what it declares and
+#! routes it at an honest account, and, since any priced note that emits a network-targeted output
+#! note participates in locating the downstream note, that no other priced script emits one
+#! unexpectedly.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -953,6 +982,7 @@ end
 #! - a feature note is not covered by enough sponsorship for its own fee.
 #! - a spawning feature note's sponsorship remainder does not cover the downstream estimate.
 #! - more than one consumed feature note declares a spawn.
+#! - more than one output note is routed at a network account, so the spawned note is ambiguous.
 #!
 #! Invocation: exec
 @locals(4)
