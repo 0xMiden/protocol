@@ -1,10 +1,6 @@
 use miden::core::word
-use {
-    LINK_MAP_ENTRY_SIZE,
-    LINK_MAP_REGION_END_PTR,
-    LINK_MAP_REGION_START_PTR,
-    link_map_malloc,
-} from miden::tx_kernel_core::memory
+use {LINK_MAP_ENTRY_SIZE, LINK_MAP_REGION_END_PTR, LINK_MAP_REGION_START_PTR, link_map_malloc}
+    from miden::tx_kernel_core::memory
 
 # A link map is a map data structure based on a sorted linked list.
 #
@@ -123,64 +119,71 @@ use {
 # ERRORS
 # =================================================================================================
 
-const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION="empty map requires operation InsertAtHead for set or AbsentAtHead for get"
+const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION =
+    "empty map requires operation InsertAtHead for set or AbsentAtHead for get"
 
-const ERR_LINK_MAP_PROVIDED_KEY_NOT_EQUAL_TO_ENTRY_KEY="provided key does not match key in map entry"
+const ERR_LINK_MAP_PROVIDED_KEY_NOT_EQUAL_TO_ENTRY_KEY =
+    "provided key does not match key in map entry"
 
-const ERR_LINK_MAP_PROVIDED_KEY_NOT_GREATER_THAN_ENTRY_KEY="provided key is not greater than the entry key"
+const ERR_LINK_MAP_PROVIDED_KEY_NOT_GREATER_THAN_ENTRY_KEY =
+    "provided key is not greater than the entry key"
 
-const ERR_LINK_MAP_PROVIDED_KEY_NOT_LESS_THAN_ENTRY_KEY="provided key is not less than the entry key"
+const ERR_LINK_MAP_PROVIDED_KEY_NOT_LESS_THAN_ENTRY_KEY =
+    "provided key is not less than the entry key"
 
-const ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION="host-provided entry ptr is outside the valid memory region"
+const ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION =
+    "host-provided entry ptr is outside the valid memory region"
 
-const ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED="host-provided entry ptr is not 'link map entry'-aligned"
+const ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED =
+    "host-provided entry ptr is not 'link map entry'-aligned"
 
-const ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR="map ptr stored in host-provided entry does not match actual pointer of the map"
+const ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR =
+    "map ptr stored in host-provided entry does not match actual pointer of the map"
 
 # CONSTANTS
 # =================================================================================================
 
 # The offset of the prev_entry_ptr in an entry's metadata.
-const PREV_ENTRY_PTR_OFFSET=1
+const PREV_ENTRY_PTR_OFFSET = 1
 
 # The offset of the next_entry_ptr in an entry's metadata.
-const NEXT_ENTRY_PTR_OFFSET=2
+const NEXT_ENTRY_PTR_OFFSET = 2
 
 # The offset of the KEY in an entry.
-const KEY_OFFSET=4
+const KEY_OFFSET = 4
 
 # The offset of the VALUE0 in an entry.
-const VALUE0_OFFSET=8
+const VALUE0_OFFSET = 8
 
 # The offset of the VALUE1 in an entry.
-const VALUE1_OFFSET=12
+const VALUE1_OFFSET = 12
 
 # The value of the Update operation for a set event.
-const INSERT_OPERATION_UPDATE=0
+const INSERT_OPERATION_UPDATE = 0
 
 # The value of the InsertAtHead operation for a set event.
-const INSERT_OPERATION_AT_HEAD=1
+const INSERT_OPERATION_AT_HEAD = 1
 
 # The value of the InsertAfterEntry operation for a set event.
-const INSERT_OPERATION_AFTER_ENTRY=2
+const INSERT_OPERATION_AFTER_ENTRY = 2
 
 # The value of the Found operation for a get event.
-const GET_OPERATION_FOUND=0
+const GET_OPERATION_FOUND = 0
 
 # The value of the AbsentAtHead operation for a get event.
-const GET_OPERATION_ABSENT_AT_HEAD=1
+const GET_OPERATION_ABSENT_AT_HEAD = 1
 
 # The value of the AbsentAfterEntry operation for a get event.
-const GET_OPERATION_ABSENT_AFTER_ENTRY=2
+const GET_OPERATION_ABSENT_AFTER_ENTRY = 2
 
 # EVENTS
 # =================================================================================================
 
 # Event emitted when an entry is set.
-const LINK_MAP_SET_EVENT=event("miden::protocol::link_map::set")
+const LINK_MAP_SET_EVENT = event("miden::protocol::link_map::set")
 
 # Event emitted when an entry is fetched.
-const LINK_MAP_GET_EVENT=event("miden::protocol::link_map::get")
+const LINK_MAP_GET_EVENT = event("miden::protocol::link_map::get")
 
 # LINK MAP PROCEDURES
 # =================================================================================================
@@ -587,7 +590,6 @@ proc insert_after_entry
         # set next_entry.prev_entry_ptr = entry_ptr
         exec.set_prev_entry_ptr
         # => []
-
     else
         # remove unneeded stack elements
         drop drop
@@ -929,7 +931,6 @@ end
 proc assert_entry_ptr_is_valid
     # Check entry pointer is in valid memory range.
     # -------------------------------------------------------------------------------------------------
-
     # memory pointers must fit into a u32
     # this enables us to use the more efficient u32lt(e) instructions.
     u32assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
