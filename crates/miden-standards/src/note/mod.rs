@@ -15,9 +15,6 @@ pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
-mod fee_sponsorship;
-pub use fee_sponsorship::{FeeSponsorship, FeeSponsorshipError};
-
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 

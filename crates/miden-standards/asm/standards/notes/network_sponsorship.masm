@@ -5,8 +5,6 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::tx
 
-use miden::standards::attachments::fee_sponsorship
-use miden::standards::attachments::network_account_target
 use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
 
@@ -16,16 +14,18 @@ use miden::standards::wallets::basic as basic_wallet
 #! The memory address at which the note storage is written.
 const STORAGE_PTR = 0
 
-# Note storage layout (3 items, loaded at STORAGE_PTR by get_storage):
-# - reclaimer_suffix      [0] : suffix of the account allowed to reclaim the note
-# - reclaimer_prefix      [1] : prefix of the account allowed to reclaim the note
-# - reclaim_block_height  [2] : block height at or after which the reclaimer may reclaim (0 = disabled)
-const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR
-const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 1
-const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 2
+# Note storage layout (7 items, loaded at STORAGE_PTR by get_storage):
+# - FEATURE_NOTE_ID       [0..3] : ID of the feature note this sponsorship pays for
+# - reclaimer_suffix      [4]    : suffix of the account allowed to reclaim the note
+# - reclaimer_prefix      [5]    : prefix of the account allowed to reclaim the note
+# - reclaim_block_height  [6]    : block height at or after which the reclaimer may reclaim (0 = disabled)
+const FEATURE_NOTE_ID_ITEM = STORAGE_PTR
+const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR + 4
+const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 5
+const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 
 #! The number of storage items of a NETWORK_SPONSORSHIP note.
-const NUM_STORAGE_ITEMS = 3
+const NUM_STORAGE_ITEMS = 7
 
 #! Local memory offset at which is_bound_feature_note_present stages the bound note ID.
 const BOUND_NOTE_ID_LOC = 0
@@ -33,7 +33,7 @@ const BOUND_NOTE_ID_LOC = 0
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="NETWORK_SPONSORSHIP note expects exactly 3 note storage items"
+const ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="NETWORK_SPONSORSHIP note expects exactly 7 note storage items"
 
 const ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED="NETWORK_SPONSORSHIP reclaim is disabled"
 
@@ -44,25 +44,25 @@ const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER="failed to reclaim N
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Returns whether the feature note bound by the active note's fee sponsorship attachment is among
-#! the transaction's input notes.
+#! Returns whether the feature note bound by the note storage is among the transaction's input
+#! notes.
 #!
 #! This check is what stops a sponsorship note from being consumed on its own. It lives in the
 #! note's own script rather than in the consuming account, because the sponsor trusts neither the
-#! network account nor the transaction builder; they do, however, choose the note's script root.
+#! consuming account nor the transaction builder; they do, however, choose the note's script root.
 #!
 #! Every input note's ID is recomputed and compared against the bound ID. No index hint is taken
 #! from the note arguments: those are chosen by the consumer, and an incorrect hint would revert a
 #! transaction whose feature note is in fact present, handing the builder a griefing vector.
 #!
-#! Inputs:  []
+#! Inputs:  [FEATURE_NOTE_ID]
 #! Outputs: [is_found]
 #!
-#! Panics if:
-#! - the active note carries no fee sponsorship attachment.
+#! Where:
+#! - FEATURE_NOTE_ID is the ID of the feature note to look for.
+#! - is_found is 1 if the feature note is among the transaction's input notes, 0 otherwise.
 @locals(4)
 proc is_bound_feature_note_present
-    exec.fee_sponsorship::active_note_bound_note_id
     loc_storew_le.BOUND_NOTE_ID_LOC dropw
     # => []
 
@@ -142,11 +142,15 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! NETWORK_SPONSORSHIP script: hands the note's assets to the network account it targets, provided
-#! the feature note it sponsors is consumed by the same transaction.
+#! NETWORK_SPONSORSHIP script: hands the note's assets to the consuming account, provided the
+#! feature note it sponsors is consumed by the same transaction.
 #!
-#! The note carries the fee for exactly one feature note, named by the note ID in its fee
-#! sponsorship attachment. The feature note itself stays entirely fee-unaware.
+#! The note carries the fee for exactly one feature note, named by the note ID in its storage. The
+#! feature note itself stays entirely fee-unaware, and the sponsorship carries no attachments.
+#!
+#! The note does not restrict who may consume it; it only requires the bound feature note to be
+#! consumed alongside it. Consumption rights are thereby inherited from the feature note: whoever
+#! may consume the feature note may take its sponsorship in the same transaction.
 #!
 #! The sponsorship and the feature note it sponsors must be consumed together. Two checks enforce
 #! this, and each sits with the party it protects:
@@ -155,12 +159,11 @@ end
 #! - Consuming a feature note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
-#! If the target account never consumes the note, the reclaimer may reclaim it once the reclaim
-#! block height is reached. Once the bound feature note is consumed by some other transaction, the
-#! presence check can never pass again and reclaim is the only way to recover the assets. When the
-#! reclaimer is also the target (a self-spawning chain sponsoring its own next hop), the same
-#! reclaim applies once the feature note can no longer be presented. The reclaimer is named in the
-#! note storage; the creator sets it, defaulting to the sender.
+#! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
+#! reclaim block height is reached. Once the bound feature note is consumed by some other
+#! transaction, the presence check can never pass again and reclaim is the only way to recover the
+#! assets. The reclaimer is named in the note storage; the creator sets it, defaulting to the
+#! sender.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -172,16 +175,16 @@ end
 #! - NOTE_ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
+#! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
 #! - reclaimer_{suffix, prefix} identify the account allowed to reclaim the note.
 #! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note,
 #!   or 0 if reclaim is disabled.
 #!
 #! Panics if:
-#! - the number of note storage items is not 3.
-#! - the note carries no network account target attachment or no fee sponsorship attachment.
-#! - the bound feature note is not consumed alongside the note by its target, and the note cannot
-#!   be reclaimed (reclaim is disabled, the reclaim block height is not reached, or the active
-#!   account is not the reclaimer).
+#! - the number of note storage items is not 7.
+#! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
+#!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
+#!   the reclaimer).
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
 @note_script
 pub proc main
@@ -194,27 +197,20 @@ pub proc main
     eq.NUM_STORAGE_ITEMS assert.err=ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
-    exec.network_account_target::active_account_matches_target_account
-    # => [is_target, pad(16)]
+    padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
+    # => [FEATURE_NOTE_ID, pad(16)]
 
-    # only the target scans the input notes for the bound feature note; for anyone else the
-    # sponsorship path is closed
-    if.true
-        exec.is_bound_feature_note_present
-        # => [is_present, pad(16)]
-    else
-        push.0
-        # => [is_present = 0, pad(16)]
-    end
-    # => [is_sponsorship = is_target AND is_present, pad(16)]
+    exec.is_bound_feature_note_present
+    # => [is_present, pad(16)]
 
-    # sponsorship path: the target keeps the assets alongside the feature note it pays for
+    # sponsorship path: the consumer keeps the assets alongside the feature note they pay for; who
+    # may get here is decided by the feature note's own consumption rules
     if.true
         exec.basic_wallet::add_assets_to_account
         # => [pad(16)]
     else
-        # reclaim path: everyone else, including the target without the feature note, may only
-        # reclaim the note back to its reclaimer named in the note storage
+        # reclaim path: without the feature note the assets may only return to the reclaimer named
+        # in the note storage
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
         # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]
 
