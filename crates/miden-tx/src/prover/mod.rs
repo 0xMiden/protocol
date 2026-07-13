@@ -14,7 +14,7 @@ use miden_protocol::transaction::{
 };
 use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::ProvingOptions;
-use miden_prover::{ExecutionProof, Word, prove};
+use miden_prover::{ExecutionProof, Word, prove_sync};
 
 use super::TransactionProverError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
@@ -33,6 +33,7 @@ pub use mast_store::TransactionMastStore;
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
+#[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
     proof_options: ProvingOptions,
 }
@@ -102,7 +103,7 @@ impl LocalTransactionProver {
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
-    pub async fn prove(
+    pub fn prove(
         &self,
         tx_inputs: impl Into<TransactionInputs>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
@@ -141,7 +142,7 @@ impl LocalTransactionProver {
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 
-        let (stack_outputs, proof) = prove(
+        let (stack_outputs, proof) = prove_sync(
             &TransactionKernel::main(),
             stack_inputs,
             advice_inputs.clone(),
@@ -149,7 +150,6 @@ impl LocalTransactionProver {
             ExecutionOptions::default(),
             self.proof_options.clone(),
         )
-        .await
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         // Extract transaction outputs and process transaction data.
