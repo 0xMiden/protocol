@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.15.4 (2026-07-13)
 
-- Migrated `miden-protocol`, `miden-standards` library and account components libraries to a miden-project structure ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
-- Added `TransactionKernel::package()`, `From<ProtocolLib> for Package`, and `From<StandardsLib> for Package` to expose the assembled packages ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
+- Migrated `miden-protocol`, `miden-standards` library and account components libraries to a miden-project structure ([#3224](https://github.com/0xMiden/protocol/pull/3224)).
+- Added `TransactionKernel::package()`, `From<ProtocolLib> for Package`, and `From<StandardsLib> for Package` to expose the assembled packages ([#3224](https://github.com/0xMiden/protocol/pull/3224)).
+- Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#3224](https://github.com/0xMiden/protocol/pull/3224)).
 
 ## v0.15.3 (2026-06-10)
 
