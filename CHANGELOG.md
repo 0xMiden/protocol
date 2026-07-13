@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.16.0-alpha.2 (2026-07-12)
+
+- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+
 ## v0.16.0-alpha.1 (2026-07-12)
 
 ### Features
