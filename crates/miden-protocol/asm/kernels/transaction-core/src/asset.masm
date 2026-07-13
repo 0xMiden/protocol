@@ -6,37 +6,21 @@ use miden::protocol_utils::asset as asset_utils
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_UNSUPPORTED_ASSET_COMPOSITION="asset composition Custom is not yet supported"
+const ERR_VAULT_UNSUPPORTED_ASSET_COMPOSITION = "asset composition Custom is not yet supported"
 
-const ERR_VAULT_MERGE_COMPOSITION_NONE="assets with composition none cannot be merged"
+const ERR_VAULT_MERGE_COMPOSITION_NONE = "assets with composition none cannot be merged"
 
-const ERR_VAULT_SPLIT_COMPOSITION_NONE="assets with composition none cannot be split"
+const ERR_VAULT_SPLIT_COMPOSITION_NONE = "assets with composition none cannot be split"
 
-const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be compared"
+const ERR_VAULT_LT_COMPOSITION_NONE = "assets with composition none cannot be compared"
 
-const ERR_FAUCET_IS_NOT_ASSET_ORIGIN="the faucet is not the origin of the asset"
+const ERR_FAUCET_IS_NOT_ASSET_ORIGIN = "the faucet is not the origin of the asset"
 
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-pub use {
-    ASSET_SIZE,
-    ASSET_VALUE_MEMORY_OFFSET,
-    COMPOSITION_CUSTOM,
-    COMPOSITION_FUNGIBLE,
-    COMPOSITION_NONE,
-    FUNGIBLE_ASSET_MAX_AMOUNT,
-    id_to_faucet_id,
-    id_into_faucet_id,
-    id_to_asset_class,
-    id_into_asset_class,
-    id_to_composition,
-    id_into_composition,
-    load,
-    store,
-    validate_metadata,
-    fungible_value_into_amount,
-} from miden::protocol_utils::asset
+pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_FUNGIBLE, COMPOSITION_NONE, FUNGIBLE_ASSET_MAX_AMOUNT, id_to_faucet_id, id_into_faucet_id, id_to_asset_class, id_into_asset_class, id_to_composition, id_into_composition, load, store, validate_metadata, fungible_value_into_amount}
+    from miden::protocol_utils::asset
 
 # PROCEDURES
 # =================================================================================================
@@ -51,7 +35,6 @@ pub use {
 #! - has_callbacks is 1 if callbacks are enabled and 0 if disabled.
 pub proc id_to_has_callbacks
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     dup.3 exec.account_id::asset_callback_flag
     # => [has_callbacks, ASSET_ID]
 end
@@ -112,7 +95,6 @@ end
 #! - the faucet ID in the key is not a valid account ID.
 pub proc validate_issuer
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     dup.3 dup.3 exec.asset_utils::split_suffix_and_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
 

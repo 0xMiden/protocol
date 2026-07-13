@@ -39,7 +39,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
+            movdn.15 dropw dropw dropw drop drop drop
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
@@ -164,7 +165,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
 // Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
 // the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
-// serial number, then registers it with the advice provider via `p2id::new ->
+// serial number, then registers it with the advice provider via `p2id::prepare_note ->
 // note::build_recipient`.
 #[tokio::test]
 async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {

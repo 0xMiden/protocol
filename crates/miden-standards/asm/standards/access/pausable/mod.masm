@@ -15,7 +15,7 @@ use miden::protocol::native_account
 pub mod manager
 
 # CONSTANTS
-# ================================================================================================
+# =================================================================================================
 
 # The slot where the paused flag is stored as a single word.
 # Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
@@ -26,14 +26,14 @@ const PAUSED_WORD = [1, 0, 0, 0]
 const UNPAUSED_WORD = [0, 0, 0, 0]
 
 # ERRORS
-# ================================================================================================
+# =================================================================================================
 
 const ERR_PAUSABLE_IS_PAUSED = "the contract is paused"
 
 const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 
 # PUBLIC INTERFACE
-# ================================================================================================
+# =================================================================================================
 
 #! Returns whether the account is currently paused.
 #!
@@ -56,6 +56,9 @@ pub proc is_paused
     swap drop
     # => [is_paused, pad(15)]
 end
+
+# PUBLIC HELPERS
+# =================================================================================================
 
 #! Sets the paused flag.
 #!

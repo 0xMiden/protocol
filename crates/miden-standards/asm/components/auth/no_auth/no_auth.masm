@@ -16,6 +16,9 @@ use miden::core::word
 #! Invocation: call
 @auth_script
 pub proc auth_no_auth
+    dropw
+    # => [pad(16)]
+
     # check if the account state has changed by comparing initial and final commitments
 
     exec.native_account::get_initial_commitment

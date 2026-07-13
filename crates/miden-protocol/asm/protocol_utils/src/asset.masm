@@ -13,7 +13,7 @@ const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata com
 # Specifies the maximum amount a fungible asset can represent.
 #
 # This is 2^63 - 2^31. See account_update.masm for more details.
-pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
+pub const FUNGIBLE_ASSET_MAX_AMOUNT = 0x7fffffff80000000
 
 # The number of elements in an asset, i.e. asset ID and value.
 pub const ASSET_SIZE = 8
@@ -97,7 +97,6 @@ end
 #! - ASSET_ID is the asset ID from which to extract the faucet ID.
 pub proc id_to_faucet_id
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     dup.3 dup.3
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_ID]
 
@@ -117,7 +116,6 @@ end
 #! - ASSET_ID is the asset ID from which to extract the faucet ID.
 pub proc id_into_faucet_id
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     drop drop
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
 
@@ -135,7 +133,6 @@ end
 #! - ASSET_ID is the asset ID from which to extract the asset class.
 pub proc id_to_asset_class
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
-
     dup.1 dup.1
     # => [asset_class_suffix, asset_class_prefix, ASSET_ID]
 end
@@ -150,7 +147,6 @@ end
 #! - ASSET_ID is the asset ID from which to extract the asset class.
 pub proc id_into_asset_class
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
-
     movup.2 drop movup.2 drop
     # => [asset_class_suffix, asset_class_prefix]
 end
@@ -257,7 +253,6 @@ end
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
 pub proc id_to_composition
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     dup.2
     # => [faucet_id_suffix_and_metadata, ASSET_ID]
 
@@ -278,7 +273,6 @@ end
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
 pub proc id_into_composition
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-
     drop drop
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
 

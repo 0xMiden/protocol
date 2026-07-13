@@ -63,7 +63,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
+use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
@@ -338,6 +338,19 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(BasicWallet)
             .with_assets(assets);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+    }
+
+    /// Adds an existing public [`NoteCreator`] account to the initial chain state and registers the
+    /// authenticator (if any).
+    ///
+    /// Unlike [`add_existing_wallet`](Self::add_existing_wallet), the account exposes only the
+    /// `create_note` procedure, which is enough for tests that only create output notes.
+    pub fn add_existing_note_creator(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
+        let account_builder = Account::builder(self.rng.random())
+            .account_type(AccountType::Public)
+            .with_component(NoteCreator);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
@@ -717,12 +730,15 @@ impl MockChainBuilder {
     /// Adds a P2IDE note (pay‑to‑ID‑extended) to the list of genesis notes.
     ///
     /// A P2IDE note can include an optional `timelock_height` and/or an optional
-    /// `reclaim_height` after which the `sender_account_id` may reclaim the
-    /// funds.
+    /// `reclaim_height` after which the note's reclaimer may reclaim the funds.
+    ///
+    /// The `reclaimer` is the account allowed to reclaim the note; when `None` it
+    /// defaults to `sender_account_id`.
     pub fn add_p2ide_note(
         &mut self,
         sender_account_id: AccountId,
         target_account_id: AccountId,
+        reclaimer: Option<AccountId>,
         asset: &[Asset],
         note_type: NoteType,
         reclaim_height: Option<BlockNumber>,
@@ -731,6 +747,7 @@ impl MockChainBuilder {
         let note: Note = P2ideNote::builder()
             .sender(sender_account_id)
             .target(target_account_id)
+            .maybe_reclaimer(reclaimer)
             .assets(asset.iter().copied())
             .note_type(note_type)
             .maybe_reclaim_height(reclaim_height)

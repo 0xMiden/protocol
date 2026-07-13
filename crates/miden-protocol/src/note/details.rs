@@ -68,8 +68,8 @@ impl NoteDetails {
     // --------------------------------------------------------------------------------------------
 
     /// Reduces the size of the note script by stripping all debug info from it.
-    pub fn minify_script(&mut self) {
-        self.recipient.minify_script();
+    pub fn clear_debug_info(&mut self) {
+        self.recipient.clear_debug_info();
     }
 
     /// Decomposes note details into underlying assets and recipient.
