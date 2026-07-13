@@ -497,7 +497,7 @@ fn extract_event_definitions_from_file(
     file_contents: &str,
     file_path: &Path,
 ) -> Result<()> {
-    let regex = Regex::new(r#"const\s*(\w+)\s*=\s*event\("([^"]+)"\)"#).unwrap();
+    let regex = Regex::new(r#"const\s*(\w+)\s*=\s*event\(\s*"([^"]+)"\s*\)"#).unwrap();
 
     for capture in regex.captures_iter(file_contents) {
         let const_name = capture.get(1).expect("const name should be captured");
