@@ -9,12 +9,9 @@ use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
 use miden::core::word
-use {
-    KERNEL_PROCEDURES_PTR,
-    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
-    UPCOMING_FOREIGN_PROCEDURE_PTR,
-} from miden::tx_kernel_core::memory
-use { AccountId } from miden::protocol_utils::types
+use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
+    from miden::tx_kernel_core::memory
+use {AccountId} from miden::protocol_utils::types
 
 # NOTE
 # =================================================================================================
@@ -28,25 +25,35 @@ use { AccountId } from miden::protocol_utils::types
 # ERRORS
 # =================================================================================================
 
-const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS="provided kernel procedure offset is out of bounds"
+const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
+    "provided kernel procedure offset is out of bounds"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note assets of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note assets of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note recipient of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note recipient of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note metadata of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note metadata of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note storage of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note storage of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note script root of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note serial number of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note attachments of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note attachments of active note because no note is currently being processed"
 
-const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO =
+    "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
+    "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
@@ -1208,7 +1215,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_recipient
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1288,7 +1295,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_serial_number
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1329,7 +1336,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_storage_info
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1373,7 +1380,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_script_root
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1842,7 +1849,11 @@ end
 #! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi(foreign_account_id: AccountId, foreign_proc_root: word, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(
+    foreign_account_id: AccountId,
+    foreign_proc_root: word,
+    foreign_procedure_input_15: felt
+)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
     # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
