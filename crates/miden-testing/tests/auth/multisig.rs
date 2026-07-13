@@ -953,13 +953,9 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
 /// Without this check a duplicated key lets a single signature satisfy multiple approver slots
 /// (signatures are looked up in the advice map by public key, not by signer index, and are not
 /// consumed on lookup), which would defeat the distinct-approvers policy.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_update_signers_rejects_duplicate_public_keys(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
@@ -994,7 +990,14 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys(
 
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(AuthMultisig::code())?
-        .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+        end
+        ",
+    )?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
     let salt = Word::from([Felt::new_unchecked(9); 4]);

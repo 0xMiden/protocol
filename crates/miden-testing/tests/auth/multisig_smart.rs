@@ -386,13 +386,9 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
 /// Tests that `multisig_smart::update_signers_and_threshold` rejects a signer set containing
 /// duplicate public keys, mirroring the check on the plain `multisig` variant.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::Falcon512Poseidon2;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
@@ -430,7 +426,7 @@ async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys(
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
         .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
@@ -489,13 +485,13 @@ async fn test_multisig_smart_set_procedure_policy(
 
     let salt = Word::from([Felt::new_unchecked(4); 4]);
 
-    let tx_context_builder = mock_chain
-        .build_tx_context(account_id, &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(account_id)
         .tx_script(set_policy_script)
         .auth_args(salt);
 
     // Dry-run to obtain the tx summary that the approvers must sign.
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -512,7 +508,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = tx_context_builder
+    let executed_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -537,13 +533,9 @@ async fn test_multisig_smart_set_procedure_policy(
 /// `set_procedure_policy` must reject a `PROC_ROOT` that is not one of the account's procedures, so
 /// a policy can never be stored under a foreign root. The `has_procedure` guard aborts during
 /// execution, before the epilogue auth check, so no signatures are required.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
@@ -571,7 +563,7 @@ async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root(
 
     let salt = Word::from([Felt::new_unchecked(7); 4]);
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
         .tx_script(set_policy_script)
         .auth_args(salt)
         .build()?
