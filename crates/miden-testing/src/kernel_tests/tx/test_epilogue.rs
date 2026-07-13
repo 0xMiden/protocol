@@ -69,7 +69,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             push.{ASSET_VALUE}
@@ -184,7 +184,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         push.{recipient}
         push.{note_type}
         push.{tag}
-        exec.output_note::create
+        call.::mock::account::create_note
         # => [note_idx]
 
         push.{ASSET_VALUE}
@@ -539,7 +539,7 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
             # => [tag, note_type, RECIPIENT]
 
             # create the note
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # make sure that output note was created: compare the output note hash with an empty

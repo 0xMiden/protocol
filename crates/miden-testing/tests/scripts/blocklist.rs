@@ -277,7 +277,9 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
 async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Only `create_note` is needed here, so a `NoteCreator` account suffices instead of a full
+    // basic wallet.
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?;
@@ -300,7 +302,8 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
+            movdn.15 dropw dropw dropw drop drop drop
 
             push.{asset_value}
             push.{asset_id}

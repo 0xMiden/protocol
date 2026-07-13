@@ -11,6 +11,9 @@ use miden_protocol::account::AccountProcedureRoot;
 pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
+    /// Exposes the `create_note` procedure from the
+    /// [`NoteCreator`][crate::account::wallets::NoteCreator] component.
+    NoteCreator,
     /// Exposes procedures from the
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
@@ -70,6 +73,7 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
+            AccountComponentInterface::NoteCreator => "Note Creator".to_string(),
             AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
             AccountComponentInterface::CodeInspection => "Code Inspection".to_string(),
             AccountComponentInterface::Authority => "Authority".to_string(),

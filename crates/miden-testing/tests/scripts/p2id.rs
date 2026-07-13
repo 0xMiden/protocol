@@ -252,7 +252,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{recipient_1}
                 push.{note_type_1}
                 push.{tag_1}
-                exec.output_note::create
+                call.::miden::standards::note::note_creator::create_note
+                movdn.15 dropw dropw dropw drop drop drop
 
                 push.{ASSET_VALUE_1}
                 push.{ASSET_ID_1}
@@ -262,7 +263,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{recipient_2}
                 push.{note_type_2}
                 push.{tag_2}
-                exec.output_note::create
+                call.::miden::standards::note::note_creator::create_note
+                movdn.15 dropw dropw dropw drop drop drop
 
                 push.{ASSET_VALUE_2}
                 push.{ASSET_ID_2}
@@ -305,11 +307,11 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests the P2ID `new` MASM constructor procedure.
-/// This test verifies that calling `p2id::new` from a transaction script creates an output note
-/// with the same recipient as `P2idNoteStorage::into_recipient` would create.
+/// Tests the P2ID `create_output_note` MASM constructor procedure.
+/// This test verifies that calling `p2id::create_output_note` from a transaction script creates an
+/// output note with the same recipient as `P2idNoteStorage::into_recipient` would create.
 #[tokio::test]
-async fn test_p2id_new_constructor() -> anyhow::Result<()> {
+async fn test_p2id_create_output_note_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_account = builder.add_existing_wallet_with_assets(
@@ -333,14 +335,14 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     // Create a note tag for the target account
     let tag = NoteTag::with_account_target(target_account.id());
 
-    // Build a transaction script that uses p2id::new to create a note
+    // Build a transaction script that uses p2id::create_output_note to create a note
     let tx_script_src = format!(
         r#"
         use miden::standards::notes::p2id
 
         @transaction_script
         pub proc main
-            # Push inputs for p2id::new
+            # Push inputs for p2id::create_output_note
             push.{serial_num}
             push.{note_type}
             push.{tag}
@@ -348,7 +350,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
             push.{target_suffix}
             # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
-            exec.p2id::new
+            exec.p2id::create_output_note
             # => [note_idx]
 
             # Add an asset to the created note
@@ -400,7 +402,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     assert_eq!(
         created_recipient.digest(),
         expected_recipient.digest(),
-        "The recipient created by p2id::new should match P2idNoteStorage::into_recipient"
+        "The recipient created by p2id::create_output_note should match \
+         P2idNoteStorage::into_recipient"
     );
 
     Ok(())

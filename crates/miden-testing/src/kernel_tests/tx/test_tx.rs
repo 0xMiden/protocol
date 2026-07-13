@@ -275,7 +275,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         "\
-        use miden::standards::wallets::basic as wallet
+        use miden::core::sys
         use miden::protocol::output_note
         use mock::util
 
@@ -289,7 +289,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{recipient_1}                  # recipient
             push.{NOTETYPE1}                    # note_type
             push.{tag1}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 0]
 
             dup
@@ -309,7 +309,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{RECIPIENT2}                   # recipient
             push.{NOTETYPE2}                    # note_type
             push.{tag2}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 1]
 
             dup
@@ -334,7 +334,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{RECIPIENT3}                   # recipient
             push.{NOTETYPE3}                    # note_type
             push.{tag3}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 2]
 
             # Store attachment3 words to memory at address 1024
@@ -347,6 +347,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => [attachment_scheme, num_words, ptr, note_idx]
             exec.output_note::add_attachment_from_memory
             # => []
+
+            exec.sys::truncate_stack
         end
     ",
         REMOVED_ASSET_ID_1 = removed_asset_1.to_id_word(),

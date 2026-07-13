@@ -10,8 +10,8 @@ use miden::core::word
 # CONSTANTS
 # ================================================================================================
 
-# The slot in this component's storage layout where the public key is stored.
-const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig_acl::pub_key")
+# The slot in this component's storage layout where the public key commitment is stored.
+const PUBLIC_KEY_COMMITMENT_SLOT = word("miden::standards::auth::singlesig_acl::pub_key")
 
 # The slot in this component's storage layout where the corresponding signature scheme id is stored.
 const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig_acl::scheme")
@@ -106,8 +106,8 @@ pub proc auth_tx_acl(auth_args: word)
 
     # If authentication is required, perform signature verification
     if.true
-        # Fetch public key from storage.
-        push.PUBLIC_KEY_SLOT[0..2] exec.native_account::get_initial_item
+        # Fetch public key commitment from storage.
+        push.PUBLIC_KEY_COMMITMENT_SLOT[0..2] exec.native_account::get_initial_item
         # => [PK_COMM, pad(16)]
 
         # Fetch scheme_id from storage
