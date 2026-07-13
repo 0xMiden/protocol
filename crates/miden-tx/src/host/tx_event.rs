@@ -54,8 +54,6 @@ pub(crate) enum TransactionProgressEvent {
 
     EpilogueAuthProcStart(RowIndex),
     EpilogueAuthProcEnd(RowIndex),
-
-    EpilogueAfterTxCyclesObtained(RowIndex),
 }
 
 // TRANSACTION EVENT
@@ -181,6 +179,15 @@ impl TransactionEvent {
                 err,
             )
         })?;
+
+        // Privileged events must originate from the kernel.
+        if tx_event_id.is_privileged() && !process.ctx().is_root() {
+            return Err(
+                TransactionKernelError::PrivilegedEventFromOutsideTransactionKernelContext(
+                    tx_event_id,
+                ),
+            );
+        }
 
         let tx_event = match tx_event_id {
             TransactionEventId::AccountBeforeForeignLoad => {
@@ -554,10 +561,6 @@ impl TransactionEvent {
             )),
             TransactionEventId::EpilogueAuthProcEnd => Some(TransactionEvent::Progress(
                 TransactionProgressEvent::EpilogueAuthProcEnd(process.clock()),
-            )),
-
-            TransactionEventId::EpilogueAfterTxCyclesObtained => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAfterTxCyclesObtained(process.clock()),
             )),
         };
 

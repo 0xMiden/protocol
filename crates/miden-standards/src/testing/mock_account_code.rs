@@ -25,9 +25,13 @@ const MOCK_FAUCET_CODE: &str = "
 ";
 
 const MOCK_ACCOUNT_CODE: &str = "
+    use miden::core::sys
     use miden::protocol::active_account
     use miden::protocol::native_account
-    use miden::protocol::tx
+    use miden::protocol::output_note
+    use {NOTE_TYPE_PRIVATE} from miden::protocol::note
+    use miden::standards::wallets::basic as wallet
+    use miden::standards::assets::fungible_asset
 
     pub use {receive_asset} from miden::standards::wallets::basic
     pub use {move_asset_to_note} from miden::standards::wallets::basic
@@ -68,7 +72,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_item
-        exec.active_account::get_initial_item
+        exec.native_account::get_initial_item
         # => [VALUE, pad(14)]
 
         # truncate the stack
@@ -96,7 +100,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [INIT_VALUE, pad(12)]
     @account_procedure
     pub proc get_initial_map_item
-        exec.active_account::get_initial_map_item
+        exec.native_account::get_initial_map_item
         # => [INIT_VALUE, pad(12)]
     end
 
@@ -110,6 +114,174 @@ const MOCK_ACCOUNT_CODE: &str = "
         # truncate the stack
         swapw dropw
         # => [CODE_COMMITMENT, pad(12)]
+    end
+
+    # READ-ONLY GETTERS
+    # ---------------------------------------------------------------------------------------------
+    # These wrap the account-context-only read procedures so tests can invoke them through the
+    # account via `call`.
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc get_initial_commitment
+        exec.native_account::get_initial_commitment
+        # => [INIT_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_COMMITMENT, pad(12)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc compute_commitment
+        exec.active_account::compute_commitment
+        # => [ACCOUNT_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [ACCOUNT_COMMITMENT, pad(12)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [nonce, pad(15)]
+    @account_procedure
+    pub proc get_nonce
+        exec.active_account::get_nonce
+        # => [nonce, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [nonce, pad(15)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_STORAGE_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc get_initial_storage_commitment
+        exec.native_account::get_initial_storage_commitment
+        # => [INIT_STORAGE_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_STORAGE_COMMITMENT, pad(12)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [INIT_VAULT_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_initial_vault_root
+        exec.native_account::get_initial_vault_root
+        # => [INIT_VAULT_ROOT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [INIT_VAULT_ROOT, pad(12)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [VAULT_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_vault_root
+        exec.active_account::get_vault_root
+        # => [VAULT_ROOT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [VAULT_ROOT, pad(12)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc get_asset
+        exec.active_account::get_asset
+        # => [ASSET_VALUE, pad(12)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc get_initial_asset
+        exec.native_account::get_initial_asset
+        # => [ASSET_VALUE, pad(12)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [balance, pad(15)]
+    @account_procedure
+    pub proc get_active_account_balance
+        exec.fungible_asset::get_active_account_balance
+        # => [balance, pad(15)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [init_balance, pad(15)]
+    @account_procedure
+    pub proc get_initial_native_account_balance
+        exec.fungible_asset::get_initial_native_account_balance
+        # => [init_balance, pad(15)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [has_asset, pad(15)]
+    @account_procedure
+    pub proc has_asset
+        exec.active_account::has_asset
+        # => [has_asset, pad(15)]
+    end
+
+    #! Inputs:  [ASSET_ID, pad(12)]
+    #! Outputs: [has_asset, pad(15)]
+    @account_procedure
+    pub proc has_initial_asset
+        exec.native_account::has_initial_asset
+        # => [has_asset, pad(15)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [num_procedures, pad(15)]
+    @account_procedure
+    pub proc get_num_procedures
+        exec.active_account::get_num_procedures
+        # => [num_procedures, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [num_procedures, pad(15)]
+    end
+
+    #! Inputs:  [index, pad(15)]
+    #! Outputs: [PROC_ROOT, pad(12)]
+    @account_procedure
+    pub proc get_procedure_root
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [PROC_ROOT, pad(12)]
+    end
+
+    #! Inputs:  [PROC_ROOT, pad(12)]
+    #! Outputs: [is_available, pad(15)]
+    @account_procedure
+    pub proc has_procedure
+        exec.active_account::has_procedure
+        # => [is_available, pad(15)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [DELTA_COMMITMENT, pad(12)]
+    @account_procedure
+    pub proc compute_delta_commitment
+        exec.native_account::compute_delta_commitment
+        # => [DELTA_COMMITMENT, pad(16)]
+
+        exec.sys::truncate_stack
+        # => [DELTA_COMMITMENT, pad(12)]
+    end
+
+    #! Inputs:  [PROC_ROOT, pad(12)]
+    #! Outputs: [was_called, pad(15)]
+    @account_procedure
+    pub proc was_procedure_called
+        exec.native_account::was_procedure_called
+        # => [was_called, pad(15)]
     end
 
     #! Inputs:  [pad(16)]
@@ -137,6 +309,14 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub proc remove_asset
         exec.native_account::remove_asset
         # => [FINAL_ASSET_VALUE, pad(12)]
+    end
+
+    #! Inputs:  [tag, note_type, RECIPIENT, pad(10)]
+    #! Outputs: [note_idx]
+    @account_procedure
+    pub proc create_note
+        exec.output_note::create
+        # => [note_idx, pad(15)]
     end
 
     #! Inputs:  [pad(16)]

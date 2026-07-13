@@ -10,13 +10,18 @@ use miden::core::word
 #! This avoids unnecessary nonce increments for transactions that don't modify
 #! the account state.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
+#!
+#! Invocation: call
 @auth_script
 pub proc auth_no_auth
+    dropw
+    # => [pad(16)]
+
     # check if the account state has changed by comparing initial and final commitments
 
-    exec.active_account::get_initial_commitment
+    exec.native_account::get_initial_commitment
     # => [INITIAL_COMMITMENT, pad(16)]
 
     exec.active_account::compute_commitment

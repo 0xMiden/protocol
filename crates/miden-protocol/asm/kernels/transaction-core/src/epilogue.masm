@@ -9,33 +9,30 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE} from miden::tx_kernel_core::constants
-use {
-    OUTPUT_NOTE_SECTION_OFFSET,
-    OUTPUT_VAULT_ROOT_PTR,
-} from miden::tx_kernel_core::memory
+use {OUTPUT_NOTE_SECTION_OFFSET, OUTPUT_VAULT_ROOT_PTR} from miden::tx_kernel_core::memory
 
 # ERRORS
 # =================================================================================================
 
-const ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME="total number of assets in the account and all involved notes must stay the same"
+const ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME =
+    "total number of assets in the account and all involved notes must stay the same"
 
-const ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY="executed transaction neither changed the account state, nor consumed any notes"
+const ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY =
+    "executed transaction neither changed the account state, nor consumed any notes"
 
-const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT="auth procedure has been called from outside the epilogue"
+const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT =
+    "auth procedure has been called from outside the epilogue"
 
-const ERR_EPILOGUE_NONCE_CANNOT_BE_0="nonce cannot be 0 after an account-creating transaction"
+const ERR_EPILOGUE_NONCE_CANNOT_BE_0 = "nonce cannot be 0 after an account-creating transaction"
 
 # CONSTANTS
 # =================================================================================================
 
-# Event emitted to signal that the compute_fee procedure has obtained the current number of cycles.
-const EPILOGUE_AFTER_TX_CYCLES_OBTAINED_EVENT=event("miden::protocol::epilogue::after_tx_cycles_obtained")
-
 # Event emitted to signal that an execution of the authentication procedure has started.
-const EPILOGUE_AUTH_PROC_START_EVENT=event("miden::protocol::epilogue::auth_proc_start")
+const EPILOGUE_AUTH_PROC_START_EVENT = event("miden::protocol::epilogue::auth_proc_start")
 
 # Event emitted to signal that an execution of the authentication procedure has ended.
-const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_end")
+const EPILOGUE_AUTH_PROC_END_EVENT = event("miden::protocol::epilogue::auth_proc_end")
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -214,42 +211,6 @@ proc execute_auth_procedure
     dropw dropw dropw dropw
 
     emit.EPILOGUE_AUTH_PROC_END_EVENT
-end
-
-# FEE PROCEDURES
-# =================================================================================================
-
-#! Computes the fee required for the current transaction.
-#!
-#! The number of cycles a transaction will take to verify depends logarithmically on the number of
-#! cycles that were proven. We estimate this by taking log2 of the estimated number of cycles the
-#! transaction will take to execute, rounded up to the next power of two.
-#!
-#! Inputs:  []
-#! Outputs: [fee_amount]
-#!
-#! Where:
-#! - fee_amount is the computed fee amount of the transaction in the fee asset.
-proc compute_fee
-    # get the number of cycles the transaction has taken to execute up this point
-    clk
-    # => [num_current_cycles]
-
-    emit.EPILOGUE_AFTER_TX_CYCLES_OBTAINED_EVENT
-    # => [num_tx_cycles]
-
-    # ilog2 will round down, but we need to round up, so we add 1 afterwards.
-    # technically we don't need to do this if num_tx_cycles is already a power of two, but
-    # because we're estimating part of the cycle count anyway, this is not a correctness
-    # concern currently.
-    ilog2 add.1
-    # => [num_estimated_verification_cycles]
-
-    exec.memory::get_verification_base_fee
-    # => [verification_base_fee, num_estimated_verification_cycles]
-
-    mul
-    # => [verification_cost]
 end
 
 # TRANSACTION EPILOGUE PROCEDURE

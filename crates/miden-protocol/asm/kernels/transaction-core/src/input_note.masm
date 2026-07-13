@@ -1,23 +1,51 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::memory
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_NONE} from miden::tx_kernel_core::asset
 
-# ERRORS
+# CONSTANTS
 # =================================================================================================
 
-const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested input note index should be less than the total number of input notes"
+#! Locals in remove_all_assets. The last region is a buffer to which the remaining assets are
+#! copied so that they can be inserted into the advice map
+#! (MAX_ASSETS_PER_NOTE * ASSET_SIZE elements). Local 3 is unused so that the buffer is
+#! word-aligned.
+const REMOVE_ALL_ASSETS_READ_PTR_LOC = 0
+const REMOVE_ALL_ASSETS_COUNT_LOC = 1
+const REMOVE_ALL_ASSETS_NUM_REMAINING_LOC = 2
+const REMOVE_ALL_ASSETS_ASSETS_LOC = 4
+
+# ERRORS
+# =================================================================================================
+
+const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS =
+    "requested input note index should be less than the total number of input notes"
+
+const ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS =
+    "requested asset index should be less than the number of assets in the input note"
+
+const ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND = "asset to remove was not found in the input note"
+
+const ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND =
+    "non-fungible asset to remove was not found in the input note"
 
 # INPUT NOTE PROCEDURES
 # =================================================================================================
 
-#! Returns the information about assets in the input note with the specified memory pointer.
+#! Returns the initial assets information of the input note with the specified memory pointer.
+#!
+#! The returned commitment and number of assets are the ones the note was created with; they do
+#! not change when assets are removed from the note during transaction execution.
 #!
 #! Inputs:  [input_note_ptr]
 #! Outputs: [ASSETS_COMMITMENT, num_assets]
 #!
 #! Where:
 #! - input_note_ptr is the memory address of the data segment for the requested input note.
-#! - num_assets is the number of assets in the specified note.
-#! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
-pub proc get_assets_info
+#! - num_assets is the number of assets the note was created with.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets the note was created with.
+pub proc get_initial_assets_info
     # get the number of assets in the note
     dup exec.memory::get_input_note_num_assets
     # => [num_assets, input_note_ptr]
@@ -27,15 +55,291 @@ pub proc get_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 end
 
+#! Returns the asset at the specified index in the input note with the specified memory pointer.
+#!
+#! The asset is returned as it currently is: if it was removed from the note, the returned
+#! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
+#!
+#! WARNING: The input_note_ptr is assumed to be valid.
+#!
+#! Inputs:  [input_note_ptr, asset_index]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - input_note_ptr is the memory address of the data segment for the requested input note.
+#! - asset_index is the index of the asset to return.
+#! - ASSET_ID is the asset ID of the asset at the specified index.
+#! - ASSET_VALUE is the value of the asset at the specified index.
+#!
+#! Panics if:
+#! - the asset index is greater or equal to the number of assets in the note.
+pub proc get_asset
+    # assert the requested asset index is less than the number of assets in the note
+    dup.1 dup.1 exec.memory::get_input_note_num_assets
+    # => [num_assets, asset_index, input_note_ptr, asset_index]
+    u32assert2.err=ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS
+    # => [input_note_ptr, asset_index]
+
+    # compute the pointer to the requested asset slot; keep a copy of assets_ptr on the stack so
+    # the stack depth does not drop below 16 while this runs in the kernel context
+    exec.memory::get_input_note_assets_ptr
+    swap mul.ASSET_SIZE dup.1 add
+    # => [asset_slot_ptr, assets_ptr]
+
+    exec.asset::load movup.8 drop
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Removes an asset from the input note with the specified memory pointer.
+#!
+#! For instance, if the note holds a fungible asset with amount 100 under ASSET_ID, and
+#! ASSET_VALUE has amount 30, then the value remaining in the note has amount 70.
+#!
+#! If the entire asset value is removed, the asset's slot in the note is cleared, i.e. set to
+#! (EMPTY_WORD, EMPTY_WORD). This is always the case for non-composable assets.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, input_note_ptr]
+#! Outputs: [FINAL_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to remove from the note.
+#! - ASSET_VALUE is the value of the asset to remove from the note.
+#! - input_note_ptr is the memory address of the data segment for the requested input note.
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
+#!   the EMPTY_WORD if the entire asset was removed.
+#!
+#! Panics if:
+#! - the asset's composition is Custom (not yet supported).
+#! - the asset is not present in the note.
+#! - the asset is not composable and is not present in the note with the exact value.
+#! - the amount of the fungible asset in the note is less than the amount to be removed.
+pub proc remove_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
+    # set up the linear scan over the note's asset slots
+    movup.8 dup exec.memory::get_input_note_num_assets
+    # => [num_assets, input_note_ptr, ASSET_ID, ASSET_VALUE]
+
+    swap exec.memory::get_input_note_assets_ptr
+    # => [assets_ptr, num_assets, ASSET_ID, ASSET_VALUE]
+
+    dup.1 mul.ASSET_SIZE add swap
+    # => [num_assets, assets_end_ptr, ASSET_ID, ASSET_VALUE]
+
+    push.0 movdn.10
+    # => [num_assets, assets_end_ptr, ASSET_ID, ASSET_VALUE, is_found = 0]
+
+    dup neq.0
+    # => [has_assets, num_assets, assets_end_ptr, ASSET_ID, ASSET_VALUE, is_found]
+
+    while.true
+        # move to the next lower asset slot
+        swap sub.ASSET_SIZE
+        # => [current_asset_ptr, num_remaining_assets, ASSET_ID, ASSET_VALUE, is_found]
+
+        # load the slot's asset ID
+        padw dup.4 mem_loadw_le
+        # => [SLOT_ASSET_ID, current_asset_ptr, num_remaining_assets, ASSET_ID, ASSET_VALUE, is_found]
+
+        # compare it against the ID of the asset to remove
+        # a cleared slot never matches a valid asset ID, and since a note cannot contain duplicate
+        # asset IDs, at most one slot matches
+        dup.9 dup.9 dup.9 dup.9 exec.word::eq
+        # => [is_match, current_asset_ptr, num_remaining_assets, ASSET_ID, ASSET_VALUE, is_found]
+
+        movup.11 or movdn.10
+        # => [current_asset_ptr, num_remaining_assets, ASSET_ID, ASSET_VALUE, is_found]
+
+        # decrement the number of remaining assets and continue if it is non-zero and !is_found
+        swap sub.1 dup neq.0
+        # => [has_remaining_assets, num_remaining_assets, current_asset_ptr, ASSET_ID, ASSET_VALUE, is_found]
+
+        # should_continue = has_remaining_assets && !is_found
+        dup.11 not and
+        # => [should_continue, num_remaining_assets, current_asset_ptr, ASSET_ID, ASSET_VALUE, is_found]
+    end
+
+    drop
+    # => [found_asset_ptr, ASSET_ID, ASSET_VALUE, is_found]
+
+    # assert the asset to remove was found in the note
+    swap.9 assert.err=ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND
+    # => [ASSET_ID, ASSET_VALUE, found_asset_ptr]
+
+    exec.asset::id_into_composition movdn.4
+    # => [ASSET_VALUE, asset_composition, found_asset_ptr]
+
+    # load the found asset's value
+    padw dup.9 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+    # => [STORED_ASSET_VALUE, ASSET_VALUE, asset_composition, found_asset_ptr]
+
+    # check if the full value is being removed
+    exec.word::test_eq
+    # => [is_full_removal, STORED_ASSET_VALUE, ASSET_VALUE, asset_composition, found_asset_ptr]
+
+    if.true
+        dropw padw padw
+        # => [EMPTY_WORD, EMPTY_WORD, ASSET_VALUE, asset_composition, found_asset_ptr]
+
+        # clear the asset's slot in the note; the removed asset becomes (EMPTY_WORD, EMPTY_WORD)
+        movup.13 exec.asset::store
+        # => [ASSET_VALUE, asset_composition]
+
+        # the entire value was removed, so nothing remains in the note; replace the removed value
+        # with the EMPTY_WORD
+        movup.4 drop padw swapw dropw
+        # => [FINAL_ASSET_VALUE]
+    else
+        # => [STORED_ASSET_VALUE, ASSET_VALUE, asset_composition, found_asset_ptr]
+
+        swapw
+        # => [ASSET_VALUE, STORED_ASSET_VALUE, asset_composition, found_asset_ptr]
+
+        # a partial removal is only defined for composable assets; if the composition is none, the
+        # non-composable asset to remove was not found in the note.
+        # split would also panic in this case, but the extra assertion provides a better error.
+        # the composition is duplicated because asset::split consumes it below
+        movup.8 dup neq.COMPOSITION_NONE
+        assert.err=ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND
+        # => [asset_composition, ASSET_VALUE, STORED_ASSET_VALUE, found_asset_ptr]
+
+        # compute the remaining value as STORED_ASSET_VALUE - ASSET_VALUE
+        exec.asset::split
+        # => [FINAL_ASSET_VALUE, found_asset_ptr]
+
+        # write the reduced value back to the note's asset slot
+        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le
+        # => [FINAL_ASSET_VALUE]
+    end
+end
+
+#! Removes all remaining assets from the input note with the specified memory pointer.
+#!
+#! Returns a commitment to the removed assets and stores them in the advice map under that
+#! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
+#! the assets that remained in the note at the time of the call, i.e. excluding assets that were
+#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#!
+#! The note's initial assets info (see get_initial_assets_info) is not affected by this procedure.
+#!
+#! Inputs:  [input_note_ptr]
+#! Outputs: [ASSETS_COMMITMENT, num_assets]
+#!
+#! Where:
+#! - input_note_ptr is the memory address of the data segment for the requested input note.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets removed by this procedure.
+#! - num_assets is the number of assets removed by this procedure.
+#!
+#! Locals:
+#! - 0: read pointer into the note's asset slots
+#! - 1: number of asset slots left to iterate
+#! - 2: number of removed (i.e. previously remaining) assets
+#! - 4..516: buffer of the removed assets (MAX_ASSETS_PER_NOTE * ASSET_SIZE elements)
+@locals(516)
+pub proc remove_all_assets
+    # initialize the number of remaining assets to zero; this is necessary because this procedure
+    # can be invoked multiple times and locals may hold values from a previous invocation
+    push.0 loc_store.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC
+    # => [input_note_ptr]
+
+    # set up the iteration over the note's asset slots
+    dup exec.memory::get_input_note_num_assets loc_store.REMOVE_ALL_ASSETS_COUNT_LOC
+    exec.memory::get_input_note_assets_ptr
+    # => [assets_ptr]
+
+    # initialize the hasher state for the assets commitment; the hasher state is pushed before the
+    # assets pointer is moved to local memory so the stack depth does not drop below 16 while this
+    # runs in the kernel context
+    exec.poseidon2::init_no_padding
+    # => [RATE0, RATE1, CAPACITY, assets_ptr]
+
+    movup.12 loc_store.REMOVE_ALL_ASSETS_READ_PTR_LOC
+    # => [RATE0, RATE1, CAPACITY]
+
+    # iterate the note's asset slots
+    # each remaining asset is hashed into the commitment, copied to the local buffer and removed
+    # from the note
+    loc_load.REMOVE_ALL_ASSETS_COUNT_LOC neq.0
+    while.true
+        loc_load.REMOVE_ALL_ASSETS_READ_PTR_LOC exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+        # an asset slot with an empty asset ID means the asset was already removed
+        exec.word::testz
+        # => [is_slot_empty, ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+        if.true
+            dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        else
+            # copy the asset to the local buffer at
+            # locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC + num_remaining * ASSET_SIZE
+            dupw.1 dupw.1
+            loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC mul.ASSET_SIZE
+            locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC add
+            # => [next_asset_ptr, ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            exec.asset::store
+            # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            # increment the number of remaining assets
+            loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC add.1
+            loc_store.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC
+
+            # remove the asset from the note by writing empty words to its slot
+            padw padw loc_load.REMOVE_ALL_ASSETS_READ_PTR_LOC exec.asset::store
+            # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            # absorb the asset into the hasher state
+            swapdw dropw dropw exec.poseidon2::permute
+            # => [RATE0, RATE1, CAPACITY]
+        end
+
+        # advance to the next asset slot
+        loc_load.REMOVE_ALL_ASSETS_READ_PTR_LOC add.ASSET_SIZE
+        loc_store.REMOVE_ALL_ASSETS_READ_PTR_LOC
+
+        # decrement the number of slots left to iterate and continue while it is non-zero
+        loc_load.REMOVE_ALL_ASSETS_COUNT_LOC sub.1
+        dup loc_store.REMOVE_ALL_ASSETS_COUNT_LOC neq.0
+        # => [should_loop, RATE0, RATE1, CAPACITY]
+    end
+
+    exec.poseidon2::squeeze_digest
+    # => [ASSETS_COMMITMENT]
+
+    # compute the local buffer range holding the removed assets
+    locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC dup
+    loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC mul.ASSET_SIZE add
+    # => [buffer_end_ptr, buffer_start_ptr, ASSETS_COMMITMENT]
+
+    movdn.5 movdn.4
+    # => [ASSETS_COMMITMENT, buffer_start_ptr, buffer_end_ptr]
+
+    # store the removed assets in the advice map using ASSETS_COMMITMENT as a key
+    adv.insert_mem
+    # => [ASSETS_COMMITMENT, buffer_start_ptr, buffer_end_ptr]
+
+    # remove the buffer pointers from the stack
+    movup.4 drop movup.4 drop
+    # => [ASSETS_COMMITMENT]
+
+    loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC movdn.4
+    # => [ASSETS_COMMITMENT, num_assets]
+end
+
 #! Assert that the provided note index is less than the total number of input notes.
 #!
 #! Inputs:  [note_index]
 #! Outputs: [note_index]
 pub proc assert_note_index_in_bounds
     # assert that the provided note index is less than the total number of notes
-    dup exec.memory::get_num_input_notes 
+    dup exec.memory::get_num_input_notes
     # => [input_notes_num, note_index, note_index]
-    
+
     u32assert2.err=ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS
     # => [note_index]

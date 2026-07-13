@@ -25,14 +25,13 @@ pub proc assert_only_one_non_auth_procedure_called
     # => [should_continue, num_procedures]
     while.true
         sub.1 dup
-        exec.active_account::get_procedure_root dupw
-        # => [PROC_ROOT, PROC_ROOT]
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, proc_index]
 
         exec.native_account::was_procedure_called
-        # => [was_called, PROC_ROOT]
+        # => [was_called, proc_index]
 
         if.true
-            dropw
             # => [proc_index]
 
             # The auth procedure is always at procedure index 0.
@@ -43,9 +42,6 @@ pub proc assert_only_one_non_auth_procedure_called
                 loc_load.0 add.1 loc_store.0
                 # => [proc_index]
             end
-        else
-            dropw
-            # => [proc_index]
         end
 
         dup neq.0

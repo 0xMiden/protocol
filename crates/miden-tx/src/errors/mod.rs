@@ -21,7 +21,7 @@ use miden_protocol::errors::{
     TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
-use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
@@ -133,6 +133,10 @@ pub enum TransactionExecutorError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
+    #[error("received privileged event {0} emitted outside the tx kernel context")]
+    PrivilegedEventFromOutsideTransactionKernelContext(TransactionEventId),
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -208,6 +212,10 @@ pub enum TransactionKernelError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
+    #[error("received privileged event {0} emitted outside the tx kernel context")]
+    PrivilegedEventFromOutsideTransactionKernelContext(TransactionEventId),
     #[error("failed to generate signature")]
     SignatureGenerationFailed(#[source] AuthenticationError),
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]

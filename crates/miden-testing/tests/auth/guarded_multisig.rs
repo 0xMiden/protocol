@@ -107,7 +107,8 @@ fn build_update_guardian_script_source(
                     push.{recipient}
                     push.{note_type}
                     push.{tag}
-                    exec.output_note::create
+                    call.::miden::standards::note::note_creator::create_note
+                    movdn.15 dropw dropw dropw drop drop drop
                     swapdw
                     dropw
                     dropw
@@ -322,7 +323,15 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "
+            @transaction_script
+            pub proc main
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                drop dropw
+            end
+            "
         ))?;
 
     let update_salt = Word::from([Felt::new_unchecked(991); 4]);
@@ -428,7 +437,15 @@ async fn test_guarded_multisig_update_guardian_public_key(
     Ok(())
 }
 
-/// Tests that `update_guardian_public_key` must be the only account action in the transaction.
+/// Tests that a `update_guardian_public_key` rotation must not touch notes, and that a valid
+/// guardian signature does not bypass that requirement.
+///
+/// Three ways to violate the "called alone" requirement are exercised: an input note (which invokes
+/// `receive_asset`), an output note (created via `create_note`), and a note-free second procedure
+/// (a direct `receive_asset` vault write). Because `guardian.masm` runs the input- and output-note
+/// guards before `assert_only_one_non_auth_procedure_called`, the note cases surface the specific
+/// note errors, while the note-free case is what actually trips
+/// `assert_only_one_non_auth_procedure_called`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -469,7 +486,15 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "@transaction_script\npub proc main\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            "
+            @transaction_script
+            pub proc main
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                drop dropw
+            end
+            "
         ))?;
 
     let mut mock_chain_builder =
@@ -514,7 +539,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .await;
     assert_transaction_executor_error!(
         without_guardian_result,
-        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
     );
 
     let old_guardian_signature = old_guardian_authenticator
@@ -531,7 +556,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 
     assert_transaction_executor_error!(
         with_guardian_result,
-        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
     );
 
     // Also reject rotation transactions that touch notes even when no other account procedure is
@@ -551,7 +576,23 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let update_guardian_with_output_script = CodeBuilder::new()
         .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
-            "use miden::protocol::output_note\n@transaction_script\npub proc main\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
+            "
+            @transaction_script
+            pub proc main
+                push.{recipient}
+                push.{note_type}
+                push.{tag}
+                call.::miden::standards::note::note_creator::create_note
+                drop
+                # => [pad(21)]
+                
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+
+                dropw dropw drop drop
+            end
+            ",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
@@ -594,17 +635,86 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .execute()
         .await;
 
-    // The transaction creates an output note (no input notes), so after the input check passes
-    // the output check fires.
+    // The rotation creates an output note (and no input notes), so the output-note guard - which
+    // runs before `assert_only_one_non_auth_procedure_called` - rejects it.
     assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES);
+
+    // Finally, combine the rotation with a note-free second procedure: a direct `receive_asset`
+    // vault write. With no input or output notes, both note guards pass and
+    // `assert_only_one_non_auth_procedure_called` is the guard that fires. (The unsourced asset
+    // would break asset preservation, but the auth procedure runs before that check in the
+    // epilogue, so the "called alone" error surfaces first.)
+    let extra_asset = FungibleAsset::mock(1);
+    let update_guardian_with_receive_script = CodeBuilder::new()
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .compile_tx_script(format!(
+            "
+            use miden::standards::wallets::basic as wallet
+            
+            @transaction_script
+            pub proc main
+                push.{asset_value}
+                push.{asset_id}
+                call.wallet::receive_asset
+                # => [pad(24)]
+
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                # => [pad(29)]
+                
+                dropw dropw dropw dropw drop
+            end
+            ",
+            asset_value = extra_asset.to_value_word(),
+            asset_id = extra_asset.to_id_word(),
+        ))?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new_unchecked(995); 4]);
+    let tx_context_builder = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_guardian_with_receive_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let result = tx_context_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
 
     Ok(())
 }
 
 /// `update_guardian_public_key` rejects every transaction that consumes input notes or creates
-/// output notes. Parametrized over the (input, output) tx layout so each path through the two
-/// separate `assert_no_*_notes` calls in `guardian.masm` is exercised — and the input check
-/// firing before the output check is verified explicitly via the (true, true) case.
+/// output notes. Parametrized over the (input, output) tx layout. Since output notes can only be
+/// created by calling the account's `create_note` procedure, any output note trips the "called
+/// alone" guard before `assert_no_output_notes` is reached; a plain input note that invokes no
+/// account procedure reaches `assert_no_input_notes` directly.
 #[rstest]
 #[case::no_notes(false, false)]
 #[case::input_only(true, false)]

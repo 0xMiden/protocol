@@ -338,7 +338,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         push.{amount}
         exec.::miden::protocol::active_account::get_id
         # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
-        exec.::miden::protocol::asset::create_fungible_asset
+        exec.::miden::standards::assets::fungible_asset::create
         # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         movupw.2
@@ -446,7 +446,9 @@ async fn test_blocked_account_cannot_add_asset_to_note(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Only `create_note` is needed here, so a `NoteCreator` account suffices instead of a full
+    // basic wallet.
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
     let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
     let asset = create_asset(faucet.id())?;
 
@@ -465,7 +467,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
 
             push.{asset_value}
             push.{asset_id}
@@ -505,8 +507,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 {
     let mut builder = MockChain::builder();
 
-    // Create wallet first so we know its ID before building the faucet.
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Create the account first so we know its ID before building the faucet.
+    let target_account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let wallet_id_suffix = target_account.id().suffix().as_canonical_u64();
     let wallet_id_prefix = target_account.id().prefix().as_u64();
 
@@ -540,7 +542,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         push.{amount}
         exec.::miden::protocol::active_account::get_id
         # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
-        exec.::miden::protocol::asset::create_fungible_asset
+        exec.::miden::standards::assets::fungible_asset::create
         # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
@@ -660,7 +662,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             push.{faucet_id_suffix}
             # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
 
-            exec.::miden::protocol::asset::create_fungible_asset
+            exec.::miden::standards::assets::fungible_asset::create
             # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
 
             call.::miden::standards::faucets::fungible::mint_and_send

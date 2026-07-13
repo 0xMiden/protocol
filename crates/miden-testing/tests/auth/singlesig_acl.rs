@@ -13,6 +13,9 @@ use miden_protocol::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
@@ -383,7 +386,6 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
-        .faucet_id(faucet_account.id())
         .asset(asset)
         .generate_serial_number(&mut rng)
         .build()?
@@ -400,6 +402,81 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// A non-binary exempt-map marker is only constructible by building the component's storage
+/// outside the typed `AuthSingleSigAcl` API (which always writes the canonical `[1, 0, 0, 0]`
+/// presence marker). Such a marker must degrade safely: the called procedure is treated as
+/// non-exempt and authentication is required, rather than the marker check aborting mid-execution
+/// and permanently bricking the account.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_non_binary_exempt_marker_requires_auth_instead_of_bricking(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (get_item, ..) = mock_component_proc_roots();
+
+    // Derive a valid public key / scheme id so the auth path is well-formed up to the point where
+    // the missing authenticator is detected.
+    let mut rng = ChaCha20Rng::from_seed(Default::default());
+    let pub_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)?
+        .public_key()
+        .to_commitment();
+
+    // Build the ACL auth component by hand, planting a NON-BINARY marker (`[5, 0, 0, 0]`) for the
+    // `get_item` root instead of the canonical `[1, 0, 0, 0]`. `AccountComponent::new` does not
+    // validate storage values against the schema, so this mirrors storage authored outside the
+    // typed `AuthSingleSigAcl` API.
+    let storage_slots = vec![
+        StorageSlot::with_value(AuthSingleSigAcl::public_key_slot().clone(), pub_key.into()),
+        StorageSlot::with_value(
+            AuthSingleSigAcl::scheme_id_slot().clone(),
+            Word::from([auth_scheme.as_u8(), 0, 0, 0]),
+        ),
+        StorageSlot::with_map(
+            AuthSingleSigAcl::exempt_procedure_roots_slot().clone(),
+            StorageMap::with_entries([(
+                StorageMapKey::from_raw(get_item.as_word()),
+                Word::from([5u32, 0, 0, 0]),
+            )])?,
+        ),
+    ];
+    let auth_component = AccountComponent::new(
+        AuthSingleSigAcl::code().clone(),
+        storage_slots,
+        AuthSingleSigAcl::component_metadata(),
+    )?;
+
+    let mock_component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let account = AccountBuilder::new([0; 32])
+        .with_auth_component(auth_component)
+        .with_component(mock_component)
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let input_note = NoteBuilder::new(account.id(), &mut rand::rng()).build()?;
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let mock_chain = builder.build()?;
+
+    // `get_item` is kernel-detected as called; the non-binary marker must be treated as "not
+    // exempt", so authentication is required. Without an authenticator this surfaces as
+    // MissingAuthenticator - not a mid-execution assertion abort from the marker check.
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .authenticator(None)
+        .tx_script(compile_call_get_item_script()?)
+        .build()?
+        .execute()
+        .await;
+    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
 
     Ok(())
 }

@@ -494,8 +494,8 @@ impl PublicOutputNote {
             return Err(OutputNoteError::NoteIsPrivate(note.id()));
         }
 
-        // Strip decorators from the note script
-        note.minify_script();
+        // Remove debug info from the note script (if any)
+        note.clear_debug_info();
 
         // Check the size limit after stripping decorators
         let note_size = note.get_size_hint();
