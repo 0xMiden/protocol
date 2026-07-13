@@ -28,7 +28,13 @@ pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 # =================================================================================================
 
 # Root of an empty Sparse Merkle Tree
-pub const EMPTY_SMT_ROOT = [3975378004049472045, 2532873049833957132, 2640800763532531478, 11158234471980764993]
+pub const EMPTY_SMT_ROOT =
+    [
+        3975378004049472045,
+        2532873049833957132,
+        2640800763532531478,
+        11158234471980764993
+    ]
 
 # Type of storage slot item in the account storage
 pub const STORAGE_SLOT_TYPE_VALUE = 0
