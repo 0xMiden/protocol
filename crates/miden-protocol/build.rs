@@ -31,14 +31,9 @@ const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
 ///
-/// With the `testing` feature enabled the projects are built with the `dev` profile so that the
-/// assembled packages retain their debug info.
-/// Otherwise the projects are built with the `release` profile, which strips debug info to keep the
-/// embedded packages small.
-#[cfg(any(feature = "testing", test))]
+/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
+/// information; consumers can strip it as needed.
 const BUILD_PROFILE: &str = "dev";
-#[cfg(not(any(feature = "testing", test)))]
-const BUILD_PROFILE: &str = "release";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
@@ -342,7 +337,9 @@ fn compile_protocol_lib(
     let protocol_package =
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-    protocol_package.write_masp_file(target_dir).into_diagnostic()
+    protocol_package.write_masp_file(target_dir).into_diagnostic()?;
+
+    write_release_package(&protocol_package)
 }
 
 // HELPER FUNCTIONS
@@ -351,6 +348,33 @@ fn compile_protocol_lib(
 /// Returns a new [Assembler] using the provided source manager, with warnings treated as errors.
 fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
     Assembler::new(source_manager).with_warnings_as_errors(true)
+}
+
+/// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
+fn write_release_package(package: &Package) -> Result<()> {
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
+    let out_path = Path::new(&out_dir);
+    // OUT_DIR is `<target>/<profile>/build/<pkg>-<hash>/out` so the profile dir is its 3rd
+    // ancestor.
+    let profile_dir = out_path
+        .ancestors()
+        .nth(3)
+        .expect("OUT_DIR should live under <target>/<profile>/build/<pkg>/out");
+
+    let name: &str = &package.name;
+    let final_path = profile_dir.join(name).with_extension(Package::EXTENSION);
+
+    let unique = out_path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+    // Because multiple build-script runs may write this same path, the package is created as a temp
+    // file and atomically renamed into place.
+    let tmp_path = profile_dir.join(format!(".{name}.{unique}.masp.tmp"));
+
+    package.write_to_file(&tmp_path).into_diagnostic()?;
+    fs::rename(&tmp_path, &final_path).into_diagnostic()
 }
 
 fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {

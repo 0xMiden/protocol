@@ -142,6 +142,10 @@
 - Fixed `eth_address::to_account_id` to validate the decoded `AccountId` structural invariants, preventing a malformed bridge-in destination address from being routed into an unspendable P2ID/MINT output ([#3243](https://github.com/0xMiden/protocol/pull/3243)).
 - Added an enforcement for `TransactionEventId::is_privileged` in the host, rejecting any privileged event emitted outside the root context ([#3251](https://github.com/0xMiden/protocol/pull/3251)).
 
+### Enhancements
+
+- Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
+
 ## v0.15.2 (2026-06-05)
 
 - [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
