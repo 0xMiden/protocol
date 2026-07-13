@@ -4,6 +4,7 @@
 
 ### Changes
 - [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
+- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
 
 ## v0.16.0-alpha.1 (2026-07-12)
 

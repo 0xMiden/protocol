@@ -175,14 +175,12 @@ fn core_benchmarks(c: &mut Criterion) {
                             .expect("failed to create a context which consumes single P2ID note")
                     },
                     |tx_context| async move {
-                        black_box(
-                            prove_transaction(
-                                tx_context.execute().await.expect(
-                                    "execution of the single P2ID note consumption tx failed",
-                                ),
-                            )
-                            .await,
-                        )
+                        black_box(prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the single P2ID note consumption tx failed"),
+                        ))
                     },
                     BatchSize::SmallInput,
                 );
@@ -199,14 +197,12 @@ fn core_benchmarks(c: &mut Criterion) {
                             .expect("failed to create a context which consumes single P2ID note")
                     },
                     |tx_context| async move {
-                        black_box(
-                            prove_transaction(
-                                tx_context.execute().await.expect(
-                                    "execution of the single P2ID note consumption tx failed",
-                                ),
-                            )
-                            .await,
-                        )
+                        black_box(prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the single P2ID note consumption tx failed"),
+                        ))
                     },
                     BatchSize::SmallInput,
                 );
@@ -224,15 +220,12 @@ fn core_benchmarks(c: &mut Criterion) {
                     },
                     |tx_context| async move {
                         // benchmark the transaction execution and proving
-                        black_box(
-                            prove_transaction(
-                                tx_context
-                                    .execute()
-                                    .await
-                                    .expect("execution of the two P2ID note consumption tx failed"),
-                            )
-                            .await,
-                        )
+                        black_box(prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the two P2ID note consumption tx failed"),
+                        ))
                     },
                     BatchSize::SmallInput,
                 );
@@ -250,15 +243,12 @@ fn core_benchmarks(c: &mut Criterion) {
                     },
                     |tx_context| async move {
                         // benchmark the transaction execution and proving
-                        black_box(
-                            prove_transaction(
-                                tx_context
-                                    .execute()
-                                    .await
-                                    .expect("execution of the two P2ID note consumption tx failed"),
-                            )
-                            .await,
-                        )
+                        black_box(prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the two P2ID note consumption tx failed"),
+                        ))
                     },
                     BatchSize::SmallInput,
                 );
@@ -280,10 +270,10 @@ fn core_benchmarks(c: &mut Criterion) {
     execute_and_prove_group.finish();
 }
 
-async fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
+fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
     let executed_transaction_id = executed_transaction.id();
     let proven_transaction: ProvenTransaction =
-        LocalTransactionProver::default().prove(executed_transaction).await?;
+        LocalTransactionProver::default().prove(executed_transaction)?;
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     Ok(())
@@ -326,7 +316,7 @@ where
                 let tx_context = build_context().await.expect("failed to build tx context");
                 let start = Instant::now();
                 let executed = tx_context.execute().await.expect("execute failed");
-                let _ = black_box(prove_transaction(executed).await);
+                let _ = black_box(prove_transaction(executed));
                 total += start.elapsed();
             }
             total
