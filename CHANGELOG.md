@@ -23,6 +23,10 @@
 - Changed the default `LocalTransactionProver` hash function from `BLAKE3` to `Poseidon2`, added ECDSA variants for every signature-authenticated transaction benchmark, and restructured the time counting benchmark IDs to encode the signing scheme and proving hash function (e.g. `poseidon2/falcon/single-p2id-note`) ([#3152](https://github.com/0xMiden/protocol/pull/3152)).
 - [BREAKING] Renamed `AssetId` to `AssetClass`, the identifier that distinguishes assets within a faucet ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
+## v0.16.0-alpha.2 (2026-07-12)
+
+- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+
 ## v0.16.0-alpha.1 (2026-07-12)
 
 ### Features

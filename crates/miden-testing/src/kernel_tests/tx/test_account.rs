@@ -1069,7 +1069,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
-    let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
+    let proven_tx = LocalTransactionProver::default().prove(tx.clone())?;
 
     // The patch should be present on the proven tx.
     let patch = proven_tx.account_update().details().unwrap_public();
