@@ -80,4 +80,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          gh release upload ${RELEASE_TAG} protocol.masp standards.masp
+          gh release upload ${RELEASE_TAG} protocol.masp standards.masp --clobber
