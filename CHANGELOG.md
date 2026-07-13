@@ -3,6 +3,8 @@
 ## v0.16.0-alpha.2 (2026-07-12)
 
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+- Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
+
 
 ## v0.16.0-alpha.1 (2026-07-12)
 
