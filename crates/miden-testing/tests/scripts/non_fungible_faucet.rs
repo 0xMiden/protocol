@@ -101,12 +101,12 @@ async fn execute_nft_mint(
     let code = nft_mint_script(commitment, recipient);
     let tx_script =
         CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet, &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
-    Ok(tx_context.execute().await?)
+    Ok(mock_tx.execute().await?)
 }
 
 /// Minting an NFT for a fresh commitment produces exactly one output note.
@@ -163,7 +163,7 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     let tx_script =
         CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
     let tx = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
@@ -222,7 +222,8 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     // the burn transaction succeeding is part of the assertion: receive_and_burn would abort with
     // ERR_NFT_NOT_ISSUED if the commitment were not in the issued state.
     let burned = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[burn_note])?
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(burn_note)
         .build()?
         .execute()
         .await?;
@@ -268,7 +269,8 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
         .into();
 
     let executed = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[mint_note])?
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(mint_note)
         .build()?
         .execute()
         .await?;
@@ -320,7 +322,8 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .into();
 
     let tx = mock_chain
-        .build_tx_context(faucet.id(), &[], &[mint_note])?
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint_note)
         .build()?
         .execute()
         .await;
@@ -387,7 +390,8 @@ async fn nft_transfer_to_blocked_account_fails() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -432,7 +436,7 @@ async fn nft_public_getters() -> anyhow::Result<()> {
     let tx_script =
         CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
     mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

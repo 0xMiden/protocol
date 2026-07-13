@@ -70,12 +70,13 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
         .compile_tx_script(code)
         .context("failed to parse tx script")?;
 
-    let tx_context = mock_chain
-        .build_tx_context(MockTransactionInput::AccountId(account.id()), &[p2id_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .authenticated_input_note(p2id_note.id())
         .tx_script(tx_script)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(
         result,
         ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED
@@ -86,7 +87,7 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
 
 #[tokio::test]
 async fn test_active_note_get_metadata() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
@@ -121,10 +122,10 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
+        METADATA = mock_tx.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -137,7 +138,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 /// word deeper and fails the second `assert_eqw`.
 #[tokio::test]
 async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
@@ -183,10 +184,10 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
+        METADATA = mock_tx.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -199,7 +200,7 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
 async fn test_active_note_is_public_and_is_private(
     #[case] note_type: NoteType,
 ) -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let mut rng = RandomCoin::new(Word::default());
@@ -241,14 +242,14 @@ async fn test_active_note_is_public_and_is_private(
         "#
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_sender() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
@@ -277,9 +278,9 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
+    let sender = mock_tx.input_notes().get_note(0).note().metadata().sender();
     assert_eq!(exec_output.get_stack_element(0), sender.suffix());
     assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
 
@@ -291,7 +292,7 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
 #[case(NoteType::Private)]
 #[tokio::test]
 async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
@@ -328,7 +329,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
         .expect("stack element should be a valid note type");
@@ -370,7 +371,7 @@ async fn test_metadata_into_tag() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -391,15 +392,12 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(
-                MockTransactionInput::AccountId(account.id()),
-                &[],
-                &[p2id_note_1, p2id_note_2],
-            )?
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()?
     };
 
-    let notes = tx_context.input_notes();
+    let notes = mock_tx.input_notes();
 
     const DEST_POINTER_NOTE_0: u32 = 100000000;
     const DEST_POINTER_NOTE_1: u32 = 200000000;
@@ -516,14 +514,14 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
         NOTE_1_ASSET_ASSERTIONS = construct_asset_assertions(notes.get_note(1).note()),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_storage() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -538,7 +536,8 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note])?
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_note(p2id_note)
             .build()?
     };
 
@@ -563,7 +562,7 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         code
     }
 
-    let note0 = tx_context.input_notes().get_note(0).note();
+    let note0 = mock_tx.input_notes().get_note(0).note();
 
     let code = format!(
         r#"
@@ -607,7 +606,7 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         NOTE_0_PTR = 100000000,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
@@ -655,8 +654,8 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     );
     let input_note = Note::new(vault.clone(), metadata, recipient);
 
-    // provide this input note to the transaction context
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    // provide this input note to the mock transaction
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .extend_input_notes(vec![input_note])
         .build()?;
 
@@ -679,14 +678,14 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
             end
         ";
 
-    tx_context.execute_code(tx_code).await.context("transaction execution failed")?;
+    mock_tx.execute_code(tx_code).await.context("transaction execution failed")?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -700,7 +699,8 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -718,16 +718,16 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let serial_number = tx_context.input_notes().get_note(0).note().serial_num();
+    let serial_number = mock_tx.input_notes().get_note(0).note().serial_num();
     assert_eq!(exec_output.get_stack_word(0), serial_number);
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -741,7 +741,8 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -759,9 +760,9 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let script_root = tx_context.input_notes().get_note(0).note().script().root();
+    let script_root = mock_tx.input_notes().get_note(0).note().script().root();
     assert_eq!(exec_output.get_stack_word(0), script_root.into());
     Ok(())
 }
@@ -792,7 +793,7 @@ async fn test_note_find_attachment(
     let scheme_0 = NoteAttachmentScheme::new(10)?;
     let scheme_1 = NoteAttachmentScheme::new(20)?;
 
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
@@ -809,7 +810,7 @@ async fn test_note_find_attachment(
             .extend_input_notes(vec![input_note0, input_note1])
             .build()?
     };
-    assert_eq!(tx_context.tx_inputs().input_notes().num_notes(), 2);
+    assert_eq!(mock_tx.tx_inputs().input_notes().num_notes(), 2);
 
     let setup_find_attachment = match note_idx {
         Some(idx) => format!("push.{idx}"),
@@ -885,7 +886,7 @@ async fn test_note_find_attachment(
         EXPECTED_WORD = word_1,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }

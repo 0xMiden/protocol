@@ -25,9 +25,9 @@ use miden_testing::MockTransaction;
 
 async fn run_scenario(
     bench: ExecutionBenchmark,
-    context: MockTransaction,
+    mock_tx: MockTransaction,
 ) -> Result<(ExecutionBenchmark, MeasurementsPrinter)> {
-    let (measurements, trace) = capture_measurements_and_trace_summary(context)
+    let (measurements, trace) = capture_measurements_and_trace_summary(mock_tx)
         .await
         .with_context(|| format!("failed to capture measurements for `{bench}`"))?;
     Ok((bench, MeasurementsPrinter::from_parts(measurements, trace)))

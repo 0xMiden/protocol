@@ -128,7 +128,7 @@ use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder}
 /// # }
 /// ```
 ///
-/// ## Create mock objects and build a transaction context
+/// ## Create mock objects and build a mock transaction
 ///
 /// ```
 /// # use anyhow::Result;
@@ -166,11 +166,11 @@ use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder}
 ///
 /// // The target account is a new account so we move it into the transaction builder, since the
 /// // chain's committed accounts do not yet contain it.
-/// let tx_context = mock_chain
+/// let mock_tx = mock_chain
 ///     .build_transaction(target)
 ///     .authenticated_input_note(note.id())
 ///     .build()?;
-/// let executed_transaction = tx_context.execute().await?;
+/// let executed_transaction = mock_tx.execute().await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -662,6 +662,17 @@ impl MockChain {
     /// [`MockChain`]. Input notes are added explicitly on the returned builder, and the transaction
     /// inputs are only resolved against the chain once all input notes are known. See
     /// [`MockTransactionBuilder`] for details.
+    ///
+    /// Depending on the provided `input`, the builder is initialized differently:
+    /// - [`MockTransactionInput::AccountId`]: The transaction inputs are resolved against the
+    ///   public account committed to the chain under that ID.
+    /// - [`MockTransactionInput::Account`]: The account is passed as-is to the transaction inputs.
+    ///   This can be used to build a chain of transactions against the same account that build on
+    ///   top of each other. For example, transaction A modifies an account from state 0 to 1, and
+    ///   transaction B modifies it from state 1 to 2.
+    ///
+    /// In both cases, if the chain holds an authenticator for the account, it is set on the
+    /// builder.
     pub fn build_transaction(
         &self,
         input: impl Into<MockTransactionInput>,
@@ -1280,11 +1291,11 @@ impl Deserializable for AccountAuthenticator {
     }
 }
 
-// TX CONTEXT INPUT
+// MOCK TRANSACTION INPUT
 // ================================================================================================
 
-/// Helper type to abstract over the inputs to [`MockChain::build_tx_context`]. See that method's
-/// docs for details.
+/// Helper type to abstract over the account input to [`MockChain::build_transaction`]. See that
+/// method's docs for details.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MockTransactionInput {
@@ -1423,7 +1434,8 @@ mod tests {
         mock_chain.prove_next_block()?;
 
         let tx = mock_chain
-            .build_tx_context(MockTransactionInput::Account(account), &[], &[note_1])?
+            .build_transaction(MockTransactionInput::Account(account))
+            .unauthenticated_input_note(note_1)
             .build()?
             .execute()
             .await?;
@@ -1475,8 +1487,8 @@ mod tests {
         let mut chain = builder.build().unwrap();
         for (account, note) in notes {
             let tx = chain
-                .build_tx_context(MockTransactionInput::Account(account), &[], &[note])
-                .unwrap()
+                .build_transaction(MockTransactionInput::Account(account))
+                .unauthenticated_input_note(note)
                 .build()
                 .unwrap()
                 .execute()
@@ -1540,7 +1552,7 @@ mod tests {
         let mut chain = builder.build()?;
 
         // Execute a noop transaction and create a batch from it.
-        let tx = chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await?;
+        let tx = chain.build_transaction(account.id()).build()?.execute().await?;
         let proven_tx = LocalTransactionProver::default().prove_dummy(tx)?;
         let proposed_batch = chain.propose_transaction_batch(vec![proven_tx])?;
         let proven_batch = chain.prove_transaction_batch(proposed_batch)?;

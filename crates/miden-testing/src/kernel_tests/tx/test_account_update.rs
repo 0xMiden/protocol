@@ -75,8 +75,7 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1080,7 +1079,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let tx_summary = mock_chain
-        .build_tx_context(account, &[], &[])?
+        .build_transaction(account)
         .build()?
         .execute()
         .await
@@ -1306,7 +1305,8 @@ impl AccountUpdateTest {
         // Delta path: emit unauthorized so the host's build_tx_summary cross-checks the delta.
         let delta_run = {
             let mut tx = mock_chain
-                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .build_transaction(account.id())
+                .authenticated_input_notes(input_note_ids.iter().copied())
                 .auth_args(emit_delta_args());
             if let Some(ref script) = tx_script {
                 tx = tx.tx_script(script.clone());
@@ -1323,7 +1323,8 @@ impl AccountUpdateTest {
         // Patch path: complete the tx normally and check the patch.
         let patch_run_tx = {
             let mut tx = mock_chain
-                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .build_transaction(account.id())
+                .authenticated_input_notes(input_note_ids.iter().copied())
                 .auth_args(EMPTY_WORD);
             if let Some(script) = tx_script {
                 tx = tx.tx_script(script);

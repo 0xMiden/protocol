@@ -172,12 +172,12 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain
+    let mock_tx = mock_chain
         .build_transaction(account.id())
         .authenticated_input_notes([note_1.id(), note_2.id()])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     account.apply_patch(executed_transaction.account_patch())?;
     let resulting_asset = account.vault().assets().next().unwrap();
@@ -286,16 +286,17 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(account.id(), &[input_note_1.id(), input_note_2.id()], &[])?
-        .extend_expected_output_notes(vec![
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_notes([input_note_1.id(), input_note_2.id()])
+        .expected_output_notes(vec![
             RawOutputNote::Full(output_note_1),
             RawOutputNote::Full(output_note_2),
         ])
         .tx_script(tx_script)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
@@ -383,13 +384,13 @@ async fn test_p2id_create_output_note_constructor() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    let tx_context = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+    let mock_tx = mock_chain
+        .build_transaction(sender_account.id())
+        .expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .tx_script(tx_script)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify that one note was created
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);

@@ -97,10 +97,11 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // EXECUTE UPDATE_GER NOTE AGAINST BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // VERIFY GER HASH WAS STORED IN MAP
     // --------------------------------------------------------------------------------------------
@@ -328,16 +329,18 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // TX1: Consume first UPDATE_GER note (should succeed)
-    let tx_context_1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note_1.id()], &[])?
+    let mock_tx_1 = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note_1.id())
         .build()?;
-    let executed_tx_1 = tx_context_1.execute().await?;
+    let executed_tx_1 = mock_tx_1.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_tx_1)?;
     mock_chain.prove_next_block()?;
 
     // TX2: Consume second UPDATE_GER note with same GER (should fail)
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[update_ger_note_2])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(update_ger_note_2)
         .build()?
         .execute()
         .await;

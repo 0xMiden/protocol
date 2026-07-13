@@ -23,9 +23,9 @@ use miden_tx::{
 /// setup against those inputs (minus the prove step). The duplicate run is per-bench, not
 /// per-iteration.
 pub async fn capture_measurements_and_trace_summary(
-    context: MockTransaction,
+    mock_tx: MockTransaction,
 ) -> Result<(TransactionMeasurements, TraceLenSummary)> {
-    let executed = context
+    let executed = mock_tx
         .execute()
         .await
         .context("pre-execution (to resolve signatures) failed")?;

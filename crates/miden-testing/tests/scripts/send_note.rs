@@ -103,10 +103,10 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         )?);
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
-        .expect("failed to build tx context")
+        .build_transaction(sender_basic_wallet_account.id())
+        .authenticated_input_note(spawn_note.id())
         .tx_script(send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
+        .expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -189,10 +189,9 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
         )?);
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(sender_fungible_faucet_account.id())
         .tx_script(send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])
+        .expected_output_notes(vec![RawOutputNote::Full(note.clone())])
         .build()?
         .execute()
         .await?;

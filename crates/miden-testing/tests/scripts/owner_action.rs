@@ -1,7 +1,6 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::slice;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
@@ -65,7 +64,8 @@ async fn execute_note_and_apply(
     note: &Note,
 ) -> anyhow::Result<Account> {
     let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(note))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note.clone())
         .build()?;
     let executed = tx.execute().await?;
 
@@ -142,7 +142,8 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     // selector 99 is not a known action
     let note = malformed_owner_action_note(owner, vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
@@ -164,7 +165,8 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     // TransferOwnership selector (0) but only one storage item instead of the expected three
     let note = malformed_owner_action_note(owner, vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 

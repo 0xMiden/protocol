@@ -291,7 +291,8 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // Consuming the note should succeed: the callback is gracefully skipped because the
     // faucet does not define the callback storage slot.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -369,7 +370,8 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 
     // Execute the transaction - should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -413,7 +415,8 @@ async fn test_blocked_account_cannot_receive_asset(
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -486,7 +489,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[], &[])?
+        .build_transaction(target_account.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -601,7 +604,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     // Execute the transaction: consume the P2ID note (asset enters vault), then move the asset
     // to output note 1. Should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -681,7 +685,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()

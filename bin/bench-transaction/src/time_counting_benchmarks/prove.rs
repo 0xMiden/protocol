@@ -91,7 +91,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     tx_consume_single_p2id_note_falcon()
                         .expect("failed to create a context which consumes single P2ID note")
                 },
-                |tx_context| async move { black_box(tx_context.execute().await) },
+                |mock_tx| async move { black_box(mock_tx.execute().await) },
                 BatchSize::SmallInput,
             );
     });
@@ -103,7 +103,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     tx_consume_single_p2id_note_ecdsa()
                         .expect("failed to create a context which consumes single P2ID note")
                 },
-                |tx_context| async move { black_box(tx_context.execute().await) },
+                |mock_tx| async move { black_box(mock_tx.execute().await) },
                 BatchSize::SmallInput,
             );
     });
@@ -112,13 +112,13 @@ fn core_benchmarks(c: &mut Criterion) {
         b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
             .iter_batched(
                 || {
-                    // prepare the transaction context
+                    // prepare the mock transaction
                     tx_consume_two_p2id_notes_falcon()
                         .expect("failed to create a context which consumes two P2ID notes")
                 },
-                |tx_context| async move {
+                |mock_tx| async move {
                     // benchmark the transaction execution
-                    black_box(tx_context.execute().await)
+                    black_box(mock_tx.execute().await)
                 },
                 BatchSize::SmallInput,
             );
@@ -128,13 +128,13 @@ fn core_benchmarks(c: &mut Criterion) {
         b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
             .iter_batched(
                 || {
-                    // prepare the transaction context
+                    // prepare the mock transaction
                     tx_consume_two_p2id_notes_ecdsa()
                         .expect("failed to create a context which consumes two P2ID notes")
                 },
-                |tx_context| async move {
+                |mock_tx| async move {
                     // benchmark the transaction execution
-                    black_box(tx_context.execute().await)
+                    black_box(mock_tx.execute().await)
                 },
                 BatchSize::SmallInput,
             );
@@ -174,9 +174,9 @@ fn core_benchmarks(c: &mut Criterion) {
                         tx_consume_single_p2id_note_falcon()
                             .expect("failed to create a context which consumes single P2ID note")
                     },
-                    |tx_context| async move {
+                    |mock_tx| async move {
                         black_box(prove_transaction(
-                            tx_context
+                            mock_tx
                                 .execute()
                                 .await
                                 .expect("execution of the single P2ID note consumption tx failed"),
@@ -196,9 +196,9 @@ fn core_benchmarks(c: &mut Criterion) {
                         tx_consume_single_p2id_note_ecdsa()
                             .expect("failed to create a context which consumes single P2ID note")
                     },
-                    |tx_context| async move {
+                    |mock_tx| async move {
                         black_box(prove_transaction(
-                            tx_context
+                            mock_tx
                                 .execute()
                                 .await
                                 .expect("execution of the single P2ID note consumption tx failed"),
@@ -218,10 +218,10 @@ fn core_benchmarks(c: &mut Criterion) {
                         tx_consume_two_p2id_notes_falcon()
                             .expect("failed to create a context which consumes two P2ID notes")
                     },
-                    |tx_context| async move {
+                    |mock_tx| async move {
                         // benchmark the transaction execution and proving
                         black_box(prove_transaction(
-                            tx_context
+                            mock_tx
                                 .execute()
                                 .await
                                 .expect("execution of the two P2ID note consumption tx failed"),
@@ -241,10 +241,10 @@ fn core_benchmarks(c: &mut Criterion) {
                         tx_consume_two_p2id_notes_ecdsa()
                             .expect("failed to create a context which consumes two P2ID notes")
                     },
-                    |tx_context| async move {
+                    |mock_tx| async move {
                         // benchmark the transaction execution and proving
                         black_box(prove_transaction(
-                            tx_context
+                            mock_tx
                                 .execute()
                                 .await
                                 .expect("execution of the two P2ID note consumption tx failed"),
@@ -279,10 +279,10 @@ fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
     Ok(())
 }
 
-/// Times `execute()` for an async-built tx context. Uses `iter_custom` because async builders
-/// can't run inside `iter_batched`'s setup under a current_thread runtime (nested `block_on`
-/// panics).
-fn bench_async_execute<F, Fut>(b: &mut Bencher<'_>, build_context: F)
+/// Times `execute()` for an async-built mock transaction. Uses `iter_custom` because async
+/// builders can't run inside `iter_batched`'s setup under a current_thread runtime (nested
+/// `block_on` panics).
+fn bench_async_execute<F, Fut>(b: &mut Bencher<'_>, build_mock_tx: F)
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<MockTransaction>>,
@@ -292,9 +292,9 @@ where
         rt.block_on(async {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let tx_context = build_context().await.expect("failed to build tx context");
+                let mock_tx = build_mock_tx().await.expect("failed to build mock transaction");
                 let start = Instant::now();
-                let _ = black_box(tx_context.execute().await);
+                let _ = black_box(mock_tx.execute().await);
                 total += start.elapsed();
             }
             total
@@ -303,7 +303,7 @@ where
 }
 
 /// Same shape as [`bench_async_execute`] but also drives the prover after `execute()`.
-fn bench_async_execute_and_prove<F, Fut>(b: &mut Bencher<'_>, build_context: F)
+fn bench_async_execute_and_prove<F, Fut>(b: &mut Bencher<'_>, build_mock_tx: F)
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<MockTransaction>>,
@@ -313,9 +313,9 @@ where
         rt.block_on(async {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let tx_context = build_context().await.expect("failed to build tx context");
+                let mock_tx = build_mock_tx().await.expect("failed to build mock transaction");
                 let start = Instant::now();
-                let executed = tx_context.execute().await.expect("execute failed");
+                let executed = mock_tx.execute().await.expect("execute failed");
                 let _ = black_box(prove_transaction(executed));
                 total += start.elapsed();
             }

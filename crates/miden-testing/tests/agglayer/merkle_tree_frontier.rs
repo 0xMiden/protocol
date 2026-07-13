@@ -107,7 +107,7 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script.clone())
         .build()?
         .execute()
@@ -144,7 +144,7 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script.clone())
         .build()?
         .execute()

@@ -407,21 +407,21 @@ mod tests {
         let script_root2 = note_script2.root();
 
         // Build a transaction context with both note scripts
-        let tx_context = TestTransactionBuilder::with_existing_mock_account()
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account()
             .add_note_script(note_script1.clone())
             .add_note_script(note_script2.clone())
             .build()
             .expect("failed to build transaction context");
 
         // Assert that fetching both note scripts works
-        let retrieved_script1 = tx_context
+        let retrieved_script1 = mock_tx
             .get_note_script(script_root1)
             .await
             .expect("failed to get note script 1")
             .expect("note script 1 should exist");
         assert_eq!(retrieved_script1, note_script1);
 
-        let retrieved_script2 = tx_context
+        let retrieved_script2 = mock_tx
             .get_note_script(script_root2)
             .await
             .expect("failed to get note script 2")
@@ -430,7 +430,7 @@ mod tests {
 
         // Fetching a non-existent one returns None
         let non_existent_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let result = tx_context.get_note_script(non_existent_root).await;
+        let result = mock_tx.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
     }
 
@@ -443,7 +443,7 @@ mod tests {
         let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
         let mock_chain = builder.build()?;
 
-        let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+        let mock_tx = mock_chain.build_transaction(account).build()?;
 
         // A value that exceeds u32::MAX triggers the `u32assert` inside `compute_fee`.
         let code = format!(
@@ -461,7 +461,7 @@ mod tests {
             num_extra_cycles = u64::from(u32::MAX) + 1
         );
 
-        let Err(error) = tx_context.execute_code(&code).await else {
+        let Err(error) = mock_tx.execute_code(&code).await else {
             anyhow::bail!("execution should fail on non-u32 extra cycles");
         };
 

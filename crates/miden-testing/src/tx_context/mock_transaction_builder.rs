@@ -30,11 +30,10 @@ use crate::mock_chain::MockTransactionInput;
 /// A builder for a [`MockTransaction`] that is coupled to a concrete [`MockChain`].
 ///
 /// It is the public entry point for executing a transaction against a chain and is created through
-/// [`MockChain::build_transaction`]. Contrary to [`MockChain::build_tx_context`], input notes are
-/// not passed up front but added explicitly through [`Self::authenticated_input_note`] and
-/// [`Self::unauthenticated_input_note`]. The transaction inputs are only resolved against the chain
-/// in [`Self::build`], once all input notes are known, by calling
-/// [`MockChain::get_transaction_inputs`].
+/// [`MockChain::build_transaction`]. Input notes are added explicitly through
+/// [`Self::authenticated_input_note`] and [`Self::unauthenticated_input_note`]. The transaction
+/// inputs are only resolved against the chain in [`Self::build`], once all input notes are known,
+/// by calling [`MockChain::get_transaction_inputs`].
 ///
 /// # Examples
 ///

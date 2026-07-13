@@ -1,5 +1,4 @@
 use core::num::NonZeroU16;
-use core::slice;
 use std::collections::BTreeSet;
 
 use miden_protocol::Word;
@@ -97,7 +96,7 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
         CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -131,7 +130,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -167,7 +167,8 @@ async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist(
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -198,7 +199,7 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(other_script)
         .build()?
         .execute()
@@ -237,7 +238,8 @@ async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -290,7 +292,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_arg
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(script.into())
         .tx_script_args(script.tx_script_args())
         .build()?
@@ -342,7 +345,8 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
 
     let input_notes = [note_allowed, note_disallowed];
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &input_notes)?
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(input_notes)
         .build()?
         .execute()
         .await;
@@ -365,7 +369,8 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;

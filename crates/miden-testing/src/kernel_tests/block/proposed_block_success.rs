@@ -344,11 +344,11 @@ async fn generate_conditional_tx(
         if modify_storage { Felt::ONE } else { Felt::ZERO },
     ];
 
-    let tx_context = chain
-        .build_tx_context(input.into(), &[noop_note.id()], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(input)
+        .authenticated_input_note(noop_note.id())
         .auth_args(auth_args.into())
         .build()
         .unwrap();
-    tx_context.execute().await.unwrap()
+    mock_tx.execute().await.unwrap()
 }

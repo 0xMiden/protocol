@@ -81,17 +81,19 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 
     let mut mock_chain = builder.build()?;
 
-    let update_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_executed = update_tx_context.execute().await?;
+    let update_executed = update_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_executed)?;
     mock_chain.prove_next_block()?;
 
-    let remove_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+    let remove_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()?;
-    let remove_executed = remove_tx_context.execute().await?;
+    let remove_executed = remove_mock_tx.execute().await?;
 
     // VERIFY GER IS NO LONGER REGISTERED AND CHAIN HASH ADVANCED
     let mut updated_bridge_account = bridge_account.clone();
@@ -149,18 +151,21 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_a, &update_b, &update_c] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
 
-    let remove_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_b.id()], &[])?
+    let remove_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_b.id())
         .build()?;
-    let remove_executed = remove_tx_context.execute().await?;
+    let remove_executed = remove_mock_tx.execute().await?;
     updated_bridge_account.apply_patch(remove_executed.account_patch())?;
 
     assert!(
@@ -220,9 +225,11 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_a, &update_b, &remove_a, &remove_b] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
@@ -272,15 +279,18 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     for note in [&update_ger_note, &remove_ger_note_first] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note_second.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note_second.id())
         .build()?
         .execute()
         .await;
@@ -316,9 +326,11 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_first, &remove_note, &update_second] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
@@ -359,15 +371,17 @@ async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
 
     let mut mock_chain = builder.build()?;
 
-    let update_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_executed = update_tx_context.execute().await?;
+    let update_executed = update_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_executed)?;
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()?
         .execute()
         .await;

@@ -160,7 +160,8 @@ async fn consume_admin_note(
 ) -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[note.id()], &[])?
+        .build_transaction(faucet_id)
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -201,7 +202,8 @@ async fn allow_receive_asset_succeeds_when_account_pre_allowed() -> anyhow::Resu
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -229,7 +231,8 @@ async fn allow_receive_asset_fails_when_recipient_not_allowed() -> anyhow::Resul
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -266,7 +269,8 @@ async fn allow_then_receive_succeeds() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -318,7 +322,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[], &[])?
+        .build_transaction(target_account.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -361,7 +365,8 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -443,7 +448,8 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(other_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(other_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -506,7 +512,7 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
     let executed = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()

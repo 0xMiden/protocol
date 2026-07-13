@@ -51,7 +51,7 @@ use crate::{
 
 #[tokio::test]
 async fn test_note_setup() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -66,7 +66,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(MockTransactionInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -86,16 +87,16 @@ async fn test_note_setup() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    note_setup_stack_assertions(&exec_output, &tx_context);
+    note_setup_stack_assertions(&exec_output, &mock_tx);
     note_setup_memory_assertions(&exec_output);
     Ok(())
 }
 
 #[tokio::test]
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
-    let mut tx_context = {
+    let mut mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -116,12 +117,8 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
         mock_chain.prove_next_block().unwrap();
 
         mock_chain
-            .build_tx_context(
-                MockTransactionInput::AccountId(account.id()),
-                &[],
-                &[p2id_note_1, p2id_note_2],
-            )
-            .unwrap()
+            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()
             .unwrap()
     };
@@ -154,15 +151,15 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
 
     let note_args = [Word::from([91, 91, 91, 91u32]), Word::from([92, 92, 92, 92u32])];
     let note_args_map = BTreeMap::from([
-        (tx_context.input_notes().get_note(0).note().id(), note_args[1]),
-        (tx_context.input_notes().get_note(1).note().id(), note_args[0]),
+        (mock_tx.input_notes().get_note(0).note().id(), note_args[1]),
+        (mock_tx.input_notes().get_note(1).note().id(), note_args[0]),
     ]);
 
-    let tx_args = TransactionArgs::new(tx_context.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().clone().map)
         .with_note_args(note_args_map);
 
-    tx_context.set_tx_args(tx_args);
-    let exec_output = tx_context.execute_code(code).await.unwrap();
+    mock_tx.set_tx_args(tx_args);
+    let exec_output = mock_tx.execute_code(code).await.unwrap();
 
     assert_eq!(exec_output.get_stack_word(0), note_args[0]);
     assert_eq!(exec_output.get_stack_word(4), note_args[1]);
@@ -191,7 +188,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
 
 #[tokio::test]
 async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Create test script and serial number
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
@@ -245,7 +242,7 @@ async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
         serial_num = serial_num,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     // Create expected NoteStorage for each test case
     let inputs_4 = word_1.to_vec();
@@ -286,7 +283,7 @@ async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Define test values as Words
     let word_1 = Word::from([1, 2, 3, 4u32]);
@@ -344,7 +341,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
         addr_3 = BASE_ADDR + 12,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let mut inputs_5 = word_1.to_vec();
     inputs_5.push(word_2[0]);
@@ -370,9 +367,9 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_build_metadata() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
-    let sender = tx_context.account().id();
+    let sender = mock_tx.account().id();
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
@@ -400,7 +397,7 @@ async fn test_build_metadata() -> anyhow::Result<()> {
             tag = test_metadata.tag(),
         );
 
-        let exec_output = tx_context.execute_code(&code).await?;
+        let exec_output = mock_tx.execute_code(&code).await?;
 
         let metadata_word = exec_output.get_stack_word(0);
 
@@ -470,11 +467,12 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     // Attempt to consume note too early.
     // ----------------------------------------------------------------------------------------
-    let tx_context = mock_chain
-        .build_tx_context(account.clone(), &[timelock_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(timelock_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, TIMESTAMP_ERROR);
 
     // Consume note where lock timestamp matches the block timestamp.
@@ -483,8 +481,11 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .prove_next_block_at(lock_timestamp)
         .context("failed to prove next block at lock timestamp")?;
 
-    let tx_context = mock_chain.build_tx_context(account, &[timelock_note.id()], &[])?.build()?;
-    tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(timelock_note.id())
+        .build()?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -531,11 +532,12 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(note_with_pub_key.clone()));
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(target_account, &[note_with_pub_key.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(target_account)
+        .authenticated_input_note(note_with_pub_key.id())
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
     Ok(())
 }
 
