@@ -22,6 +22,7 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
+    AccountProcedureRoot,
     AccountStorage,
     StorageMapKey,
     StorageSlotId,
@@ -115,6 +116,8 @@ pub enum AccountError {
     AccountCodeMultipleAuthComponents,
     #[error("account code must contain at least one non-auth procedure")]
     AccountCodeNoProcedures,
+    #[error("account procedure {0} is not contained in the provided mast forest")]
+    AccountCodeProcedureNotInMastForest(AccountProcedureRoot),
     #[error("account code contains {0} procedures but it may contain at most {max} procedures", max = AccountCode::MAX_NUM_PROCEDURES)]
     AccountCodeTooManyProcedures(usize),
     #[error("account code contains a duplicate procedure with root {0}")]

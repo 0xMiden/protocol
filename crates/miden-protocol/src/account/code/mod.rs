@@ -73,6 +73,7 @@ impl AccountCode {
     /// Returns an error if:
     /// - The number of procedures is smaller than 2 or greater than 256.
     /// - The procedure roots are not unique.
+    /// - Any provided procedure root is not in the provided [`MastForest`].
     pub fn from_parts(
         mast: Arc<MastForest>,
         procedures: Vec<AccountProcedureRoot>,
@@ -88,6 +89,13 @@ impl AccountCode {
         for procedure in &procedures {
             if !unique_roots.insert(procedure.as_word()) {
                 return Err(AccountError::AccountCodeDuplicateProcedureRoot(procedure.as_word()));
+            }
+        }
+
+        // make sure that all account procedures are in the MAST forest
+        for procedure in procedures.iter() {
+            if mast.find_procedure_root(procedure.as_word()).is_none() {
+                return Err(AccountError::AccountCodeProcedureNotInMastForest(*procedure));
             }
         }
 
@@ -306,30 +314,10 @@ impl Deserializable for AccountCode {
         let mast = Arc::new(MastForest::read_from(source)?);
         let num_procedures = (source.read_u8()? as usize) + 1;
 
-        // make sure the number of procedures is valid; we only check the minimum because
-        // u8::MAX + 1 is guaranteed to be less than or equal to 256
-        if num_procedures < Self::MIN_NUM_PROCEDURES {
-            return Err(DeserializationError::InvalidValue(format!(
-                "account code must contain at least {} procedures, but has only {num_procedures} procedures",
-                Self::MIN_NUM_PROCEDURES
-            )));
-        }
-
         let procedures = source
             .read_many_iter(num_procedures)?
             .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
 
-        // make sure that all account procedures are in the MAST forest
-        for procedure in procedures.iter() {
-            if mast.find_procedure_root(procedure.as_word()).is_none() {
-                return Err(DeserializationError::InvalidValue(format!(
-                    "procedure with root {} is missing from account code's MAST forest",
-                    procedure.as_word()
-                )));
-            }
-        }
-
-        // `from_parts` enforces the procedure count and uniqueness of the roots
         Self::from_parts(mast, procedures)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
@@ -482,9 +470,10 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::{AccountCode, ByteWriter, Deserializable, DeserializationError, Serializable};
-    use crate::account::AccountComponent;
+    use crate::Word;
     use crate::account::code::build_procedure_commitment;
     use crate::account::component::AccountComponentMetadata;
+    use crate::account::{AccountComponent, AccountProcedureRoot};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
     use crate::testing::assembler::assemble_test_library;
@@ -584,6 +573,22 @@ mod tests {
         assert_matches!(
             err,
             AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1].as_word()
+        );
+    }
+
+    #[test]
+    fn test_account_code_from_parts_rejects_missing_root() {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+        let non_existent_root = AccountProcedureRoot::from_raw(Word::from([1, 2, 3, 4u32]));
+
+        // provide a procedure root that is not in the mast forest
+        let procedures = vec![procedures[0], non_existent_root];
+        let err = AccountCode::from_parts(code.mast(), procedures).unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountError::AccountCodeProcedureNotInMastForest(root) if root == non_existent_root
         );
     }
 
