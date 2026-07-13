@@ -5,6 +5,7 @@
 ### Changes
 - [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+- `warden::set_warden` and agglayer's `eth_address::to_account_id` now validate only the structure of an account ID (`account_id::validate_structure`) instead of also requiring version = 1 ([#3288](https://github.com/0xMiden/protocol/pull/3288)).
 
 ## v0.16.0-alpha.1 (2026-07-12)
 

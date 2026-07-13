@@ -73,7 +73,7 @@ end
 #!
 #! Panics if:
 #! - the sender is not authorized.
-#! - new_warden is non-zero and the account ID is invalid.
+#! - new_warden is non-zero and the account ID is structurally invalid.
 #!
 #! Invocation: call
 @account_procedure
@@ -87,8 +87,8 @@ pub proc set_warden
     # => [is_zero_address, new_warden_suffix, new_warden_prefix, pad(14)]
 
     if.false
-        # Non-zero new warden: validate before storing.
-        dup.1 dup.1 exec.account_id::validate
+        # Non-zero new warden: validate structure before storing.
+        dup.1 dup.1 exec.account_id::validate_structure
     end
     # => [new_warden_suffix, new_warden_prefix, pad(14)]
 
