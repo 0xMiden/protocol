@@ -23,10 +23,8 @@ use miden::protocol::tx
 
 use miden::standards::access::authority
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
-use miden::standards::attachments::fee_sponsorship
 use miden::standards::attachments::network_account_target
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME} from miden::standards::attachments::network_account_target
-use {ALWAYS} from miden::standards::note::execution_hint
 use miden::standards::note::note_id
 use miden::standards::notes::fee as fee_note
 use miden::standards::notes::network_sponsorship
@@ -75,6 +73,14 @@ const CONTRIBUTION_FEATURE_ID_LOC = 4
 const CONTRIBUTION_ASSET_ID_LOC = 8
 const CONTRIBUTION_ASSET_VALUE_LOC = 12
 
+#! Local memory offset (@locals(8)) at which read_sponsorship_binding stages the opened storage.
+const BINDING_STORAGE_LOC = 0
+
+#! The number of storage items of a NETWORK_SPONSORSHIP note.
+#!
+#! Must match `NUM_STORAGE_ITEMS` in `asm/standards/notes/network_sponsorship.masm`.
+const SPONSORSHIP_NUM_STORAGE_ITEMS = 7
+
 # active_note_remainder memory locals
 const REMAINDER_OWN_FEE_LOC = 0
 
@@ -99,10 +105,12 @@ const ESTIMATE_AMOUNT_LOC = 6
 # sponsor_downstream_note memory locals
 const SPONSOR_FEE_AMOUNT_LOC = 0
 const SPONSOR_CHILD_IDX_LOC = 1
-const SPONSOR_TARGET_SUFFIX_LOC = 2
-const SPONSOR_TARGET_PREFIX_LOC = 3
-const SPONSOR_CHILD_NOTE_ID_LOC = 4
-const SPONSOR_RECLAIM_HEIGHT_LOC = 8
+# The 7-item sponsorship note storage is staged contiguously at the word-aligned offset 4:
+# [CHILD_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height].
+const SPONSOR_STORAGE_LOC = 4
+const SPONSOR_RECLAIMER_SUFFIX_LOC = 8
+const SPONSOR_RECLAIMER_PREFIX_LOC = 9
+const SPONSOR_RECLAIM_HEIGHT_LOC = 10
 const SPONSOR_NOTE_IDX_LOC = 12
 
 # settle_feature_note memory locals
@@ -139,6 +147,10 @@ const ERR_FEE_MANAGER_INSUFFICIENT_SPONSORSHIP="the feature note is not covered 
 const ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP="the sponsorship remainder does not cover the fee of the spawned downstream note"
 
 const ERR_FEE_MANAGER_MULTIPLE_SPAWNING_NOTES="this account cannot settle more than one spawning feature note per transaction"
+
+const ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_STORAGE="the sponsorship note storage does not hold the expected number of items"
+
+const ERR_FEE_MANAGER_SPONSORSHIP_STORAGE_MISMATCH="the opened sponsorship note storage does not match its commitment"
 
 # PROCEDURES
 # ================================================================================================
@@ -237,8 +249,8 @@ end
 
 #! Returns the fee this account requires to accept a note bearing the provided script root.
 #!
-#! Callable over a foreign procedure invocation, so a note creator -- or an upstream network
-#! account pricing a note it is about to spawn -- can size the sponsorship before the note exists.
+#! Callable over a foreign procedure invocation, so a note creator, or an upstream network
+#! account pricing a note it is about to spawn, can size the sponsorship before the note exists.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, pad(12)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -268,7 +280,7 @@ end
 
 #! Prices the note script with the provided root.
 #!
-#! Each fee portion must fit a fungible asset amount on its own -- settlement materializes the
+#! Each fee portion must fit a fungible asset amount on its own: settlement materializes the
 #! protocol portion as a standalone asset, and the application portion stays in the vault as one --
 #! and so must their sum, which the sponsorship charges as a single asset. The per-portion checks
 #! run before the summed check to make the `add` provably wrap-free over the field:
@@ -349,19 +361,77 @@ end
 # FEE SETTLEMENT
 # ================================================================================================
 
+#! Returns the ID of the feature note bound by the NETWORK_SPONSORSHIP note at the provided input
+#! note index.
+#!
+#! The binding lives in the sponsorship note's storage, which the kernel exposes for another input
+#! note only as a commitment. The items are opened from the advice map, where the transaction's
+#! advice inputs stage `STORAGE_COMMITMENT -> storage items` for every input note, and are trusted
+#! only once they rehash to that commitment.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [BOUND_NOTE_ID]
+#!
+#! Where:
+#! - note_idx is the index of the input note whose binding should be read.
+#! - BOUND_NOTE_ID is the ID of the feature note that sponsorship note pays for.
+#!
+#! Panics if:
+#! - the note's storage item count is not that of a NETWORK_SPONSORSHIP note. Unreachable for a
+#!   consumed sponsorship note, whose own script asserts the count.
+#! - the advice map holds no storage preimage for the note's storage commitment.
+#! - the opened items do not rehash to the note's storage commitment.
+#!
+#! Invocation: exec
+@locals(8)
+proc read_sponsorship_binding
+    exec.input_note::get_storage_info
+    # => [STORAGE_COMMITMENT, num_storage_items]
+
+    movup.4 eq.SPONSORSHIP_NUM_STORAGE_ITEMS
+    assert.err=ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_STORAGE
+    # => [STORAGE_COMMITMENT]
+
+    # open the storage items from the advice map; they stream in item order into locals 0..6
+    adv.push_mapval
+    # => [STORAGE_COMMITMENT]
+
+    adv_push loc_store.0
+    adv_push loc_store.1
+    adv_push loc_store.2
+    adv_push loc_store.3
+    adv_push loc_store.4
+    adv_push loc_store.5
+    adv_push loc_store.6
+    # => [STORAGE_COMMITMENT]
+
+    # the advice data is only trusted once it rehashes to the note's storage commitment
+    push.SPONSORSHIP_NUM_STORAGE_ITEMS locaddr.BINDING_STORAGE_LOC
+    # => [storage_ptr, num_storage_items, STORAGE_COMMITMENT]
+
+    exec.note::compute_storage_commitment
+    # => [COMPUTED_COMMITMENT, STORAGE_COMMITMENT]
+
+    assert_eqw.err=ERR_FEE_MANAGER_SPONSORSHIP_STORAGE_MISMATCH
+    # => []
+
+    # the bound feature note ID occupies the first storage word
+    padw loc_loadw_le.BINDING_STORAGE_LOC
+    # => [BOUND_NOTE_ID]
+end
+
 #! Returns the fee-asset amount the input note at `note_idx` contributes towards sponsoring the
 #! feature note with the provided ID.
 #!
-#! Only a NETWORK_SPONSORSHIP note targeted at this account and bound to FEATURE_NOTE_ID
-#! contributes. The target check excludes a sponsorship this account is reclaiming as the sender
-#! in the same transaction, whose reclaim deposit must not double as coverage. A bound note
-#! carrying anything other than exactly one asset of this account's fee asset contributes 0 rather
-#! than panicking: aborting here would let one junk note bound to a real feature note block that
-#! note even when other sponsorships cover it.
+#! Only a NETWORK_SPONSORSHIP note bound to FEATURE_NOTE_ID contributes. A sponsorship this
+#! account reclaims in the same transaction cannot double as coverage: its script only reclaims
+#! when its bound note is absent, and an absent note is never settled here. A bound note carrying
+#! anything other than exactly one asset of this account's fee asset contributes 0 rather than
+#! panicking: aborting here would let one junk note bound to a real feature note block that note
+#! even when other sponsorships cover it.
 #!
 #! The asset count is checked before any assets are written to the local frame, which has room for
-#! exactly one asset while a hostile note could carry many. A targeted sponsorship always carries
-#! the binding attachment, because its script requires it on the target path.
+#! exactly one asset while a hostile note could carry many.
 #!
 #! Inputs:  [note_idx, FEATURE_NOTE_ID]
 #! Outputs: [amount]
@@ -377,12 +447,8 @@ proc sponsorship_contribution
     procref.network_sponsorship::main exec.word::eq
     # => [is_sponsorship]
 
-    loc_load.CONTRIBUTION_NOTE_IDX_LOC
-    exec.network_account_target::input_note_targets_active_account and
-    # => [is_targeted_sponsorship]
-
     if.true
-        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.fee_sponsorship::input_note_bound_note_id
+        loc_load.CONTRIBUTION_NOTE_IDX_LOC exec.read_sponsorship_binding
         padw loc_loadw_le.CONTRIBUTION_FEATURE_ID_LOC exec.word::eq
         # => [is_bound_to_feature_note]
 
@@ -639,7 +705,7 @@ end
 
 #! Returns the fee the target account charges to accept a note bearing the provided script root.
 #!
-#! When the target is this account itself -- a self-spawning chain -- the local fee schedule is
+#! When the target is this account itself (a self-spawning chain), the local fee schedule is
 #! read directly: a foreign procedure invocation against the native account panics in the kernel,
 #! and the local schedule is the same data the FPI would return.
 #!
@@ -669,22 +735,37 @@ end
 #! Creates a sponsorship note for the downstream network note this transaction spawned, funding it
 #! from the account vault.
 #!
+#! The new sponsorship carries no attachments: the binding and the reclaim data live in its note
+#! storage, and this account names itself the reclaimer so it can recover the budget after the
+#! configured reclaim delta if the downstream account never consumes the note. The note is minted
+#! with tag 0: sponsorship notes are discovered by script root and matched to their feature note
+#! by the bound ID, so no routing tag is required.
+#!
 #! The caller must already have established that the upstream sponsorship covers `fee_amount`, since
 #! the asset is taken out of the vault. Without that check the account would front the downstream
 #! leg's liquidity, and a hostile downstream account could name an arbitrary amount.
 #!
-#! Inputs:  [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
+#! Inputs:  [fee_amount, child_note_idx]
 #! Outputs: []
 #!
 #! Invocation: exec
 @locals(16)
 proc sponsor_downstream_note
     loc_store.SPONSOR_FEE_AMOUNT_LOC loc_store.SPONSOR_CHILD_IDX_LOC
-    loc_store.SPONSOR_TARGET_SUFFIX_LOC loc_store.SPONSOR_TARGET_PREFIX_LOC
     # => []
 
+    # stage the new note's storage, the child binding first; the note ID of the just-created
+    # output note is final because settlement runs in the auth procedure, after every output note
+    # is finalized
     loc_load.SPONSOR_CHILD_IDX_LOC exec.note_id::compute_output_note_id
-    loc_storew_le.SPONSOR_CHILD_NOTE_ID_LOC dropw
+    loc_storew_le.SPONSOR_STORAGE_LOC dropw
+    # => []
+
+    # this account reclaims its own chained sponsorship
+    exec.active_account::get_id
+    # => [account_id_suffix, account_id_prefix]
+
+    loc_store.SPONSOR_RECLAIMER_SUFFIX_LOC loc_store.SPONSOR_RECLAIMER_PREFIX_LOC
     # => []
 
     # the reclaim height derives from the configured delta, letting this account recover the
@@ -712,7 +793,7 @@ proc sponsor_downstream_note
     exec.active_account::get_nonce exec.active_account::get_id
     # => [SERIAL_NUM, SPONSORSHIP_SCRIPT_ROOT]
 
-    push.1 locaddr.SPONSOR_RECLAIM_HEIGHT_LOC
+    push.SPONSORSHIP_NUM_STORAGE_ITEMS locaddr.SPONSOR_STORAGE_LOC
     # => [storage_ptr, num_storage_items, SERIAL_NUM, SPONSORSHIP_SCRIPT_ROOT]
 
     exec.note::compute_and_store_recipient
@@ -722,27 +803,6 @@ proc sponsor_downstream_note
     # => [tag, note_type, RECIPIENT]
 
     exec.output_note::create loc_store.SPONSOR_NOTE_IDX_LOC
-    # => []
-
-    # route the sponsorship at the downstream account
-    loc_load.SPONSOR_NOTE_IDX_LOC push.ALWAYS
-    loc_load.SPONSOR_TARGET_PREFIX_LOC loc_load.SPONSOR_TARGET_SUFFIX_LOC
-    # => [target_id_suffix, target_id_prefix, exec_hint_tag, note_idx]
-
-    exec.network_account_target::new
-    # => [attachment_scheme, NOTE_ATTACHMENT, note_idx]
-
-    exec.output_note::add_word_attachment
-    # => []
-
-    # bind it to the note it pays for
-    loc_load.SPONSOR_NOTE_IDX_LOC padw loc_loadw_le.SPONSOR_CHILD_NOTE_ID_LOC
-    # => [CHILD_NOTE_ID, note_idx]
-
-    exec.fee_sponsorship::new
-    # => [attachment_scheme, NOTE_ATTACHMENT, note_idx]
-
-    exec.output_note::add_word_attachment
     # => []
 
     # fund it out of the vault, where the upstream sponsorship was already deposited
@@ -845,9 +905,8 @@ proc settle_feature_note
             assert.err=ERR_FEE_MANAGER_INSUFFICIENT_DOWNSTREAM_SPONSORSHIP
             # => []
 
-            loc_load.FEATURE_TARGET_PREFIX_LOC loc_load.FEATURE_TARGET_SUFFIX_LOC
             loc_load.FEATURE_CHILD_IDX_LOC loc_load.FEATURE_REMAINDER_LOC
-            # => [fee_amount, child_note_idx, target_id_suffix, target_id_prefix]
+            # => [fee_amount, child_note_idx]
 
             exec.sponsor_downstream_note
             # => []

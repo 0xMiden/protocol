@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -176,7 +177,7 @@ impl AuthGuardedMultisigConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
+    pub fn proc_thresholds(&self) -> &BTreeMap<AccountProcedureRoot, u32> {
         self.multisig.proc_thresholds()
     }
 

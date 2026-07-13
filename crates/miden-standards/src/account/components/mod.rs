@@ -18,7 +18,7 @@ use crate::account::faucets::FungibleFaucet;
 use crate::account::fees::FeeManager;
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
-use crate::account::wallets::BasicWallet;
+use crate::account::wallets::{BasicWallet, NoteCreator};
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
@@ -27,6 +27,7 @@ use crate::account::wallets::BasicWallet;
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
+    NoteCreator,
     FungibleFaucet,
     CodeInspection,
     Authority,
@@ -49,6 +50,7 @@ impl StandardAccountComponent {
     pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
+            Self::NoteCreator => NoteCreator::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
             Self::CodeInspection => CodeInspection::code(),
             Self::Authority => Authority::code(),
@@ -87,6 +89,9 @@ impl StandardAccountComponent {
             match self {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
+                },
+                Self::NoteCreator => {
+                    component_interface_vec.push(AccountComponentInterface::NoteCreator)
                 },
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
@@ -140,6 +145,9 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
+        // Must run after `BasicWallet`: `NoteCreator`'s only procedure (`create_note`) is a subset
+        // of the basic wallet's, so a full wallet must claim it first to avoid misdetection.
+        Self::NoteCreator.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::CodeInspection.extract_component(procedures_set, component_interface_vec);
         Self::Authority.extract_component(procedures_set, component_interface_vec);

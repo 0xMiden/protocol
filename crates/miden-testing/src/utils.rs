@@ -269,12 +269,16 @@ fn note_script_that_creates_notes<'note>(
         } else {
             out.push_str("dropw dropw dropw\n");
         }
+        // Note creation must originate from the account context, so the note script delegates to
+        // the mock account's `create_note` procedure (the consuming account is the mock account).
         out.push_str(&format!(
             "
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create\n",
+            call.::mock::account::create_note
+            # drop the 15 pad elements the account-procedure call convention leaves
+            repeat.15 swap drop end\n",
             recipient = note.recipient().digest(),
             note_type = note.metadata().note_type() as u8,
             tag = note.metadata().tag(),

@@ -86,7 +86,7 @@ fn parent_note_code(downstream: &Account) -> String {
             push.{prefix} push.{suffix}
             # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM, pad(16)]
 
-            exec.p2id::new
+            exec.p2id::create_output_note
             # => [note_idx, pad(16)]
 
             # route it at the downstream network account

@@ -9,8 +9,6 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
     NoteId,
     NoteRecipient,
     NoteScript,
@@ -24,7 +22,6 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::note::{FeeSponsorship, NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -48,40 +45,47 @@ static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// Under the sponsorship fee model, the feature note (`BURN`, `CLAIM`, `B2AGG`, ...) stays entirely
 /// fee-unaware. The fee travels in this separate note, which names the feature note it pays for by
-/// carrying that note's [`NoteId`] in a [`FeeSponsorship`] attachment, and names the network
-/// account that may consume it in a [`NetworkAccountTarget`] attachment.
+/// carrying that note's [`NoteId`] in its note storage. The note carries no attachments; its tag
+/// routes it to the network account the feature note targets.
 ///
 /// # Consumption
 ///
-/// The target network account may consume the note, but only in a transaction that also consumes
-/// the bound feature note. The script enforces this itself, rather than relying on the account: the
-/// sponsor trusts neither the network account nor the transaction builder, but does choose the
+/// The note may only be consumed in a transaction that also consumes the bound feature note; it
+/// does not restrict who that consumer is. Consumption rights are thereby inherited from the
+/// feature note: whoever may consume the feature note may take its sponsorship in the same
+/// transaction. The script enforces the pairing itself, rather than relying on the account: the
+/// sponsor trusts neither the consuming account nor the transaction builder, but does choose the
 /// note's script root.
 ///
-/// The mirror-image check -- that a feature note is not consumed *without* sponsorship -- costs the
+/// The mirror-image check (that a feature note is not consumed *without* sponsorship) costs the
 /// account rather than the sponsor, and so lives in the account's auth procedure.
 ///
 /// # Reclaim
 ///
-/// Anyone other than the target may only reclaim the note back to its sponsor, once
-/// `reclaim_height` is reached. This is load-bearing rather than a convenience: if the bound
-/// feature note is consumed by some other transaction, this note's presence check can never pass
-/// again, and reclaim is the only way to recover the assets.
+/// Every consumption without the bound feature note is a reclaim: the note returns to its
+/// `reclaimer`, once `reclaim_height` is reached. Reclaim is load-bearing rather than a
+/// convenience: if the bound feature note is consumed by some other transaction, this note's
+/// presence check can never pass again, and reclaim is the only way to recover the assets. The
+/// reclaimer is stored in the note and defaults to the sender.
 #[derive(Debug, Clone)]
 pub struct NetworkSponsorshipNote {
     sender: AccountId,
     serial_number: Word,
     assets: NoteAssets,
-    target: NetworkAccountTarget,
+    target: AccountId,
     feature_note_id: NoteId,
+    reclaimer: AccountId,
     reclaim_height: Option<BlockNumber>,
 }
 
 #[bon::bon]
 impl NetworkSponsorshipNote {
-    /// Builds a new [`NetworkSponsorshipNote`] sponsoring `feature_note_id` against `target`.
+    /// Builds a new [`NetworkSponsorshipNote`] sponsoring `feature_note_id`, tagged for `target`.
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
+    ///
+    /// The reclaimer, the account allowed to reclaim the note after `reclaim_height`, defaults to
+    /// `sender` when left unset.
     ///
     /// # Errors
     ///
@@ -95,14 +99,18 @@ impl NetworkSponsorshipNote {
         #[builder(
             name = target_account,
             with = |target_id: AccountId| -> Result<_, NoteError> {
-                NetworkAccountTarget::new(target_id, NoteExecutionHint::Always).map_err(|error| {
-                    NoteError::other_with_source("invalid network sponsorship target", error)
-                })
+                if !target_id.is_public() {
+                    return Err(NoteError::other(
+                        "network sponsorship target account must be public",
+                    ));
+                }
+                Ok(target_id)
             },
         )]
-        target: NetworkAccountTarget,
+        target: AccountId,
         feature_note_id: NoteId,
         serial_number: Word,
+        reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
@@ -112,6 +120,8 @@ impl NetworkSponsorshipNote {
         }
 
         let assets = NoteAssets::new(assets)?;
+        // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
+        let reclaimer = reclaimer.unwrap_or(sender);
 
         Ok(Self {
             sender,
@@ -119,6 +129,7 @@ impl NetworkSponsorshipNote {
             assets,
             target,
             feature_note_id,
+            reclaimer,
             reclaim_height,
         })
     }
@@ -129,7 +140,10 @@ impl NetworkSponsorshipNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the NETWORK_SPONSORSHIP note.
-    pub const NUM_STORAGE_ITEMS: usize = 1;
+    ///
+    /// The layout is `[FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]`,
+    /// matching the `*_ITEM` offsets in `asm/standards/notes/network_sponsorship.masm`.
+    pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -144,14 +158,28 @@ impl NetworkSponsorshipNote {
         NETWORK_SPONSORSHIP_SCRIPT.root()
     }
 
-    /// Returns the account ID of the network account that may consume the note.
+    /// Returns the account ID of the network account the note's tag routes to.
+    ///
+    /// The tag is a discovery hint for the network transaction builder; the script itself does not
+    /// restrict consumption to this account.
     pub fn target_id(&self) -> AccountId {
-        self.target.target_id()
+        self.target
     }
 
     /// Returns the ID of the feature note this note sponsors.
     pub fn feature_note_id(&self) -> NoteId {
         self.feature_note_id
+    }
+
+    /// Returns the account ID allowed to reclaim the note after `reclaim_height`.
+    pub fn reclaimer(&self) -> AccountId {
+        self.reclaimer
+    }
+
+    /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
+    /// enabled.
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.reclaim_height
     }
 }
 
@@ -191,24 +219,25 @@ where
 impl From<NetworkSponsorshipNote> for Note {
     fn from(note: NetworkSponsorshipNote) -> Self {
         // Network notes must be public so the network can discover and execute them. The tag routes
-        // the note to the network account that may consume it.
+        // the note to the network account the feature note targets.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.target.target_id()));
+            .with_tag(NoteTag::with_account_target(note.target));
 
-        let storage =
-            NoteStorage::new(vec![Felt::from(note.reclaim_height.unwrap_or_default().as_u32())])
-                .expect("a single storage item never exceeds the note storage limit");
+        // Storage layout must match the `*_ITEM` offsets in the note's MASM script:
+        // [FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent
+        // reclaim height is encoded as 0, which the script reads as "reclaim disabled".
+        let mut items = Vec::with_capacity(NetworkSponsorshipNote::NUM_STORAGE_ITEMS);
+        items.extend_from_slice(note.feature_note_id.as_word().as_elements());
+        items.push(note.reclaimer.suffix());
+        items.push(note.reclaimer.prefix().as_felt());
+        items.push(Felt::from(note.reclaim_height.unwrap_or_default().as_u32()));
+        let storage = NoteStorage::new(items)
+            .expect("seven storage items never exceed the note storage limit");
 
         let recipient =
             NoteRecipient::new(note.serial_number, NetworkSponsorshipNote::script(), storage);
 
-        let attachments = NoteAttachments::new(vec![
-            NoteAttachment::from(note.target),
-            NoteAttachment::from(FeeSponsorship::new(note.feature_note_id)),
-        ])
-        .expect("two attachments never exceed the note attachment limit");
-
-        Note::with_attachments(note.assets, metadata, recipient, attachments)
+        Note::new(note.assets, metadata, recipient)
     }
 }
 
@@ -240,8 +269,8 @@ mod tests {
         NoteId::from_raw(Word::from([7, 8, 9, 10u32]))
     }
 
-    /// The builder produces a public note tagged for the target, carrying both attachments and one
-    /// storage item.
+    /// The builder produces a public note tagged for the target, carrying no attachments and the
+    /// seven storage items.
     #[test]
     fn builder_builds_public_sponsorship_note() {
         let mut rng = RandomCoin::new(Word::empty());
@@ -265,15 +294,13 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(note.storage().num_items(), NetworkSponsorshipNote::NUM_STORAGE_ITEMS as u16);
-        assert_eq!(note.storage().items()[0], Felt::from(42u32));
-        assert_eq!(note.attachments().num_attachments(), 2);
-
-        // Both attachments must decode back to what was put in.
-        let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
-        assert_eq!(target.target_id(), network_account());
-
-        let sponsorship = FeeSponsorship::try_from(note.attachments()).unwrap();
-        assert_eq!(sponsorship.feature_note_id(), feature_note_id());
+        // The bound feature note ID comes first, then the reclaimer (defaulting to the sender),
+        // then the reclaim height.
+        assert_eq!(&note.storage().items()[..4], feature_note_id().as_word().as_elements());
+        assert_eq!(note.storage().items()[4], sponsor().suffix());
+        assert_eq!(note.storage().items()[5], sponsor().prefix().as_felt());
+        assert_eq!(note.storage().items()[6], Felt::from(42u32));
+        assert_eq!(note.attachments().num_attachments(), 0);
     }
 
     /// A reclaim height of `None` encodes as 0, which the script reads as "reclaim disabled".
@@ -293,7 +320,33 @@ mod tests {
             .unwrap();
 
         let note = Note::from(sponsorship);
-        assert_eq!(note.storage().items()[0], Felt::from(0u32));
+        assert_eq!(note.storage().items()[6], Felt::from(0u32));
+    }
+
+    /// An explicit reclaimer overrides the sender in the note storage.
+    #[test]
+    fn explicit_reclaimer_is_stored() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let asset = FungibleAsset::new(faucet(), 100).unwrap();
+        let reclaimer =
+            AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
+
+        let sponsorship = NetworkSponsorshipNote::builder()
+            .sender(sponsor())
+            .target_account(network_account())
+            .unwrap()
+            .feature_note_id(feature_note_id())
+            .asset(asset)
+            .reclaimer(reclaimer)
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        assert_eq!(sponsorship.reclaimer(), reclaimer);
+
+        let note = Note::from(sponsorship);
+        assert_eq!(note.storage().items()[4], reclaimer.suffix());
+        assert_eq!(note.storage().items()[5], reclaimer.prefix().as_felt());
     }
 
     /// A sponsorship that pays nothing is never intended, so the constructor rejects it.
@@ -313,7 +366,7 @@ mod tests {
         });
     }
 
-    /// The target of a network note must be a public account.
+    /// The tag of a network note must route to a public account.
     #[test]
     fn builder_rejects_private_target() {
         let private_target =

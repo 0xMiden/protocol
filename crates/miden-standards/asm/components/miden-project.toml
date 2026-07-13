@@ -30,6 +30,7 @@ members = [
   "fees/fee_manager",
   "inspection/code_inspection",
   "inspection/schema_commitment",
+  "note/note_creator",
   "wallets/basic_wallet",
 ]
 
@@ -37,6 +38,6 @@ members = [
 version = "0.16.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.22" }
+miden-core      = { linkage = "dynamic", version = "0.25" }
 miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
 miden-standards = { linkage = "static", version = "0.16.0" }

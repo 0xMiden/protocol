@@ -108,10 +108,14 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            exec.native_account::get_initial_commitment
+            call.mock_account::get_initial_commitment
+            # => [INITIAL_COMMITMENT, pad(12)]
+            swapdw dropw dropw swapw dropw
             # => [INITIAL_COMMITMENT]
 
-            exec.active_account::compute_commitment
+            call.mock_account::compute_commitment
+            # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(8)]
+            swapdw dropw dropw
             # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT]
 
             assert_eqw.err="initial and current commitment should be equal when no changes have been made"
@@ -133,7 +137,9 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             # => [STORAGE_COMMITMENT0]
 
             # compute the commitment which will recompute the storage commitment
-            exec.active_account::compute_commitment
+            call.mock_account::compute_commitment
+            # => [CURRENT_COMMITMENT, STORAGE_COMMITMENT0, pad(8)]
+            swapdw dropw dropw
             # => [CURRENT_COMMITMENT, STORAGE_COMMITMENT0]
 
             push.{expected_commitment}
@@ -847,14 +853,17 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use miden::protocol::native_account
+        use mock::account as mock_account
         use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # get the initial storage commitment
-            exec.native_account::get_initial_storage_commitment
+            call.mock_account::get_initial_storage_commitment
+            # => [INIT_STORAGE_COMMITMENT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [INIT_STORAGE_COMMITMENT]
             push.{expected_storage_commitment}
             assert_eqw.err="actual storage commitment is not equal to the expected one"
         end
@@ -1060,7 +1069,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
-    let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
+    let proven_tx = LocalTransactionProver::default().prove(tx.clone())?;
 
     // The patch should be present on the proven tx.
     let patch = proven_tx.account_update().details().unwrap_public();
@@ -1089,14 +1098,17 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     // get the initial vault root
     let code = format!(
         r#"
-        use miden::protocol::native_account
+        use mock::account as mock_account
         use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # get the initial vault root
-            exec.native_account::get_initial_vault_root
+            call.mock_account::get_initial_vault_root
+            # => [INIT_VAULT_ROOT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [INIT_VAULT_ROOT]
             push.{expected_vault_root}
             assert_eqw.err="initial vault root mismatch"
         end
@@ -1125,7 +1137,10 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             # => []
 
             # get the current vault root
-            exec.active_account::get_vault_root
+            call.mock_account::get_vault_root
+            # => [VAULT_ROOT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [VAULT_ROOT]
             push.{expected_vault_root}
             assert_eqw.err="vault root mismatch"
         end
@@ -1161,7 +1176,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -1200,14 +1215,15 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_existing_source = format!(
         r#"
-        use miden::standards::assets::fungible_asset
+        use miden::core::sys
+        use mock::account as mock_account
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_active_account_balance
-            # => [final_balance]
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1216,12 +1232,15 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_initial_native_account_balance
-            # => [init_balance]
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
         ASSET_ID = asset_id.to_word(),
@@ -1229,7 +1248,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(add_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_existing_source)?;
 
     let tx_context = mock_chain
         .build_tx_context(
@@ -1250,14 +1269,15 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let add_new_source = format!(
         r#"
-        use miden::standards::assets::fungible_asset
+        use miden::core::sys
+        use mock::account as mock_account
 
         @transaction_script
         pub proc main
             # get the current asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_active_account_balance
-            # => [final_balance]
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1266,12 +1286,15 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_initial_native_account_balance
-            # => [init_balance]
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
         ASSET_ID = asset_id.to_word(),
@@ -1279,7 +1302,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(add_new_source)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
 
     let tx_context = mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_new_asset])?
@@ -1307,7 +1330,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -1329,7 +1352,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
     let remove_existing_source = format!(
         r#"
-        use miden::standards::assets::fungible_asset
+        use miden::core::sys
+        use mock::account as mock_account
         use mock::util
 
         @transaction_script
@@ -1345,8 +1369,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the current asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_active_account_balance
-            # => [final_balance]
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1355,12 +1379,15 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
             # get the initial asset balance
             push.{ASSET_ID}
-            exec.fungible_asset::get_initial_native_account_balance
-            # => [init_balance]
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
         REMOVED_ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
@@ -1398,7 +1425,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -1421,9 +1448,10 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 
     let remove_existing_source = format!(
         r#"
+        use miden::core::sys
         use miden::protocol::active_account
         use miden::protocol::native_account
-        use miden::standards::assets::fungible_asset
+        use mock::account as mock_account
         use mock::util
 
         @transaction_script
@@ -1438,19 +1466,22 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             # => []
 
             # get the current asset
-            push.{ASSET_ID} exec.active_account::get_asset
-            # => [ASSET_VALUE]
+            push.{ASSET_ID} call.mock_account::get_asset
+            # => [ASSET_VALUE, pad(12)]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
-            # => []
+            # => [pad(12)]
 
             # get the initial asset
-            push.{ASSET_ID} exec.native_account::get_initial_asset
-            # => [INITIAL_ASSET]
+            push.{ASSET_ID} call.mock_account::get_initial_asset
+            # => [INITIAL_ASSET, pad(12)]
 
             push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
         ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
@@ -1542,16 +1573,13 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
         .unwrap();
     let mock_value_slot1 = &*MOCK_VALUE_SLOT1;
 
-    // Create a transaction script that:
-    // 1. Checks that get_item hasn't been called yet
-    // 2. Calls get_item from the mock account
-    // 3. Checks that get_item has been called
-    // 4. Calls get_item **again**
-    // 5. Checks that `was_procedure_called` returns `true`
+    // Verifies the call-tracking of an account procedure: `get_item` is tracked as called once it
+    // has been invoked. `was_procedure_called` is itself account-context-gated, so it is invoked
+    // through the account.
     let tx_script_code = format!(
         r#"
+        use miden::core::sys
         use mock::account as mock_account
-        use miden::protocol::native_account
 
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
@@ -1559,16 +1587,15 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
         pub proc main
             # First check that get_item procedure hasn't been called yet
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assertz.err="procedure should not have been called"
 
             # Call the procedure first time
             push.MOCK_VALUE_SLOT1[0..2]
             call.mock_account::get_item dropw
-            # => []
 
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assert.err="procedure should have been called"
 
             # Call the procedure second time
@@ -1576,8 +1603,10 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
             call.mock_account::get_item dropw
 
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assert.err="2nd call should not change the was_called flag"
+
+            exec.sys::truncate_stack
         end
         "#
     );
@@ -1757,8 +1786,8 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .unwrap();
 
     let tx_script_code = r#"
+        use miden::core::sys
         use mock::account as mock_account
-        use miden::protocol::active_account
 
         @transaction_script
         pub proc main
@@ -1766,8 +1795,8 @@ async fn test_has_procedure() -> anyhow::Result<()> {
             procref.mock_account::get_item
             # => [GET_ITEM_ROOT]
 
-            exec.active_account::has_procedure
-            # => [is_procedure_available]
+            call.mock_account::has_procedure
+            # => [is_procedure_available, pad(15)]
 
             # assert that the get_item is exposed
             assert.err="get_item procedure should be exposed by the mock account"
@@ -1775,11 +1804,13 @@ async fn test_has_procedure() -> anyhow::Result<()> {
             # get some random word and assert that it is not exposed
             push.5.3.15.686
 
-            exec.active_account::has_procedure
-            # => [is_procedure_available]
+            call.mock_account::has_procedure
+            # => [is_procedure_available, pad(15)]
 
             # assert that the procedure with some random root is not exposed
             assertz.err="procedure with some random root should not be exposed by the mock account"
+
+            exec.sys::truncate_stack
         end
         "#;
 

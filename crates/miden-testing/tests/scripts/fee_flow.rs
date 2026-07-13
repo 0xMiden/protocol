@@ -12,7 +12,7 @@ use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteId, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -443,11 +443,11 @@ async fn priced_but_not_allowlisted_note_is_rejected() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A sponsorship this account reclaims as the sender in the same transaction does not double as
-/// coverage: only sponsorships targeted at this account count.
+/// A sponsorship this account reclaims in the same transaction does not double as coverage.
 ///
 /// The reclaim path deposits the note's assets into the vault exactly like the sponsorship path
-/// does, so without the target check the two would be indistinguishable to settlement.
+/// does, but a reclaim only happens when the note's bound feature note is absent, and an absent
+/// note is never settled: the reclaimed funds match no settled feature note's binding.
 #[tokio::test]
 async fn reclaimed_sponsorship_does_not_count_as_coverage() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::empty());
@@ -464,13 +464,15 @@ async fn reclaimed_sponsorship_does_not_count_as_coverage() -> anyhow::Result<()
         NoteType::Public,
     )?;
 
-    // The network account itself sponsored some other account's work, binding the note to this
-    // feature note. Fully funded, expired, and reclaimable by the network account as its sender.
+    // The network account itself sponsored some other note that never materialized: the binding
+    // names a note that is not in this transaction. Fully funded, expired, and reclaimable by the
+    // network account as its sender.
+    let absent_note_id = NoteId::from_raw(Word::from([11, 12, 13, 14u32]));
     let reclaimable_note = Note::from(
         NetworkSponsorshipNote::builder()
             .sender(network_account.id())
             .target_account(third_party.id())?
-            .feature_note_id(feature_note.id())
+            .feature_note_id(absent_note_id)
             .asset(fee_asset(APP_FEE + PROTOCOL_FEE)?)
             .reclaim_height(BlockNumber::from(1u32))
             .generate_serial_number(&mut rng)

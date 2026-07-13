@@ -43,7 +43,46 @@ const FROZEN = 1
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
 
-# PUBLIC PROCEDURES
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Freezes the account's authority-gated surface as an emergency switch.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc freeze
+    exec.assert_sender_is_emergency_authority
+    # => [pad(16)]
+
+    push.FROZEN exec.write_frozen_flag
+    # => [pad(16)]
+end
+
+#! Unfreezes the account's authority-gated surface, clearing the emergency switch.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc unfreeze
+    exec.assert_sender_is_emergency_authority
+    # => [pad(16)]
+
+    push.UNFROZEN exec.write_frozen_flag
+    # => [pad(16)]
+end
+
+# PUBLIC HELPERS
 # =================================================================================================
 
 #! Asserts the caller is authorized to invoke an authority-gated procedure.
@@ -111,43 +150,7 @@ pub proc assert_authorized
     end
 end
 
-#! Freezes the account's authority-gated surface as an emergency switch.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the account's emergency authority.
-#!
-#! Invocation: call
-@account_procedure
-pub proc freeze
-    exec.assert_sender_is_emergency_authority
-    # => [pad(16)]
-
-    push.FROZEN exec.write_frozen_flag
-    # => [pad(16)]
-end
-
-#! Unfreezes the account's authority-gated surface, clearing the emergency switch.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the account's emergency authority.
-#!
-#! Invocation: call
-@account_procedure
-pub proc unfreeze
-    exec.assert_sender_is_emergency_authority
-    # => [pad(16)]
-
-    push.UNFROZEN exec.write_frozen_flag
-    # => [pad(16)]
-end
-
-# PRIVATE PROCEDURES
+# HELPER PROCEDURES
 # =================================================================================================
 
 #! Asserts the sender may toggle the emergency switch.

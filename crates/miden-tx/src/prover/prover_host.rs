@@ -3,20 +3,14 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::{
-    BaseHost,
-    FutureMaybeSend,
-    Host,
-    LoadedMastForest,
-    MastForestStore,
-    ProcessorState,
-};
+use miden_processor::{BaseHost, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 use miden_protocol::vm::{EventId, EventName};
+use miden_prover::SyncHost;
 
 use crate::host::{
     RecipientData,
@@ -27,7 +21,7 @@ use crate::host::{
 };
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
 
-/// The transaction prover host is responsible for handling [`Host`] requests made by the
+/// The transaction prover host is responsible for handling [`SyncHost`] requests made by the
 /// transaction kernel during proving.
 pub struct TransactionProverHost<'store, STORE>
 where
@@ -94,24 +88,16 @@ where
     }
 }
 
-impl<STORE> Host for TransactionProverHost<'_, STORE>
+impl<STORE> SyncHost for TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    fn get_mast_forest(
-        &self,
-        node_digest: &Word,
-    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
-        let result = self.base_host.get_mast_forest(node_digest);
-        async move { result }
+    fn get_mast_forest(&self, node_digest: &Word) -> Option<LoadedMastForest> {
+        self.base_host.get_mast_forest(node_digest)
     }
 
-    fn on_event(
-        &mut self,
-        process: &ProcessorState,
-    ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
-        let result = self.on_event_sync(process);
-        async move { result }
+    fn on_event(&mut self, process: &ProcessorState) -> Result<Vec<AdviceMutation>, EventError> {
+        self.on_event_sync(process)
     }
 }
 

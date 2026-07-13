@@ -67,6 +67,7 @@ use crate::mock_chain::TxContextInput;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct MockTransactionBuilder<'chain> {
     chain: &'chain MockChain,
     input: TxContextInput,

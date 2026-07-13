@@ -90,9 +90,10 @@ end
 
 #! Computes the commitment to the native account's delta.
 #!
-#! Note that if the account state has changed, the nonce must be incremented before this procedure
-#! is called, otherwise it will panic. This means it can only be called from an auth procedure,
-#! since only auth procedures are allowed to increment the nonce.
+#! This procedure must be invoked from the account context. Additionally, if the account state has
+#! changed, the nonce must be incremented before it is called, otherwise it will panic; since only
+#! auth procedures are allowed to increment the nonce, a non-empty delta can only be computed from
+#! the auth procedure.
 #!
 #! The commitment to an empty delta is defined as the empty word.
 #!
@@ -110,6 +111,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment() -> word
     # pad the stack
@@ -535,6 +538,9 @@ end
 #! Where:
 #! - PROC_ROOT is the hash of the procedure to check.
 #! - was_called is 1 if the procedure was called, 0 otherwise.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool

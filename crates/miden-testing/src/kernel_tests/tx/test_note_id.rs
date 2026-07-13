@@ -134,6 +134,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
+        use miden::core::sys
         use miden::protocol::output_note
         use miden::tx_kernel_core::prologue
         use miden::standards::note::note_id
@@ -144,7 +145,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             dup push.{asset_value} push.{asset_id}
@@ -161,7 +162,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
             # => [NOTE_ID]
 
             # truncate the stack
-            swapw dropw
+            exec.sys::truncate_stack
         end
         "#,
         recipient = expected_note.recipient().digest(),

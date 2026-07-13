@@ -4,7 +4,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
 
-# CONSTANTS
+# PUBLIC API
 # =================================================================================================
 
 #! Adds the provided asset to the active account.

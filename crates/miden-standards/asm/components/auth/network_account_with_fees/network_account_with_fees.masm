@@ -30,8 +30,8 @@ const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::a
 
 #! Authenticates a transaction against a fee-managed network account.
 #!
-#! Runs the AuthNetworkAccount checks first -- the tx script and every input note must be
-#! allowlisted -- then settles the transaction's fees, then increments the nonce when the account
+#! Runs the AuthNetworkAccount checks first (the tx script and every input note must be
+#! allowlisted), then settles the transaction's fees, then increments the nonce when the account
 #! state changed or the account is new. The two gates are independent: the allowlists decide what
 #! may run, fee settlement what it costs.
 #!
