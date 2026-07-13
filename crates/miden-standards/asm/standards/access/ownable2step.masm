@@ -32,7 +32,7 @@ use miden::protocol::active_note
 use miden::protocol::native_account
 
 # CONSTANTS
-# ================================================================================================
+# =================================================================================================
 
 # Ownership config value representing renounced ownership (all zeros).
 const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
@@ -42,7 +42,7 @@ const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
 const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_config")
 
 # ERRORS
-# ================================================================================================
+# =================================================================================================
 
 const ERR_NO_OWNER = "component has no owner"
 const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
@@ -50,41 +50,7 @@ const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
 const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
 
 # PUBLIC INTERFACE
-# ================================================================================================
-
-#! Returns 1 if the note sender is the current owner, otherwise 0.
-#!
-#! Inputs:  []
-#! Outputs: [is_sender_owner]
-#!
-#! Where:
-#! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
-#!
-#! Invocation: exec
-pub proc is_sender_owner
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix]
-
-    exec.is_owner_internal
-    # => [is_sender_owner]
-end
-
-#! Asserts that the note sender is the current owner.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: exec
-pub proc assert_sender_is_owner
-    exec.is_sender_owner
-    # => [is_sender_owner]
-
-    assert.err=ERR_SENDER_NOT_OWNER
-    # => []
-end
+# =================================================================================================
 
 #! Returns the owner account ID.
 #!
@@ -246,8 +212,45 @@ pub proc renounce_ownership
     # => [pad(16)]
 end
 
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Returns 1 if the note sender is the current owner, otherwise 0.
+#!
+#! Inputs:  []
+#! Outputs: [is_sender_owner]
+#!
+#! Where:
+#! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_sender_owner
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix]
+
+    exec.is_owner_internal
+    # => [is_sender_owner]
+end
+
+#! Asserts that the note sender is the current owner.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_owner
+    exec.is_sender_owner
+    # => [is_sender_owner]
+
+    assert.err=ERR_SENDER_NOT_OWNER
+    # => []
+end
+
 # HELPER PROCEDURES
-# ================================================================================================
+# =================================================================================================
 
 #! Returns the full ownership word from storage.
 #!
