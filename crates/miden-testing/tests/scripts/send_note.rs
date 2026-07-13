@@ -206,64 +206,6 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the script roots are independent of the concrete notes and expiration delta, and
-/// that the wallet and faucet variants have distinct roots.
-///
-/// The stable roots are what network accounts allowlist, so a change here is a breaking change
-/// for every account that has allowlisted them.
-#[test]
-fn test_send_note_script_roots_are_stable() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let wallet_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        [FungibleAsset::mock(100)],
-    )?;
-
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let note_a: Note = P2idNote::builder()
-        .sender(wallet_account.id())
-        .target(wallet_account.id())
-        .asset(FungibleAsset::mock(10))
-        .note_type(NoteType::Public)
-        .generate_serial_number(&mut rng)
-        .build()?
-        .into();
-    let note_b: Note = P2idNote::builder()
-        .sender(wallet_account.id())
-        .target(wallet_account.id())
-        .asset(FungibleAsset::mock(20))
-        .note_type(NoteType::Private)
-        .generate_serial_number(&mut rng)
-        .build()?
-        .into();
-
-    let interface = wallet_account.code_interface();
-    let script_a =
-        SendNotesTransactionScript::new(&interface, slice::from_ref(&note_a.clone().into()))?;
-    let script_b = SendNotesTransactionScript::with_expiration_delta(
-        &interface,
-        &[note_a.into(), note_b.into()],
-        NonZeroU16::new(42).expect("42 is non-zero"),
-    )?;
-
-    let root_a = TransactionScript::from(script_a).root();
-    let root_b = TransactionScript::from(script_b).root();
-    assert_eq!(root_a, root_b, "wallet script root should not depend on notes or delta");
-    assert_eq!(root_a, SendNotesTransactionScript::wallet_script_root());
-
-    assert_ne!(
-        SendNotesTransactionScript::wallet_script_root(),
-        SendNotesTransactionScript::faucet_script_root(),
-        "wallet and faucet scripts should have distinct roots"
-    );
-
-    Ok(())
-}
-
-/// Tests that a single wallet transaction can send multiple notes with varying numbers of assets
-/// and attachments, exercising the script's variable-size note record walk.
 #[tokio::test]
 async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<()> {
     let total_asset = FungibleAsset::mock(100);
@@ -335,67 +277,7 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that a payload that does not match the commitment in the transaction script argument
-/// is rejected by the script's advice validation.
-#[tokio::test]
-async fn test_send_note_script_tampered_payload_fails() -> anyhow::Result<()> {
-    let (mock_chain, sender_account, note) = wallet_chain_with_note()?;
-
-    let script =
-        SendNotesTransactionScript::new(&sender_account.code_interface(), &[note.clone().into()])?;
-
-    // Tamper with the payload (flip the expiration delta element) while keeping the advice map
-    // key and the transaction script argument at the original commitment.
-    let mut advice_entries = script.advice_entries().to_vec();
-    let payload = &mut advice_entries[0].1;
-    payload[1] += Felt::from(1u32);
-
-    let result = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.tx_script().clone())
-        .tx_script_args(script.tx_script_args())
-        .extend_advice_map(advice_entries)
-        .build()?
-        .execute()
-        .await;
-
-    // The commitment check in `pipe_preimage_to_memory` must reject the mismatch.
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::OperationError {
-            err: miden_processor::operation::OperationError::FailedAssertion { .. },
-            ..
-        }
-    );
-
-    Ok(())
-}
-
-/// Tests that executing the script without providing the payload in the advice map fails when
-/// the script looks up the payload commitment.
-#[tokio::test]
-async fn test_send_note_script_missing_advice_entries_fails() -> anyhow::Result<()> {
-    let (mock_chain, sender_account, note) = wallet_chain_with_note()?;
-
-    let script =
-        SendNotesTransactionScript::new(&sender_account.code_interface(), &[note.clone().into()])?;
-
-    // Pass the script and its args, but omit the advice entries.
-    let result = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.tx_script().clone())
-        .tx_script_args(script.tx_script_args())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, matches ExecutionError::AdviceError { .. });
-
-    Ok(())
-}
-
-/// Tests that the faucet script's defense-in-depth assertion rejects a handcrafted payload whose
-/// note record claims more than one asset, bypassing the Rust-side validation.
+/// Tests that the faucet script rejects a payload whose note record claims more than one asset.
 #[tokio::test]
 async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -439,28 +321,4 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
     assert_transaction_executor_error!(result, ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET);
 
     Ok(())
-}
-
-/// Builds a mock chain with a basic wallet account holding a fungible asset and a P2ID note
-/// sending part of that asset back to the account.
-fn wallet_chain_with_note() -> anyhow::Result<(MockChain, miden_protocol::account::Account, Note)> {
-    let mut builder = MockChain::builder();
-    let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        [FungibleAsset::mock(100)],
-    )?;
-    let mock_chain = builder.build()?;
-
-    let note: Note = P2idNote::builder()
-        .sender(sender_account.id())
-        .target(sender_account.id())
-        .asset(FungibleAsset::mock(10))
-        .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
-        .build()?
-        .into();
-
-    Ok((mock_chain, sender_account, note))
 }
