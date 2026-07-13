@@ -38,18 +38,19 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let asset_id = AssetId::new_fungible(faucet_id);
     let code = format!(
         r#"
+        use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use miden::standards::assets::fungible_asset
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
 
             push.{ASSET_ID}
-            exec.fungible_asset::get_active_account_balance
-            # => [balance]
+            call.mock_account::get_active_account_balance
+            # => [balance, pad(15)]
 
             # truncate the stack
-            swap drop
+            exec.sys::truncate_stack
         end
             "#,
         ASSET_ID = asset_id.to_word(),
@@ -158,16 +159,17 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
     let code = format!(
         "
+        use miden::core::sys
         use miden::tx_kernel_core::prologue
-        use miden::protocol::active_account
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.active_account::has_asset
+            call.mock_account::has_asset
 
             # truncate the stack
-            swap drop
+            exec.sys::truncate_stack
         end
         ",
         NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
@@ -189,28 +191,28 @@ async fn test_has_initial_asset() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::native_account
-        use mock::account
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
 
-            # the asset is present in the initial vault
+            # the asset is present in the initial vault. `has_initial_asset` reads the account's
+            # initial vault, so it must be invoked from the account context via `call`.
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.native_account::has_initial_asset
-            # => [has_asset_before]
+            call.mock_account::has_initial_asset
+            # => [has_asset_before, pad(15)]
 
             # remove the asset from the account's current vault
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_ID}
-            call.account::remove_asset
+            call.mock_account::remove_asset
             # => [FINAL_ASSET_VALUE, has_asset_before]
             dropw
             # => [has_asset_before]
 
             # has_initial_asset still reports it since it reads the initial vault
             push.{NON_FUNGIBLE_ASSET_ID}
-            exec.native_account::has_initial_asset
+            call.mock_account::has_initial_asset
             # => [has_asset_after, has_asset_before]
 
             # truncate the stack

@@ -22,6 +22,8 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
+    ERR_PROC_ROOT_NOT_IN_ACCOUNT,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
@@ -382,6 +384,62 @@ async fn test_multisig_smart_update_signers_and_thresholds(
     Ok(())
 }
 
+/// Tests that `multisig_smart::update_signers_and_threshold` rejects a signer set containing
+/// duplicate public keys, mirroring the check on the plain `multisig` variant.
+#[tokio::test]
+async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // Update to a signer set of [PK_A, PK_A, PK_B]: the first key is repeated.
+    let duplicate_public_keys =
+        vec![public_keys[0].clone(), public_keys[0].clone(), public_keys[1].clone()];
+    let new_threshold: u64 = 2;
+    let new_num_approvers: u64 = 3;
+
+    let multisig_config_data = build_update_signers_config_vector(
+        new_threshold,
+        new_num_approvers,
+        &duplicate_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, multisig_config_data);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let salt = Word::from([Felt::new_unchecked(3); 4]);
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(update_signers_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
+
+    Ok(())
+}
+
 /// `set_procedure_policy` invoked from a transaction script must persist the policy to the
 /// `procedure_policies` storage map so subsequent transactions see the new policy.
 #[rstest]
@@ -427,13 +485,13 @@ async fn test_multisig_smart_set_procedure_policy(
 
     let salt = Word::from([Felt::new_unchecked(4); 4]);
 
-    let tx_context_builder = mock_chain
-        .build_tx_context(account_id, &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(account_id)
         .tx_script(set_policy_script)
         .auth_args(salt);
 
     // Dry-run to obtain the tx summary that the approvers must sign.
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -450,7 +508,7 @@ async fn test_multisig_smart_set_procedure_policy(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = tx_context_builder
+    let executed_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -468,6 +526,51 @@ async fn test_multisig_smart_set_procedure_policy(
         stored_policy,
         Word::from([immediate_threshold, delayed_threshold, note_restrictions as u32, 0])
     );
+
+    Ok(())
+}
+
+/// `set_procedure_policy` must reject a `PROC_ROOT` that is not one of the account's procedures, so
+/// a policy can never be stored under a foreign root. The `has_procedure` guard aborts during
+/// execution, before the epilogue auth check, so no signatures are required.
+#[tokio::test]
+async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // A root that is not one of the account's procedures.
+    let foreign_root = Word::from([Felt::new_unchecked(123); 4]);
+
+    // Valid threshold/note-restriction values so execution reaches the `has_procedure` guard.
+    let set_policy_script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{root}
+            push.0
+            push.0
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
+        end
+        ",
+        root = foreign_root,
+    ))?;
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(set_policy_script)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_ROOT_NOT_IN_ACCOUNT);
 
     Ok(())
 }

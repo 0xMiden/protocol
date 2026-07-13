@@ -18,6 +18,9 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
+const UNIQUE_OUTER_INDEX_LOC=0
+const UNIQUE_INNER_INDEX_LOC=1
+
 # CONSTANTS
 # =================================================================================================
 
@@ -77,7 +80,9 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
 
-const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
+const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
+
+const ERR_SIGNER_INDEX_OUT_OF_BOUNDS = "signer index must be less than the number of approvers"
 
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 
@@ -85,7 +90,9 @@ const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and pro
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
-const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedure root that is not one of the account's procedures"
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+
+const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
 
 #! Remove old approver public keys and the corresponding scheme ids from the approver public key and
 #! scheme id mappings.
@@ -225,6 +232,82 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     # => []
 end
 
+#! Asserts that the `num_approvers` public keys currently stored in APPROVER_PUBLIC_KEYS_SLOT are
+#! pairwise distinct, reverting on the first duplicate.
+#!
+#! Reads the current account state, so it validates the keys just written by the caller.
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#! Panics if:
+#! - any two approver public keys are equal.
+#!
+#! Cost: O(num_approvers^2) map reads; num_approvers is small for a multisig.
+@locals(2)
+pub proc assert_unique_approver_public_keys(num_approvers: u32)
+    dup neq.0
+    # => [outer_continue, num_approvers]
+    while.true
+        sub.1
+        # => [i]
+
+        dup loc_store.UNIQUE_OUTER_INDEX_LOC
+        # => [i]
+
+        # read PK_i from the current state
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        exec.active_account::get_map_item
+        # => [PK_I, i]
+
+        movup.4
+        # => [i, PK_I]
+
+        dup neq.0
+        # => [inner_continue, i, PK_I]
+        while.true
+            sub.1
+            # => [j, PK_I]
+
+            dup loc_store.UNIQUE_INNER_INDEX_LOC
+            exec.signature::create_approver_map_key
+            # => [APPROVER_MAP_KEY, PK_I]
+
+            push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+            exec.active_account::get_map_item
+            # => [PK_J, PK_I]
+
+            # assert PK_I != PK_J
+            dupw.1 exec.word::eq
+            # => [is_equal, PK_I]
+
+            assertz.err=ERR_DUPLICATE_APPROVER_PUBLIC_KEY
+            # => [PK_I]
+
+            loc_load.UNIQUE_INNER_INDEX_LOC
+            # => [j, PK_I]
+
+            dup neq.0
+            # => [inner_continue, j, PK_I]
+        end
+        # => [0, PK_I]
+
+        drop dropw
+        # => []
+
+        loc_load.UNIQUE_OUTER_INDEX_LOC
+        # => [i]
+
+        dup neq.0
+        # => [outer_continue, i]
+    end
+
+    drop
+    # => []
+end
+
 #! Update threshold config, add & remove approvers, and update the approver scheme ids
 #!
 #! Note: per-procedure threshold overrides in `PROC_THRESHOLD_ROOTS_SLOT` are NOT re-scaled by this
@@ -234,6 +317,9 @@ end
 #! ratio (e.g. a 2-of-2 override becomes 2-of-N). To preserve the intended security level, operators
 #! must re-evaluate and, where appropriate, raise the affected overrides via `set_procedure_threshold`
 #! in the same transaction that grows the signer set; this procedure neither performs nor prompts it.
+#!
+#! Security: like editing an override, this is gated only at the default threshold and can be used
+#! to weaken a stricter setup. See the `AuthMultisig` Rust type's documentation.
 #!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
@@ -363,6 +449,11 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     # => [pad(13)]
 
     drop
+    # => [pad(12)]
+
+    # assert all approver public keys are unique.
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
+    exec.assert_unique_approver_public_keys
     # => [pad(12)]
 
     # compare initial vs current multisig config
@@ -548,6 +639,9 @@ end
 
 #! Sets or clears a per-procedure threshold override.
 #!
+#! Security: a raised override is only as strong as the default threshold, since lowering it is
+#! gated only at the default. See the `AuthMultisig` Rust type's documentation.
+#!
 #! Inputs: [proc_threshold, PROC_ROOT]
 #! Outputs: []
 #!
@@ -607,16 +701,25 @@ end
 
 #! Returns signer public key at index i
 #!
+#! Reads the initial account state: the returned signer reflects the approver set at the start of
+#! the transaction, not any updates made earlier in the same transaction.
+#!
 #! Inputs:  [index, pad(15)]
 #! Outputs: [PUB_KEY, scheme_id, pad(11)]
 #!
 #! Panics if:
 #! - index is not a u32 value.
+#! - index is greater than or equal to the number of approvers.
 #!
 #! Invocation: call
 @account_procedure
 pub proc get_signer_at
-    u32assert.err=ERR_SIGNER_INDEX_NOT_U32
+    # Bounds check: index must be < num_approvers
+    dup exec.get_initial_threshold_and_num_approvers drop
+    # => [num_approvers, index, index]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32
+    u32lt assert.err=ERR_SIGNER_INDEX_OUT_OF_BOUNDS
     # => [index]
 
     dup
@@ -652,7 +755,10 @@ pub proc get_signer_at
 end
 
 
-#! Returns 1 if PUB_KEY is a current signer, else 0.
+#! Returns 1 if PUB_KEY is a signer, else 0.
+#!
+#! Reads the initial account state: the result reflects the approver set at the start of the
+#! transaction, not any updates made earlier in the same transaction.
 #!
 #! Inputs:  [PUB_KEY, pad(12)]
 #! Outputs: [is_signer, pad(15)]

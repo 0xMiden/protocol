@@ -126,11 +126,14 @@ pub proc verify_signature(msg: word)
     # => [was_update_guardian_public_key_called, MSG]
 
     if.true
-        exec.tx_policy::assert_only_one_non_auth_procedure_called
-        # => [MSG]
-
+        # Check the notes first: creating an output note requires calling `create_note`, which
+        # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
+        # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
         exec.tx_policy::assert_no_output_notes
+        # => [MSG]
+
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
         # => [MSG]
 
         dropw

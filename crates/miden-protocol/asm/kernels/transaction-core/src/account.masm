@@ -742,6 +742,27 @@ end
 #! Panics if:
 #! - the procedure root is not part of the account code.
 pub proc authenticate_and_track_procedure
+    # verify that the procedure is part of the account code and get its index
+    exec.assert_procedure_in_account
+    # => [index]
+
+    # Set the was_called flag to 1 for this procedure
+    exec.set_was_procedure_called
+    # => []
+end
+
+#! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
+#! tracking the call.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [index]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to authenticate.
+#!
+#! Panics if:
+#! - the procedure root is not part of the account code.
+pub proc assert_procedure_in_account
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
@@ -752,10 +773,6 @@ pub proc authenticate_and_track_procedure
     # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
     assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
     # => [index]
-
-    # Set the was_called flag to 1 for this procedure
-    exec.set_was_procedure_called
-    # => []
 end
 
 #! Asserts that the specified procedure root is the root of the authentication procedure for an
