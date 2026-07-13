@@ -106,7 +106,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let executed_transaction = mock_chain
         .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
         .expect("failed to build tx context")
-        .tx_script(send_note_transaction_script.clone().into())
+        .tx_script(send_note_transaction_script.tx_script().clone())
         .tx_script_args(send_note_transaction_script.tx_script_args())
         .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
@@ -193,7 +193,7 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let executed_transaction = mock_chain
         .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
         .expect("failed to build tx context")
-        .tx_script(send_note_transaction_script.clone().into())
+        .tx_script(send_note_transaction_script.tx_script().clone())
         .tx_script_args(send_note_transaction_script.tx_script_args())
         .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
         .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])
@@ -315,7 +315,7 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.clone().into())
+        .tx_script(script.tx_script().clone())
         .tx_script_args(script.tx_script_args())
         .extend_advice_map(script.advice_entries().to_vec())
         .extend_expected_output_notes(vec![
@@ -352,7 +352,7 @@ async fn test_send_note_script_tampered_payload_fails() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.clone().into())
+        .tx_script(script.tx_script().clone())
         .tx_script_args(script.tx_script_args())
         .extend_advice_map(advice_entries)
         .build()?
@@ -383,7 +383,7 @@ async fn test_send_note_script_missing_advice_entries_fails() -> anyhow::Result<
     // Pass the script and its args, but omit the advice entries.
     let result = mock_chain
         .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.clone().into())
+        .tx_script(script.tx_script().clone())
         .tx_script_args(script.tx_script_args())
         .build()?
         .execute()
@@ -429,7 +429,7 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
 
     let result = mock_chain
         .build_tx_context(faucet_account.id(), &[], &[])?
-        .tx_script(script.clone().into())
+        .tx_script(script.tx_script().clone())
         .tx_script_args(tampered_args)
         .extend_advice_map([(tampered_args, payload)])
         .build()?

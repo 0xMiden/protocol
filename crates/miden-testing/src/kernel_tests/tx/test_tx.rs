@@ -975,7 +975,7 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain
         .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
-        .tx_script(script.clone().into())
+        .tx_script(script.tx_script().clone())
         .tx_script_args(script.tx_script_args())
         .extend_advice_map(script.advice_entries().to_vec())
         .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])

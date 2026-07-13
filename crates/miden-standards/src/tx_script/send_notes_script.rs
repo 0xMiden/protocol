@@ -65,7 +65,7 @@ static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(
 /// ```ignore
 /// let script = SendNotesTransactionScript::new(&interface, &notes)?;
 /// let context = build_tx_context(/* .. */)
-///     .tx_script(script.clone().into())
+///     .tx_script(script.tx_script().clone())
 ///     .tx_script_args(script.tx_script_args())
 ///     .extend_advice_map(script.advice_entries().to_vec());
 /// ```
@@ -110,10 +110,15 @@ impl SendNotesTransactionScript {
         self.tx_script_args
     }
 
-    /// The advice map entries the script requires at execution: the payload keyed by its
+    /// The advice map entries the script required at execution: the payload keyed by its
     /// commitment, plus each attachment's content keyed by the attachment commitment.
     pub fn advice_entries(&self) -> &[(Word, Vec<Felt>)] {
         &self.advice_entries
+    }
+
+    /// The underlying [`TransactionScript`], to be set as the transaction's script.
+    pub fn tx_script(&self) -> &TransactionScript {
+        &self.script
     }
 
     /// The [`TransactionScriptRoot`] of the canonical wallet script, to be allowlisted on a

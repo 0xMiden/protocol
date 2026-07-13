@@ -257,7 +257,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(send_note_script.clone().into())
+        .tx_script(send_note_script.tx_script().clone())
         .tx_script_args(send_note_script.tx_script_args())
         .extend_advice_map(send_note_script.advice_entries().to_vec())
         .auth_args(Word::from([Felt::new_unchecked(2); 4]))
