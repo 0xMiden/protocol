@@ -21,7 +21,7 @@
 - Added a standalone `Warden` account component storing a single warden account ID, with `get_warden` / `set_warden` procedures and `is_sender_warden` / `assert_sender_is_warden` authorization primitives ([#3125](https://github.com/0xMiden/protocol/pull/3125)).
 - [BREAKING] Included the storage slot delta operation (create, update, or remove) in the account storage patch commitment ([#3142](https://github.com/0xMiden/protocol/pull/3142)).
 - [BREAKING] PSWAP notes now treat the requested asset amount as a minimum rather than an exact cap: a fill at or above it is accepted and takes the whole offered side with no remainder note (fills above the requested amount previously reverted). Partial fills below the minimum are unchanged. The `PswapNoteStorage` accessors `requested_asset` and `requested_asset_amount` were renamed to `min_requested_asset` and `min_requested_amount` (`requested_faucet_id` is unchanged), and the `ERR_PSWAP_FILL_EXCEEDS_REQUESTED` error was removed ([#3148](https://github.com/0xMiden/protocol/pull/3148)).
-- Updated `AuthRequest` event to carry either signature of TX summary, but not both enabling signature verification on arbitrary messages ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
+- Updated `AuthRequest` event to carry either signature or TX summary, but not both enabling signature verification on arbitrary messages ([#3157](https://github.com/0xMiden/protocol/pull/3157)).
 - Added the `CodeInspection` standard account component, exposing the `has_procedure`, `get_code_commitment`, `get_num_procedures`, and `get_procedure_root` introspection procedures on an account's public interface ([#3162](https://github.com/0xMiden/protocol/pull/3162)).
 - Added the `account_id::eqz` MASM helper to check whether an account ID is zero ([#3170](https://github.com/0xMiden/protocol/pull/3170)).
 - Introduced `MockTransactionBuilder`, created via `MockChain::build_transaction` ([#3172](https://github.com/0xMiden/protocol/pull/3172)).
@@ -35,8 +35,6 @@
 - Added the `PauseActionNote` (`PauseAction`) for triggering `PausableManager` admin actions (pause / unpause) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes the note sender through the account-wide `Authority` component ([#3258](https://github.com/0xMiden/protocol/pull/3258)).
 - Added the `FaucetPolicyActionNote` (`FaucetPolicyAction`) for switching a faucet's active `TokenPolicyManager` policy (mint / burn / send / receive) to an allowed alternative via a note. A selector in the note storage dispatches to the matching `set_*_policy` procedure, which authorizes the note sender through the account-wide `Authority` component ([#3260](https://github.com/0xMiden/protocol/pull/3260)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
-
-
 ### Changes
 
 - [BREAKING] Replaced the `P2idNote` marker type and its `P2idNote::create` factory with a `P2idNote` struct built via a `bon` typestate builder (`P2idNote::builder()`). P2ID notes must now carry at least one asset; a `P2idNote` converts into a `Note` via `Note::from`, and the builder offers `.asset()`/`.assets()`, `.attachment()`/`.attachments()`, and `.generate_serial_number()` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
