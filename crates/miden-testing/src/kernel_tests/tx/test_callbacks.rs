@@ -446,7 +446,9 @@ async fn test_blocked_account_cannot_add_asset_to_note(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Only `create_note` is needed here, so a `NoteCreator` account suffices instead of a full
+    // basic wallet.
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
     let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
     let asset = create_asset(faucet.id())?;
 
@@ -465,7 +467,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
 
             push.{asset_value}
             push.{asset_id}
@@ -505,8 +507,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 {
     let mut builder = MockChain::builder();
 
-    // Create wallet first so we know its ID before building the faucet.
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Create the account first so we know its ID before building the faucet.
+    let target_account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let wallet_id_suffix = target_account.id().suffix().as_canonical_u64();
     let wallet_id_prefix = target_account.id().prefix().as_u64();
 

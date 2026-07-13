@@ -140,6 +140,18 @@ impl AccountBuilder {
     ///
     /// Procedures from this component will be placed at the beginning of the account procedure
     /// list.
+    ///
+    /// # Security
+    ///
+    /// This only enforces the structural requirement above; it does not check that the auth
+    /// component is a sensible choice for the other components on the account. In particular, an
+    /// auth component that performs no authentication makes the account permissionless: every
+    /// state-changing procedure it exposes can be called by anyone. This is especially dangerous
+    /// when combined with components that rely on the auth component as their sole access gate
+    /// (such as authority-controlled setters), which then become permissionless as well.
+    /// Higher-level factory functions vet these combinations; when building an account
+    /// directly, the caller is responsible for pairing a suitable auth component with the
+    /// account's other components.
     pub fn with_auth_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
         self.auth_component = Some(account_component.into());
         self

@@ -39,7 +39,7 @@ pub async fn prove_and_verify_transaction(
 
     let proof_options = ProvingOptions::default();
     let prover = LocalTransactionProver::new(proof_options);
-    let proven_transaction = prover.prove(executed_transaction).await.unwrap();
+    let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
