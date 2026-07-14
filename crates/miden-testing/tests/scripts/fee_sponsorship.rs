@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
@@ -12,6 +14,7 @@ use miden_standards::errors::standards::{
     ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
     ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
+    ERR_FEE_SPONSORSHIP_SWAP_NOT_IMPLEMENTED,
 };
 use miden_standards::note::FeeSponsorshipNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -160,6 +163,31 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
         result,
         ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME
     );
+
+    Ok(())
+}
+
+/// The first note argument reserves a swap mode for making the sponsorship convertible; it is not
+/// implemented yet, so requesting it panics even when the bound feature note is present.
+#[tokio::test]
+async fn swap_arg_is_rejected_as_unimplemented() -> anyhow::Result<()> {
+    let f = setup(None)?;
+
+    // The first note-argument element lands on top of the stack, where the script reads the
+    // consumption mode; 1 is SWAP_MODE.
+    let swap_args = Word::from([1u32, 0, 0, 0]);
+
+    let result = f
+        .mock_chain
+        .build_transaction(f.network_account.id())
+        .authenticated_input_note(f.sponsorship_note.id())
+        .authenticated_input_note(f.feature_note.id())
+        .extend_note_args(BTreeMap::from([(f.sponsorship_note.id(), swap_args)]))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_SWAP_NOT_IMPLEMENTED);
 
     Ok(())
 }
