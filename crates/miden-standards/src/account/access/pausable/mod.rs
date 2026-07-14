@@ -31,7 +31,7 @@ static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 
 procedure_root!(
     PAUSABLE_IS_PAUSED_ROOT,
-    Pausable::NAME,
+    Pausable::LIBRARY_PATH,
     Pausable::IS_PAUSED_PROC_NAME,
     Pausable::code()
 );
@@ -121,6 +121,9 @@ pub struct Pausable(PausableStorage);
 impl Pausable {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::pausable";
+
+    /// The assembled library path of the component.
+    const LIBRARY_PATH: &'static str = "miden::standards::components::access::pausable::mod";
 
     pub const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
 
