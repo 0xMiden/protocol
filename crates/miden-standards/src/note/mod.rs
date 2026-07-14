@@ -6,6 +6,9 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+mod batch_fee;
+pub use batch_fee::BatchFeeNote;
+
 mod burn;
 pub use burn::BurnNote;
 
@@ -14,9 +17,6 @@ pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
 
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
-
-mod fee;
-pub use fee::FeeNote;
 
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
@@ -70,7 +70,7 @@ pub enum StandardNote {
     PAUSE_ACTION,
     OWNER_ACTION,
     RBAC_ACTION,
-    FEE,
+    BATCH_FEE,
 }
 
 impl StandardNote {
@@ -116,8 +116,8 @@ impl StandardNote {
         if root == RbacActionNote::script_root() {
             return Some(Self::RBAC_ACTION);
         }
-        if root == FeeNote::script_root() {
-            return Some(Self::FEE);
+        if root == BatchFeeNote::script_root() {
+            return Some(Self::BATCH_FEE);
         }
 
         None
@@ -139,7 +139,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
-            Self::FEE => "FEE",
+            Self::BATCH_FEE => "BATCH_FEE",
         }
     }
 
@@ -158,7 +158,7 @@ impl StandardNote {
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
             // RbacAction storage is variable per action; this returns the upper bound.
             Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
-            Self::FEE => FeeNote::NUM_STORAGE_ITEMS,
+            Self::BATCH_FEE => BatchFeeNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -175,7 +175,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
-            Self::FEE => FeeNote::script(),
+            Self::BATCH_FEE => BatchFeeNote::script(),
         }
     }
 
@@ -192,7 +192,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),
-            Self::FEE => FeeNote::script_root(),
+            Self::BATCH_FEE => BatchFeeNote::script_root(),
         }
     }
 
@@ -233,7 +233,7 @@ impl StandardNote {
     ///     - check that depending on whether the target account is reclaimer or receiver, it could
     ///       be either consumed, or consumed after timelock height, or consumed after reclaim
     ///       height.
-    /// - for `FEE` note:
+    /// - for `BATCH_FEE` note:
     ///     - check that note storage is empty; the note is otherwise consumable by any account.
     fn is_consumable_inner(
         &self,
@@ -298,12 +298,13 @@ impl StandardNote {
                 }
             },
 
-            // FEE notes carry no target restriction: any account can consume them, as long as the
-            // note carries no storage items (the note script rejects any other storage shape).
-            StandardNote::FEE => {
-                if usize::from(note.storage().num_items()) != FeeNote::NUM_STORAGE_ITEMS {
+            // BATCH_FEE notes carry no target restriction: any account can consume them, as long as
+            // the note carries no storage items (the note script rejects any other
+            // storage shape).
+            StandardNote::BATCH_FEE => {
+                if usize::from(note.storage().num_items()) != BatchFeeNote::NUM_STORAGE_ITEMS {
                     return Ok(Some(NoteConsumptionStatus::NeverConsumable(
-                        "FEE note carries unexpected storage items".into(),
+                        "BATCH_FEE note carries unexpected storage items".into(),
                     )));
                 }
 

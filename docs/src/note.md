@@ -241,9 +241,9 @@ The P2IDE note script extends P2ID with additional features including time-locki
 - Conditional payments that can be reclaimed if not consumed
 - Time-delayed transfers
 
-### FEE
+### BATCH_FEE
 
-The FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
+The BATCH_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
 
 **Key characteristics:**
 
