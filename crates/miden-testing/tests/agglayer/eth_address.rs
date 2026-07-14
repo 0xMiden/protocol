@@ -39,7 +39,8 @@ end",
 
 /// Returns an embedded-form address that decodes into a structurally invalid `AccountId` (suffix
 /// least-significant byte non-zero), plus its decoded `(suffix, prefix)`. Built from a valid
-/// `AccountId` with only the suffix LSB flipped, so `account_id::validate` fails on that check.
+/// `AccountId` with only the suffix LSB flipped, so `account_id::validate_structure` fails on that
+/// check.
 fn crafted_invalid_embedded_address() -> (EthAddress, Felt, Felt) {
     let valid_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let mut bytes = EthEmbeddedAccountId::from_account_id(valid_id).to_bytes();

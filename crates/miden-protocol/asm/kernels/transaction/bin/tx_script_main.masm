@@ -6,7 +6,7 @@ use {TX_SCRIPT_ROOT_PTR} from miden::tx_kernel_core::memory
 # ERRORS
 # =================================================================================================
 
-const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING="the transaction script is missing"
+const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING = "the transaction script is missing"
 
 # MAIN
 # =================================================================================================
@@ -37,7 +37,6 @@ const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING="the transaction script is missing"
 proc main
     # Prologue
     # ---------------------------------------------------------------------------------------------
-
     exec.prologue::prepare_transaction
     # => []
 

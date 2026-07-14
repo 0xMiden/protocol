@@ -46,11 +46,12 @@ const GUARDIAN_SCHEME_ID_SLOT = word("miden::standards::auth::guardian::scheme")
 const GUARDIAN_MAP_KEY = [0, 0, 0, 0]
 
 # ERRORS
-# -------------------------------------------------------------------------------------------------
+# =================================================================================================
+
 const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 
 # PUBLIC INTERFACE
-# ================================================================================================
+# =================================================================================================
 
 #! Updates the guardian public key.
 #!
@@ -106,6 +107,9 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     dropw
     # => []
 end
+
+# PUBLIC HELPERS
+# =================================================================================================
 
 #! Conditionally verifies a guardian signature.
 #!

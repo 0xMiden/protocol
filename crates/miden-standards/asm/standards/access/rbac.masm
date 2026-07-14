@@ -71,44 +71,6 @@ const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Checks that the note sender holds the given role.
-#!
-#! Inputs:  [role_symbol]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#!
-#! Panics if:
-#! - role_symbol is zero.
-#! - the note sender does not hold the given role.
-#!
-#! Invocation: exec
-pub proc assert_sender_has_role
-    dup exec.assert_role_symbol_non_zero
-    # => [role_symbol]
-
-    exec.is_sender_in_role
-    # => [has_role]
-
-    assert.err=ERR_SENDER_LACKS_ROLE
-    # => []
-end
-
-#! Asserts the note sender holds the built-in ADMIN role.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the note sender does not hold the ADMIN role.
-#!
-#! Invocation: exec
-pub proc assert_sender_is_admin
-    push.ADMIN_ROLE exec.assert_sender_has_role
-    # => []
-end
-
 #! Returns whether an account holds a role.
 #!
 #! Returns `0` if the role does not exist or the account is not a member.
@@ -311,6 +273,47 @@ pub proc renounce_role
 
     exec.set_membership_internal
     # => [pad(16)]
+end
+
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Checks that the note sender holds the given role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: []
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - the note sender does not hold the given role.
+#!
+#! Invocation: exec
+pub proc assert_sender_has_role
+    dup exec.assert_role_symbol_non_zero
+    # => [role_symbol]
+
+    exec.is_sender_in_role
+    # => [has_role]
+
+    assert.err=ERR_SENDER_LACKS_ROLE
+    # => []
+end
+
+#! Asserts the note sender holds the built-in ADMIN role.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender does not hold the ADMIN role.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_admin
+    push.ADMIN_ROLE exec.assert_sender_has_role
+    # => []
 end
 
 # HELPER PROCEDURES

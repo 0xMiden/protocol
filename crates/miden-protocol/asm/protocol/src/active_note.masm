@@ -1,22 +1,19 @@
 use miden::protocol_utils::mem
-use {
-    INPUT_NOTE_GET_METADATA_OFFSET,
-    INPUT_NOTE_GET_RECIPIENT_OFFSET,
-    INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET,
-    INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET,
-    INPUT_NOTE_GET_STORAGE_INFO_OFFSET,
-} from miden::protocol::kernel_proc_offsets
+use {INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET}
+    from miden::protocol::kernel_proc_offsets
 use miden::protocol::note
 use miden::protocol::input_note
 use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
-use { AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot } from miden::protocol::types
+use {AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot}
+    from miden::protocol::types
 
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the commitment"
+const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT = "note data does not match the commitment"
 
-const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note storage items does not match the actual number"
+const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS =
+    "the specified number of note storage items does not match the actual number"
 
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================

@@ -41,7 +41,10 @@ const TWO_POW_32=4294967296
 #!
 #! These 8-byte words are packed into field elements via build_felt.
 #!
-#! The decoded (suffix, prefix) is validated as a structurally valid AccountId.
+#! The decoded (suffix, prefix) is validated as a structurally valid AccountId. The ID version is
+#! not constrained, so a destination carrying a structurally valid but currently unsupported
+#! version is accepted and routes to an output that remains unspendable until that version is
+#! supported.
 #!
 #! Inputs:  [limb0, limb1, limb2, limb3, limb4]
 #! Outputs: [suffix, prefix]
@@ -49,7 +52,7 @@ const TWO_POW_32=4294967296
 #! Panics if:
 #! - the most-significant 4 bytes (limb0) are non-zero.
 #! - any limb is not a valid u32, or a packed 8-byte word does not fit in the field.
-#! - the decoded (suffix, prefix) is not a valid AccountId.
+#! - the decoded (suffix, prefix) is not a structurally valid AccountId.
 #!
 #! Invocation: exec
 pub proc to_account_id
@@ -78,7 +81,7 @@ pub proc to_account_id
     dup.1 dup.1
     # => [suffix, prefix, suffix, prefix]
 
-    exec.account_id::validate
+    exec.account_id::validate_structure
     # => [suffix, prefix]
 end
 
