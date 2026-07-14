@@ -1,5 +1,3 @@
-use miden::core::word
-
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -27,9 +25,6 @@ const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 #! The number of storage items of a FEE_SPONSORSHIP note.
 const NUM_STORAGE_ITEMS = 7
 
-#! Local memory offset at which is_bound_companion_note_present stages the bound note ID.
-const BOUND_NOTE_ID_LOC = 0
-
 # ERRORS
 # =================================================================================================
 
@@ -43,65 +38,6 @@ const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE
 
 # HELPER PROCEDURES
 # =================================================================================================
-
-#! Returns whether the companion note bound by the note storage is among the transaction's input
-#! notes.
-#!
-#! This check is what stops a sponsorship note from being consumed on its own. It lives in the
-#! note's own script rather than in the consuming account, because the sponsor trusts neither the
-#! consuming account nor the transaction builder; they do, however, choose the note's script root.
-#!
-#! Every input note's ID is recomputed and compared against the bound ID. No index hint is taken
-#! from the note arguments: those are chosen by the consumer, and an incorrect hint would revert a
-#! transaction whose companion note is in fact present, handing the builder a griefing vector.
-#!
-#! Inputs:  [COMPANION_NOTE_ID]
-#! Outputs: [is_found]
-#!
-#! Where:
-#! - COMPANION_NOTE_ID is the ID of the companion note to look for.
-#! - is_found is 1 if the companion note is among the transaction's input notes, 0 otherwise.
-@locals(4)
-proc is_bound_companion_note_present
-    loc_storew_le.BOUND_NOTE_ID_LOC dropw
-    # => []
-
-    push.0
-    # => [is_found]
-
-    exec.tx::get_num_input_notes
-    # => [note_idx, is_found]
-
-    dup neq.0
-    # => [should_loop, note_idx, is_found]
-
-    while.true
-        sub.1
-        # => [note_idx, is_found]
-
-        dup exec.note_id::compute_input_note_id
-        # => [NOTE_ID, note_idx, is_found]
-
-        padw loc_loadw_le.BOUND_NOTE_ID_LOC
-        # => [BOUND_NOTE_ID, NOTE_ID, note_idx, is_found]
-
-        exec.word::eq
-        # => [is_match, note_idx, is_found]
-
-        movup.2 or
-        # => [is_found, note_idx]
-
-        swap
-        # => [note_idx, is_found]
-
-        dup neq.0
-        # => [should_loop, note_idx, is_found]
-    end
-    # => [note_idx, is_found]
-
-    drop
-    # => [is_found]
-end
 
 #! Returns the sponsorship assets to the reclaimer, provided reclaim is enabled and its block height
 #! has been reached.
@@ -206,8 +142,16 @@ pub proc main
     padw mem_loadw_le.COMPANION_NOTE_ID_ITEM
     # => [COMPANION_NOTE_ID, pad(16)]
 
-    exec.is_bound_companion_note_present
-    # => [is_present, pad(16)]
+    # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
+    # script rather than in the consuming account because the sponsor trusts neither the consuming
+    # account nor the transaction builder. The search takes no index hint from the note args: an
+    # incorrect hint would revert a transaction whose companion note is in fact present, handing
+    # the builder a griefing vector.
+    exec.note_id::find_input_note_by_id
+    # => [is_found, note_idx, pad(16)]
+
+    swap drop
+    # => [is_found, pad(16)]
 
     # with the companion note present, the sponsorship path is a no-op: the assets stay in the note
     # for the consuming account to collect, and who may get here is decided by the companion note's
