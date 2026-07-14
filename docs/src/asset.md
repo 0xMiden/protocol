@@ -20,7 +20,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
    Users can transact freely and privately with no single contract or entity controlling `Asset` transfers. This reduces the risk of censored transactions, resulting in a more open and resilient system.
 
 4. **Fee payment in native asset:**  
-   Transaction fees are paid in the chain's native asset as defined by the current reference block's fee parameters. See [Fees](fees.md).
+   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in the native asset by default (a different payment asset can be chosen via fee conversion info). See [Fees](fees.md).
 
 ## Native asset
 

@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -18,6 +18,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 
@@ -126,6 +127,31 @@ impl BatchFeeNote {
     /// Returns the assets carried by the note.
     pub fn assets(&self) -> &NoteAssets {
         &self.assets
+    }
+
+    // SERIAL NUMBER DERIVATION
+    // --------------------------------------------------------------------------------------------
+
+    /// Derives the serial number that `miden::standards::auth::fee::pay_fee` uses for the
+    /// BATCH_FEE note it creates during a transaction.
+    ///
+    /// The serial number is `[ref_block_num, initial_nonce, account_id_suffix,
+    /// account_id_prefix]`, which is unique per (account, nonce) pair and lets clients precompute
+    /// the note's recipient before executing the transaction.
+    ///
+    /// This derivation must be kept in sync with `create_and_fund_fee_note` in the
+    /// `miden::standards::auth::fee` MASM module.
+    pub fn derive_serial_number(
+        sender: AccountId,
+        initial_nonce: Felt,
+        ref_block_num: BlockNumber,
+    ) -> Word {
+        Word::from([
+            Felt::from(ref_block_num.as_u32()),
+            initial_nonce,
+            sender.suffix(),
+            sender.prefix().as_felt(),
+        ])
     }
 }
 
