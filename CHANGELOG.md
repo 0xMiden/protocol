@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [Added] `min_fill_amount` field to `PswapNoteStorage` to prevent very small partial fills (#3235)
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 
