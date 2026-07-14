@@ -3,35 +3,14 @@
 #! Recomputes a note's ID from the components exposed by the kernel's indexed note accessors.
 #!
 #! The transaction kernel derives note IDs internally during the prologue but exposes no accessor
-#! for them. This module reconstructs the ID from the four commitments that are exposed, for both
-#! input and output notes, mirroring the kernel's own derivation.
+#! for them. This module reconstructs the ID from the four commitments that are exposed, for input,
+#! output, and active notes, mirroring the kernel's own derivation.
 
 use miden::core::crypto::hashes::poseidon2
-use miden::core::word
 
 use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::output_note
-use miden::protocol::tx
-
-# CONSTANTS
-# ================================================================================================
-
-#! Local memory offset at which a note's RECIPIENT is staged.
-const RECIPIENT_PTR = 0
-
-#! Local memory offset at which a note's ASSETS_COMMITMENT is staged.
-const ASSETS_COMMITMENT_PTR = 4
-
-#! Local memory offset at which a note's METADATA is staged.
-const METADATA_PTR = 8
-
-#! Local memory offset at which a note's ATTACHMENTS_COMMITMENT is staged.
-const ATTACHMENTS_COMMITMENT_PTR = 12
-
-#! Local memory offset at which compute_active_note_id stages the matched note index. The offset
-#! value overlaps the staging constants above deliberately: each procedure has its own local frame.
-const MATCHED_INDEX_PTR = 4
 
 # PROCEDURES
 # ================================================================================================
@@ -39,32 +18,29 @@ const MATCHED_INDEX_PTR = 4
 #! Computes the note ID from the four note commitments.
 #!
 #! The note ID is computed as:
-#! - NOTE_DETAILS_COMMITMENT  = hash(RECIPIENT || ASSETS_COMMITMENT)
 #! - NOTE_METADATA_COMMITMENT = hash(METADATA || ATTACHMENTS_COMMITMENT)
+#! - NOTE_DETAILS_COMMITMENT  = hash(RECIPIENT || ASSETS_COMMITMENT)
 #! - NOTE_ID                  = hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)
 #!
-#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
+#! Inputs:  [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
-#! - RECIPIENT is the commitment to the note's serial number, script root and storage.
-#! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - METADATA is the note's metadata word.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - RECIPIENT is the commitment to the note's serial number, script root and storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - NOTE_ID is the resulting note ID.
 #!
 #! Invocation: exec
 proc compute_note_id
     exec.poseidon2::merge
-    # => [NOTE_DETAILS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
+    # => [NOTE_METADATA_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
     movdnw.2
-    # => [METADATA, ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT]
+    # => [RECIPIENT, ASSETS_COMMITMENT, NOTE_METADATA_COMMITMENT]
 
     exec.poseidon2::merge
-    # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT]
-
-    swapw
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT]
 
     exec.poseidon2::merge
@@ -84,32 +60,21 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-@locals(16)
 pub proc compute_input_note_id
-    dup exec.input_note::get_recipient
-    loc_storew_le.RECIPIENT_PTR dropw
-    # => [note_idx]
-
     dup exec.input_note::get_initial_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
-    movup.4 drop
-    loc_storew_le.ASSETS_COMMITMENT_PTR dropw
-    # => [note_idx]
+    movup.4 drop movup.4
+    # => [note_idx, ASSETS_COMMITMENT]
 
-    dup exec.input_note::get_metadata
-    loc_storew_le.METADATA_PTR dropw
-    # => [note_idx]
+    dup exec.input_note::get_recipient movup.4
+    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
 
-    exec.input_note::get_attachments_commitment
-    loc_storew_le.ATTACHMENTS_COMMITMENT_PTR dropw
-    # => []
+    dup exec.input_note::get_attachments_commitment movup.4
+    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
-    padw loc_loadw_le.ATTACHMENTS_COMMITMENT_PTR
-    padw loc_loadw_le.METADATA_PTR
-    padw loc_loadw_le.ASSETS_COMMITMENT_PTR
-    padw loc_loadw_le.RECIPIENT_PTR
-    # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
+    exec.input_note::get_metadata
+    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
     exec.compute_note_id
     # => [NOTE_ID]
@@ -117,49 +82,33 @@ end
 
 #! Computes the ID of the active note.
 #!
-#! The kernel exposes neither the active note's ID nor its index, so the note is located among the
-#! input notes by recipient and its ID recomputed via the indexed accessors. If two input notes
-#! share a recipient (same serial number, script and storage), the first match wins.
-#!
 #! Inputs:  []
 #! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - NOTE_ID is the ID of the active note.
 #!
 #! Panics if:
 #! - no note is currently active.
 #!
 #! Invocation: exec
-@locals(8)
 pub proc compute_active_note_id
-    exec.active_note::get_recipient loc_storew_le.RECIPIENT_PTR dropw
-    # => []
+    exec.active_note::get_initial_assets_info
+    # => [ASSETS_COMMITMENT, num_assets]
 
-    push.0 loc_store.MATCHED_INDEX_PTR
-    exec.tx::get_num_input_notes
-    # => [note_idx]
+    movup.4 drop
+    # => [ASSETS_COMMITMENT]
 
-    dup neq.0
-    # => [should_loop, note_idx]
+    exec.active_note::get_recipient
+    # => [RECIPIENT, ASSETS_COMMITMENT]
 
-    while.true
-        sub.1
-        # => [note_idx]
+    exec.active_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
-        dup exec.input_note::get_recipient
-        padw loc_loadw_le.RECIPIENT_PTR
-        exec.word::eq
-        # => [is_match, note_idx]
+    exec.active_note::get_metadata
+    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
-        if.true
-            dup loc_store.MATCHED_INDEX_PTR
-        end
-
-        dup neq.0
-        # => [should_loop, note_idx]
-    end
-    drop
-    # => []
-
-    loc_load.MATCHED_INDEX_PTR exec.compute_input_note_id
+    exec.compute_note_id
     # => [NOTE_ID]
 end
 
@@ -179,32 +128,21 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-@locals(16)
 pub proc compute_output_note_id
-    dup exec.output_note::get_recipient
-    loc_storew_le.RECIPIENT_PTR dropw
-    # => [note_idx]
-
     dup exec.output_note::get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
-    movup.4 drop
-    loc_storew_le.ASSETS_COMMITMENT_PTR dropw
-    # => [note_idx]
+    movup.4 drop movup.4
+    # => [note_idx, ASSETS_COMMITMENT]
 
-    dup exec.output_note::get_metadata
-    loc_storew_le.METADATA_PTR dropw
-    # => [note_idx]
+    dup exec.output_note::get_recipient movup.4
+    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
 
-    exec.output_note::get_attachments_commitment
-    loc_storew_le.ATTACHMENTS_COMMITMENT_PTR dropw
-    # => []
+    dup exec.output_note::get_attachments_commitment movup.4
+    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
-    padw loc_loadw_le.ATTACHMENTS_COMMITMENT_PTR
-    padw loc_loadw_le.METADATA_PTR
-    padw loc_loadw_le.ASSETS_COMMITMENT_PTR
-    padw loc_loadw_le.RECIPIENT_PTR
-    # => [RECIPIENT, ASSETS_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT]
+    exec.output_note::get_metadata
+    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
     exec.compute_note_id
     # => [NOTE_ID]

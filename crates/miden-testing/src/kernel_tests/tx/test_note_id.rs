@@ -77,9 +77,6 @@ async fn compute_input_note_id_matches_rust(#[case] note_index: u8) -> anyhow::R
 }
 
 /// Recomputing the active note's ID must match `Note::id()` of the note being processed.
-///
-/// The active note is located among the input notes by recipient; consuming two notes proves the
-/// right one is found.
 #[tokio::test]
 async fn compute_active_note_id_matches_rust() -> anyhow::Result<()> {
     let tx_context = two_note_tx()?;
