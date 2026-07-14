@@ -70,6 +70,7 @@ pub enum StandardNote {
     PAUSE_ACTION,
     OWNER_ACTION,
     RBAC_ACTION,
+    FEE_SPONSORSHIP,
 }
 
 impl StandardNote {
@@ -115,6 +116,9 @@ impl StandardNote {
         if root == RbacActionNote::script_root() {
             return Some(Self::RBAC_ACTION);
         }
+        if root == FeeSponsorshipNote::script_root() {
+            return Some(Self::FEE_SPONSORSHIP);
+        }
 
         None
     }
@@ -135,6 +139,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
+            Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
         }
     }
 
@@ -153,6 +158,7 @@ impl StandardNote {
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
             // RbacAction storage is variable per action; this returns the upper bound.
             Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -169,6 +175,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
         }
     }
 
@@ -185,6 +192,7 @@ impl StandardNote {
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
         }
     }
 
@@ -338,6 +346,39 @@ impl Clone for NoteConsumptionStatus {
                 let err = error.to_string();
                 NoteConsumptionStatus::NeverConsumable(err.into())
             },
+        }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every registered variant must resolve back to itself from its own script root; a wrong
+    /// mapping in `from_script_root` would silently misclassify notes.
+    #[test]
+    fn script_root_round_trips_for_every_standard_note() {
+        let variants = [
+            StandardNote::P2ID,
+            StandardNote::P2IDE,
+            StandardNote::SWAP,
+            StandardNote::PSWAP,
+            StandardNote::MINT,
+            StandardNote::BURN,
+            StandardNote::FAUCET_POLICY_ACTION,
+            StandardNote::PAUSE_ACTION,
+            StandardNote::OWNER_ACTION,
+            StandardNote::RBAC_ACTION,
+            StandardNote::FEE_SPONSORSHIP,
+        ];
+
+        for variant in variants {
+            let resolved = StandardNote::from_script_root(variant.script_root())
+                .unwrap_or_else(|| panic!("script root of {} must resolve", variant.name()));
+            assert_eq!(resolved.name(), variant.name());
         }
     }
 }
