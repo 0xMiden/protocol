@@ -11,11 +11,7 @@ use crate::Word;
 use crate::asset::Asset;
 use crate::errors::AssetError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A witness of an asset in an [`AssetVault`](super::AssetVault).
@@ -192,8 +188,7 @@ mod tests {
     use super::*;
     use crate::asset::{AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
     };
 
     /// Tests that constructing an asset witness fails if the (asset_id, value) pair stored in the

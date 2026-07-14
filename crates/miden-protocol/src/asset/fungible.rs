@@ -7,11 +7,7 @@ use crate::Felt;
 use crate::account::{AccountId, AssetCallbackFlag};
 use crate::asset::AssetClass;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // FUNGIBLE ASSET
@@ -256,10 +252,8 @@ mod tests {
     use crate::asset::NonFungibleAsset;
     use crate::asset::tests::set_asset_metadata;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
     };
 

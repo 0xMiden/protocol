@@ -6,12 +6,7 @@ use alloc::vec::Vec;
 use miden_core::Word;
 
 use super::{
-    AccountDeltaError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    AccountDeltaError, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::Felt;
 use crate::account::delta::AssetDeltaOperation;

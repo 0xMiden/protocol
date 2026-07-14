@@ -6,12 +6,8 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 pub use storage::{
-    AccountStoragePatch,
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StoragePatchOperation,
-    StorageSlotPatch,
-    StorageValuePatch,
+    AccountStoragePatch, StorageMapPatch, StorageMapPatchEntries, StoragePatchOperation,
+    StorageSlotPatch, StorageValuePatch,
 };
 pub use update_details::AccountUpdateDetails;
 pub use vault::AccountVaultPatch;
@@ -21,11 +17,7 @@ use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountError, AccountPatchError};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Word};
 
@@ -484,21 +476,13 @@ mod tests {
 
     use super::{AccountPatch, AccountVaultPatch};
     use crate::account::{
-        Account,
-        AccountCode,
-        AccountId,
-        AccountStoragePatch,
-        StorageMapKey,
-        StorageMapPatch,
-        StorageSlotName,
-        StorageSlotPatch,
-        StorageValuePatch,
+        Account, AccountCode, AccountId, AccountStoragePatch, StorageMapKey, StorageMapPatch,
+        StorageSlotName, StorageSlotPatch, StorageValuePatch,
     };
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::errors::{AccountError, AccountPatchError};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
     use crate::utils::serde::Serializable;
     use crate::{Felt, Word};

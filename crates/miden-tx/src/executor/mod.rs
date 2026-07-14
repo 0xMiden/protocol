@@ -11,13 +11,8 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    TransactionArgs,
-    TransactionInputs,
-    TransactionKernel,
-    TransactionScript,
+    ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionInputs,
+    TransactionKernel, TransactionScript,
 };
 use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
@@ -35,11 +30,7 @@ pub use data_store::DataStore;
 
 mod notes_checker;
 pub use notes_checker::{
-    FailedNote,
-    MAX_NUM_CHECKER_NOTES,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    SuccessfulNote,
+    FailedNote, MAX_NUM_CHECKER_NOTES, NoteConsumptionChecker, NoteConsumptionInfo, SuccessfulNote,
 };
 
 mod program_executor;

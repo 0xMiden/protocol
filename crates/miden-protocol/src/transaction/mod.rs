@@ -21,23 +21,14 @@ pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, T
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use ordered_transactions::OrderedTransactionHeaders;
 pub use outputs::{
-    OutputNote,
-    OutputNoteCollection,
-    OutputNotes,
-    PrivateOutputNote,
-    PublicOutputNote,
-    RawOutputNote,
-    RawOutputNotes,
-    TransactionOutputs,
+    OutputNote, OutputNoteCollection, OutputNotes, PrivateOutputNote, PublicOutputNote,
+    RawOutputNote, RawOutputNotes, TransactionOutputs,
 };
 pub use partial_blockchain::PartialBlockchain;
 pub use proven_tx::{InputNoteCommitment, ProvenTransaction, TxAccountUpdate};
 pub use transaction_id::TransactionId;
 pub use tx_args::{
-    TRANSACTION_SCRIPT_ATTRIBUTE,
-    TransactionArgs,
-    TransactionScript,
-    TransactionScriptRoot,
+    TRANSACTION_SCRIPT_ATTRIBUTE, TransactionArgs, TransactionScript, TransactionScriptRoot,
 };
 pub use tx_header::TransactionHeader;
 pub use tx_summary::TransactionSummary;

@@ -1,19 +1,10 @@
 use crate::account::{
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StoragePatchOperation,
-    StorageSlotContent,
-    StorageSlotName,
-    StorageSlotType,
-    StorageValuePatch,
+    StorageMapPatch, StorageMapPatchEntries, StoragePatchOperation, StorageSlotContent,
+    StorageSlotName, StorageSlotType, StorageValuePatch,
 };
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // STORAGE SLOT PATCH

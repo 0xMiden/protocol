@@ -9,30 +9,16 @@ use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
 use crate::block::nullifier_tree::{NullifierWitness, PartialNullifierTree};
 use crate::block::{
-    AccountUpdateWitness,
-    BlockBody,
-    BlockHeader,
-    BlockNoteIndex,
-    BlockNoteTree,
-    BlockNumber,
-    OutputNoteBatch,
-    ValidatorKeys,
+    AccountUpdateWitness, BlockBody, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber,
+    OutputNoteBatch, ValidatorKeys,
 };
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::transaction::{
-    InputNoteCommitment,
-    OutputNote,
-    PartialBlockchain,
-    TransactionHeader,
-    TransactionKernel,
+    InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader, TransactionKernel,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 

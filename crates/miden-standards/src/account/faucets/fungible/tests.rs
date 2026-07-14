@@ -5,29 +5,19 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::{
-    FungibleFaucet,
-    create_guarded_user_fungible_faucet,
-    create_multisig_user_fungible_faucet,
-    create_network_fungible_faucet,
-    create_singlesig_user_fungible_faucet,
+    FungibleFaucet, create_guarded_user_fungible_faucet, create_multisig_user_fungible_faucet,
+    create_network_fungible_faucet, create_singlesig_user_fungible_faucet,
 };
 use crate::account::access::{AccessControl, PausableManager};
 use crate::account::auth::{
-    Approver,
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthNetworkAccount,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    GuardianConfig,
+    Approver, AuthGuardedMultisig, AuthMultisig, AuthNetworkAccount, AuthSingleSig,
+    AuthSingleSigAcl, GuardianConfig,
 };
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{
-    user_faucet_guarded,
-    user_faucet_multisig,
-    user_faucet_single_sig_acl,
+    user_faucet_guarded, user_faucet_multisig, user_faucet_single_sig_acl,
 };
 use crate::tx_script::ExpirationTransactionScript;
 

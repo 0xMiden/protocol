@@ -4,21 +4,12 @@ use alloc::vec::Vec;
 
 use miden_agglayer::errors::{ERR_FAUCET_NOT_REGISTERED, ERR_SENDER_NOT_BRIDGE_ADMIN};
 use miden_agglayer::{
-    AggLayerBridge,
-    ConfigAggBridgeNote,
-    ConversionMetadata,
-    DeregisterAggFaucetNote,
-    EthAddress,
-    MetadataHash,
-    create_existing_bridge_account,
+    AggLayerBridge, ConfigAggBridgeNote, ConversionMetadata, DeregisterAggFaucetNote, EthAddress,
+    MetadataHash, create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    AccountId,
-    AccountIdVersion,
-    AccountType,
-    AssetCallbackFlag,
-    StorageMapKey,
+    AccountId, AccountIdVersion, AccountType, AssetCallbackFlag, StorageMapKey,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;

@@ -1,8 +1,7 @@
 use crate::account::AccountId;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use crate::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
 };
 
 impl NonFungibleAsset {

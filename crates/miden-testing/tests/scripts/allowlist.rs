@@ -12,12 +12,7 @@ use std::sync::Arc;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountType,
-    AssetCallbackFlag,
+    Account, AccountBuilder, AccountId, AccountProcedureRoot, AccountType, AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::assembly::DefaultSourceManager;
@@ -28,22 +23,13 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    AllowlistManager,
-    AllowlistStorage,
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    AllowlistManager, AllowlistStorage, BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_NOT_ALLOWED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_transaction_executor_error,
+    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
 };
 
 use super::rbac::{build_grant_role_note, role, test_account_id};

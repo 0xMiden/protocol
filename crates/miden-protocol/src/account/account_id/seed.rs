@@ -2,9 +2,7 @@ use alloc::vec::Vec;
 
 use crate::account::account_id::AccountIdVersion;
 use crate::account::account_id::v1::{
-    compute_digest,
-    extract_asset_callback_flag,
-    validate_prefix,
+    compute_digest, extract_asset_callback_flag, validate_prefix,
 };
 use crate::account::{AccountIdV1, AccountType, AssetCallbackFlag};
 use crate::errors::AccountError;

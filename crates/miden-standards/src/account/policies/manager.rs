@@ -15,20 +15,11 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    AccountComponentName,
-    AccountProcedureRoot,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, AccountComponentName, AccountProcedureRoot, StorageMap, StorageMapKey,
+    StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::utils::sync::LazyLock;

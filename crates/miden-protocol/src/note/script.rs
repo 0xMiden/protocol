@@ -17,11 +17,7 @@ use crate::errors::NoteError;
 use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::vm::{AdviceMap, Program};
 use crate::{PrettyPrint, Word};

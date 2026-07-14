@@ -7,13 +7,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::{
-    Assembler,
-    Linkage,
-    ModuleParser,
-    Path as MasmPath,
-    Report,
-    SourceManager,
-    ast,
+    Assembler, Linkage, ModuleParser, Path as MasmPath, Report, SourceManager, ast,
 };
 use miden_assembly_syntax::Parse;
 use miden_core::Word;
@@ -25,10 +19,7 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::access::Authority;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use regex::Regex;
 

@@ -7,11 +7,7 @@ use crate::account::AccountId;
 use crate::address::{AddressType, NetworkId};
 use crate::errors::{AddressError, Bech32Error};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// The identifier of an [`Address`](super::Address).

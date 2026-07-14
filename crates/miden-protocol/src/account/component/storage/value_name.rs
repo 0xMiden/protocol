@@ -8,11 +8,7 @@ use thiserror::Error;
 use crate::account::StorageSlotName;
 use crate::errors::StorageSlotNameError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A simple wrapper type around a string key that identifies init-provided values.

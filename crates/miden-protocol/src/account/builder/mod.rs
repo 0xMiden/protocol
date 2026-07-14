@@ -3,15 +3,8 @@ use alloc::vec::Vec;
 
 use crate::account::component::StorageSchema;
 use crate::account::{
-    Account,
-    AccountCode,
-    AccountComponent,
-    AccountId,
-    AccountIdV1,
-    AccountIdVersion,
-    AccountStorage,
-    AccountType,
-    AssetCallbackFlag,
+    Account, AccountCode, AccountComponent, AccountId, AccountIdV1, AccountIdVersion,
+    AccountStorage, AccountType, AssetCallbackFlag,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;

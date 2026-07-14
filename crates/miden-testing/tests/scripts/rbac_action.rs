@@ -7,8 +7,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
-    ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_RBAC_ACTION_UNKNOWN_SELECTOR,
+    ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS, ERR_RBAC_ACTION_UNKNOWN_SELECTOR,
 };
 use miden_standards::note::{RbacAction, RbacActionNote};
 use miden_standards::testing::note::NoteBuilder;

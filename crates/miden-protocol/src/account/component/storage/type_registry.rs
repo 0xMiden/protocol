@@ -12,11 +12,7 @@ use crate::account::RoleSymbol;
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::utils::sync::LazyLock;
 

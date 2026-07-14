@@ -3,20 +3,12 @@ use alloc::vec::Vec;
 use miden_core::Word;
 
 use crate::block::{
-    BlockAccountUpdate,
-    BlockNoteIndex,
-    BlockNoteTree,
-    OutputNoteBatch,
-    ProposedBlock,
+    BlockAccountUpdate, BlockNoteIndex, BlockNoteTree, OutputNoteBatch, ProposedBlock,
 };
 use crate::note::Nullifier;
 use crate::transaction::{OrderedTransactionHeaders, OutputNote};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // BLOCK BODY

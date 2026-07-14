@@ -1,16 +1,6 @@
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    NoteAssets,
-    NoteAttachments,
-    NoteDetailsCommitment,
-    NoteHeader,
-    NoteId,
-    NoteMetadata,
-    PartialNoteMetadata,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, NoteAssets, NoteAttachments,
+    NoteDetailsCommitment, NoteHeader, NoteId, NoteMetadata, PartialNoteMetadata, Serializable,
 };
 use crate::Word;
 

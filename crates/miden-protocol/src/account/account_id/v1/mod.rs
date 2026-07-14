@@ -14,11 +14,7 @@ use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{EMPTY_WORD, Felt, Hasher, Word};
 
@@ -524,10 +520,8 @@ mod tests {
     use super::*;
     use crate::account::AccountIdPrefix;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
 

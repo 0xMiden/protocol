@@ -36,33 +36,17 @@ use miden_processor::trace::RowIndex;
 use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountCode,
-    AccountDelta,
-    AccountHeader,
-    AccountId,
-    AccountPatch,
-    AccountStorageHeader,
-    PartialAccount,
-    StorageMapKey,
-    StorageSlotHeader,
-    StorageSlotId,
-    StorageSlotName,
+    AccountCode, AccountDelta, AccountHeader, AccountId, AccountPatch, AccountStorageHeader,
+    PartialAccount, StorageMapKey, StorageSlotHeader, StorageSlotId, StorageSlotName,
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    RawOutputNote,
-    RawOutputNotes,
-    TransactionMeasurements,
+    InputNote, InputNotes, RawOutputNote, RawOutputNotes, TransactionMeasurements,
     TransactionSummary,
 };
 pub(crate) use tx_event::{
-    RecipientData,
-    TransactionEvent,
-    TransactionProgressEvent,
-    TxSummaryOrSignature,
+    RecipientData, TransactionEvent, TransactionProgressEvent, TxSummaryOrSignature,
 };
 pub use tx_progress::TransactionProgress;
 

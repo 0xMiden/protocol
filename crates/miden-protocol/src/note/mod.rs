@@ -3,11 +3,7 @@ use miden_crypto::Word;
 use crate::account::AccountId;
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, ZERO};
 
@@ -28,10 +24,7 @@ pub use metadata::{NoteMetadata, PartialNoteMetadata};
 
 mod attachment;
 pub use attachment::{
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentHeader,
-    NoteAttachmentScheme,
+    NoteAttachment, NoteAttachmentContent, NoteAttachmentHeader, NoteAttachmentScheme,
     NoteAttachments,
 };
 

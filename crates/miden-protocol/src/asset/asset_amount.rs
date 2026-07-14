@@ -4,11 +4,7 @@ use core::ops::{Add, Sub};
 
 use super::super::errors::AssetError;
 use super::super::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::Felt;
 

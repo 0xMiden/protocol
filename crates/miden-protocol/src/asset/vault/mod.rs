@@ -5,16 +5,8 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::{
-    Asset,
-    AssetAmount,
-    AssetComposition,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    FungibleAsset,
-    NonFungibleAsset,
-    Serializable,
+    Asset, AssetAmount, AssetComposition, ByteReader, ByteWriter, Deserializable,
+    DeserializationError, FungibleAsset, NonFungibleAsset, Serializable,
 };
 use crate::Word;
 use crate::account::AccountVaultPatch;

@@ -7,12 +7,7 @@ use alloc::vec::Vec;
 use miden_core::{Felt, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountComponent,
-    AccountId,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountComponent, AccountId, StorageMapKey, StorageSlot, StorageSlotName,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
@@ -27,24 +22,9 @@ use crate::utils::Keccak256Output;
 /// Removed-GER hash chain representation (32-byte Keccak256 hash)
 pub type RemovedGerHashChain = Keccak256Output;
 pub use crate::{
-    B2AggNote,
-    ClaimNote,
-    ClaimNoteStorage,
-    ConfigAggBridgeNote,
-    DeregisterAggFaucetNote,
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    ExitRoot,
-    GlobalIndex,
-    GlobalIndexError,
-    LeafData,
-    MetadataHash,
-    ProofData,
-    RemoveGerNote,
-    SmtNode,
-    UpdateGerNote,
+    B2AggNote, ClaimNote, ClaimNoteStorage, ConfigAggBridgeNote, DeregisterAggFaucetNote,
+    EthAddress, EthAmount, EthAmountError, EthEmbeddedAccountId, ExitRoot, GlobalIndex,
+    GlobalIndexError, LeafData, MetadataHash, ProofData, RemoveGerNote, SmtNode, UpdateGerNote,
 };
 
 // CONSTANTS

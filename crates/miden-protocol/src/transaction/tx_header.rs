@@ -3,20 +3,11 @@ use alloc::vec::Vec;
 use crate::Word;
 use crate::note::NoteHeader;
 use crate::transaction::{
-    AccountId,
-    ExecutedTransaction,
-    InputNoteCommitment,
-    InputNotes,
-    ProvenTransaction,
-    RawOutputNotes,
-    TransactionId,
+    AccountId, ExecutedTransaction, InputNoteCommitment, InputNotes, ProvenTransaction,
+    RawOutputNotes, TransactionId,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A transaction header derived from a

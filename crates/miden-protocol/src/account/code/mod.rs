@@ -9,13 +9,7 @@ use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
 
 use super::{
-    AccountError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Hasher,
+    AccountError, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, Hasher,
     Serializable,
 };
 use crate::Word;

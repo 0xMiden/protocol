@@ -2,18 +2,10 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, StorageMap, StorageMapKey, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -22,9 +14,7 @@ use miden_protocol::utils::sync::LazyLock;
 // are exposed as `pub(super)` in the sibling `multisig` module; we reference them directly so
 // the sharing is visible at the use site rather than hidden behind delegating methods.
 use super::super::multisig::{
-    APPROVER_PUBKEYS_SLOT_NAME,
-    APPROVER_SCHEME_ID_SLOT_NAME,
-    EXECUTED_TRANSACTIONS_SLOT_NAME,
+    APPROVER_PUBKEYS_SLOT_NAME, APPROVER_SCHEME_ID_SLOT_NAME, EXECUTED_TRANSACTIONS_SLOT_NAME,
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;

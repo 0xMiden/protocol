@@ -10,11 +10,7 @@ use miden_protocol::utils::serde::Deserializable;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
-    BurnAllowAll,
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnAllowAll, BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_utils_sync::LazyLock;
 
@@ -36,26 +32,14 @@ pub mod utils;
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError, RemovedGerHashChain};
 pub use claim_note::{
-    CgiChainHash,
-    ClaimNote,
-    ClaimNoteStorage,
-    ExitRoot,
-    LeafData,
-    LeafValue,
-    ProofData,
-    SmtNode,
+    CgiChainHash, ClaimNote, ClaimNoteStorage, ExitRoot, LeafData, LeafValue, ProofData, SmtNode,
 };
 pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    GlobalIndex,
-    GlobalIndexError,
+    EthAddress, EthAmount, EthAmountError, EthEmbeddedAccountId, GlobalIndex, GlobalIndexError,
     MetadataHash,
 };
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};

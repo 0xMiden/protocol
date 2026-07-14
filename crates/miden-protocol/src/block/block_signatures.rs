@@ -5,11 +5,7 @@ use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use crate::Word;
 use crate::block::ValidatorKeys;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // SIGNATURE VERIFICATION ERROR

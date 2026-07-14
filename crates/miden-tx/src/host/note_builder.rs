@@ -4,12 +4,7 @@ use alloc::vec::Vec;
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteRecipient,
-    PartialNote,
+    Note, NoteAssets, NoteAttachment, NoteAttachments, NoteRecipient, PartialNote,
     PartialNoteMetadata,
 };
 

@@ -6,14 +6,7 @@ use miden_crypto::WordError;
 use miden_crypto_derive::WordWrapper;
 
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Hasher,
-    Serializable,
-    Word,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, Hasher, Serializable, Word,
     ZERO,
 };
 use crate::note::{NoteDetails, NoteMetadata, NoteScriptRoot};

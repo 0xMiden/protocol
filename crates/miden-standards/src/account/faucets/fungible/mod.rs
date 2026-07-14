@@ -1,24 +1,12 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
+    AccountComponentCode, AccountComponentMetadata, FeltSchema, SchemaType, StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountCodeInterface,
-    AccountComponent,
-    AccountComponentName,
-    AccountProcedureRoot,
-    AccountStorage,
-    AccountType,
-    AssetCallbackFlag,
-    StorageSlot,
+    Account, AccountBuilder, AccountCodeInterface, AccountComponent, AccountComponentName,
+    AccountProcedureRoot, AccountStorage, AccountType, AssetCallbackFlag, StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
@@ -26,21 +14,13 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::{
-    Description,
-    ExternalLink,
-    FungibleFaucetError,
-    LogoURI,
-    TokenMetadata,
-    TokenMetadataError,
+    Description, ExternalLink, FungibleFaucetError, LogoURI, TokenMetadata, TokenMetadataError,
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthNetworkAccount,
-    AuthSingleSigAcl,
+    AuthGuardedMultisig, AuthMultisig, AuthNetworkAccount, AuthSingleSigAcl,
 };
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};

@@ -2,11 +2,7 @@ use alloc::string::ToString;
 
 use crate::errors::AssetError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// Indicates how an asset is composed (i.e. how its merge/split semantics are defined).

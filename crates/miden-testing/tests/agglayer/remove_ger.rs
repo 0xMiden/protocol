@@ -2,11 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::errors::{ERR_GER_NOT_FOUND, ERR_SENDER_NOT_GER_REMOVER};
 use miden_agglayer::{
-    AggLayerBridge,
-    ExitRoot,
-    RemoveGerNote,
-    UpdateGerNote,
-    create_existing_bridge_account,
+    AggLayerBridge, ExitRoot, RemoveGerNote, UpdateGerNote, create_existing_bridge_account,
 };
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_protocol::account::Account;

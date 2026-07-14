@@ -15,13 +15,7 @@ use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::sync::LazyLock;
 use crate::vm::{
-    AdviceInputs,
-    DebugSourceNodeId,
-    Package,
-    PackageDebugInfo,
-    Program,
-    ProgramInfo,
-    StackInputs,
+    AdviceInputs, DebugSourceNodeId, Package, PackageDebugInfo, Program, ProgramInfo, StackInputs,
     StackOutputs,
 };
 use crate::{Felt, Hasher, Word};

@@ -235,12 +235,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::{
-        Deserializable,
-        EMPTY_STORAGE_MAP_ROOT,
-        Serializable,
-        StorageMap,
-        StorageMapKey,
-        Word,
+        Deserializable, EMPTY_STORAGE_MAP_ROOT, Serializable, StorageMap, StorageMapKey, Word,
     };
     use crate::errors::StorageMapError;
 

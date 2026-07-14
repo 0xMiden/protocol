@@ -5,15 +5,8 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::errors::AccountError;
 
 use crate::account::auth::{
-    Approver,
-    ApproverSet,
-    AuthGuardedMultisig,
-    AuthGuardedMultisigConfig,
-    AuthMultisig,
-    AuthMultisigConfig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
-    GuardianConfig,
+    Approver, ApproverSet, AuthGuardedMultisig, AuthGuardedMultisigConfig, AuthMultisig,
+    AuthMultisigConfig, AuthSingleSigAcl, AuthSingleSigAclConfig, GuardianConfig,
 };
 use crate::account::faucets::FungibleFaucet;
 

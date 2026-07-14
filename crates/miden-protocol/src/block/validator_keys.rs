@@ -3,11 +3,7 @@ use alloc::vec::Vec;
 
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, WORD_SIZE, Word};
 

@@ -8,11 +8,7 @@ use crate::Felt;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // FELT SCHEMA

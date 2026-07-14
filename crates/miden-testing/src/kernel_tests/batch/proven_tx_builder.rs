@@ -7,11 +7,7 @@ use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
-    InputNote,
-    InputNoteCommitment,
-    OutputNote,
-    ProvenTransaction,
-    TxAccountUpdate,
+    InputNote, InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
 

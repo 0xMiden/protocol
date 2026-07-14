@@ -1,12 +1,6 @@
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    NoteDetailsCommitment,
-    NoteId,
-    NoteMetadata,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, NoteDetailsCommitment, NoteId,
+    NoteMetadata, Serializable,
 };
 
 // NOTE HEADER

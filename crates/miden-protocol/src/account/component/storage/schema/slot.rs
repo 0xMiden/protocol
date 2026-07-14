@@ -7,11 +7,7 @@ use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // STORAGE SLOT SCHEMA

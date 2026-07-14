@@ -10,18 +10,12 @@ mod non_fungible;
 mod token_metadata;
 
 pub use fungible::{
-    FungibleFaucet,
-    FungibleFaucetBuilder,
-    create_guarded_user_fungible_faucet,
-    create_multisig_user_fungible_faucet,
-    create_network_fungible_faucet,
+    FungibleFaucet, FungibleFaucetBuilder, create_guarded_user_fungible_faucet,
+    create_multisig_user_fungible_faucet, create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
 pub use non_fungible::{
-    AssetStatus,
-    NonFungibleFaucet,
-    NonFungibleFaucetBuilder,
-    create_network_non_fungible_faucet,
+    AssetStatus, NonFungibleFaucet, NonFungibleFaucetBuilder, create_network_non_fungible_faucet,
     create_user_non_fungible_faucet,
 };
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};

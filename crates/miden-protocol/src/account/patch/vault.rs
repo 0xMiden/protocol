@@ -5,11 +5,7 @@ use alloc::vec::Vec;
 use crate::asset::{Asset, AssetId};
 use crate::errors::AssetError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Word};
 

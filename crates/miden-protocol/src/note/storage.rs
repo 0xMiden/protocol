@@ -2,11 +2,7 @@ use alloc::vec::Vec;
 
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, MAX_NOTE_STORAGE_ITEMS, Word};
 

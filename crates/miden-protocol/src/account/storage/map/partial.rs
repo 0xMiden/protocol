@@ -6,11 +6,7 @@ use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use crate::account::{StorageMap, StorageMapKey, StorageMapWitness};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A partial representation of a [`StorageMap`], containing only proofs for a subset of the

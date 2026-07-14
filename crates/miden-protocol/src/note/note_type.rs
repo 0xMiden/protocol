@@ -4,11 +4,7 @@ use core::str::FromStr;
 use crate::Felt;
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // NOTE TYPE

@@ -6,11 +6,7 @@ use miden_core::{ONE, ZERO};
 use crate::Felt;
 use crate::errors::AccountError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // STORAGE SLOT TYPE

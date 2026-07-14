@@ -8,11 +8,7 @@ use super::{AccountStorage, AccountStorageHeader, StorageSlotContent};
 use crate::account::PartialStorageMap;
 use crate::errors::AccountError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A partial representation of an account storage, containing only a subset of the storage data.
@@ -162,14 +158,8 @@ mod tests {
     use miden_core::Word;
 
     use crate::account::{
-        AccountStorage,
-        AccountStorageHeader,
-        PartialStorage,
-        PartialStorageMap,
-        StorageMap,
-        StorageMapKey,
-        StorageSlot,
-        StorageSlotName,
+        AccountStorage, AccountStorageHeader, PartialStorage, PartialStorageMap, StorageMap,
+        StorageMapKey, StorageSlot, StorageSlotName,
     };
 
     #[test]

@@ -8,16 +8,8 @@ use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
 use crate::account::{
-    AccountCode,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    PartialAccount,
-    PartialStorage,
-    StorageMapKey,
-    StorageMapWitness,
-    StorageSlotId,
-    StorageSlotName,
+    AccountCode, AccountHeader, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
+    StorageMapKey, StorageMapWitness, StorageSlotId, StorageSlotName,
 };
 use crate::asset::{Asset, AssetId, AssetWitness, PartialVault};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
@@ -27,11 +19,7 @@ use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
 use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Word};
 

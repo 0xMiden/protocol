@@ -4,12 +4,7 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountUpdateDetails,
-    StorageSlot,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountUpdateDetails, StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::FungibleAsset;
@@ -18,10 +13,7 @@ use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::{
-    InputNoteCommitment,
-    OutputNote,
-    ProvenTransaction,
-    TxAccountUpdate,
+    InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};

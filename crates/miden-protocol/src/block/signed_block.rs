@@ -3,11 +3,7 @@ use miden_core::Word;
 use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // SIGNED BLOCK ERROR

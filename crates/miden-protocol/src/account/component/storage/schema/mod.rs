@@ -8,11 +8,7 @@ use crate::account::{StorageSlot, StorageSlotName};
 use crate::crypto::utils::bytes_to_elements_with_padding;
 use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Hasher, Word};
 

@@ -5,15 +5,8 @@ use std::collections::BTreeMap;
 use std::vec::Vec;
 
 use crate::account::{
-    AccountCode,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    PartialAccount,
-    PartialStorage,
-    StorageSlotHeader,
-    StorageSlotName,
-    StorageSlotType,
+    AccountCode, AccountHeader, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
+    StorageSlotHeader, StorageSlotName, StorageSlotType,
 };
 use crate::asset::PartialVault;
 use crate::block::account_tree::AccountIdKey;
@@ -297,11 +290,7 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
     use miden_core::Felt;
 
     use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountStorageHeader,
-        PartialAccount,
-        PartialStorage,
+        AccountCode, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
         StorageSlotName,
     };
     use crate::asset::PartialVault;

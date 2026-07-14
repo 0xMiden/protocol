@@ -4,22 +4,13 @@ use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 mod notes;
 pub use notes::{
-    OutputNote,
-    OutputNoteCollection,
-    OutputNotes,
-    PrivateOutputNote,
-    PublicOutputNote,
-    RawOutputNote,
-    RawOutputNotes,
+    OutputNote, OutputNoteCollection, OutputNotes, PrivateOutputNote, PublicOutputNote,
+    RawOutputNote, RawOutputNotes,
 };
 
 #[cfg(test)]

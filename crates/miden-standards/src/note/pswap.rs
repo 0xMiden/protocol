@@ -5,18 +5,8 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteRecipient,
+    NoteScript, NoteScriptRoot, NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
@@ -43,15 +33,16 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Canonical storage representation for a PSWAP note.
 ///
-/// Maps to the 6-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 7-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
 /// | Slot | Field |
 /// |---------|-------|
 /// | `[0]` | Requested asset faucet ID suffix |
 /// | `[1]` | Requested asset faucet ID prefix |
 /// | `[2]` | Requested asset amount |
-/// | `[3]` | Payback note type (0 = private, 1 = public) |
-/// | `[4-5]` | Creator account ID (prefix, suffix) |
+/// | `[3]` | Minimum fill amount (0 = no minimum) |
+/// | `[4]` | Payback note type (0 = private, 1 = public) |
+/// | `[5-6]` | Creator account ID (suffix, prefix) |
 ///
 /// The payback note tag is derived at runtime from the creator account ID
 /// (via `note_tag::create_account_target` in MASM) rather than stored.
@@ -72,6 +63,8 @@ pub struct PswapNoteStorage {
     /// executed transaction's output).
     #[builder(default = NoteType::Private)]
     payback_note_type: NoteType,
+    /// Minimum fill amount. If None, no minimum is enforced.
+    min_fill_amount: Option<u64>,
 }
 
 impl PswapNoteStorage {
@@ -79,7 +72,7 @@ impl PswapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 6;
+    pub const NUM_STORAGE_ITEMS: usize = 7;
 
     /// Consumes the storage and returns a PSWAP [`NoteRecipient`] with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -115,12 +108,18 @@ impl PswapNoteStorage {
     }
 
     /// Returns the requested token amount.
+    /// Returns the requested token amount.
     pub fn min_requested_amount(&self) -> u64 {
         self.min_requested_asset.amount().as_u64()
     }
+
+    /// Returns the minimum fill amount for this PSWAP note.
+    pub fn min_fill_amount(&self) -> Option<u64> {
+        self.min_fill_amount
+    }
 }
 
-/// Serializes [`PswapNoteStorage`] into a 6-element [`NoteStorage`].
+/// Serializes [`PswapNoteStorage`] into a 7-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let storage_items = vec![
@@ -128,11 +127,13 @@ impl From<PswapNoteStorage> for NoteStorage {
             storage.min_requested_asset.faucet_id().suffix(),
             storage.min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(storage.min_requested_asset.amount()),
-            // Payback note type [3]
+            // Minimum fill amount [3]
+            Felt::new(storage.min_fill_amount.unwrap_or(0)).unwrap(),
+            // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Creator ID [4-5]
-            storage.creator_account_id.prefix().as_felt(),
+            // Creator ID [5-6]
             storage.creator_account_id.suffix(),
+            storage.creator_account_id.prefix().as_felt(),
         ];
         NoteStorage::new(storage_items)
             .expect("number of storage items should not exceed max storage items")
@@ -160,21 +161,30 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         let min_requested_asset = FungibleAsset::new(faucet_id, amount)
             .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?;
 
-        // [3] = payback_note_type
+        // [3] = min_fill_amount
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[3].as_canonical_u64())
+            u8::try_from(note_storage[4].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [4-5] = creator account ID (prefix, suffix)
-        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[4])
+        // [4] = payback_note_type
+        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[6])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
+
+        // [5-6] = creator account ID (suffix, prefix)
+        let min_fill_amount = note_storage[3].as_canonical_u64();
+        let min_fill_amount = if min_fill_amount == 0 {
+            None
+        } else {
+            Some(min_fill_amount)
+        };
 
         Ok(Self {
             min_requested_asset,
             creator_account_id,
             payback_note_type,
+            min_fill_amount,
         })
     }
 }
@@ -1034,9 +1044,10 @@ mod tests {
             min_requested_asset.faucet_id().suffix(),
             min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(min_requested_asset.amount()),
+            Felt::ZERO,                            // min_fill_amount = None
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
-            creator_id.prefix().as_felt(),
             creator_id.suffix(),
+            creator_id.prefix().as_felt(),
         ];
 
         let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();

@@ -8,12 +8,7 @@ use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
-    AccountCode,
-    AccountId,
-    AccountPatch,
-    PartialAccount,
-    StorageMapKey,
-    StorageSlotId,
+    AccountCode, AccountId, AccountPatch, PartialAccount, StorageMapKey, StorageSlotId,
     StorageSlotName,
 };
 use miden_protocol::assembly::debuginfo::Location;
@@ -22,18 +17,10 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    PartialNoteMetadata,
+    NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage, PartialNoteMetadata,
 };
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    RawOutputNote,
-    TransactionAdviceInputs,
-    TransactionSummary,
+    InputNote, InputNotes, RawOutputNote, TransactionAdviceInputs, TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use miden_protocol::{Felt, Hasher, Word};
@@ -42,13 +29,8 @@ use miden_standards::note::StandardNote;
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
 use crate::host::{
-    RecipientData,
-    ScriptMastForestStore,
-    TransactionBaseHost,
-    TransactionEvent,
-    TransactionProgress,
-    TransactionProgressEvent,
-    TxSummaryOrSignature,
+    RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent,
+    TransactionProgress, TransactionProgressEvent, TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 

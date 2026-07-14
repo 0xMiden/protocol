@@ -7,17 +7,14 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::tx_kernel::{
-    ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
-    ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
+    ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS, ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
 };
 use miden_protocol::note::{Note, NoteAssets, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ASSET_SIZE;

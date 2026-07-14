@@ -12,11 +12,7 @@ use miden_protocol::{Felt, Hasher, Word};
 
 use crate::errors::AuthenticationError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // SIGNATURE DATA

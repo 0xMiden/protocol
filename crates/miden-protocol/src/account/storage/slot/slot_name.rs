@@ -7,11 +7,7 @@ use crate::account::name_validation::{self, NameValidationError};
 use crate::account::storage::slot::StorageSlotId;
 use crate::errors::StorageSlotNameError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// The name of an account storage slot.

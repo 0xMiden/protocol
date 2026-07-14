@@ -9,11 +9,7 @@ use crate::Word;
 use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // MAP SLOT SCHEMA

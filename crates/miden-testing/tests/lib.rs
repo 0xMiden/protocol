@@ -11,12 +11,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteRecipient,
-    NoteStorage,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteRecipient, NoteStorage, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};

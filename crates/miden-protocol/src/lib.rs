@@ -39,24 +39,12 @@ pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
     pub use miden_assembly::debuginfo::SourceManagerSync;
     pub use miden_assembly::{
-        Assembler,
-        DefaultSourceManager,
-        Linkage,
-        ModuleParser,
-        Path,
-        SourceFile,
-        SourceId,
-        SourceManager,
-        SourceSpan,
-        debuginfo,
-        diagnostics,
-        mast,
+        Assembler, DefaultSourceManager, Linkage, ModuleParser, Path, SourceFile, SourceId,
+        SourceManager, SourceSpan, debuginfo, diagnostics, mast,
     };
     pub use miden_assembly_syntax::Parse;
     pub use miden_mast_package::{
-        Package as KernelLibrary,
-        Package as Library,
-        PackageExport as LibraryExport,
+        Package as KernelLibrary, Package as Library, PackageExport as LibraryExport,
         ProcedureExport,
     };
 }
@@ -74,14 +62,8 @@ pub mod vm {
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};
     pub use miden_mast_package::{
-        Package,
-        PackageDebugInfoError,
-        PackageExport,
-        PackageManifest,
-        ProcedureExport,
-        Section,
-        SectionId,
-        TargetType,
+        Package, PackageDebugInfoError, PackageExport, PackageManifest, ProcedureExport, Section,
+        SectionId, TargetType,
     };
     pub use miden_processor::trace::RowIndex;
     pub use miden_processor::{FutureMaybeSend, MIN_STACK_DEPTH, StackInputs, StackOutputs};

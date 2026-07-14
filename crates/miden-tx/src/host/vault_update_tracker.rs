@@ -3,10 +3,7 @@ use alloc::collections::BTreeMap;
 use miden_protocol::Word;
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
-    AccountVaultDelta,
-    AccountVaultPatch,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
+    AccountVaultDelta, AccountVaultPatch, FungibleAssetDelta, NonFungibleAssetDelta,
     NonFungibleDeltaAction,
 };
 use miden_protocol::asset::{Asset, AssetId};

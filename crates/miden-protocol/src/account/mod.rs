@@ -5,22 +5,13 @@ use crate::asset::{Asset, AssetVault};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, Word, ZERO};
 
 mod account_id;
 pub use account_id::{
-    AccountId,
-    AccountIdPrefix,
-    AccountIdPrefixV1,
-    AccountIdV1,
-    AccountIdVersion,
-    AccountType,
+    AccountId, AccountIdPrefix, AccountIdPrefixV1, AccountIdV1, AccountIdVersion, AccountType,
     AssetCallbackFlag,
 };
 
@@ -46,42 +37,21 @@ pub use interface::{AccountCodeInterface, AccountComponentName};
 
 mod patch;
 pub use patch::{
-    AccountPatch,
-    AccountStoragePatch,
-    AccountUpdateDetails,
-    AccountVaultPatch,
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StoragePatchOperation,
-    StorageSlotPatch,
-    StorageValuePatch,
+    AccountPatch, AccountStoragePatch, AccountUpdateDetails, AccountVaultPatch, StorageMapPatch,
+    StorageMapPatchEntries, StoragePatchOperation, StorageSlotPatch, StorageValuePatch,
 };
 
 pub mod delta;
 pub use delta::{
-    AccountDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
+    AccountDelta, AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta,
     NonFungibleDeltaAction,
 };
 
 pub mod storage;
 pub use storage::{
-    AccountStorage,
-    AccountStorageHeader,
-    PartialStorage,
-    PartialStorageMap,
-    StorageMap,
-    StorageMapKey,
-    StorageMapKeyHash,
-    StorageMapWitness,
-    StorageSlot,
-    StorageSlotContent,
-    StorageSlotHeader,
-    StorageSlotId,
-    StorageSlotName,
-    StorageSlotType,
+    AccountStorage, AccountStorageHeader, PartialStorage, PartialStorageMap, StorageMap,
+    StorageMapKey, StorageMapKeyHash, StorageMapWitness, StorageSlot, StorageSlotContent,
+    StorageSlotHeader, StorageSlotId, StorageSlotName, StorageSlotType,
 };
 
 mod header;
@@ -593,20 +563,9 @@ mod tests {
 
     use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
     use crate::account::{
-        Account,
-        AccountBuilder,
-        AccountIdVersion,
-        AccountPatch,
-        AccountType,
-        AccountVaultDelta,
-        AccountVaultPatch,
-        AssetCallbackFlag,
-        PartialAccount,
-        StorageMap,
-        StorageMapKey,
-        StorageSlot,
-        StorageSlotContent,
-        StorageSlotName,
+        Account, AccountBuilder, AccountIdVersion, AccountPatch, AccountType, AccountVaultDelta,
+        AccountVaultPatch, AssetCallbackFlag, PartialAccount, StorageMap, StorageMapKey,
+        StorageSlot, StorageSlotContent, StorageSlotName,
     };
     use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;

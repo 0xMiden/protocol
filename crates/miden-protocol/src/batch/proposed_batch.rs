@@ -10,21 +10,11 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
 use crate::transaction::{
-    InputNoteCommitment,
-    InputNotes,
-    OrderedTransactionHeaders,
-    OutputNote,
-    PartialBlockchain,
-    ProvenTransaction,
-    TransactionHeader,
-    TransactionVerifier,
+    InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote, PartialBlockchain,
+    ProvenTransaction, TransactionHeader, TransactionVerifier,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
 

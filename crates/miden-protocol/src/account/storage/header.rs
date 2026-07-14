@@ -10,11 +10,7 @@ use crate::account::{StorageSlot, StorageSlotId, StorageSlotName};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT STORAGE HEADER

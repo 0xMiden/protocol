@@ -7,11 +7,7 @@ use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetClass;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // NON-FUNGIBLE ASSET
@@ -229,8 +225,7 @@ mod tests {
     use crate::account::AccountId;
     use crate::asset::FungibleAsset;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     };
 

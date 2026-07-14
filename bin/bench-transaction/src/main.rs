@@ -6,15 +6,10 @@ use anyhow::{Context, Result};
 
 mod context_setups;
 use context_setups::{
-    ClaimDataSource,
-    tx_consume_b2agg_note,
-    tx_consume_claim_note,
-    tx_consume_single_p2id_note_ecdsa,
-    tx_consume_single_p2id_note_falcon,
-    tx_consume_two_p2id_notes_ecdsa,
-    tx_consume_two_p2id_notes_falcon,
-    tx_create_single_p2id_note_ecdsa,
-    tx_create_single_p2id_note_falcon,
+    ClaimDataSource, tx_consume_b2agg_note, tx_consume_claim_note,
+    tx_consume_single_p2id_note_ecdsa, tx_consume_single_p2id_note_falcon,
+    tx_consume_two_p2id_notes_ecdsa, tx_consume_two_p2id_notes_falcon,
+    tx_create_single_p2id_note_ecdsa, tx_create_single_p2id_note_falcon,
 };
 
 mod cycle_counting_benchmarks;

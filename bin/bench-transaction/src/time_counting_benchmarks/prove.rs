@@ -4,13 +4,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use bench_transaction::context_setups::{
-    ClaimDataSource,
-    tx_consume_b2agg_note,
-    tx_consume_claim_note,
-    tx_consume_single_p2id_note_ecdsa,
-    tx_consume_single_p2id_note_falcon,
-    tx_consume_two_p2id_notes_ecdsa,
-    tx_consume_two_p2id_notes_falcon,
+    ClaimDataSource, tx_consume_b2agg_note, tx_consume_claim_note,
+    tx_consume_single_p2id_note_ecdsa, tx_consume_single_p2id_note_falcon,
+    tx_consume_two_p2id_notes_ecdsa, tx_consume_two_p2id_notes_falcon,
 };
 use criterion::{BatchSize, Bencher, Criterion, SamplingMode, criterion_group, criterion_main};
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};

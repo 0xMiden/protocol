@@ -8,17 +8,9 @@ extern crate std;
 
 mod executor;
 pub use executor::{
-    DataStore,
-    ExecutionOptions,
-    FailedNote,
-    MAX_NUM_CHECKER_NOTES,
-    MastForestStore,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    ProgramExecutor,
-    SuccessfulNote,
-    TransactionExecutor,
-    TransactionExecutorHost,
+    DataStore, ExecutionOptions, FailedNote, MAX_NUM_CHECKER_NOTES, MastForestStore,
+    NoteConsumptionChecker, NoteConsumptionInfo, ProgramExecutor, SuccessfulNote,
+    TransactionExecutor, TransactionExecutorHost,
 };
 
 mod host;
@@ -26,20 +18,13 @@ pub use host::{AccountProcedureIndexMap, LinkMap, MemoryViewer, ScriptMastForest
 
 mod prover;
 pub use prover::{
-    LocalTransactionProver,
-    ProvingOptions,
-    TransactionMastStore,
-    TransactionProverHost,
+    LocalTransactionProver, ProvingOptions, TransactionMastStore, TransactionProverHost,
 };
 
 mod errors;
 pub use errors::{
-    AuthenticationError,
-    DataStoreError,
-    NoteCheckerError,
-    TransactionExecutorError,
-    TransactionKernelError,
-    TransactionProverError,
+    AuthenticationError, DataStoreError, NoteCheckerError, TransactionExecutorError,
+    TransactionKernelError, TransactionProverError,
 };
 
 pub mod auth;

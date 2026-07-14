@@ -10,56 +10,31 @@ use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountCode,
-    AccountComponent,
-    AccountId,
-    AccountStorage,
-    AccountType,
-    StorageMap,
-    StorageMapKey,
-    StorageMapPatch,
-    StorageSlot,
-    StorageSlotContent,
-    StorageSlotId,
-    StorageSlotName,
-    StorageSlotPatch,
-    StorageSlotType,
-    StorageValuePatch,
+    Account, AccountBuilder, AccountCode, AccountComponent, AccountId, AccountStorage, AccountType,
+    StorageMap, StorageMapKey, StorageMapPatch, StorageSlot, StorageSlotContent, StorageSlotId,
+    StorageSlotName, StorageSlotPatch, StorageSlotType, StorageValuePatch,
 };
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{
-    DefaultSourceManager,
-    Library,
-    Linkage,
-    ModuleKind,
-    ModuleParser,
-    Path,
+    DefaultSourceManager, Library, Linkage, ModuleKind, ModuleParser, Path,
 };
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
-    ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
-    ERR_ACCOUNT_ID_UNKNOWN_VERSION,
-    ERR_ACCOUNT_NONCE_AT_MAX,
-    ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO, ERR_ACCOUNT_ID_UNKNOWN_VERSION,
+    ERR_ACCOUNT_NONCE_AT_MAX, ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::memory::{
-    CODE_UPGRADE_COMMITMENT_PTR,
-    STORAGE_UPGRADE_COMMITMENT_PTR,
+    CODE_UPGRADE_COMMITMENT_PTR, STORAGE_UPGRADE_COMMITMENT_PTR,
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
@@ -73,11 +48,7 @@ use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
-    Auth,
-    ExecError,
-    MockChain,
-    TestTransactionBuilder,
-    TxContextInput,
+    Auth, ExecError, MockChain, TestTransactionBuilder, TxContextInput,
     assert_transaction_executor_error,
 };
 

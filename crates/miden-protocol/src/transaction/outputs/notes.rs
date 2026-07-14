@@ -6,22 +6,11 @@ use core::fmt::Debug;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
-    Note,
-    NoteAssets,
-    NoteAttachments,
-    NoteDetailsCommitment,
-    NoteHeader,
-    NoteId,
-    NoteMetadata,
-    NoteRecipient,
-    PartialNote,
+    Note, NoteAssets, NoteAttachments, NoteDetailsCommitment, NoteHeader, NoteId, NoteMetadata,
+    NoteRecipient, PartialNote,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, MAX_OUTPUT_NOTES_PER_TX, Word};
 

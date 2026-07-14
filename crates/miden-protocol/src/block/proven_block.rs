@@ -4,11 +4,7 @@ use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockProof, BlockSignatures};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // PROVEN BLOCK ERROR

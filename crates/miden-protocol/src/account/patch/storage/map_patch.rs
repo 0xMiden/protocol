@@ -5,11 +5,7 @@ use crate::Word;
 use crate::account::{StorageMap, StorageMapKey, StoragePatchOperation, StorageSlotName};
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // STORAGE MAP PATCH

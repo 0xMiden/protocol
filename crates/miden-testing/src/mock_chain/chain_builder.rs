@@ -20,32 +20,15 @@ const DEFAULT_VALIDATOR_COUNT: usize = 3;
 use itertools::Itertools;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountPatch,
-    AccountType,
-    AccountUpdateDetails,
-    AssetCallbackFlag,
-    StorageSlot,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountPatch, AccountType,
+    AccountUpdateDetails, AssetCallbackFlag, StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
-    BlockAccountUpdate,
-    BlockBody,
-    BlockHeader,
-    BlockNoteTree,
-    BlockNumber,
-    BlockProof,
-    BlockSignatures,
-    Blockchain,
-    FeeParameters,
-    OutputNoteBatch,
-    ProvenBlock,
-    ValidatorKeys,
+    BlockAccountUpdate, BlockBody, BlockHeader, BlockNoteTree, BlockNumber, BlockProof,
+    BlockSignatures, Blockchain, FeeParameters, OutputNoteBatch, ProvenBlock, ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
@@ -58,10 +41,7 @@ use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};

@@ -5,8 +5,7 @@
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 use miden_protocol::testing::constants::FUNGIBLE_ASSET_AMOUNT;
 use miden_protocol::testing::storage::MOCK_MAP_SLOT;

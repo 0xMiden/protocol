@@ -8,16 +8,8 @@ use miden_protocol::assembly::{DefaultSourceManager, Library};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteAttachment, NoteAttachments, NoteRecipient, NoteScript, NoteStorage,
+    NoteTag, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::vm::{AdviceMap, Package};

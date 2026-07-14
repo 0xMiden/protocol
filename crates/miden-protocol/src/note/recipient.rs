@@ -1,15 +1,8 @@
 use core::fmt::Debug;
 
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Hasher,
-    NoteScript,
-    NoteStorage,
-    Serializable,
-    Word,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Hasher, NoteScript, NoteStorage,
+    Serializable, Word,
 };
 
 /// Value that describes under which condition a note can be consumed.

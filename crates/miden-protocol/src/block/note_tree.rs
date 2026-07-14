@@ -8,18 +8,11 @@ use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
 use crate::note::NoteHeader;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{
-    BLOCK_NOTE_TREE_DEPTH,
-    MAX_BATCHES_PER_BLOCK,
-    MAX_OUTPUT_NOTES_PER_BATCH,
-    MAX_OUTPUT_NOTES_PER_BLOCK,
-    Word,
+    BLOCK_NOTE_TREE_DEPTH, MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BLOCK, Word,
 };
 
 /// Wrapper over [SimpleSmt<BLOCK_NOTE_TREE_DEPTH>] for notes tree.

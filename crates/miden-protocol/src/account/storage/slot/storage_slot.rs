@@ -2,11 +2,7 @@ use crate::Word;
 use crate::account::storage::slot::StorageSlotId;
 use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// An individual storage slot in [`AccountStorage`](crate::account::AccountStorage).

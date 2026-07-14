@@ -2,16 +2,8 @@ use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountStorageHeader,
-    AccountStoragePatch,
-    PartialAccount,
-    StorageMapKey,
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StorageSlotName,
-    StorageSlotPatch,
-    StorageSlotType,
-    StorageValuePatch,
+    AccountStorageHeader, AccountStoragePatch, PartialAccount, StorageMapKey, StorageMapPatch,
+    StorageMapPatchEntries, StorageSlotName, StorageSlotPatch, StorageSlotType, StorageValuePatch,
 };
 
 use crate::TransactionKernelError;

@@ -8,11 +8,7 @@ use miden_processor::mast::{MastNode, MastNodeExt, MastNodeId};
 
 use crate::Word;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT PROCEDURE ROOT

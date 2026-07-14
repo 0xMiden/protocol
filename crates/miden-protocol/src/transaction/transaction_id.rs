@@ -5,11 +5,7 @@ use miden_crypto_derive::WordWrapper;
 
 use super::{Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // TRANSACTION ID

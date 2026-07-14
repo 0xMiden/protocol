@@ -2,22 +2,11 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{
-    AccountError,
-    AccountStoragePatch,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Serializable,
-    Word,
+    AccountError, AccountStoragePatch, ByteReader, ByteWriter, Deserializable,
+    DeserializationError, Felt, Serializable, Word,
 };
 use crate::account::{
-    AccountComponent,
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StorageSlotPatch,
-    StorageValuePatch,
+    AccountComponent, StorageMapPatch, StorageMapPatchEntries, StorageSlotPatch, StorageValuePatch,
 };
 use crate::crypto::SequentialCommit;
 
@@ -487,13 +476,8 @@ mod tests {
     use super::{AccountStorage, Deserializable, Serializable};
     use crate::Word;
     use crate::account::{
-        AccountStorageHeader,
-        AccountStoragePatch,
-        StorageSlot,
-        StorageSlotHeader,
-        StorageSlotName,
-        StorageSlotPatch,
-        StorageValuePatch,
+        AccountStorageHeader, AccountStoragePatch, StorageSlot, StorageSlotHeader, StorageSlotName,
+        StorageSlotPatch, StorageValuePatch,
     };
     use crate::errors::AccountError;
 

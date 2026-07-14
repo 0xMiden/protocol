@@ -1,36 +1,22 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountProcedureRoot,
-    AccountType,
-    StorageMapKey,
+    Account, AccountBuilder, AccountProcedureRoot, AccountType, StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteRecipient,
-    NoteStorage,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteRecipient, NoteStorage, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
-    Approver,
-    ApproverSet,
-    AuthGuardedMultisig,
-    AuthGuardedMultisigConfig,
-    GuardianConfig,
+    Approver, ApproverSet, AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
-    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
+    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};

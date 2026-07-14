@@ -4,11 +4,7 @@ use crate::account::AccountDelta;
 use crate::crypto::SequentialCommit;
 use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Word};
 

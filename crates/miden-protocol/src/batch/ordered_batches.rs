@@ -3,11 +3,7 @@ use alloc::vec::Vec;
 use crate::batch::ProvenBatch;
 use crate::transaction::OrderedTransactionHeaders;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ORDERED BATCHES

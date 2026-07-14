@@ -11,12 +11,7 @@ use crate::vm::AdviceMap;
 
 pub mod serde {
     pub use miden_crypto::utils::{
-        BudgetedReader,
-        ByteReader,
-        ByteWriter,
-        Deserializable,
-        DeserializationError,
-        Serializable,
+        BudgetedReader, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
         SliceReader,
     };
 }

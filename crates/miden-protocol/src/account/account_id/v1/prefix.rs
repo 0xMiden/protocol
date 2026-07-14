@@ -8,11 +8,7 @@ use crate::account::account_id::v1::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT ID PREFIX VERSION 1
@@ -229,10 +225,8 @@ mod tests {
     use super::*;
     use crate::account::{AccountId, AccountIdPrefix};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
 

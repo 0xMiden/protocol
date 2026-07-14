@@ -5,19 +5,11 @@ use alloc::vec::Vec;
 use super::slot_patch::MergeOutcome;
 use crate::Felt;
 use crate::account::{
-    AccountStorage,
-    StorageMapPatch,
-    StorageSlotName,
-    StorageSlotPatch,
-    StorageValuePatch,
+    AccountStorage, StorageMapPatch, StorageSlotName, StorageSlotPatch, StorageValuePatch,
 };
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT STORAGE PATCH

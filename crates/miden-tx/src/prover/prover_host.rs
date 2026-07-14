@@ -13,10 +13,7 @@ use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
 use crate::host::{
-    RecipientData,
-    ScriptMastForestStore,
-    TransactionBaseHost,
-    TransactionEvent,
+    RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent,
     TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, TransactionKernelError};

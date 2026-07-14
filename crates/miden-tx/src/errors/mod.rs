@@ -12,13 +12,8 @@ use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
-    AccountDeltaError,
-    AssetError,
-    NoteError,
-    OutputNoteError,
-    ProvenTransactionError,
-    TransactionInputError,
-    TransactionOutputError,
+    AccountDeltaError, AssetError, NoteError, OutputNoteError, ProvenTransactionError,
+    TransactionInputError, TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};

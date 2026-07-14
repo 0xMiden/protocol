@@ -1,22 +1,12 @@
 extern crate alloc;
 
 use miden_agglayer::errors::{
-    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
-    ERR_B2AGG_NOTE_MUST_BE_PUBLIC,
-    ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
-    ERR_FAUCET_NOT_REGISTERED,
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN, ERR_B2AGG_NOTE_MUST_BE_PUBLIC,
+    ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED,
 };
 use miden_agglayer::{
-    AggLayerBridge,
-    B2AggNote,
-    ConfigAggBridgeNote,
-    ConversionMetadata,
-    EthAddress,
-    ExitRoot,
-    Keccak256Output,
-    MetadataHash,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
+    AggLayerBridge, B2AggNote, ConfigAggBridgeNote, ConversionMetadata, EthAddress, ExitRoot,
+    Keccak256Output, MetadataHash, create_existing_agglayer_faucet, create_existing_bridge_account,
 };
 use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
@@ -25,12 +15,7 @@ use miden_protocol::account::{Account, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteAttachment, NoteAttachments, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};

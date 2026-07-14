@@ -20,39 +20,22 @@ use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
 use crate::account::{
-    AccountCode,
-    AccountIdPrefix,
-    AccountProcedureRoot,
-    AccountStorage,
-    StorageMapKey,
-    StorageSlotId,
-    StorageSlotName,
+    AccountCode, AccountIdPrefix, AccountProcedureRoot, AccountStorage, StorageMapKey,
+    StorageSlotId, StorageSlotName,
 };
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteTag, NoteType, Nullifier,
 };
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
-    ACCOUNT_UPDATE_MAX_SIZE,
-    Felt,
-    MAX_ACCOUNTS_PER_BATCH,
-    MAX_INPUT_NOTES_PER_BATCH,
-    MAX_INPUT_NOTES_PER_TX,
-    MAX_NOTE_STORAGE_ITEMS,
-    MAX_OUTPUT_NOTES_PER_TX,
-    NOTE_MAX_SIZE,
+    ACCOUNT_UPDATE_MAX_SIZE, Felt, MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH,
+    MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, MAX_OUTPUT_NOTES_PER_TX, NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]

@@ -1,13 +1,7 @@
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
-    ExecutionError,
-    ExecutionOptions,
-    ExecutionOutput,
-    FastProcessor,
-    FutureMaybeSend,
-    Host,
-    Program,
-    StackInputs,
+    ExecutionError, ExecutionOptions, ExecutionOutput, FastProcessor, FutureMaybeSend, Host,
+    Program, StackInputs,
 };
 use miden_protocol::vm::{DebugSourceNodeId, PackageDebugInfo};
 

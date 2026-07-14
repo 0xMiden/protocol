@@ -1,11 +1,7 @@
 use crate::account::AccountPatch;
 use crate::errors::AccountPatchError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT UPDATE DETAILS
@@ -123,13 +119,8 @@ impl Deserializable for AccountUpdateDetails {
 mod tests {
     use super::AccountUpdateDetails;
     use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountPatch,
-        AccountStoragePatch,
-        AccountVaultPatch,
-        StorageMapKey,
-        StorageSlotName,
+        AccountCode, AccountId, AccountPatch, AccountStoragePatch, AccountVaultPatch,
+        StorageMapKey, StorageSlotName,
     };
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;

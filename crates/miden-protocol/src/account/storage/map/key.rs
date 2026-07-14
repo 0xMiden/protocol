@@ -4,11 +4,7 @@ use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
 use miden_crypto_derive::WordWrapper;
 
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Hasher, Word};
 

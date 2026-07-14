@@ -5,11 +5,7 @@ use miden_crypto_derive::WordWrapper;
 
 use super::{NoteDetailsCommitment, NoteMetadata};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Hasher, Word, WordError};
 

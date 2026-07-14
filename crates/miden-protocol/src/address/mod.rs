@@ -18,11 +18,7 @@ use crate::crypto::ies::SealingKey;
 use crate::errors::AddressError;
 use crate::note::NoteTag;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 mod address_id;

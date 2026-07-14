@@ -1,17 +1,8 @@
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, FeltSchema, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    AccountComponentName,
-    AccountId,
-    AccountStorage,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, AccountComponentName, AccountId, AccountStorage, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::utils::sync::LazyLock;

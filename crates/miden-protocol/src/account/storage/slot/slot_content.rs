@@ -4,11 +4,7 @@ use crate::account::StorageSlotType;
 use crate::account::storage::map::EMPTY_STORAGE_MAP_ROOT;
 use crate::account::storage::{StorageMap, Word};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // STORAGE SLOT CONTENT

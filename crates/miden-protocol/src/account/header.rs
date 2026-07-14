@@ -4,22 +4,12 @@ use super::{Account, AccountId, Felt, PartialAccount};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::transaction::memory::{
-    ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_DATA_MEM_SIZE,
-    ACCT_ID_AND_NONCE_OFFSET,
-    ACCT_ID_PREFIX_IDX,
-    ACCT_ID_SUFFIX_IDX,
-    ACCT_NONCE_IDX,
-    ACCT_STORAGE_COMMITMENT_OFFSET,
-    ACCT_VAULT_ROOT_OFFSET,
+    ACCT_CODE_COMMITMENT_OFFSET, ACCT_DATA_MEM_SIZE, ACCT_ID_AND_NONCE_OFFSET, ACCT_ID_PREFIX_IDX,
+    ACCT_ID_SUFFIX_IDX, ACCT_NONCE_IDX, ACCT_STORAGE_COMMITMENT_OFFSET, ACCT_VAULT_ROOT_OFFSET,
     MemoryOffset,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{WORD_SIZE, Word, WordError};
 

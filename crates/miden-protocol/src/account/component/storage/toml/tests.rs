@@ -5,15 +5,8 @@ use miden_core::{Felt, Word};
 
 use crate::account::component::toml::init_storage_data::InitStorageDataError;
 use crate::account::component::{
-    AccountComponentMetadata,
-    InitStorageData,
-    InitStorageDataError as CoreInitStorageDataError,
-    SchemaType,
-    StorageSlotSchema,
-    StorageValueName,
-    StorageValueNameError,
-    WordSchema,
-    WordValue,
+    AccountComponentMetadata, InitStorageData, InitStorageDataError as CoreInitStorageDataError,
+    SchemaType, StorageSlotSchema, StorageValueName, StorageValueNameError, WordSchema, WordValue,
 };
 use crate::account::{StorageMapKey, StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;

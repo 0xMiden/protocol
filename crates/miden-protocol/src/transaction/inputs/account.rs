@@ -4,11 +4,7 @@ use crate::asset::PartialVault;
 use crate::block::account_tree::AccountWitness;
 use crate::crypto::merkle::smt::{SmtProof, SmtProofError};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT INPUTS

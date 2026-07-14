@@ -6,11 +6,7 @@ use alloc::vec::Vec;
 
 use miden_agglayer::errors::ERR_GER_ALREADY_REGISTERED;
 use miden_agglayer::{
-    AggLayerBridge,
-    ExitRoot,
-    UpdateGerNote,
-    agglayer_library,
-    create_existing_bridge_account,
+    AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_library, create_existing_bridge_account,
 };
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;

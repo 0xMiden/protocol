@@ -16,7 +16,7 @@ use miden::standards::note::note_creator
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=6
+const NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -24,13 +24,14 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
-# Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
-# - payback_note_type          [3]  : 1 felt
-# - creator_id_prefix          [4]  : 1 felt
+# - min_fill_amount            [3]  : 1 felt (0 = no minimum)
+# - payback_note_type          [4]  : 1 felt
 # - creator_id_suffix          [5]  : 1 felt
+# - creator_id_prefix          [6]  : 1 felt
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
@@ -51,9 +52,10 @@ const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
 const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 3
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 4
+const MIN_FILL_AMOUNT_ITEM = STORAGE_PTR + 3
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
 # =================================================================================================
@@ -101,6 +103,7 @@ const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note a
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
+const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below minimum fill amount"
 
 # U64 VALIDATION
 # =================================================================================================
@@ -557,7 +560,7 @@ end
 #! Inputs: [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
-@locals(10)
+@locals(11)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_MIN_REQUESTED          : amt_min_requested
 # EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
@@ -568,6 +571,7 @@ end
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
 # EXEC_AMT_FILL_REFERENCE         : max(total_fill, min_requested_amount)
+# EXEC_MIN_FILL_AMOUNT            : min_fill_amount (0 = no minimum)
 proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
@@ -614,6 +618,19 @@ proc execute_pswap
 
     swap mul.MAX_U32 add
     # => [fill_amount]
+
+    # Check min_fill_amount: if set (non-zero), fill must be >= min_fill_amount.
+    # Equivalent to: min_fill_amount == 0 || fill_amount >= min_fill_amount
+    mem_load.MIN_FILL_AMOUNT_ITEM
+    dup.1
+    eq.0
+    movup.2
+    dup.1
+    gte
+    movup.2
+    add
+    assert.err=ERR_PSWAP_FILL_BELOW_MINIMUM
+    drop
 
     # fill_reference = max(fill, min_requested_amount).
     loc_load.EXEC_AMT_MIN_REQUESTED

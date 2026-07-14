@@ -3,11 +3,7 @@ use alloc::vec::Vec;
 use crate::account::AccountId;
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorKeys};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, Word, ZERO};
 

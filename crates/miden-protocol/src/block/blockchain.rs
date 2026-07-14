@@ -5,11 +5,7 @@ use miden_crypto::merkle::mmr::{Forest, Mmr, MmrError, MmrPeaks, MmrProof, Parti
 use crate::Word;
 use crate::block::BlockNumber;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// The [Merkle Mountain Range](Mmr) defining the Miden blockchain.

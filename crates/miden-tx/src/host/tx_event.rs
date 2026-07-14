@@ -6,24 +6,12 @@ use miden_processor::trace::RowIndex;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
-    AccountId,
-    StorageMap,
-    StorageMapKey,
-    StorageSlotName,
-    StorageSlotType,
+    AccountId, StorageMap, StorageMapKey, StorageSlotName, StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::note::{
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentScheme,
-    NoteId,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNoteMetadata,
+    NoteAttachment, NoteAttachmentContent, NoteAttachmentScheme, NoteId, NoteRecipient, NoteScript,
+    NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};

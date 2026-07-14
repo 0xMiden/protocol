@@ -9,11 +9,7 @@ use crate::errors::ProvenBatchError;
 use crate::note::Nullifier;
 use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::vm::ExecutionProof;
 use crate::{MIN_PROOF_SECURITY_LEVEL, Word};

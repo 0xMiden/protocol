@@ -5,11 +5,7 @@ use miden_crypto::SequentialCommit;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
@@ -194,8 +190,7 @@ mod tests {
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::errors::NoteError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
 

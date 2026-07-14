@@ -9,19 +9,11 @@ use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
-    Note,
-    NoteAssets,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
     PartialNoteMetadata,
 };
 use crate::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER,
 };
 use crate::utils::serde::Serializable;
 use crate::{Felt, Word};

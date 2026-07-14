@@ -9,8 +9,7 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::errors::standards::{
-    ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_OWNER_ACTION_UNKNOWN_SELECTOR,
+    ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS, ERR_OWNER_ACTION_UNKNOWN_SELECTOR,
 };
 use miden_standards::note::{OwnerAction, OwnerActionNote};
 use miden_standards::testing::note::NoteBuilder;
@@ -20,9 +19,7 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // suite, which owns the exhaustive tests of the underlying component. This suite only checks
 // that the OwnerAction note dispatches each action and rejects malformed notes.
 use super::ownable2step::{
-    create_ownable_account,
-    get_nominated_owner_from_storage,
-    get_owner_from_storage,
+    create_ownable_account, get_nominated_owner_from_storage, get_owner_from_storage,
 };
 
 // HELPERS

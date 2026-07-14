@@ -7,20 +7,9 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 
 use crate::account::{
-    Account,
-    AccountCode,
-    AccountId,
-    AccountPatch,
-    AccountStorage,
-    AccountStoragePatch,
-    AccountVaultPatch,
-    StorageMapKey,
-    StorageMapPatch,
-    StorageMapPatchEntries,
-    StorageSlot,
-    StorageSlotName,
-    StorageSlotPatch,
-    StorageValuePatch,
+    Account, AccountCode, AccountId, AccountPatch, AccountStorage, AccountStoragePatch,
+    AccountVaultPatch, StorageMapKey, StorageMapPatch, StorageMapPatchEntries, StorageSlot,
+    StorageSlotName, StorageSlotPatch, StorageValuePatch,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountPatchError;

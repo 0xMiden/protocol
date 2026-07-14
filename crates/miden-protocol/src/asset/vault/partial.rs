@@ -10,11 +10,7 @@ use crate::Word;
 use crate::asset::{Asset, AssetWitness};
 use crate::errors::PartialAssetVaultError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// A partial representation of an [`AssetVault`], containing only proofs for a subset of assets.

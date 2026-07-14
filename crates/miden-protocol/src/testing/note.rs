@@ -3,13 +3,7 @@ use alloc::vec::Vec;
 use crate::Word;
 use crate::asset::FungibleAsset;
 use crate::note::{
-    Note,
-    NoteAssets,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
     PartialNoteMetadata,
 };
 use crate::testing::account_id::ACCOUNT_ID_SENDER;

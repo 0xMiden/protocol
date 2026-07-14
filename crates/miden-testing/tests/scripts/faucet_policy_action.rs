@@ -21,10 +21,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
@@ -33,11 +30,7 @@ use miden_standards::errors::standards::{
 use miden_standards::note::{FaucetPolicyAction, FaucetPolicyActionNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_transaction_executor_error,
+    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
 };
 
 // HELPERS

@@ -8,11 +8,7 @@ use crate::account::AccountId;
 use crate::block::account_tree::AccountIdKey;
 use crate::errors::AccountTreeError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT WITNESS

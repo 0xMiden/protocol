@@ -19,22 +19,9 @@ use thiserror::Error;
 
 use super::agglayer_faucet_component_library;
 pub use crate::{
-    AggLayerBridge,
-    B2AggNote,
-    ClaimNoteStorage,
-    ConfigAggBridgeNote,
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    ExitRoot,
-    GlobalIndex,
-    GlobalIndexError,
-    LeafData,
-    MetadataHash,
-    ProofData,
-    SmtNode,
-    UpdateGerNote,
+    AggLayerBridge, B2AggNote, ClaimNoteStorage, ConfigAggBridgeNote, EthAddress, EthAmount,
+    EthAmountError, EthEmbeddedAccountId, ExitRoot, GlobalIndex, GlobalIndexError, LeafData,
+    MetadataHash, ProofData, SmtNode, UpdateGerNote,
 };
 
 // CONSTANTS

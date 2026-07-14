@@ -6,11 +6,7 @@ use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Word, ZERO};
 
@@ -19,10 +15,7 @@ pub use delta_op::AssetDeltaOperation;
 
 mod vault;
 pub use vault::{
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
+    AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction,
 };
 
 // ACCOUNT DELTA
@@ -494,26 +487,15 @@ mod tests {
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
     use crate::account::{
-        Account,
-        AccountCode,
-        AccountId,
-        AccountStorage,
-        AccountType,
-        StorageMapKey,
-        StorageMapPatch,
-        StorageSlotName,
+        Account, AccountCode, AccountId, AccountStorage, AccountType, StorageMapKey,
+        StorageMapPatch, StorageSlotName,
     };
     use crate::asset::{
-        Asset,
-        AssetVault,
-        FungibleAsset,
-        NonFungibleAsset,
-        NonFungibleAssetDetails,
+        Asset, AssetVault, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails,
     };
     use crate::errors::AccountDeltaError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
     use crate::utils::serde::Serializable;

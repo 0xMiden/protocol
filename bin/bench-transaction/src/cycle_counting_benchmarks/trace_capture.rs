@@ -8,10 +8,7 @@ use miden_processor::trace::{TraceLenSummary, build_trace};
 use miden_protocol::transaction::{TransactionInputs, TransactionKernel, TransactionMeasurements};
 use miden_testing::TransactionContext;
 use miden_tx::{
-    AccountProcedureIndexMap,
-    ExecutionOptions,
-    ScriptMastForestStore,
-    TransactionMastStore,
+    AccountProcedureIndexMap, ExecutionOptions, ScriptMastForestStore, TransactionMastStore,
     TransactionProverHost,
 };
 

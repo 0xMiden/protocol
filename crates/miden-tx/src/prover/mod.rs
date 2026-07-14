@@ -4,13 +4,8 @@ use miden_processor::ExecutionOptions;
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    ProvenTransaction,
-    TransactionInputs,
-    TransactionKernel,
-    TransactionOutputs,
-    TxAccountUpdate,
+    InputNote, InputNotes, ProvenTransaction, TransactionInputs, TransactionKernel,
+    TransactionOutputs, TxAccountUpdate,
 };
 use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::ProvingOptions;
