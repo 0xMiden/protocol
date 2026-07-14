@@ -165,24 +165,27 @@ fn move_asset_to_note_body(
         body.push_str(
             "
             call.::miden::standards::note::note_creator::create_note
-            # => [note_idx, pad(21)]\n
+            # => [note_idx, pad(21)]
+
+            movdn.5 dropw drop
+            # => [note_idx, pad(16)]\n
             ",
         );
 
         for asset in note.assets().iter() {
             body.push_str(&format!(
                 "
-                dup movdn.8
-                # => [note_idx, pad(7), note_idx, pad(14)]
+                padw push.0 push.0 push.0 dup.7
+                # => [note_idx, pad(7), note_idx, pad(16)]
 
                 push.{ASSET_VALUE}
                 push.{ASSET_ID}
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx, pad(14)]
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
 
                 call.::miden::standards::wallets::basic::move_asset_to_note
-                # => [pad(16), note_idx, pad(14)]
+                # => [pad(16), note_idx, pad(16)]
 
-                dropw dropw dropw drop drop movup.2
+                dropw dropw dropw dropw
                 # => [note_idx, pad(16)]\n
                 ",
                 ASSET_ID = asset.to_id_word(),

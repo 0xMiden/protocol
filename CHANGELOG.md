@@ -1,9 +1,15 @@
 # Changelog
 
-## v0.16.0-alpha.2 (2026-07-12)
+## v0.16.0-alpha.2 (2026-07-13)
 
+### Changes
+- [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
 - Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
+
+### Fixes
+
+- Fixed `SendNotesTransactionScript` generating a script that returned at an invalid stack depth when a note carried no assets, causing the VM to reject the transaction with `InvalidStackDepthOnReturn` ([#3302](https://github.com/0xMiden/protocol/pull/3302)).
 
 
 ## v0.16.0-alpha.1 (2026-07-12)
