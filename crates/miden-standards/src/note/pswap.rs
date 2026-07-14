@@ -51,6 +51,9 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// (the asset pair is unchanged, so the tag carries over unchanged).
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct PswapNoteStorage {
+    #[builder(default = 0)]
+    min_fill_amount: u64,
+
     min_requested_asset: FungibleAsset,
 
     creator_account_id: AccountId,
@@ -167,6 +170,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
+            min_fill_amount: note_storage[3].as_canonical_u64(),
             min_requested_asset,
             creator_account_id,
             payback_note_type,
