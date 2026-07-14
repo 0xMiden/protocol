@@ -7,11 +7,11 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::{
-    ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
-    ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED,
-    ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
+    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
+    ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
+    ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
 };
-use miden_standards::note::NetworkSponsorshipNote;
+use miden_standards::note::FeeSponsorshipNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 const FEE_AMOUNT: u64 = 500;
@@ -50,7 +50,7 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
     let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
     let sponsorship_note = Note::from(
-        NetworkSponsorshipNote::builder()
+        FeeSponsorshipNote::builder()
             .sender(sponsor.id())
             .target_account(network_account.id())?
             .feature_note_id(feature_note.id())
@@ -121,7 +121,7 @@ async fn sponsorship_cannot_be_consumed_without_feature_note() -> anyhow::Result
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED);
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED);
 
     Ok(())
 }
@@ -141,10 +141,7 @@ async fn consumer_without_feature_note_is_not_the_reclaimer() -> anyhow::Result<
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
 
     Ok(())
 }
@@ -212,10 +209,7 @@ async fn stranger_cannot_consume_sponsorship_without_feature_note() -> anyhow::R
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
 
     Ok(())
 }
@@ -261,7 +255,7 @@ async fn sponsor_cannot_reclaim_before_reclaim_height() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED);
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED);
 
     Ok(())
 }
@@ -279,7 +273,7 @@ async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()>
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED);
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED);
 
     Ok(())
 }
@@ -298,7 +292,7 @@ fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture>
     let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
     let sponsorship_note = Note::from(
-        NetworkSponsorshipNote::builder()
+        FeeSponsorshipNote::builder()
             .sender(sponsor.id())
             .target_account(network_account.id())?
             .feature_note_id(feature_note.id())
@@ -363,10 +357,7 @@ async fn sender_cannot_reclaim_when_a_different_reclaimer_is_named() -> anyhow::
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
 
     Ok(())
 }

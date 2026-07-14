@@ -26,22 +26,21 @@ use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the NETWORK_SPONSORSHIP note script procedure in the standards library.
-const NETWORK_SPONSORSHIP_SCRIPT_PATH: &str =
-    "::miden::standards::notes::network_sponsorship::main";
+/// Path to the FEE_SPONSORSHIP note script procedure in the standards library.
+const FEE_SPONSORSHIP_SCRIPT_PATH: &str = "::miden::standards::notes::fee_sponsorship::main";
 
-// Initialize the NETWORK_SPONSORSHIP note script only once
-static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the FEE_SPONSORSHIP note script only once
+static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(NETWORK_SPONSORSHIP_SCRIPT_PATH);
+    let path = Path::new(FEE_SPONSORSHIP_SCRIPT_PATH);
     NoteScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains NETWORK_SPONSORSHIP note script procedure")
+        .expect("Standards library contains FEE_SPONSORSHIP note script procedure")
 });
 
-// NETWORK SPONSORSHIP NOTE
+// FEE SPONSORSHIP NOTE
 // ================================================================================================
 
-/// A NETWORK_SPONSORSHIP note: carries the fee for exactly one feature note.
+/// A FEE_SPONSORSHIP note: carries the fee for exactly one feature note.
 ///
 /// Under the sponsorship fee model, the feature note (`BURN`, `CLAIM`, `B2AGG`, ...) stays entirely
 /// fee-unaware. The fee travels in this separate note, which names the feature note it pays for by
@@ -68,7 +67,7 @@ static NETWORK_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// presence check can never pass again, and reclaim is the only way to recover the assets. The
 /// reclaimer is stored in the note and defaults to the sender.
 #[derive(Debug, Clone)]
-pub struct NetworkSponsorshipNote {
+pub struct FeeSponsorshipNote {
     sender: AccountId,
     serial_number: Word,
     assets: NoteAssets,
@@ -79,8 +78,8 @@ pub struct NetworkSponsorshipNote {
 }
 
 #[bon::bon]
-impl NetworkSponsorshipNote {
-    /// Builds a new [`NetworkSponsorshipNote`] sponsoring `feature_note_id`, tagged for `target`.
+impl FeeSponsorshipNote {
+    /// Builds a new [`FeeSponsorshipNote`] sponsoring `feature_note_id`, tagged for `target`.
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
     ///
@@ -101,7 +100,7 @@ impl NetworkSponsorshipNote {
             with = |target_id: AccountId| -> Result<_, NoteError> {
                 if !target_id.is_public() {
                     return Err(NoteError::other(
-                        "network sponsorship target account must be public",
+                        "fee sponsorship target account must be public",
                     ));
                 }
                 Ok(target_id)
@@ -114,9 +113,7 @@ impl NetworkSponsorshipNote {
         reclaim_height: Option<BlockNumber>,
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
-            return Err(NoteError::other(
-                "a NETWORK_SPONSORSHIP note must contain at least one asset",
-            ));
+            return Err(NoteError::other("a FEE_SPONSORSHIP note must contain at least one asset"));
         }
 
         let assets = NoteAssets::new(assets)?;
@@ -135,27 +132,27 @@ impl NetworkSponsorshipNote {
     }
 }
 
-impl NetworkSponsorshipNote {
+impl FeeSponsorshipNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Expected number of storage items of the NETWORK_SPONSORSHIP note.
+    /// Expected number of storage items of the FEE_SPONSORSHIP note.
     ///
     /// The layout is `[FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]`,
-    /// matching the `*_ITEM` offsets in `asm/standards/notes/network_sponsorship.masm`.
+    /// matching the `*_ITEM` offsets in `asm/standards/notes/fee_sponsorship.masm`.
     pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the NETWORK_SPONSORSHIP note.
+    /// Returns the script of the FEE_SPONSORSHIP note.
     pub fn script() -> NoteScript {
-        NETWORK_SPONSORSHIP_SCRIPT.clone()
+        FEE_SPONSORSHIP_SCRIPT.clone()
     }
 
-    /// Returns the NETWORK_SPONSORSHIP note script root.
+    /// Returns the FEE_SPONSORSHIP note script root.
     pub fn script_root() -> NoteScriptRoot {
-        NETWORK_SPONSORSHIP_SCRIPT.root()
+        FEE_SPONSORSHIP_SCRIPT.root()
     }
 
     /// Returns the account ID of the network account the note's tag routes to.
@@ -186,7 +183,7 @@ impl NetworkSponsorshipNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: network_sponsorship_note_builder::State> NetworkSponsorshipNoteBuilder<S> {
+impl<S: fee_sponsorship_note_builder::State> FeeSponsorshipNoteBuilder<S> {
     /// Adds a single asset to the note.
     pub fn asset(mut self, asset: impl Into<Asset>) -> Self {
         self.assets.push(asset.into());
@@ -200,15 +197,15 @@ impl<S: network_sponsorship_note_builder::State> NetworkSponsorshipNoteBuilder<S
     }
 }
 
-impl<S: network_sponsorship_note_builder::State> NetworkSponsorshipNoteBuilder<S>
+impl<S: fee_sponsorship_note_builder::State> FeeSponsorshipNoteBuilder<S>
 where
-    S::SerialNumber: network_sponsorship_note_builder::IsUnset,
+    S::SerialNumber: fee_sponsorship_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> NetworkSponsorshipNoteBuilder<network_sponsorship_note_builder::SetSerialNumber<S>> {
+    ) -> FeeSponsorshipNoteBuilder<fee_sponsorship_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -216,8 +213,8 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<NetworkSponsorshipNote> for Note {
-    fn from(note: NetworkSponsorshipNote) -> Self {
+impl From<FeeSponsorshipNote> for Note {
+    fn from(note: FeeSponsorshipNote) -> Self {
         // Network notes must be public so the network can discover and execute them. The tag routes
         // the note to the network account the feature note targets.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
@@ -226,7 +223,7 @@ impl From<NetworkSponsorshipNote> for Note {
         // Storage layout must match the `*_ITEM` offsets in the note's MASM script:
         // [FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent
         // reclaim height is encoded as 0, which the script reads as "reclaim disabled".
-        let mut items = Vec::with_capacity(NetworkSponsorshipNote::NUM_STORAGE_ITEMS);
+        let mut items = Vec::with_capacity(FeeSponsorshipNote::NUM_STORAGE_ITEMS);
         items.extend_from_slice(note.feature_note_id.as_word().as_elements());
         items.push(note.reclaimer.suffix());
         items.push(note.reclaimer.prefix().as_felt());
@@ -235,7 +232,7 @@ impl From<NetworkSponsorshipNote> for Note {
             .expect("seven storage items never exceed the note storage limit");
 
         let recipient =
-            NoteRecipient::new(note.serial_number, NetworkSponsorshipNote::script(), storage);
+            NoteRecipient::new(note.serial_number, FeeSponsorshipNote::script(), storage);
 
         Note::new(note.assets, metadata, recipient)
     }
@@ -276,7 +273,7 @@ mod tests {
         let mut rng = RandomCoin::new(Word::empty());
         let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
-        let sponsorship = NetworkSponsorshipNote::builder()
+        let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
@@ -293,7 +290,7 @@ mod tests {
         let note = Note::from(sponsorship);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(network_account()));
-        assert_eq!(note.storage().num_items(), NetworkSponsorshipNote::NUM_STORAGE_ITEMS as u16);
+        assert_eq!(note.storage().num_items(), FeeSponsorshipNote::NUM_STORAGE_ITEMS as u16);
         // The bound feature note ID comes first, then the reclaimer (defaulting to the sender),
         // then the reclaim height.
         assert_eq!(&note.storage().items()[..4], feature_note_id().as_word().as_elements());
@@ -309,7 +306,7 @@ mod tests {
         let mut rng = RandomCoin::new(Word::empty());
         let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
-        let sponsorship = NetworkSponsorshipNote::builder()
+        let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
@@ -331,7 +328,7 @@ mod tests {
         let reclaimer =
             AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
 
-        let sponsorship = NetworkSponsorshipNote::builder()
+        let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
@@ -352,7 +349,7 @@ mod tests {
     /// A sponsorship that pays nothing is never intended, so the constructor rejects it.
     #[test]
     fn builder_rejects_empty_assets() {
-        let err = NetworkSponsorshipNote::builder()
+        let err = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
@@ -372,9 +369,7 @@ mod tests {
         let private_target =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-        let result = NetworkSponsorshipNote::builder()
-            .sender(sponsor())
-            .target_account(private_target);
+        let result = FeeSponsorshipNote::builder().sender(sponsor()).target_account(private_target);
 
         assert!(result.is_err(), "a private target must be rejected");
     }

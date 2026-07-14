@@ -12,6 +12,9 @@ pub use burn::BurnNote;
 mod faucet_policy_action;
 pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
 
+mod fee_sponsorship;
+pub use fee_sponsorship::FeeSponsorshipNote;
+
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
@@ -41,9 +44,6 @@ pub use rbac_action::{RbacAction, RbacActionNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
-
-mod network_sponsorship;
-pub use network_sponsorship::NetworkSponsorshipNote;
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};

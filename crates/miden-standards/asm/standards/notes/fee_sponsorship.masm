@@ -24,7 +24,7 @@ const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR + 4
 const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 5
 const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 
-#! The number of storage items of a NETWORK_SPONSORSHIP note.
+#! The number of storage items of a FEE_SPONSORSHIP note.
 const NUM_STORAGE_ITEMS = 7
 
 #! Local memory offset at which is_bound_feature_note_present stages the bound note ID.
@@ -33,13 +33,13 @@ const BOUND_NOTE_ID_LOC = 0
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="NETWORK_SPONSORSHIP note expects exactly 7 note storage items"
+const ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "FEE_SPONSORSHIP note expects exactly 7 note storage items"
 
-const ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED="NETWORK_SPONSORSHIP reclaim is disabled"
+const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "FEE_SPONSORSHIP reclaim is disabled"
 
-const ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED="failed to reclaim NETWORK_SPONSORSHIP note because the reclaim block height is not reached yet"
+const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim FEE_SPONSORSHIP note because the reclaim block height is not reached yet"
 
-const ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER="failed to reclaim NETWORK_SPONSORSHIP note because the reclaiming account is not the reclaimer"
+const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE_SPONSORSHIP note because the reclaiming account is not the reclaimer"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -120,19 +120,19 @@ end
 #! - the reclaim block height has not been reached.
 #! - the active account is not the note's reclaimer.
 proc reclaim_note
-    dup neq.0 assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_DISABLED
+    dup neq.0 assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED
     # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
     exec.tx::get_block_number
     # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    lte assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
+    lte assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
     # => [reclaimer_id_suffix, reclaimer_id_prefix]
 
     exec.active_account::get_id
     # => [account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    exec.account_id::eq assert.err=ERR_NETWORK_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
+    exec.account_id::eq assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
     # => []
 
     exec.basic_wallet::add_assets_to_account
@@ -142,7 +142,7 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! NETWORK_SPONSORSHIP script: hands the note's assets to the consuming account, provided the
+#! FEE_SPONSORSHIP script: hands the note's assets to the consuming account, provided the
 #! feature note it sponsors is consumed by the same transaction.
 #!
 #! The note carries the fee for exactly one feature note, named by the note ID in its storage. The
@@ -194,7 +194,7 @@ pub proc main
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items, pad(16)]
 
-    eq.NUM_STORAGE_ITEMS assert.err=ERR_NETWORK_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
     padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
