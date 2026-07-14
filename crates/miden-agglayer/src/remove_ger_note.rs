@@ -20,7 +20,10 @@ use crate::ger_note::create_ger_note;
 
 // Initialize the REMOVE_GER note script only once
 static REMOVE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/remove_ger.masp"));
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/note_scripts/miden-agglayer-remove_ger.masp"
+    ));
     let library =
         Library::read_from_bytes(bytes).expect("shipped REMOVE_GER script library is well-formed");
     NoteScript::from_library(&library).expect("shipped REMOVE_GER script is well-formed")

@@ -1,0 +1,13 @@
+[package]
+name              = "miden-agglayer-deregister_agg_faucet"
+version.workspace = true
+
+[lib]
+namespace = "agglayer::note_scripts::deregister_agg_faucet"
+path      = "deregister_agg_faucet.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+miden-agglayer.workspace  = true

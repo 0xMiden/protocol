@@ -67,17 +67,19 @@ pub use utils::Keccak256Output;
 // ================================================================================================
 
 static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masp"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
     Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
 });
 
 static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masp"));
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
     Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
 });
 
 static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masp"));
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
     Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
 });
 

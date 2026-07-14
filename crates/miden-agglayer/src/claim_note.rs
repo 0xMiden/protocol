@@ -31,7 +31,8 @@ use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masp"));
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-claim.masp"));
     let library =
         Library::read_from_bytes(bytes).expect("shipped CLAIM script library is well-formed");
     NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")

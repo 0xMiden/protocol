@@ -35,8 +35,10 @@ use miden_utils_sync::LazyLock;
 
 // Initialize the DEREGISTER_AGG_FAUCET note script only once
 static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/deregister_agg_faucet.masp"));
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/note_scripts/miden-agglayer-deregister_agg_faucet.masp"
+    ));
     let library = Library::read_from_bytes(bytes)
         .expect("shipped DEREGISTER_AGG_FAUCET script library is well-formed");
     NoteScript::from_library(&library).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")

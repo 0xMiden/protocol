@@ -1,0 +1,13 @@
+[package]
+name              = "miden-agglayer-update_ger"
+version.workspace = true
+
+[lib]
+namespace = "agglayer::note_scripts::update_ger"
+path      = "update_ger.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+miden-agglayer.workspace  = true

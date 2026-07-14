@@ -1,0 +1,13 @@
+[package]
+name              = "miden-agglayer-b2agg"
+version.workspace = true
+
+[lib]
+namespace = "agglayer::note_scripts::b2agg"
+path      = "b2agg.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+miden-agglayer.workspace  = true

@@ -19,7 +19,10 @@ use crate::ger_note::create_ger_note;
 
 // Initialize the UPDATE_GER note script only once
 static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/update_ger.masp"));
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/note_scripts/miden-agglayer-update_ger.masp"
+    ));
     let library =
         Library::read_from_bytes(bytes).expect("shipped UPDATE_GER script library is well-formed");
     NoteScript::from_library(&library).expect("shipped UPDATE_GER script is well-formed")
