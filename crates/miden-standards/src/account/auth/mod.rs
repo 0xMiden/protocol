@@ -2,7 +2,7 @@ mod approver;
 pub use approver::{Approver, ApproverSet};
 
 mod fee;
-pub use fee::FeeConversionInfo;
+pub use fee::FeePaymentInfo;
 
 mod no_auth;
 pub use no_auth::NoAuth;

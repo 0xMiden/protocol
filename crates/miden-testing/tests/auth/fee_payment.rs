@@ -8,14 +8,15 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::FeeConversionInfo;
+use miden_standards::account::auth::FeePaymentInfo;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
     ERR_FEE_CONVERSION_RATE_NOT_U32,
     ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
     ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
+    ERR_FEE_PAYMENT_INFO_COMMITMENT_MISMATCH,
+    ERR_FEE_PAYMENT_INFO_MISSING,
 };
 use miden_standards::note::BatchFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -48,12 +49,16 @@ fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
 
 /// Executes an empty transaction against a singlesig wallet on a fee-charging mock chain and
 /// returns the executed transaction together with the wallet's initial nonce.
+///
+/// When no payment info entry is provided, the fee is paid in the native fee asset via
+/// [`FeePaymentInfo::native`] at rate 1/1.
 async fn execute_fee_paying_tx(
     auth_scheme: AuthScheme,
     extra_assets: &[Asset],
-    auth_args: Option<(Word, Vec<miden_protocol::Felt>)>,
+    payment_info_entry: Option<(Word, Vec<miden_protocol::Felt>)>,
 ) -> anyhow::Result<(ExecutedTransaction, miden_protocol::Felt)> {
-    let fee_asset: Asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?.into();
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let mut assets = vec![fee_asset];
@@ -64,13 +69,17 @@ async fn execute_fee_paying_tx(
 
     let initial_nonce = account.nonce();
 
-    let mut tx_context_builder = mock_chain.build_tx_context(account.id(), &[], &[])?;
-    if let Some((args, advice_value)) = auth_args {
-        tx_context_builder =
-            tx_context_builder.auth_args(args).extend_advice_map([(args, advice_value)]);
-    }
+    let (args, advice_value) = payment_info_entry.unwrap_or_else(|| {
+        FeePaymentInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
+    });
 
-    let executed_transaction = tx_context_builder.build()?.execute().await?;
+    let executed_transaction = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .auth_args(args)
+        .extend_advice_map([(args, advice_value)])
+        .build()?
+        .execute()
+        .await?;
 
     Ok((executed_transaction, initial_nonce))
 }
@@ -156,7 +165,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10_000_000)?.into();
 
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
+    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 2, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (executed_transaction, _) = execute_fee_paying_tx(
@@ -218,7 +227,7 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
     // the rate must produce a non-zero remainder for this test to exercise the round-up branch
     assert_ne!(native_amount % 3, 0, "test setup should produce a non-zero division remainder");
 
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 1, 3)?;
+    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 1, 3)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (converted_tx, _) = execute_fee_paying_tx(
@@ -243,7 +252,7 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
 }
 
 /// Builds a raw advice-map entry committing to the given conversion info word, bypassing the
-/// validation in [`FeeConversionInfo`]. Used to exercise the in-VM validation of malformed rates.
+/// validation in [`FeePaymentInfo`]. Used to exercise the in-VM validation of malformed rates.
 fn raw_conversion_entry(conversion_word: Word, salt: Word) -> (Word, Vec<Felt>) {
     let key = Hasher::merge(&[conversion_word, salt]);
     let mut value = Vec::with_capacity(8);
@@ -280,7 +289,7 @@ async fn execute_with_conversion_entry(
 #[tokio::test]
 async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
+    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 2, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (key, mut value) = conversion_info.advice_map_entry(salt);
@@ -289,7 +298,7 @@ async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
 
     let result = execute_with_conversion_entry((key, value)).await?;
 
-    assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_INFO_COMMITMENT_MISMATCH);
 
     Ok(())
 }
@@ -350,7 +359,7 @@ async fn non_u32_conversion_rate_aborts() -> anyhow::Result<()> {
 async fn converted_amount_overflow_aborts() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     // a maximum base fee times a maximum u32 rate overflows the u64 product
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, u32::MAX, 1)?;
+    let conversion_info = FeePaymentInfo::new(payment_faucet_id, u32::MAX, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let mut builder = MockChain::builder().verification_base_fee(u32::MAX);
@@ -395,18 +404,50 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
 /// fee asset.
 #[tokio::test]
 async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let mock_chain = builder.build()?;
 
-    let result = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await;
+    let (args, advice_value) =
+        FeePaymentInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .auth_args(args)
+        .extend_advice_map([(args, advice_value)])
+        .build()?
+        .execute()
+        .await;
 
     assert_transaction_executor_error!(
         result,
         ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
     );
+
+    Ok(())
+}
+
+/// A non-zero fee without a payment info entry for the auth args aborts with a dedicated error.
+#[tokio::test]
+async fn fee_payment_fails_without_payment_info() -> anyhow::Result<()> {
+    let fee_asset: Asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?.into();
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [fee_asset],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_INFO_MISSING);
 
     Ok(())
 }
@@ -487,9 +528,14 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     let tx_script_src = format!("@transaction_script\npub proc main\n{body}\nend");
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
 
+    let (args, advice_value) = FeePaymentInfo::native(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .advice_map_entry(Word::from([9u32, 10, 11, 12]));
+
     let executed_transaction = mock_chain
         .build_tx_context(account.id(), &[], &[])?
         .tx_script(tx_script)
+        .auth_args(args)
+        .extend_advice_map([(args, advice_value)])
         .build()?
         .execute()
         .await?;
