@@ -11,7 +11,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BlocklistOwnerControlled,
+    BlocklistManager,
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
@@ -331,7 +331,7 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
 }
 
 /// Builds an NFT faucet with a basic-blocklist transfer policy on send and receive, seeding the
-/// blocked-accounts set, plus the owner-controlled blocklist admin component.
+/// blocked-accounts set, plus the authority-gated blocklist admin component.
 fn build_nft_faucet_with_blocklist(
     builder: &mut MockChainBuilder,
     owner: AccountId,
@@ -357,7 +357,7 @@ fn build_nft_faucet_with_blocklist(
                 .build(),
         )
         .with_component(Pausable::unpaused())
-        .with_component(BlocklistOwnerControlled);
+        .with_component(BlocklistManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }

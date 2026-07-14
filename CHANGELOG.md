@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.16.0 (TBD)
+
+### Changes
+
+- [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
+
 ## v0.16.0-alpha.2 (2026-07-13)
 
 ### Changes
@@ -27,6 +33,7 @@
 - [BREAKING] Renamed `AssetVaultKey` to `AssetId` (and `AssetVaultKeyHash` to `AssetIdHash`), so an asset is identified by an `AssetId` just as accounts and notes are identified by `AccountId` and `NoteId`. The `Asset::vault_key()` accessor is now `Asset::id()` ([#3079](https://github.com/0xMiden/protocol/issues/3079)).
 - [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+- `warden::set_warden` and agglayer's `eth_address::to_account_id` now validate only the structure of an account ID (`account_id::validate_structure`) instead of also requiring version = 1 ([#3288](https://github.com/0xMiden/protocol/pull/3288)).
 
 ## v0.16.0-alpha.1 (2026-07-12)
 
@@ -163,6 +170,10 @@
 - Fixed the transaction executor host honoring `AuthRequest` events emitted outside the registered auth procedure, which let untrusted note or transaction scripts force the host to sign; signature production is now restricted to the authentication procedure ([#3233](https://github.com/0xMiden/protocol/pull/3233)).
 - Fixed `eth_address::to_account_id` to validate the decoded `AccountId` structural invariants, preventing a malformed bridge-in destination address from being routed into an unspendable P2ID/MINT output ([#3243](https://github.com/0xMiden/protocol/pull/3243)).
 - Added an enforcement for `TransactionEventId::is_privileged` in the host, rejecting any privileged event emitted outside the root context ([#3251](https://github.com/0xMiden/protocol/pull/3251)).
+
+### Enhancements
+
+- Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
 
 ## v0.15.2 (2026-06-05)
 

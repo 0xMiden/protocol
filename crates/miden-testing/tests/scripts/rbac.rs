@@ -93,13 +93,22 @@ pub(super) fn is_role_member(
     Ok(word[0].as_canonical_u64() != 0)
 }
 
-fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
-    let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
+pub(super) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
+    let seed: [u32; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(code.into())
         .build()?)
+}
+
+/// Builds a note authored by `sender` that grants `role` to `account_id` via `rbac::grant_role`.
+pub(super) fn build_grant_role_note(
+    sender: AccountId,
+    role: &RoleSymbol,
+    account_id: AccountId,
+) -> anyhow::Result<Note> {
+    build_note(sender, grant_role_script(role, account_id))
 }
 
 async fn execute_note_and_apply(
