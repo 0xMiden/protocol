@@ -248,8 +248,8 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     /// Static consumption analysis accepts a well-formed BATCH_FEE note for an arbitrary account
-    /// and rejects a note that shares the BATCH_FEE script root but carries unexpected storage items
-    /// (such a note would panic in the note script on execution).
+    /// and rejects a note that shares the BATCH_FEE script root but carries unexpected storage
+    /// items (such a note would panic in the note script on execution).
     #[test]
     fn is_consumable_validates_storage() {
         let block_ref = BlockNumber::from(0u32);

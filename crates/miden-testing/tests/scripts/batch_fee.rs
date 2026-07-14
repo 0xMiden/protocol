@@ -41,7 +41,8 @@ async fn batch_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(consumer_account.id(), &[note.id()], &[])?
+        .build_transaction(consumer_account.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -126,8 +127,8 @@ async fn test_batch_fee_create_output_note_constructor() -> anyhow::Result<()> {
         .into();
 
     let tx_context = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .build_transaction(sender_account.id())
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .tx_script(tx_script)
         .build()?;
 

@@ -303,12 +303,12 @@ impl StandardNote {
             // storage shape).
             StandardNote::BATCH_FEE => {
                 if usize::from(note.storage().num_items()) != BatchFeeNote::NUM_STORAGE_ITEMS {
-                    return Ok(Some(NoteConsumptionStatus::NeverConsumable(
+                    Ok(Some(NoteConsumptionStatus::NeverConsumable(
                         "BATCH_FEE note carries unexpected storage items".into(),
-                    )));
+                    )))
+                } else {
+                    Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                 }
-
-                Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
             },
 
             // the consumption status of any other note cannot be determined by the static analysis,
