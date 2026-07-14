@@ -14,12 +14,12 @@ Miden transactions pay a fee by creating a public BATCH_FEE note (see the [note 
 
 ## Which asset is used to pay fees
 
-- The fee amount is denominated in the chain’s native fee asset, defined by the current reference block’s fee parameters. The `get_fee_faucet_id` transaction kernel procedure exposes the issuing faucet to account code.
+- The fee amount is denominated in the chain’s native fee asset, defined by the current reference block’s fee parameters.
 - The native asset is chosen once as part of the genesis block and then copied to every newly created block, which means the native asset stays consistent for a given network.
-- The fee can also be paid in a different asset: the transaction’s auth args can commit to conversion info (payment asset and conversion rate), in which case the fee-paying auth procedure funds the BATCH_FEE note with the converted amount instead. Whether a batch builder accepts a given payment asset is up to the builder.
+- The payment asset and conversion rate are committed to via the transaction’s auth args: the auth args are the hash of the payment info (a fungible faucet ID and a rate) together with a salt, and the advice map carries the preimage. Paying in the native asset means committing to the native fee faucet at rate 1/1; any other asset is paid at the committed rate. Whether a batch builder accepts a given payment asset is up to the builder.
 
 ## How fees are paid
 
-- The account’s authentication procedure computes the fee via `compute_fee` and creates a BATCH_FEE note funded from the account’s vault, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. The standard singlesig component does this automatically via the `miden::standards::auth::fee::pay_fee` procedure.
-- Users should ensure their account’s vault holds sufficient balance of the payment asset to cover the fee. If it does not, the transaction fails during the authentication procedure.
-- On chains with a zero `verification_base_fee`, no fee note is created.
+- The account’s authentication procedure computes the fee via `compute_fee` and creates a BATCH_FEE note funded from the account’s vault with the committed payment asset, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. The standard singlesig component does this automatically via the `miden::standards::auth::fee::pay_fee` procedure.
+- Users should ensure their account’s vault holds sufficient balance of the payment asset to cover the fee. If it does not, or if no payment info is committed for a non-zero fee, the transaction fails during the authentication procedure.
+- On chains with a zero `verification_base_fee`, no fee note is created and no payment info is required.
