@@ -63,7 +63,7 @@ pub struct PswapNoteStorage {
     #[builder(default = NoteType::Private)]
     payback_note_type: NoteType,
     /// Minimum fill amount. 0 = no minimum.
-    min_fill_amount: Option<u64>,
+    minimum_fill_amount: Option<u64>,
 }
 
 impl PswapNoteStorage {
@@ -113,7 +113,7 @@ impl PswapNoteStorage {
 
     /// Returns the minimum fill amount for this PSWAP note.
     pub fn minimum_fill_amount(&self) -> Option<u64> {
-        self.min_fill_amount
+        self.minimum_fill_amount
     }
 }
 
@@ -126,7 +126,7 @@ impl From<PswapNoteStorage> for NoteStorage {
             storage.min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(storage.min_requested_asset.amount()),
             // Minimum fill amount [3]
-            Felt::new(storage.min_fill_amount.unwrap_or(0)).unwrap(),
+            Felt::new(storage.minimum_fill_amount.unwrap_or(0)).unwrap(),
             // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
             // Creator ID [5-6]
@@ -174,7 +174,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             min_requested_asset,
             creator_account_id,
             payback_note_type,
-            min_fill_amount,
+            minimum_fill_amount,
         })
     }
 }
