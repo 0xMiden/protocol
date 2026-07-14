@@ -56,14 +56,14 @@ fn collect_fee_tx_script(fee_asset: Asset) -> anyhow::Result<TransactionScript> 
 }
 
 /// The cast for every test below: the network account the sponsorship is routed to, the sponsor who
-/// created it, an unrelated third party, the fee-unaware feature note, and the sponsorship bound to
-/// it.
+/// created it, an unrelated third party, the fee-unaware companion note, and the sponsorship bound
+/// to it.
 struct Fixture {
     mock_chain: MockChain,
     network_account: Account,
     sponsor: Account,
     stranger: Account,
-    feature_note: Note,
+    companion_note: Note,
     sponsorship_note: Note,
     fee_asset: Asset,
 }
@@ -78,15 +78,15 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
     let sponsor = builder.add_existing_wallet(auth())?;
     let stranger = builder.add_existing_wallet(auth())?;
 
-    // The feature note is completely fee-unaware: it carries no fee and knows nothing about the
+    // The companion note is completely fee-unaware: it carries no fee and knows nothing about the
     // sponsorship. P2ANY stands in for a real network note here.
-    let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+    let companion_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
             .sender(sponsor.id())
             .target_account(network_account.id())?
-            .feature_note_id(feature_note.id())
+            .companion_note_id(companion_note.id())
             .asset(fee_asset)
             .maybe_reclaim_height(reclaim_height)
             .generate_serial_number(&mut rng)
@@ -104,23 +104,23 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
         network_account,
         sponsor,
         stranger,
-        feature_note,
+        companion_note,
         sponsorship_note,
         fee_asset,
     })
 }
 
-/// The happy path: the network account consumes the sponsorship alongside the feature note it pays
-/// for, collecting the fee itself since the note script leaves the assets in place.
+/// The happy path: the network account consumes the sponsorship alongside the companion note it
+/// pays for, collecting the fee itself since the note script leaves the assets in place.
 #[tokio::test]
-async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Result<()> {
+async fn network_account_consumes_sponsorship_with_companion_note() -> anyhow::Result<()> {
     let f = setup(None)?;
 
     let executed = f
         .mock_chain
         .build_transaction(f.network_account.id())
         .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.feature_note.id())
+        .authenticated_input_note(f.companion_note.id())
         .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
         .execute()
@@ -138,7 +138,7 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
 }
 
 /// The sponsorship path itself does not move the note's assets: a transaction that consumes the
-/// sponsorship alongside its feature note but never collects the fee fails asset conservation in
+/// sponsorship alongside its companion note but never collects the fee fails asset conservation in
 /// the epilogue.
 ///
 /// This pins the division of labor: collecting the fee is the consuming account's job, so the note
@@ -151,7 +151,7 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
         .mock_chain
         .build_transaction(f.network_account.id())
         .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.feature_note.id())
+        .authenticated_input_note(f.companion_note.id())
         .build()?
         .execute()
         .await;
@@ -168,10 +168,10 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
 ///
 /// This is the check that protects the sponsor. Without it, the consuming account (or the
 /// transaction builder that assembles the transaction) could pocket the fee and never run the
-/// feature note. Without the feature note the script falls into the reclaim path, which is
+/// companion note. Without the companion note the script falls into the reclaim path, which is
 /// disabled here.
 #[tokio::test]
-async fn sponsorship_cannot_be_consumed_without_feature_note() -> anyhow::Result<()> {
+async fn sponsorship_cannot_be_consumed_without_companion_note() -> anyhow::Result<()> {
     let f = setup(None)?;
 
     let result = f
@@ -187,11 +187,11 @@ async fn sponsorship_cannot_be_consumed_without_feature_note() -> anyhow::Result
     Ok(())
 }
 
-/// Even with reclaim enabled and its height reached, a consumer without the feature note cannot
+/// Even with reclaim enabled and its height reached, a consumer without the companion note cannot
 /// take the assets: the reclaim path returns them to the reclaimer, and this consumer is not the
 /// reclaimer.
 #[tokio::test]
-async fn consumer_without_feature_note_is_not_the_reclaimer() -> anyhow::Result<()> {
+async fn consumer_without_companion_note_is_not_the_reclaimer() -> anyhow::Result<()> {
     let f = setup(Some(BlockNumber::from(1u32)))?;
 
     let result = f
@@ -210,14 +210,14 @@ async fn consumer_without_feature_note_is_not_the_reclaimer() -> anyhow::Result<
 /// The order in which the two notes are consumed does not matter.
 ///
 /// The presence check reads input notes by index, which the prologue has already materialized, so
-/// it does not depend on the feature note having executed first.
+/// it does not depend on the companion note having executed first.
 #[tokio::test]
 async fn note_order_does_not_matter() -> anyhow::Result<()> {
     let f = setup(None)?;
 
     f.mock_chain
         .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.feature_note.id())
+        .authenticated_input_note(f.companion_note.id())
         .authenticated_input_note(f.sponsorship_note.id())
         .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
@@ -227,21 +227,21 @@ async fn note_order_does_not_matter() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Consumption rights are inherited from the feature note: the sponsorship does not restrict who
-/// consumes it, so whoever may consume the feature note may claim the sponsored fee alongside it.
+/// Consumption rights are inherited from the companion note: the sponsorship does not restrict who
+/// consumes it, so whoever may consume the companion note may claim the sponsored fee alongside it.
 ///
-/// The P2ANY feature note used here is consumable by anyone, so the stranger collects the fee. A
-/// real network feature note restricts its consumers itself (for example a note targeting the
+/// The P2ANY companion note used here is consumable by anyone, so the stranger collects the fee. A
+/// real network companion note restricts its consumers itself (for example a note targeting the
 /// network account), and the sponsorship inherits that restriction transitively.
 #[tokio::test]
-async fn anyone_consuming_the_feature_note_takes_the_sponsorship() -> anyhow::Result<()> {
+async fn anyone_consuming_the_companion_note_takes_the_sponsorship() -> anyhow::Result<()> {
     let f = setup(None)?;
 
     let executed = f
         .mock_chain
         .build_transaction(f.stranger.id())
         .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.feature_note.id())
+        .authenticated_input_note(f.companion_note.id())
         .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
         .execute()
@@ -252,16 +252,16 @@ async fn anyone_consuming_the_feature_note_takes_the_sponsorship() -> anyhow::Re
     assert_eq!(
         stranger.vault().get_balance(f.fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
-        "whoever consumes the feature note receives the sponsored fee",
+        "whoever consumes the companion note receives the sponsored fee",
     );
 
     Ok(())
 }
 
-/// A stranger consuming the sponsorship without the feature note lands on the reclaim path and is
+/// A stranger consuming the sponsorship without the companion note lands on the reclaim path and is
 /// rejected there.
 #[tokio::test]
-async fn stranger_cannot_consume_sponsorship_without_feature_note() -> anyhow::Result<()> {
+async fn stranger_cannot_consume_sponsorship_without_companion_note() -> anyhow::Result<()> {
     let f = setup(Some(BlockNumber::from(1u32)))?;
 
     let result = f
@@ -279,8 +279,8 @@ async fn stranger_cannot_consume_sponsorship_without_feature_note() -> anyhow::R
 
 /// The sponsor can reclaim the note once the reclaim height is reached.
 ///
-/// This path is load-bearing: if the bound feature note is consumed by some other transaction, the
-/// presence check can never pass again, and reclaim is the only way to recover the assets.
+/// This path is load-bearing: if the bound companion note is consumed by some other transaction,
+/// the presence check can never pass again, and reclaim is the only way to recover the assets.
 #[tokio::test]
 async fn sponsor_reclaims_after_reclaim_height() -> anyhow::Result<()> {
     let f = setup(Some(BlockNumber::from(1u32)))?;
@@ -352,13 +352,13 @@ fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture>
     let sponsor = builder.add_existing_wallet(auth())?;
     let stranger = builder.add_existing_wallet(auth())?;
 
-    let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+    let companion_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
             .sender(sponsor.id())
             .target_account(network_account.id())?
-            .feature_note_id(feature_note.id())
+            .companion_note_id(companion_note.id())
             .asset(fee_asset)
             .reclaimer(stranger.id())
             .reclaim_height(reclaim_height)
@@ -375,7 +375,7 @@ fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture>
         network_account,
         sponsor,
         stranger,
-        feature_note,
+        companion_note,
         sponsorship_note,
         fee_asset,
     })

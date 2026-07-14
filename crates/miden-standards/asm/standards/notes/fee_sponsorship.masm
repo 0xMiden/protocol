@@ -15,11 +15,11 @@ use miden::standards::wallets::basic as basic_wallet
 const STORAGE_PTR = 0
 
 # Note storage layout (7 items, loaded at STORAGE_PTR by get_storage):
-# - FEATURE_NOTE_ID       [0..3] : ID of the feature note this sponsorship pays for
+# - COMPANION_NOTE_ID       [0..3] : ID of the companion note this sponsorship pays for
 # - reclaimer_suffix      [4]    : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix      [5]    : prefix of the account allowed to reclaim the note
 # - reclaim_block_height  [6]    : block height at or after which the reclaimer may reclaim (0 = disabled)
-const FEATURE_NOTE_ID_ITEM = STORAGE_PTR
+const COMPANION_NOTE_ID_ITEM = STORAGE_PTR
 const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR + 4
 const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 5
 const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
@@ -27,7 +27,7 @@ const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 #! The number of storage items of a FEE_SPONSORSHIP note.
 const NUM_STORAGE_ITEMS = 7
 
-#! Local memory offset at which is_bound_feature_note_present stages the bound note ID.
+#! Local memory offset at which is_bound_companion_note_present stages the bound note ID.
 const BOUND_NOTE_ID_LOC = 0
 
 # ERRORS
@@ -44,7 +44,7 @@ const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Returns whether the feature note bound by the note storage is among the transaction's input
+#! Returns whether the companion note bound by the note storage is among the transaction's input
 #! notes.
 #!
 #! This check is what stops a sponsorship note from being consumed on its own. It lives in the
@@ -53,16 +53,16 @@ const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE
 #!
 #! Every input note's ID is recomputed and compared against the bound ID. No index hint is taken
 #! from the note arguments: those are chosen by the consumer, and an incorrect hint would revert a
-#! transaction whose feature note is in fact present, handing the builder a griefing vector.
+#! transaction whose companion note is in fact present, handing the builder a griefing vector.
 #!
-#! Inputs:  [FEATURE_NOTE_ID]
+#! Inputs:  [COMPANION_NOTE_ID]
 #! Outputs: [is_found]
 #!
 #! Where:
-#! - FEATURE_NOTE_ID is the ID of the feature note to look for.
-#! - is_found is 1 if the feature note is among the transaction's input notes, 0 otherwise.
+#! - COMPANION_NOTE_ID is the ID of the companion note to look for.
+#! - is_found is 1 if the companion note is among the transaction's input notes, 0 otherwise.
 @locals(4)
-proc is_bound_feature_note_present
+proc is_bound_companion_note_present
     loc_storew_le.BOUND_NOTE_ID_LOC dropw
     # => []
 
@@ -142,29 +142,29 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! FEE_SPONSORSHIP script: verifies that the feature note this note sponsors is consumed by the
+#! FEE_SPONSORSHIP script: verifies that the companion note this note sponsors is consumed by the
 #! same transaction, leaving the note's assets in place; otherwise it attempts a reclaim.
 #!
-#! The note carries the fee for exactly one feature note, named by the note ID in its storage. The
-#! feature note itself stays entirely fee-unaware, and the sponsorship carries no attachments.
+#! The note carries the fee for exactly one companion note, named by the note ID in its storage. The
+#! companion note itself stays entirely fee-unaware, and the sponsorship carries no attachments.
 #!
-#! The note does not restrict who may consume it; it only requires the bound feature note to be
-#! consumed alongside it. Consumption rights are thereby inherited from the feature note: whoever
-#! may consume the feature note may take its sponsorship in the same transaction.
+#! The note does not restrict who may consume it; it only requires the bound companion note to be
+#! consumed alongside it. Consumption rights are thereby inherited from the companion note: whoever
+#! may consume the companion note may take its sponsorship in the same transaction.
 #!
-#! The sponsorship and the feature note it sponsors must be consumed together. Two checks enforce
+#! The sponsorship and the companion note it sponsors must be consumed together. Two checks enforce
 #! this, and each sits with the party it protects:
-#! - Consuming the sponsorship without its feature note costs the *sponsor*, so this script rejects
+#! - Consuming the sponsorship without its companion note costs the *sponsor*, so this script rejects
 #!   it.
-#! - Consuming a feature note without sponsorship costs the *account*, so the account's auth
+#! - Consuming a companion note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
 #! On the sponsorship path the script leaves the note's assets untouched: collecting them is the
 #! consuming account's job (for a network account, typically its auth procedure). This keeps the
 #! note free of any wallet-interface requirement on the account it sponsors.
 #!
-#! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
-#! reclaim block height is reached. Once the bound feature note is consumed by some other
+#! If the note is never consumed alongside its companion note, the reclaimer may reclaim it once the
+#! reclaim block height is reached. Once the bound companion note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
 #! assets. The reclaimer is named in the note storage; the creator sets it, defaulting to the
 #! sender.
@@ -180,14 +180,14 @@ end
 #! - NOTE_ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
-#! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
+#! - COMPANION_NOTE_ID is the ID of the companion note this sponsorship pays for.
 #! - reclaimer_{suffix, prefix} identify the account allowed to reclaim the note.
 #! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note,
 #!   or 0 if reclaim is disabled.
 #!
 #! Panics if:
 #! - the number of note storage items is not 7.
-#! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
+#! - the bound companion note is not consumed by this transaction, and the note cannot be reclaimed
 #!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
 #!   the reclaimer).
 #! - the note is reclaimed and the reclaiming account does not expose the
@@ -203,20 +203,20 @@ pub proc main
     eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
-    padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
-    # => [FEATURE_NOTE_ID, pad(16)]
+    padw mem_loadw_le.COMPANION_NOTE_ID_ITEM
+    # => [COMPANION_NOTE_ID, pad(16)]
 
-    exec.is_bound_feature_note_present
+    exec.is_bound_companion_note_present
     # => [is_present, pad(16)]
 
-    # with the feature note present, the sponsorship path is a no-op: the assets stay in the note
-    # for the consuming account to collect, and who may get here is decided by the feature note's
+    # with the companion note present, the sponsorship path is a no-op: the assets stay in the note
+    # for the consuming account to collect, and who may get here is decided by the companion note's
     # own consumption rules. Invert the flag so the branch below handles the absent case (reclaim).
     not
     # => [is_absent, pad(16)]
 
     if.true
-        # reclaim path: without the feature note the assets may only return to the reclaimer named
+        # reclaim path: without the companion note the assets may only return to the reclaimer named
         # in the note storage
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
         # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]

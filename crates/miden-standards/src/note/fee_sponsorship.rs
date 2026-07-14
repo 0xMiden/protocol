@@ -40,23 +40,23 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // FEE SPONSORSHIP NOTE
 // ================================================================================================
 
-/// A FEE_SPONSORSHIP note: carries the fee for exactly one feature note.
+/// A FEE_SPONSORSHIP note: carries the fee for exactly one companion note.
 ///
-/// Under the sponsorship fee model, the feature note (`BURN`, `CLAIM`, `B2AGG`, ...) stays entirely
-/// fee-unaware. The fee travels in this separate note, which names the feature note it pays for by
-/// carrying that note's [`NoteId`] in its note storage. The note carries no attachments; its tag
-/// routes it to the network account the feature note targets.
+/// Under the sponsorship fee model, the companion note (`BURN`, `CLAIM`, `B2AGG`, ...) stays
+/// entirely fee-unaware. The fee travels in this separate note, which names the companion note it
+/// pays for by carrying that note's [`NoteId`] in its note storage. The note carries no
+/// attachments; its tag routes it to the network account the companion note targets.
 ///
 /// # Consumption
 ///
-/// The note may only be consumed in a transaction that also consumes the bound feature note; it
+/// The note may only be consumed in a transaction that also consumes the bound companion note; it
 /// does not restrict who that consumer is. Consumption rights are thereby inherited from the
-/// feature note: whoever may consume the feature note may take its sponsorship in the same
+/// companion note: whoever may consume the companion note may take its sponsorship in the same
 /// transaction. The script enforces the pairing itself, rather than relying on the account: the
 /// sponsor trusts neither the consuming account nor the transaction builder, but does choose the
 /// note's script root.
 ///
-/// The mirror-image check (that a feature note is not consumed *without* sponsorship) costs the
+/// The mirror-image check (that a companion note is not consumed *without* sponsorship) costs the
 /// account rather than the sponsor, and so lives in the account's auth procedure.
 ///
 /// On the sponsorship path the script leaves the note's assets untouched, so the note demands no
@@ -67,9 +67,9 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// # Reclaim
 ///
-/// Every consumption without the bound feature note is a reclaim: the note returns to its
+/// Every consumption without the bound companion note is a reclaim: the note returns to its
 /// `reclaimer`, once `reclaim_height` is reached. Reclaim is load-bearing rather than a
-/// convenience: if the bound feature note is consumed by some other transaction, this note's
+/// convenience: if the bound companion note is consumed by some other transaction, this note's
 /// presence check can never pass again, and reclaim is the only way to recover the assets. The
 /// reclaimer is stored in the note and defaults to the sender.
 #[derive(Debug, Clone)]
@@ -78,14 +78,14 @@ pub struct FeeSponsorshipNote {
     serial_number: Word,
     assets: NoteAssets,
     target: AccountId,
-    feature_note_id: NoteId,
+    companion_note_id: NoteId,
     reclaimer: AccountId,
     reclaim_height: Option<BlockNumber>,
 }
 
 #[bon::bon]
 impl FeeSponsorshipNote {
-    /// Builds a new [`FeeSponsorshipNote`] sponsoring `feature_note_id`, tagged for `target`.
+    /// Builds a new [`FeeSponsorshipNote`] sponsoring `companion_note_id`, tagged for `target`.
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
     ///
@@ -113,7 +113,7 @@ impl FeeSponsorshipNote {
             },
         )]
         target: AccountId,
-        feature_note_id: NoteId,
+        companion_note_id: NoteId,
         serial_number: Word,
         reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
@@ -131,7 +131,7 @@ impl FeeSponsorshipNote {
             serial_number,
             assets,
             target,
-            feature_note_id,
+            companion_note_id,
             reclaimer,
             reclaim_height,
         })
@@ -144,8 +144,9 @@ impl FeeSponsorshipNote {
 
     /// Expected number of storage items of the FEE_SPONSORSHIP note.
     ///
-    /// The layout is `[FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]`,
-    /// matching the `*_ITEM` offsets in `asm/standards/notes/fee_sponsorship.masm`.
+    /// The layout is `[COMPANION_NOTE_ID, reclaimer_suffix, reclaimer_prefix,
+    /// reclaim_block_height]`, matching the `*_ITEM` offsets in
+    /// `asm/standards/notes/fee_sponsorship.masm`.
     pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
@@ -169,9 +170,9 @@ impl FeeSponsorshipNote {
         self.target
     }
 
-    /// Returns the ID of the feature note this note sponsors.
-    pub fn feature_note_id(&self) -> NoteId {
-        self.feature_note_id
+    /// Returns the ID of the companion note this note sponsors.
+    pub fn companion_note_id(&self) -> NoteId {
+        self.companion_note_id
     }
 
     /// Returns the account ID allowed to reclaim the note after `reclaim_height`.
@@ -222,15 +223,15 @@ where
 impl From<FeeSponsorshipNote> for Note {
     fn from(note: FeeSponsorshipNote) -> Self {
         // Network notes must be public so the network can discover and execute them. The tag routes
-        // the note to the network account the feature note targets.
+        // the note to the network account the companion note targets.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
 
         // Storage layout must match the `*_ITEM` offsets in the note's MASM script:
-        // [FEATURE_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent
+        // [COMPANION_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent
         // reclaim height is encoded as 0, which the script reads as "reclaim disabled".
         let mut items = Vec::with_capacity(FeeSponsorshipNote::NUM_STORAGE_ITEMS);
-        items.extend_from_slice(note.feature_note_id.as_word().as_elements());
+        items.extend_from_slice(note.companion_note_id.as_word().as_elements());
         items.push(note.reclaimer.suffix());
         items.push(note.reclaimer.prefix().as_felt());
         items.push(Felt::from(note.reclaim_height.unwrap_or_default().as_u32()));
@@ -268,7 +269,7 @@ mod tests {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32])
     }
 
-    fn feature_note_id() -> NoteId {
+    fn companion_note_id() -> NoteId {
         NoteId::from_raw(Word::from([7, 8, 9, 10u32]))
     }
 
@@ -283,7 +284,7 @@ mod tests {
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
-            .feature_note_id(feature_note_id())
+            .companion_note_id(companion_note_id())
             .asset(asset)
             .reclaim_height(BlockNumber::from(42u32))
             .generate_serial_number(&mut rng)
@@ -291,15 +292,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(sponsorship.target_id(), network_account());
-        assert_eq!(sponsorship.feature_note_id(), feature_note_id());
+        assert_eq!(sponsorship.companion_note_id(), companion_note_id());
 
         let note = Note::from(sponsorship);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(note.storage().num_items(), FeeSponsorshipNote::NUM_STORAGE_ITEMS as u16);
-        // The bound feature note ID comes first, then the reclaimer (defaulting to the sender),
+        // The bound companion note ID comes first, then the reclaimer (defaulting to the sender),
         // then the reclaim height.
-        assert_eq!(&note.storage().items()[..4], feature_note_id().as_word().as_elements());
+        assert_eq!(&note.storage().items()[..4], companion_note_id().as_word().as_elements());
         assert_eq!(note.storage().items()[4], sponsor().suffix());
         assert_eq!(note.storage().items()[5], sponsor().prefix().as_felt());
         assert_eq!(note.storage().items()[6], Felt::from(42u32));
@@ -316,7 +317,7 @@ mod tests {
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
-            .feature_note_id(feature_note_id())
+            .companion_note_id(companion_note_id())
             .asset(asset)
             .generate_serial_number(&mut rng)
             .build()
@@ -338,7 +339,7 @@ mod tests {
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
-            .feature_note_id(feature_note_id())
+            .companion_note_id(companion_note_id())
             .asset(asset)
             .reclaimer(reclaimer)
             .generate_serial_number(&mut rng)
@@ -359,7 +360,7 @@ mod tests {
             .sender(sponsor())
             .target_account(network_account())
             .unwrap()
-            .feature_note_id(feature_note_id())
+            .companion_note_id(companion_note_id())
             .serial_number(Word::empty())
             .build()
             .expect_err("a sponsorship without assets must be rejected");

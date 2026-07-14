@@ -5,7 +5,7 @@
 ### Changes
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
-- Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
+- Added the `FeeSponsorshipNote` standard note, which carries the fee for the companion note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
 
