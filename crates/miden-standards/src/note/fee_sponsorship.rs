@@ -61,10 +61,10 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// account rather than the sponsor, and so lives in the account's auth procedure.
 ///
 /// On the sponsorship path the script leaves the note's assets untouched, so the note demands no
-/// wallet interface from the account it sponsors. Collecting the assets is the consuming account's
-/// job (for a network account, typically its auth procedure); asset conservation forces the
-/// transaction to claim them somewhere. Only the reclaim path moves assets, into the reclaimer's
-/// vault.
+/// wallet interface from the account that consumes it. Collecting the assets is the consuming
+/// account's job (for a network account, typically its auth procedure); asset conservation forces
+/// the transaction to claim them somewhere. Only the reclaim path moves assets, into the
+/// reclaimer's vault.
 ///
 /// # Reclaim
 ///

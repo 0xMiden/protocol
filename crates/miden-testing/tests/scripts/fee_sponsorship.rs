@@ -156,7 +156,7 @@ async fn network_account_consumes_sponsorship_with_companion_note() -> anyhow::R
 /// the epilogue.
 ///
 /// This pins the division of labor: collecting the fee is the consuming account's job, so the note
-/// requires no wallet interface from the account it sponsors.
+/// requires no wallet interface from the consuming account.
 #[tokio::test]
 async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
     let Fixture {
