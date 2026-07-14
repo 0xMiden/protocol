@@ -1,0 +1,33 @@
+name: MASM root stability
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  masm-root-stability:
+    if: ${{ github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install nightly toolchain
+        shell: bash
+        run: rustup toolchain install nightly --profile minimal --no-self-update
+
+      - name: Check MASM root stability
+        shell: bash
+        run: |
+          chmod +x scripts/check-masm-root-stability.sh
+          ./scripts/check-masm-root-stability.sh
