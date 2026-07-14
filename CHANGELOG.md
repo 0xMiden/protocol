@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added the `UpgradeManager` account component and `UpgradeNote` for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
+
 ### Changes
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
