@@ -1,9 +1,9 @@
 use miden_protocol::Word;
 use miden_protocol::account::Account;
-use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
@@ -15,14 +15,9 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::FeeSponsorshipNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 const FEE_AMOUNT: u64 = 500;
-
-fn auth() -> Auth {
-    Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    }
-}
 
 /// Compiles a transaction script that moves `fee_asset` into the executing account's vault.
 ///
@@ -55,6 +50,14 @@ fn collect_fee_tx_script(fee_asset: Asset) -> anyhow::Result<TransactionScript> 
     Ok(CodeBuilder::default().compile_tx_script(src)?)
 }
 
+/// Who the sponsorship names as its reclaimer.
+enum Reclaimer {
+    /// The reclaimer is left unset and defaults to the sender.
+    Sender,
+    /// The stranger is named as an explicit reclaimer, distinct from the sender.
+    Stranger,
+}
+
 /// The cast for every test below: the network account the sponsorship is routed to, the sponsor who
 /// created it, an unrelated third party, the fee-unaware companion note, and the sponsorship bound
 /// to it.
@@ -68,19 +71,24 @@ struct Fixture {
     fee_asset: Asset,
 }
 
-/// Builds the fixture with the given reclaim height (`None` disables reclaim).
-fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
+/// Builds the fixture with the given reclaim height (`None` disables reclaim) and reclaimer.
+fn setup(reclaim_height: Option<BlockNumber>, reclaimer: Reclaimer) -> anyhow::Result<Fixture> {
     let fee_asset: Asset = FungibleAsset::mock(FEE_AMOUNT);
     let mut rng = RandomCoin::new(Word::empty());
 
     let mut builder = MockChain::builder();
-    let network_account = builder.add_existing_wallet(auth())?;
-    let sponsor = builder.add_existing_wallet(auth())?;
-    let stranger = builder.add_existing_wallet(auth())?;
+    let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let stranger = builder.add_existing_wallet(Auth::basic_ecdsa())?;
 
     // The companion note is completely fee-unaware: it carries no fee and knows nothing about the
     // sponsorship. P2ANY stands in for a real network note here.
     let companion_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+
+    let reclaimer = match reclaimer {
+        Reclaimer::Sender => None,
+        Reclaimer::Stranger => Some(stranger.id()),
+    };
 
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
@@ -88,6 +96,7 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
             .target_account(network_account.id())
             .companion_note_id(companion_note.id())
             .asset(fee_asset)
+            .maybe_reclaimer(reclaimer)
             .maybe_reclaim_height(reclaim_height)
             .generate_serial_number(&mut rng)
             .build()?,
@@ -114,22 +123,27 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
 /// pays for, collecting the fee itself since the note script leaves the assets in place.
 #[tokio::test]
 async fn network_account_consumes_sponsorship_with_companion_note() -> anyhow::Result<()> {
-    let f = setup(None)?;
+    let Fixture {
+        mock_chain,
+        mut network_account,
+        companion_note,
+        sponsorship_note,
+        fee_asset,
+        ..
+    } = setup(None, Reclaimer::Sender)?;
 
-    let executed = f
-        .mock_chain
-        .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.companion_note.id())
-        .tx_script(collect_fee_tx_script(f.fee_asset)?)
+    let executed = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .authenticated_input_note(companion_note.id())
+        .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()
         .await?;
 
-    let mut network_account = f.network_account;
     network_account.apply_patch(executed.account_patch())?;
     assert_eq!(
-        network_account.vault().get_balance(f.fee_asset.id())?.as_u64(),
+        network_account.vault().get_balance(fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
         "the network account should receive the sponsored fee",
     );
@@ -145,13 +159,18 @@ async fn network_account_consumes_sponsorship_with_companion_note() -> anyhow::R
 /// requires no wallet interface from the account it sponsors.
 #[tokio::test]
 async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
-    let f = setup(None)?;
+    let Fixture {
+        mock_chain,
+        network_account,
+        companion_note,
+        sponsorship_note,
+        ..
+    } = setup(None, Reclaimer::Sender)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.companion_note.id())
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .authenticated_input_note(companion_note.id())
         .build()?
         .execute()
         .await;
@@ -164,45 +183,39 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The sponsorship cannot be consumed on its own.
+/// The sponsorship cannot be consumed on its own: without the companion note the script falls into
+/// the reclaim path, which rejects the consumer whether reclaim is disabled or the consumer is
+/// simply not the reclaimer.
 ///
 /// This is the check that protects the sponsor. Without it, the consuming account (or the
 /// transaction builder that assembles the transaction) could pocket the fee and never run the
-/// companion note. Without the companion note the script falls into the reclaim path, which is
-/// disabled here.
+/// companion note.
+#[rstest]
+#[case::reclaim_disabled(None, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED)]
+#[case::not_the_reclaimer(
+    Some(BlockNumber::from(1u32)),
+    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
+)]
 #[tokio::test]
-async fn sponsorship_cannot_be_consumed_without_companion_note() -> anyhow::Result<()> {
-    let f = setup(None)?;
+async fn sponsorship_cannot_be_consumed_without_companion_note(
+    #[case] reclaim_height: Option<BlockNumber>,
+    #[case] expected_err: MasmError,
+) -> anyhow::Result<()> {
+    let Fixture {
+        mock_chain,
+        network_account,
+        sponsorship_note,
+        ..
+    } = setup(reclaim_height, Reclaimer::Sender)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED);
-
-    Ok(())
-}
-
-/// Even with reclaim enabled and its height reached, a consumer without the companion note cannot
-/// take the assets: the reclaim path returns them to the reclaimer, and this consumer is not the
-/// reclaimer.
-#[tokio::test]
-async fn consumer_without_companion_note_is_not_the_reclaimer() -> anyhow::Result<()> {
-    let f = setup(Some(BlockNumber::from(1u32)))?;
-
-    let result = f
-        .mock_chain
-        .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.sponsorship_note.id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
+    assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
 }
@@ -211,15 +224,31 @@ async fn consumer_without_companion_note_is_not_the_reclaimer() -> anyhow::Resul
 ///
 /// The presence check reads input notes by index, which the prologue has already materialized, so
 /// it does not depend on the companion note having executed first.
+#[rstest]
 #[tokio::test]
-async fn note_order_does_not_matter() -> anyhow::Result<()> {
-    let f = setup(None)?;
+async fn note_order_does_not_matter(
+    #[values(true, false)] sponsorship_first: bool,
+) -> anyhow::Result<()> {
+    let Fixture {
+        mock_chain,
+        network_account,
+        companion_note,
+        sponsorship_note,
+        fee_asset,
+        ..
+    } = setup(None, Reclaimer::Sender)?;
 
-    f.mock_chain
-        .build_transaction(f.network_account.id())
-        .authenticated_input_note(f.companion_note.id())
-        .authenticated_input_note(f.sponsorship_note.id())
-        .tx_script(collect_fee_tx_script(f.fee_asset)?)
+    let (first, second) = if sponsorship_first {
+        (&sponsorship_note, &companion_note)
+    } else {
+        (&companion_note, &sponsorship_note)
+    };
+
+    mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(first.id())
+        .authenticated_input_note(second.id())
+        .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()
         .await?;
@@ -235,22 +264,27 @@ async fn note_order_does_not_matter() -> anyhow::Result<()> {
 /// network account), and the sponsorship inherits that restriction transitively.
 #[tokio::test]
 async fn anyone_consuming_the_companion_note_takes_the_sponsorship() -> anyhow::Result<()> {
-    let f = setup(None)?;
+    let Fixture {
+        mock_chain,
+        mut stranger,
+        companion_note,
+        sponsorship_note,
+        fee_asset,
+        ..
+    } = setup(None, Reclaimer::Sender)?;
 
-    let executed = f
-        .mock_chain
-        .build_transaction(f.stranger.id())
-        .authenticated_input_note(f.sponsorship_note.id())
-        .authenticated_input_note(f.companion_note.id())
-        .tx_script(collect_fee_tx_script(f.fee_asset)?)
+    let executed = mock_chain
+        .build_transaction(stranger.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .authenticated_input_note(companion_note.id())
+        .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()
         .await?;
 
-    let mut stranger = f.stranger;
     stranger.apply_patch(executed.account_patch())?;
     assert_eq!(
-        stranger.vault().get_balance(f.fee_asset.id())?.as_u64(),
+        stranger.vault().get_balance(fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
         "whoever consumes the companion note receives the sponsored fee",
     );
@@ -262,12 +296,13 @@ async fn anyone_consuming_the_companion_note_takes_the_sponsorship() -> anyhow::
 /// rejected there.
 #[tokio::test]
 async fn stranger_cannot_consume_sponsorship_without_companion_note() -> anyhow::Result<()> {
-    let f = setup(Some(BlockNumber::from(1u32)))?;
+    let Fixture {
+        mock_chain, stranger, sponsorship_note, ..
+    } = setup(Some(BlockNumber::from(1u32)), Reclaimer::Sender)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.stranger.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let result = mock_chain
+        .build_transaction(stranger.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await;
@@ -283,21 +318,25 @@ async fn stranger_cannot_consume_sponsorship_without_companion_note() -> anyhow:
 /// the presence check can never pass again, and reclaim is the only way to recover the assets.
 #[tokio::test]
 async fn sponsor_reclaims_after_reclaim_height() -> anyhow::Result<()> {
-    let f = setup(Some(BlockNumber::from(1u32)))?;
-    assert!(f.mock_chain.latest_block_header().block_num() >= BlockNumber::from(1u32));
+    let Fixture {
+        mock_chain,
+        mut sponsor,
+        sponsorship_note,
+        fee_asset,
+        ..
+    } = setup(Some(BlockNumber::from(1u32)), Reclaimer::Sender)?;
+    assert!(mock_chain.latest_block_header().block_num() >= BlockNumber::from(1u32));
 
-    let executed = f
-        .mock_chain
-        .build_transaction(f.sponsor.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let executed = mock_chain
+        .build_transaction(sponsor.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await?;
 
-    let mut sponsor = f.sponsor;
     sponsor.apply_patch(executed.account_patch())?;
     assert_eq!(
-        sponsor.vault().get_balance(f.fee_asset.id())?.as_u64(),
+        sponsor.vault().get_balance(fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
         "the sponsor should get the unused fee back",
     );
@@ -308,12 +347,13 @@ async fn sponsor_reclaims_after_reclaim_height() -> anyhow::Result<()> {
 /// The sponsor cannot reclaim before the reclaim height.
 #[tokio::test]
 async fn sponsor_cannot_reclaim_before_reclaim_height() -> anyhow::Result<()> {
-    let f = setup(Some(BlockNumber::from(1_000u32)))?;
+    let Fixture {
+        mock_chain, sponsor, sponsorship_note, ..
+    } = setup(Some(BlockNumber::from(1_000u32)), Reclaimer::Sender)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.sponsor.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let result = mock_chain
+        .build_transaction(sponsor.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await;
@@ -326,12 +366,13 @@ async fn sponsor_cannot_reclaim_before_reclaim_height() -> anyhow::Result<()> {
 /// With reclaim disabled, not even the sponsor can take the note back.
 #[tokio::test]
 async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()> {
-    let f = setup(None)?;
+    let Fixture {
+        mock_chain, sponsor, sponsorship_note, ..
+    } = setup(None, Reclaimer::Sender)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.sponsor.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let result = mock_chain
+        .build_transaction(sponsor.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await;
@@ -341,64 +382,28 @@ async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()>
     Ok(())
 }
 
-/// Builds a fixture whose sponsorship names the stranger as an explicit reclaimer, distinct from
-/// the sender.
-fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture> {
-    let fee_asset: Asset = FungibleAsset::mock(FEE_AMOUNT);
-    let mut rng = RandomCoin::new(Word::empty());
-
-    let mut builder = MockChain::builder();
-    let network_account = builder.add_existing_wallet(auth())?;
-    let sponsor = builder.add_existing_wallet(auth())?;
-    let stranger = builder.add_existing_wallet(auth())?;
-
-    let companion_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
-
-    let sponsorship_note = Note::from(
-        FeeSponsorshipNote::builder()
-            .sender(sponsor.id())
-            .target_account(network_account.id())
-            .companion_note_id(companion_note.id())
-            .asset(fee_asset)
-            .reclaimer(stranger.id())
-            .reclaim_height(reclaim_height)
-            .generate_serial_number(&mut rng)
-            .build()?,
-    );
-    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    Ok(Fixture {
-        mock_chain,
-        network_account,
-        sponsor,
-        stranger,
-        companion_note,
-        sponsorship_note,
-        fee_asset,
-    })
-}
-
 /// Reclaim keys on the stored reclaimer, not the sender: a named reclaimer distinct from the sender
 /// can reclaim the note once the reclaim height is reached.
 #[tokio::test]
 async fn named_reclaimer_reclaims_after_reclaim_height() -> anyhow::Result<()> {
-    let f = named_reclaimer_setup(BlockNumber::from(1u32))?;
+    let Fixture {
+        mock_chain,
+        mut stranger,
+        sponsorship_note,
+        fee_asset,
+        ..
+    } = setup(Some(BlockNumber::from(1u32)), Reclaimer::Stranger)?;
 
-    let executed = f
-        .mock_chain
-        .build_transaction(f.stranger.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let executed = mock_chain
+        .build_transaction(stranger.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await?;
 
-    let mut reclaimer = f.stranger;
-    reclaimer.apply_patch(executed.account_patch())?;
+    stranger.apply_patch(executed.account_patch())?;
     assert_eq!(
-        reclaimer.vault().get_balance(f.fee_asset.id())?.as_u64(),
+        stranger.vault().get_balance(fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
         "the named reclaimer should get the unused fee back",
     );
@@ -410,12 +415,13 @@ async fn named_reclaimer_reclaims_after_reclaim_height() -> anyhow::Result<()> {
 /// not the sender, the authority.
 #[tokio::test]
 async fn sender_cannot_reclaim_when_a_different_reclaimer_is_named() -> anyhow::Result<()> {
-    let f = named_reclaimer_setup(BlockNumber::from(1u32))?;
+    let Fixture {
+        mock_chain, sponsor, sponsorship_note, ..
+    } = setup(Some(BlockNumber::from(1u32)), Reclaimer::Stranger)?;
 
-    let result = f
-        .mock_chain
-        .build_transaction(f.sponsor.id())
-        .authenticated_input_note(f.sponsorship_note.id())
+    let result = mock_chain
+        .build_transaction(sponsor.id())
+        .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
         .await;
