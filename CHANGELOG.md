@@ -3,7 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
-- [BREAKING] Transaction fees are now paid by the authentication procedure creating a public BATCH_FEE note funded from the account's vault, before the transaction summary is created so the note is covered by the signature. The payment asset and conversion rate are committed to via the transaction's auth args (native fee asset at rate 1/1 for plain native payment; the paid amount is `ceil(fee * rate_num / rate_den)`). Adds the composable `miden::standards::auth::fee::pay_fee` MASM procedure, per-scheme cycle estimates (`signature::estimate_authentication_cycles`), and Rust helpers `BatchFeeNote::derive_serial_number` and `FeePaymentInfo`. The standard singlesig component pays fees automatically; on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
+- [BREAKING] Transaction fees are now paid by the authentication procedure creating a public BATCH_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::auth::fee::pay_fee`). The payment asset and conversion rate are committed to via the auth args (see `FeePaymentInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 

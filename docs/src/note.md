@@ -255,7 +255,7 @@ The BATCH_FEE note script is the canonical way for a transaction to pay its fee 
 - **Validation:** None - unlike P2ID, there is no target account check, so the note is consumable by any account. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
 - **Requirements:** Consuming account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
-**Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts. The standard singlesig auth component creates these notes automatically while authorizing a transaction; see the [fee documentation](fees.md) for details.
+**Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
 
 ### SWAP
 
