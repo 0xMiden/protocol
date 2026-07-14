@@ -22,6 +22,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::decode_block_height;
 use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
@@ -363,25 +364,6 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             timelock_height,
         })
     }
-}
-
-/// Decodes an optional block height stored as a single storage item, where zero encodes `None`.
-///
-/// `error_msg` names the field being decoded so that a caller can tell the heights apart.
-fn decode_block_height(
-    item: Felt,
-    error_msg: &'static str,
-) -> Result<Option<BlockNumber>, NoteError> {
-    if item == Felt::ZERO {
-        return Ok(None);
-    }
-
-    let height: u32 = item
-        .as_canonical_u64()
-        .try_into()
-        .map_err(|e| NoteError::other_with_source(error_msg, e))?;
-
-    Ok(Some(BlockNumber::from(height)))
 }
 
 // TESTS

@@ -85,7 +85,7 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
             .sender(sponsor.id())
-            .target_account(network_account.id())?
+            .target_account(network_account.id())
             .companion_note_id(companion_note.id())
             .asset(fee_asset)
             .maybe_reclaim_height(reclaim_height)
@@ -357,7 +357,7 @@ fn named_reclaimer_setup(reclaim_height: BlockNumber) -> anyhow::Result<Fixture>
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
             .sender(sponsor.id())
-            .target_account(network_account.id())?
+            .target_account(network_account.id())
             .companion_note_id(companion_note.id())
             .asset(fee_asset)
             .reclaimer(stranger.id())

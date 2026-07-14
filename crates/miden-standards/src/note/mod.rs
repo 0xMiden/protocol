@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::error::Error;
 
+use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -13,7 +14,7 @@ mod faucet_policy_action;
 pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
 
 mod fee_sponsorship;
-pub use fee_sponsorship::FeeSponsorshipNote;
+pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
@@ -305,6 +306,25 @@ impl StandardNote {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Decodes an optional block height stored as a single storage item, where zero encodes `None`.
+///
+/// `error_msg` names the field being decoded so that a caller can tell the heights apart.
+pub(crate) fn decode_block_height(
+    item: Felt,
+    error_msg: &'static str,
+) -> Result<Option<BlockNumber>, NoteError> {
+    if item == Felt::ZERO {
+        return Ok(None);
+    }
+
+    let height: u32 = item
+        .as_canonical_u64()
+        .try_into()
+        .map_err(|e| NoteError::other_with_source(error_msg, e))?;
+
+    Ok(Some(BlockNumber::from(height)))
+}
 
 // HELPER STRUCTURES
 // ================================================================================================

@@ -21,6 +21,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::decode_block_height;
 use crate::StandardsLib;
 
 // NOTE SCRIPT
@@ -78,9 +79,7 @@ pub struct FeeSponsorshipNote {
     serial_number: Word,
     assets: NoteAssets,
     target: AccountId,
-    companion_note_id: NoteId,
-    reclaimer: AccountId,
-    reclaim_height: Option<BlockNumber>,
+    storage: FeeSponsorshipNoteStorage,
 }
 
 #[bon::bon]
@@ -95,29 +94,22 @@ impl FeeSponsorshipNote {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - the target account is not public. A network note's tag must route to a public account.
     /// - `assets` is empty. A sponsorship that pays nothing is never intended.
     /// - `assets` contains duplicates or exceeds the protocol limit (see [`NoteAssets::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] assets: Vec<Asset>,
         sender: AccountId,
-        #[builder(
-            name = target_account,
-            with = |target_id: AccountId| -> Result<_, NoteError> {
-                if !target_id.is_public() {
-                    return Err(NoteError::other(
-                        "fee sponsorship target account must be public",
-                    ));
-                }
-                Ok(target_id)
-            },
-        )]
-        target: AccountId,
+        #[builder(name = target_account)] target: AccountId,
         companion_note_id: NoteId,
         serial_number: Word,
         reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
     ) -> Result<Self, NoteError> {
+        if !target.is_public() {
+            return Err(NoteError::other("fee sponsorship target account must be public"));
+        }
         if assets.is_empty() {
             return Err(NoteError::other("a FEE_SPONSORSHIP note must contain at least one asset"));
         }
@@ -125,15 +117,14 @@ impl FeeSponsorshipNote {
         let assets = NoteAssets::new(assets)?;
         // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
         let reclaimer = reclaimer.unwrap_or(sender);
+        let storage = FeeSponsorshipNoteStorage::new(companion_note_id, reclaimer, reclaim_height);
 
         Ok(Self {
             sender,
             serial_number,
             assets,
             target,
-            companion_note_id,
-            reclaimer,
-            reclaim_height,
+            storage,
         })
     }
 }
@@ -143,11 +134,7 @@ impl FeeSponsorshipNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the FEE_SPONSORSHIP note.
-    ///
-    /// The layout is `[COMPANION_NOTE_ID, reclaimer_suffix, reclaimer_prefix,
-    /// reclaim_block_height]`, matching the `*_ITEM` offsets in
-    /// `asm/standards/notes/fee_sponsorship.masm`.
-    pub const NUM_STORAGE_ITEMS: usize = 7;
+    pub const NUM_STORAGE_ITEMS: usize = FeeSponsorshipNoteStorage::NUM_ITEMS;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -172,18 +159,18 @@ impl FeeSponsorshipNote {
 
     /// Returns the ID of the companion note this note sponsors.
     pub fn companion_note_id(&self) -> NoteId {
-        self.companion_note_id
+        self.storage.companion_note_id()
     }
 
     /// Returns the account ID allowed to reclaim the note after `reclaim_height`.
     pub fn reclaimer(&self) -> AccountId {
-        self.reclaimer
+        self.storage.reclaimer()
     }
 
     /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
     /// enabled.
     pub fn reclaim_height(&self) -> Option<BlockNumber> {
-        self.reclaim_height
+        self.storage.reclaim_height()
     }
 }
 
@@ -227,21 +214,128 @@ impl From<FeeSponsorshipNote> for Note {
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
 
-        // Storage layout must match the `*_ITEM` offsets in the note's MASM script:
-        // [COMPANION_NOTE_ID, reclaimer_suffix, reclaimer_prefix, reclaim_block_height]. An absent
-        // reclaim height is encoded as 0, which the script reads as "reclaim disabled".
-        let mut items = Vec::with_capacity(FeeSponsorshipNote::NUM_STORAGE_ITEMS);
-        items.extend_from_slice(note.companion_note_id.as_word().as_elements());
-        items.push(note.reclaimer.suffix());
-        items.push(note.reclaimer.prefix().as_felt());
-        items.push(Felt::from(note.reclaim_height.unwrap_or_default().as_u32()));
-        let storage = NoteStorage::new(items)
-            .expect("seven storage items never exceed the note storage limit");
-
-        let recipient =
-            NoteRecipient::new(note.serial_number, FeeSponsorshipNote::script(), storage);
+        let recipient = note.storage.into_recipient(note.serial_number);
 
         Note::new(note.assets, metadata, recipient)
+    }
+}
+
+// FEE SPONSORSHIP NOTE STORAGE
+// ================================================================================================
+
+/// Canonical storage representation for a FEE_SPONSORSHIP note.
+///
+/// Binds the sponsorship to its companion note by [`NoteId`] and stores the reclaimer together
+/// with the optional reclaim height controlling when the note can be reclaimed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeeSponsorshipNoteStorage {
+    companion_note_id: NoteId,
+    reclaimer: AccountId,
+    reclaim_height: Option<BlockNumber>,
+}
+
+impl FeeSponsorshipNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Number of storage items in this layout.
+    pub const NUM_ITEMS: usize = 7;
+
+    // Indices of the storage items. Must match the `*_ITEM` offsets from `STORAGE_PTR` in
+    // `asm/standards/notes/fee_sponsorship.masm`. The companion note ID occupies items 0 to 3.
+    const COMPANION_NOTE_ID_IDX: usize = 0;
+    const RECLAIMER_SUFFIX_IDX: usize = 4;
+    const RECLAIMER_PREFIX_IDX: usize = 5;
+    const RECLAIM_HEIGHT_IDX: usize = 6;
+
+    /// Creates new FEE_SPONSORSHIP note storage.
+    pub fn new(
+        companion_note_id: NoteId,
+        reclaimer: AccountId,
+        reclaim_height: Option<BlockNumber>,
+    ) -> Self {
+        Self {
+            companion_note_id,
+            reclaimer,
+            reclaim_height,
+        }
+    }
+
+    /// Consumes the storage and returns a FEE_SPONSORSHIP [`NoteRecipient`] with the provided
+    /// serial number.
+    pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
+        NoteRecipient::new(serial_num, FeeSponsorshipNote::script(), self.into())
+    }
+
+    /// Returns the ID of the companion note the sponsorship is bound to.
+    pub fn companion_note_id(&self) -> NoteId {
+        self.companion_note_id
+    }
+
+    /// Returns the reclaimer account ID.
+    pub fn reclaimer(&self) -> AccountId {
+        self.reclaimer
+    }
+
+    /// Returns the reclaim block height (if any).
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.reclaim_height
+    }
+}
+
+impl From<FeeSponsorshipNoteStorage> for NoteStorage {
+    fn from(storage: FeeSponsorshipNoteStorage) -> Self {
+        // an absent height is encoded as zero, which the script reads as "reclaim disabled"
+        let reclaim = storage.reclaim_height.map_or(Felt::ZERO, Felt::from);
+
+        // the item order must match the `*_IDX` constants that `try_from` decodes with
+        let mut items = Vec::with_capacity(FeeSponsorshipNoteStorage::NUM_ITEMS);
+        items.extend_from_slice(storage.companion_note_id.as_word().as_elements());
+        items.push(storage.reclaimer.suffix());
+        items.push(storage.reclaimer.prefix().as_felt());
+        items.push(reclaim);
+
+        NoteStorage::new(items)
+            .expect("number of storage items should not exceed max storage items")
+    }
+}
+
+impl TryFrom<&[Felt]> for FeeSponsorshipNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
+        if note_storage.len() != Self::NUM_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: Self::NUM_ITEMS,
+                actual: note_storage.len(),
+            });
+        }
+
+        let companion_note_id = NoteId::from_raw(Word::new([
+            note_storage[Self::COMPANION_NOTE_ID_IDX],
+            note_storage[Self::COMPANION_NOTE_ID_IDX + 1],
+            note_storage[Self::COMPANION_NOTE_ID_IDX + 2],
+            note_storage[Self::COMPANION_NOTE_ID_IDX + 3],
+        ]));
+
+        let reclaimer = AccountId::try_from_elements(
+            note_storage[Self::RECLAIMER_SUFFIX_IDX],
+            note_storage[Self::RECLAIMER_PREFIX_IDX],
+        )
+        .map_err(|err| {
+            NoteError::other_with_source("failed to create reclaimer account id", err)
+        })?;
+
+        let reclaim_height = decode_block_height(
+            note_storage[Self::RECLAIM_HEIGHT_IDX],
+            "invalid reclaim height in note storage",
+        )?;
+
+        Ok(Self {
+            companion_note_id,
+            reclaimer,
+            reclaim_height,
+        })
     }
 }
 
@@ -283,7 +377,6 @@ mod tests {
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
-            .unwrap()
             .companion_note_id(companion_note_id())
             .asset(asset)
             .reclaim_height(BlockNumber::from(42u32))
@@ -316,7 +409,6 @@ mod tests {
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
-            .unwrap()
             .companion_note_id(companion_note_id())
             .asset(asset)
             .generate_serial_number(&mut rng)
@@ -338,7 +430,6 @@ mod tests {
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
-            .unwrap()
             .companion_note_id(companion_note_id())
             .asset(asset)
             .reclaimer(reclaimer)
@@ -359,7 +450,6 @@ mod tests {
         let err = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
-            .unwrap()
             .companion_note_id(companion_note_id())
             .serial_number(Word::empty())
             .build()
@@ -375,9 +465,105 @@ mod tests {
     fn builder_rejects_private_target() {
         let private_target =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
+        let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
-        let result = FeeSponsorshipNote::builder().sender(sponsor()).target_account(private_target);
+        let err = FeeSponsorshipNote::builder()
+            .sender(sponsor())
+            .target_account(private_target)
+            .companion_note_id(companion_note_id())
+            .asset(asset)
+            .serial_number(Word::empty())
+            .build()
+            .expect_err("a private target must be rejected");
 
-        assert!(result.is_err(), "a private target must be rejected");
+        assert_matches!(err, NoteError::Other { error_msg, .. } => {
+            assert!(error_msg.contains("must be public"))
+        });
+    }
+
+    // STORAGE TESTS
+    // --------------------------------------------------------------------------------------------
+
+    // A suffix/prefix pair that does not decode to a valid account ID: the prefix's version check
+    // runs first, and `888 & 0xf == 8` is not a known version.
+    const INVALID_ID_SUFFIX: Felt = Felt::new_unchecked(999);
+    const INVALID_ID_PREFIX: Felt = Felt::new_unchecked(888);
+
+    /// Builds the seven storage items with the layout spelled out literally, so these tests pin
+    /// the item order independently of the encoder.
+    fn raw_storage(reclaimer_suffix: Felt, reclaimer_prefix: Felt, height: Felt) -> Vec<Felt> {
+        let mut storage = companion_note_id().as_word().as_elements().to_vec();
+        storage.push(reclaimer_suffix);
+        storage.push(reclaimer_prefix);
+        storage.push(height);
+        storage
+    }
+
+    #[test]
+    fn try_from_valid_storage_succeeds() {
+        let reclaimer = network_account();
+        let storage =
+            raw_storage(reclaimer.suffix(), reclaimer.prefix().as_felt(), Felt::from(42u32));
+
+        let decoded = FeeSponsorshipNoteStorage::try_from(storage.as_slice())
+            .expect("valid FEE_SPONSORSHIP storage should decode");
+
+        assert_eq!(decoded.companion_note_id(), companion_note_id());
+        assert_eq!(decoded.reclaimer(), reclaimer);
+        assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
+    }
+
+    #[test]
+    fn try_from_zero_height_maps_to_none() {
+        let reclaimer = network_account();
+        let storage = raw_storage(reclaimer.suffix(), reclaimer.prefix().as_felt(), Felt::ZERO);
+
+        let decoded = FeeSponsorshipNoteStorage::try_from(storage.as_slice()).unwrap();
+
+        assert_eq!(decoded.reclaim_height(), None);
+    }
+
+    #[test]
+    fn try_from_invalid_length_fails() {
+        let storage = vec![Felt::ZERO; 3];
+
+        let err = FeeSponsorshipNoteStorage::try_from(storage.as_slice())
+            .expect_err("wrong length must fail");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: FeeSponsorshipNoteStorage::NUM_ITEMS,
+                actual: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_reclaimer_fails() {
+        let storage = raw_storage(INVALID_ID_SUFFIX, INVALID_ID_PREFIX, Felt::ZERO);
+
+        let err = FeeSponsorshipNoteStorage::try_from(storage.as_slice())
+            .expect_err("invalid reclaimer encoding must fail");
+
+        assert_matches!(err, NoteError::Other { error_msg, source: Some(_), .. } => {
+            assert!(error_msg.contains("reclaimer"));
+        });
+    }
+
+    /// The encoder and the decoder must agree on the item order. The layout itself is pinned by
+    /// the hand-built storage vectors in the `try_from_*` tests above.
+    #[test]
+    fn storage_round_trips_through_note_storage() {
+        let storage = FeeSponsorshipNoteStorage::new(
+            companion_note_id(),
+            network_account(),
+            Some(BlockNumber::from(42u32)),
+        );
+
+        let encoded: NoteStorage = storage.into();
+        let decoded = FeeSponsorshipNoteStorage::try_from(encoded.items()).unwrap();
+
+        assert_eq!(decoded, storage);
     }
 }
