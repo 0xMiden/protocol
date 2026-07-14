@@ -17,13 +17,11 @@ use crate::account::wallets::BasicWallet;
 // CONSTANTS
 // ================================================================================================
 
-/// Path to the `send_notes` wallet transaction script procedure in the standards library,
-/// assembled at build time from `asm/standards/tx_scripts/send_notes_wallet.masm`.
+/// Path to the `send_notes` wallet transaction script procedure in the standards library.
 const SEND_NOTES_WALLET_TX_SCRIPT_PATH: &str =
     "::miden::standards::tx_scripts::send_notes_wallet::main";
 
-/// Path to the `send_notes` faucet transaction script procedure in the standards library,
-/// assembled at build time from `asm/standards/tx_scripts/send_notes_faucet.masm`.
+/// Path to the `send_notes` faucet transaction script procedure in the standards library.
 const SEND_NOTES_FAUCET_TX_SCRIPT_PATH: &str =
     "::miden::standards::tx_scripts::send_notes_faucet::main";
 
@@ -249,24 +247,11 @@ fn validate_note_sender(
     Ok(())
 }
 
-/// Encodes the notes and expiration delta into the payload element stream expected by the
-/// `send_notes` MASM scripts:
-///
-/// ```text
-/// word 0 (header):             [num_notes, expiration_delta, 0, 0]
-/// per note record:
-///   word 0:                    RECIPIENT
-///   word 1:                    [tag, note_type, num_assets, num_attachments]
-///   num_assets * 2 words:      ASSET_ID, ASSET_VALUE
-///   num_attachments * 2 words: [attachment_scheme, 0, 0, 0], ATTACHMENT_COMMITMENT
-/// ```
-///
-/// The scripts load this stream into memory verbatim and validate it against its sequential
-/// hash, which [`SendNotesTransactionScript::tx_script_args`] carries as the transaction script
-/// argument.
+/// Encodes the notes and expiration delta into the payload element expected by the `send_notes`
+/// MASM scripts.
 fn encode_payload(notes: &[PartialNote], expiration_delta: u16) -> Vec<Felt> {
-    // The kernel caps output notes at 1024 and assets per note at 256, both far below u32::MAX,
-    // so these conversions cannot truncate for any executable transaction.
+    // SAFETY: kernel caps output notes and assets per note below u32::MAX, so these conversions
+    // cannot truncate for any executable transaction.
     let num_notes = u32::try_from(notes.len()).expect("note count should fit in a u32");
 
     let mut payload = alloc::vec![Felt::from(num_notes), Felt::from(expiration_delta), ZERO, ZERO];

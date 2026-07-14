@@ -36,7 +36,32 @@ const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment co
 
 const ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET = "faucet note must contain exactly one asset"
 
-# PROCEDURES
+# TRANSACTION SCRIPT
+# =================================================================================================
+
+#! Sends freshly minted notes described by the advice-provided payload from an account exposing
+#! the basic fungible faucet interface.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Invocation: call
+@transaction_script
+pub proc main
+    exec.send_notes_common::load_payload
+    # => [pad(16)]
+
+    exec.process_notes
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
 # =================================================================================================
 
 #! Creates the output notes described by the payload stored at `PAYLOAD_ADDR`, minting each
@@ -120,6 +145,7 @@ proc process_notes
         dup neq.0
         while.true
             # => [attachments_left, notes_left, pad(16)]
+
             loc_load.PROCESS_NOTES_NOTE_IDX_LOC
             # => [note_idx, attachments_left, notes_left, pad(16)]
 
@@ -146,30 +172,5 @@ proc process_notes
         sub.1 dup neq.0
     end
     drop
-    # => [pad(16)]
-end
-
-# ENTRYPOINT
-# =================================================================================================
-
-#! Sends freshly minted notes described by the advice-provided payload from an account exposing
-#! the basic fungible faucet interface.
-#!
-#! Inputs:
-#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
-#!   Advice map: {
-#!     PAYLOAD_COMMITMENT: [[payload]],
-#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
-#!
-#! Invocation: call
-@transaction_script
-pub proc main
-    exec.send_notes_common::load_payload
-    # => [pad(16)]
-
-    exec.process_notes
     # => [pad(16)]
 end

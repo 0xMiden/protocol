@@ -88,7 +88,7 @@ const ERR_SEND_NOTES_PAYLOAD_EMPTY = "send notes payload must not be empty"
 #! - the expiration delta is non-zero and not in the range 1..=0xFFFF.
 #!
 #! Invocation: exec
-pub proc load_payload
+pub proc load_payload(payload_commitment: word)
     # push the payload from the advice map onto the advice stack, together with its length
     adv.push_mapvaln
     # OS => [PAYLOAD_COMMITMENT, pad(12)]
@@ -115,11 +115,11 @@ pub proc load_payload
     # => [num_words, write_ptr, PAYLOAD_COMMITMENT, pad(12)]
 
     exec.mem::pipe_preimage_to_memory drop
-    # => [pad(12)]
+    # => [pad(16)]
 
     # set the transaction expiration delta if one was provided
     mem_load.EXPIRATION_DELTA_ADDR
-    # => [expiration_delta, pad(12)]
+    # => [expiration_delta, pad(15)]
 
     dup neq.0
     if.true
@@ -127,5 +127,5 @@ pub proc load_payload
     else
         drop
     end
-    # => [pad(12)]
+    # => [pad(16)]
 end
