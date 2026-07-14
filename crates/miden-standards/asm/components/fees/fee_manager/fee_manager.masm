@@ -1,0 +1,5 @@
+# The MASM code of the Fee Manager Account Component.
+#
+# See the `FeeManager` Rust type's documentation for more details.
+
+pub use {estimate_note_fee} from miden::standards::fees::fee_manager

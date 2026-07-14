@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added a minimal `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure over a fixed per-note-script fee schedule ([#3307](https://github.com/0xMiden/protocol/pull/3307)).
+
 ### Changes
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
