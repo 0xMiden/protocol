@@ -30,9 +30,6 @@ const NUM_STORAGE_ITEMS = 7
 #! Local memory offset at which is_bound_feature_note_present stages the bound note ID.
 const BOUND_NOTE_ID_LOC = 0
 
-#! First-note-argument value that requests the swap consumption path (not yet implemented).
-const SWAP_MODE = 1
-
 # ERRORS
 # =================================================================================================
 
@@ -43,8 +40,6 @@ const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "FEE_SPONSORSHIP reclaim is disable
 const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim FEE_SPONSORSHIP note because the reclaim block height is not reached yet"
 
 const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE_SPONSORSHIP note because the reclaiming account is not the reclaimer"
-
-const ERR_FEE_SPONSORSHIP_SWAP_NOT_IMPLEMENTED = "the FEE_SPONSORSHIP swap path is not yet implemented"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -168,10 +163,6 @@ end
 #! consuming account's job (for a network account, typically its auth procedure). This keeps the
 #! note free of any wallet-interface requirement on the account it sponsors.
 #!
-#! A swap mode, requested through the first note argument, is reserved for making the sponsorship
-#! convertible (the sponsor pays in one asset, the target account receives another, with mechanics
-#! similar to the SWAP note); it is not implemented yet and currently panics.
-#!
 #! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
 #! reclaim block height is reached. Once the bound feature note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
@@ -186,9 +177,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - NOTE_ARGS are the note arguments. The first argument selects the consumption mode: SWAP_MODE
-#!   requests the (not yet implemented) swap path, and any other value selects the
-#!   sponsor-or-reclaim flow. The remaining arguments are ignored.
+#! - NOTE_ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
 #! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
@@ -197,7 +186,6 @@ end
 #!   or 0 if reclaim is disabled.
 #!
 #! Panics if:
-#! - the first note argument requests the swap path, which is not yet implemented.
 #! - the number of note storage items is not 7.
 #! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
 #!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
@@ -206,14 +194,7 @@ end
 #!   miden::standards::wallets::basic::receive_asset procedure.
 @note_script
 pub proc main
-    # NOTE_ARGS[0] selects the consumption mode: SWAP_MODE requests the swap path, which is not
-    # yet implemented. Any other value selects the sponsor-or-reclaim flow below, which takes no
-    # arguments: deriving the path from the transaction's contents instead denies the transaction
-    # builder a griefing vector (see is_bound_feature_note_present).
-    eq.SWAP_MODE assertz.err=ERR_FEE_SPONSORSHIP_SWAP_NOT_IMPLEMENTED
-    # => [note_args_1, note_args_2, note_args_3, pad(12)]
-
-    drop drop drop
+    dropw
     # => [pad(16)]
 
     push.STORAGE_PTR exec.active_note::get_storage

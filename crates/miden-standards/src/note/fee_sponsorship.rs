@@ -65,10 +65,6 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// transaction to claim them somewhere. Only the reclaim path moves assets, into the reclaimer's
 /// vault.
 ///
-/// A swap mode, requested through the first note argument, is reserved for making the sponsorship
-/// convertible (the sponsor pays in one asset, the target account receives another); it is not
-/// implemented yet and currently panics.
-///
 /// # Reclaim
 ///
 /// Every consumption without the bound feature note is a reclaim: the note returns to its
