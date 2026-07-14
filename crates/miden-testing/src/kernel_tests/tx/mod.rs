@@ -32,7 +32,6 @@ mod test_input_note;
 mod test_lazy_loading;
 mod test_link_map;
 mod test_note;
-mod test_note_id;
 mod test_output_note;
 mod test_prologue;
 mod test_tx;

@@ -42,24 +42,38 @@ fn two_note_tx() -> anyhow::Result<TransactionContext> {
         .build()
 }
 
-/// Recomputing an input note's ID in MASM must match `Note::id()` in Rust.
+/// Recomputing a note's ID in MASM must match `Note::id()` in Rust, for both notes of the fixture
+/// (note 0 is bare, note 1 carries an asset and attachments) through both the indexed and the
+/// active-note procedure.
 #[rstest]
-#[case::bare_note(0)]
-#[case::note_with_assets_and_attachments(1)]
 #[tokio::test]
-async fn compute_input_note_id_matches_rust(#[case] note_index: u8) -> anyhow::Result<()> {
+async fn compute_active_and_input_note_id_matches_rust(
+    #[values(0, 1)] note_index: u8,
+    #[values("compute_active_note_id", "compute_input_note_id")] procedure: &str,
+) -> anyhow::Result<()> {
     let tx_context = two_note_tx()?;
+
+    // The input variant takes the note index from the stack; the active variant reads the active
+    // note, so the test points the active-note pointer at the note under test instead.
+    let setup_code = if procedure == "compute_active_note_id" {
+        format!(
+            "push.{note_index} exec.memory::get_input_note_ptr exec.memory::set_active_input_note_ptr"
+        )
+    } else {
+        format!("push.{note_index}")
+    };
 
     let code = format!(
         r#"
+        use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
         use miden::standards::note::note_id
 
         begin
             exec.prologue::prepare_transaction
 
-            push.{note_index}
-            exec.note_id::compute_input_note_id
+            {setup_code}
+            exec.note_id::{procedure}
             # => [NOTE_ID]
 
             # truncate the stack
@@ -71,35 +85,6 @@ async fn compute_input_note_id_matches_rust(#[case] note_index: u8) -> anyhow::R
     let exec_output = tx_context.execute_code(&code).await?;
 
     let expected = tx_context.input_notes().get_note(note_index as usize).note().id();
-    assert_eq!(exec_output.get_stack_word(0), expected.as_word());
-
-    Ok(())
-}
-
-/// Recomputing the active note's ID must match `Note::id()` of the note being processed.
-#[tokio::test]
-async fn compute_active_note_id_matches_rust() -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
-
-    // The prologue leaves the active-note pointer on input note 0.
-    let code = r#"
-        use miden::tx_kernel_core::prologue
-        use miden::standards::note::note_id
-
-        begin
-            exec.prologue::prepare_transaction
-
-            exec.note_id::compute_active_note_id
-            # => [NOTE_ID]
-
-            # truncate the stack
-            swapw dropw
-        end
-    "#;
-
-    let exec_output = tx_context.execute_code(code).await?;
-
-    let expected = tx_context.input_notes().get_note(0).note().id();
     assert_eq!(exec_output.get_stack_word(0), expected.as_word());
 
     Ok(())
