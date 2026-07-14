@@ -52,7 +52,7 @@ git -C "$repo_root" fetch --tags origin || true
 
 baseline_tag="$(latest_release_tag_on_head)"
 if [[ -z "$baseline_tag" ]]; then
-    echo "No release tag found on the current branch history; skipping MASM root stability check"
+    echo "No release tag found on the current branch history; skipping MAST root stability check"
     exit 0
 fi
 
@@ -60,7 +60,7 @@ baseline_version="${baseline_tag#v}"
 parse_version "$baseline_version" baseline
 
 if cargo_incompatible_release_line_changed; then
-    echo "workspace version changed Cargo-incompatible release line from ${baseline_version} to ${workspace_version}; skipping MASM root stability check"
+    echo "workspace version changed Cargo-incompatible release line from ${baseline_version} to ${workspace_version}; skipping MAST root stability check"
     exit 0
 fi
 
@@ -75,7 +75,7 @@ sed -E "s/tag = \"v[0-9]+\\.[0-9]+\\.[0-9]+\"/tag = \"${baseline_tag}\"/g" \
     "$repo_root/scripts/check-masm-export-digests.rs" >"$check_script"
 chmod +x "$check_script"
 
-echo "Checking MASM procedure root stability against $baseline_tag"
+echo "Checking MAST root stability against $baseline_tag"
 RUSTC_WRAPPER= rustup run nightly cargo -Zscript "$check_script"
 
-echo "MASM procedure roots are stable against $baseline_tag"
+echo "MAST roots are stable against $baseline_tag"

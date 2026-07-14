@@ -90,7 +90,7 @@ runs:
         chmod +x scripts/check-msrv.sh
         ./scripts/check-msrv.sh
 
-    - name: Check MASM procedure root stability
+    - name: Check MAST root stability
       if: ${{ inputs.mode == 'dry-run' && github.ref == 'refs/heads/main' }}
       shell: bash
       run: |
