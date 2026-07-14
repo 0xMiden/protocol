@@ -100,6 +100,7 @@ end
 @locals(4)
 pub proc active_account_matches_target_account
     # find the network account target attachment, if any
+    # if there are multiple, we consider the first one the canonical one
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     exec.active_note::find_attachment
     # => [is_found, attachment_idx]
