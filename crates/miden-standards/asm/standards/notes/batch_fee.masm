@@ -60,7 +60,7 @@ pub proc main
     # => []
 end
 
-#! Computes the FEE recipient and returns the note-creation arguments for the given serial number.
+#! Computes the BATCH_FEE recipient and returns the note-creation arguments for the given serial number.
 #!
 #! This procedure handles:
 #! - Obtaining the note script root via procref
@@ -102,7 +102,7 @@ pub proc prepare_note
     # => [tag, note_type, RECIPIENT]
 end
 
-#! Creates a new FEE output note from the given serial number and returns its index.
+#! Creates a new BATCH_FEE output note from the given serial number and returns its index.
 #!
 #! Note creation must originate from the account context, so this procedure routes creation through
 #! the account's `note_creator::create_note` procedure. This lets `batch_fee::create_output_note` be used

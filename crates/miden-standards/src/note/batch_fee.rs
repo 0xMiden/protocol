@@ -248,7 +248,7 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     /// Static consumption analysis accepts a well-formed BATCH_FEE note for an arbitrary account
-    /// and rejects a note that shares the FEE script root but carries unexpected storage items
+    /// and rejects a note that shares the BATCH_FEE script root but carries unexpected storage items
     /// (such a note would panic in the note script on execution).
     #[test]
     fn is_consumable_validates_storage() {
@@ -256,7 +256,7 @@ mod tests {
         let asset = FungibleAsset::new(faucet_a(), 100).unwrap();
 
         let standard_note = StandardNote::from_script_root(BatchFeeNote::script_root())
-            .expect("FEE script root should be recognized as a standard note");
+            .expect("BATCH_FEE script root should be recognized as a standard note");
 
         let fee_note: Note = BatchFeeNote::builder()
             .sender(sender())
@@ -271,7 +271,7 @@ mod tests {
             Some(NoteConsumptionStatus::ConsumableWithAuthorization)
         );
 
-        // A note with the FEE script root but non-empty storage can never be consumed.
+        // A note with the BATCH_FEE script root but non-empty storage can never be consumed.
         let malformed_storage = NoteStorage::new(vec![Felt::from(1u32)]).unwrap();
         let malformed_note = Note::new(
             NoteAssets::new(vec![asset.into()]).unwrap(),
