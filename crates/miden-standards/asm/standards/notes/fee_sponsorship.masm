@@ -142,8 +142,8 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! FEE_SPONSORSHIP script: hands the note's assets to the consuming account, provided the
-#! feature note it sponsors is consumed by the same transaction.
+#! FEE_SPONSORSHIP script: verifies that the feature note this note sponsors is consumed by the
+#! same transaction, leaving the note's assets in place; otherwise it attempts a reclaim.
 #!
 #! The note carries the fee for exactly one feature note, named by the note ID in its storage. The
 #! feature note itself stays entirely fee-unaware, and the sponsorship carries no attachments.
@@ -159,13 +159,18 @@ end
 #! - Consuming a feature note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
+#! On the sponsorship path the script leaves the note's assets untouched: collecting them is the
+#! consuming account's job (for a network account, typically its auth procedure). This keeps the
+#! note free of any wallet-interface requirement on the account it sponsors.
+#!
 #! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
 #! reclaim block height is reached. Once the bound feature note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
 #! assets. The reclaimer is named in the note storage; the creator sets it, defaulting to the
 #! sender.
 #!
-#! Requires that the account exposes:
+#! Only the reclaim path moves assets, so only reclaiming requires that the consuming account
+#! exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
 #! Inputs:  [NOTE_ARGS, pad(12)]
@@ -185,7 +190,8 @@ end
 #! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
 #!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
 #!   the reclaimer).
-#! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
+#! - the note is reclaimed and the reclaiming account does not expose the
+#!   miden::standards::wallets::basic::receive_asset procedure.
 @note_script
 pub proc main
     dropw
@@ -203,12 +209,13 @@ pub proc main
     exec.is_bound_feature_note_present
     # => [is_present, pad(16)]
 
-    # sponsorship path: the consumer keeps the assets alongside the feature note they pay for; who
-    # may get here is decided by the feature note's own consumption rules
+    # with the feature note present, the sponsorship path is a no-op: the assets stay in the note
+    # for the consuming account to collect, and who may get here is decided by the feature note's
+    # own consumption rules. Invert the flag so the branch below handles the absent case (reclaim).
+    not
+    # => [is_absent, pad(16)]
+
     if.true
-        exec.basic_wallet::add_assets_to_account
-        # => [pad(16)]
-    else
         # reclaim path: without the feature note the assets may only return to the reclaimer named
         # in the note storage
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM

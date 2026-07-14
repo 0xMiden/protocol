@@ -4,8 +4,10 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
 use miden_protocol::note::{Note, NoteType};
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
@@ -20,6 +22,37 @@ fn auth() -> Auth {
     Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     }
+}
+
+/// Compiles a transaction script that moves `fee_asset` into the executing account's vault.
+///
+/// On the sponsorship path the note script leaves the sponsored assets in place, so the consuming
+/// transaction has to collect them itself. This script stands in for the account's fee-collection
+/// logic (for a network account, typically its auth procedure).
+fn collect_fee_tx_script(fee_asset: Asset) -> anyhow::Result<TransactionScript> {
+    let src = format!(
+        "
+        use miden::standards::wallets::basic as wallet
+
+        @transaction_script
+        pub proc main
+            push.{asset_value}
+            push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE]
+
+            padw padw swapdw
+            # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+            call.wallet::receive_asset
+            # => [pad(16)]
+
+            dropw dropw dropw dropw
+        end
+        ",
+        asset_value = fee_asset.to_value_word(),
+        asset_id = fee_asset.to_id_word(),
+    );
+    Ok(CodeBuilder::default().compile_tx_script(src)?)
 }
 
 /// The cast for every test below: the network account the sponsorship is routed to, the sponsor who
@@ -78,7 +111,7 @@ fn setup(reclaim_height: Option<BlockNumber>) -> anyhow::Result<Fixture> {
 }
 
 /// The happy path: the network account consumes the sponsorship alongside the feature note it pays
-/// for.
+/// for, collecting the fee itself since the note script leaves the assets in place.
 #[tokio::test]
 async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Result<()> {
     let f = setup(None)?;
@@ -88,6 +121,7 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         .build_transaction(f.network_account.id())
         .authenticated_input_note(f.sponsorship_note.id())
         .authenticated_input_note(f.feature_note.id())
+        .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
         .execute()
         .await?;
@@ -98,6 +132,33 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         network_account.vault().get_balance(f.fee_asset.id())?.as_u64(),
         FEE_AMOUNT,
         "the network account should receive the sponsored fee",
+    );
+
+    Ok(())
+}
+
+/// The sponsorship path itself does not move the note's assets: a transaction that consumes the
+/// sponsorship alongside its feature note but never collects the fee fails asset conservation in
+/// the epilogue.
+///
+/// This pins the division of labor: collecting the fee is the consuming account's job, so the note
+/// requires no wallet interface from the account it sponsors.
+#[tokio::test]
+async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
+    let f = setup(None)?;
+
+    let result = f
+        .mock_chain
+        .build_transaction(f.network_account.id())
+        .authenticated_input_note(f.sponsorship_note.id())
+        .authenticated_input_note(f.feature_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME
     );
 
     Ok(())
@@ -158,6 +219,7 @@ async fn note_order_does_not_matter() -> anyhow::Result<()> {
         .build_transaction(f.network_account.id())
         .authenticated_input_note(f.feature_note.id())
         .authenticated_input_note(f.sponsorship_note.id())
+        .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
         .execute()
         .await?;
@@ -166,11 +228,11 @@ async fn note_order_does_not_matter() -> anyhow::Result<()> {
 }
 
 /// Consumption rights are inherited from the feature note: the sponsorship does not restrict who
-/// consumes it, so whoever may consume the feature note may take the sponsorship alongside it.
+/// consumes it, so whoever may consume the feature note may claim the sponsored fee alongside it.
 ///
-/// The P2ANY feature note used here is consumable by anyone, so the stranger takes the fee. A real
-/// network feature note restricts its consumers itself (for example a note targeting the network
-/// account), and the sponsorship inherits that restriction transitively.
+/// The P2ANY feature note used here is consumable by anyone, so the stranger collects the fee. A
+/// real network feature note restricts its consumers itself (for example a note targeting the
+/// network account), and the sponsorship inherits that restriction transitively.
 #[tokio::test]
 async fn anyone_consuming_the_feature_note_takes_the_sponsorship() -> anyhow::Result<()> {
     let f = setup(None)?;
@@ -180,6 +242,7 @@ async fn anyone_consuming_the_feature_note_takes_the_sponsorship() -> anyhow::Re
         .build_transaction(f.stranger.id())
         .authenticated_input_note(f.sponsorship_note.id())
         .authenticated_input_note(f.feature_note.id())
+        .tx_script(collect_fee_tx_script(f.fee_asset)?)
         .build()?
         .execute()
         .await?;
