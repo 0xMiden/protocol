@@ -151,7 +151,7 @@ end
 #! amount into the payment asset's amount.
 #!
 #! The payment info word is laid out as [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den]
-#! (in memory order) and the payment amount is ceil(fee_amount * rate_num / rate_den).
+#! and the payment amount is ceil(fee_amount * rate_num / rate_den).
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS, fee_amount]
