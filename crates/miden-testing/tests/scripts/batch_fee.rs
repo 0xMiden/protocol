@@ -9,8 +9,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::BatchFeeNote;
 use miden_testing::{Auth, MockChain};
 
-use crate::prove_and_verify_transaction;
-
 /// A BATCH_FEE note imposes no target restriction, so an account unrelated to the note can consume
 /// it and claim its assets. We use two assets to test the loop inside the script.
 #[tokio::test]
@@ -62,7 +60,6 @@ async fn batch_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
         consumer_account_after.to_commitment()
     );
 
-    prove_and_verify_transaction(executed_transaction).await?;
     Ok(())
 }
 

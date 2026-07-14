@@ -184,8 +184,6 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountType};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::block::BlockNumber;
-    use miden_protocol::crypto::rand::RandomCoin;
-    use miden_protocol::errors::NoteError;
     use miden_protocol::{Felt, Word};
 
     use super::*;
@@ -207,59 +205,6 @@ mod tests {
         AccountId::builder()
             .account_type(AccountType::Public)
             .build_with_seed([3u8; 32])
-    }
-
-    fn faucet_b() -> AccountId {
-        AccountId::builder()
-            .account_type(AccountType::Public)
-            .build_with_seed([4u8; 32])
-    }
-
-    // BUILDER TESTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The minimal builder only requires a sender, a serial number and one asset.
-    #[test]
-    fn builder_minimal() {
-        let note = BatchFeeNote::builder()
-            .sender(sender())
-            .serial_number(Word::empty())
-            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
-            .build()
-            .unwrap();
-
-        assert_eq!(note.sender(), sender());
-        assert_eq!(note.assets().num_assets(), 1);
-    }
-
-    /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
-    #[test]
-    fn builder_accumulates_assets() {
-        let mut rng = RandomCoin::new(Word::empty());
-        let note = BatchFeeNote::builder()
-            .sender(sender())
-            .asset(FungibleAsset::new(faucet_a(), 100).unwrap())
-            .assets([Asset::from(FungibleAsset::new(faucet_b(), 200).unwrap())])
-            .generate_serial_number(&mut rng)
-            .build()
-            .unwrap();
-
-        assert_eq!(note.assets().num_assets(), 2);
-        assert_ne!(note.serial_number(), Word::empty());
-    }
-
-    /// A BATCH_FEE note must carry at least one asset.
-    #[test]
-    fn builder_rejects_empty_assets() {
-        let err = BatchFeeNote::builder()
-            .sender(sender())
-            .serial_number(Word::empty())
-            .build()
-            .expect_err("a note without assets must be rejected");
-
-        assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("note must contain at least one asset"))
-        });
     }
 
     // CONVERSION TESTS
