@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-access-upgrade-manager"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::access::upgrade::manager"
+path      = "upgrade_manager.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

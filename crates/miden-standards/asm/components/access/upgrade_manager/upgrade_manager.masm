@@ -1,0 +1,8 @@
+# UpgradeManager component shim.
+#
+# Exposes the `account_upgrade::upgrade` procedure.
+#
+# Companion component required:
+# - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac`).
+
+pub use {upgrade} from miden::standards::extensions::account_upgrade

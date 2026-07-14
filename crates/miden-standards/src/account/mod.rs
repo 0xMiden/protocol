@@ -1,6 +1,7 @@
 pub mod access;
 pub mod auth;
 pub mod components;
+pub mod extensions;
 pub mod faucets;
 pub mod inspection;
 pub mod interface;

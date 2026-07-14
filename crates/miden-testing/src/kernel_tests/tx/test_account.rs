@@ -29,14 +29,7 @@ use miden_protocol::account::{
     StorageValuePatch,
 };
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_protocol::assembly::{
-    DefaultSourceManager,
-    Library,
-    Linkage,
-    ModuleKind,
-    ModuleParser,
-    Path,
-};
+use miden_protocol::assembly::{DefaultSourceManager, Linkage, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
@@ -63,6 +56,7 @@ use miden_protocol::transaction::memory::{
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -2120,7 +2114,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         StorageSlotName::new("miden::slot::test").expect("storage slot name should be valid")
     });
 
-    static COMPONENT_1_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    static COMPONENT_1_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -2146,7 +2140,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
             .expect("mock account code should be valid")
     });
 
-    static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    static COMPONENT_2_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account

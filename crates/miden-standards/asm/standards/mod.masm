@@ -3,6 +3,7 @@ pub mod assets
 pub mod attachments
 pub mod auth
 pub mod data_structures
+pub mod extensions
 pub mod faucets
 pub mod inspection
 pub mod note
