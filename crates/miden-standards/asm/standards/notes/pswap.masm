@@ -16,7 +16,7 @@ use miden::standards::note::note_creator
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=6
+const NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -24,13 +24,14 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
-# Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
 # - payback_note_type          [3]  : 1 felt
-# - creator_id_prefix          [4]  : 1 felt
-# - creator_id_suffix          [5]  : 1 felt
+# - creator_id_suffix          [4]  : 1 felt
+# - creator_id_prefix          [5]  : 1 felt
+# - min_fill_step              [6]  : 1 felt
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
@@ -38,8 +39,9 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - payback_note_type: The NoteType used for the P2ID payback note
-# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
+# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
+# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
 #
 # The payback note tag is derived at runtime from the creator's account ID
 # (via note_tag::create_account_target) rather than stored.
@@ -52,8 +54,9 @@ const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
 const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
 const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 3
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 4
-const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 4
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
+const MIN_FILL_STEP_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
 # =================================================================================================
@@ -96,11 +99,12 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 # ERRORS
 # =================================================================================================
 
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 6 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
+const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill step"
 
 # U64 VALIDATION
 # =================================================================================================
@@ -199,6 +203,17 @@ proc max
     # => [b_lt_a, a, b]
     cdrop
     # => [max(a, b)]
+end
+
+#! Returns the smaller of two field elements, compared as unsigned integers.
+#!
+#! Inputs:  [a, b]
+#! Outputs: [min(a, b)]
+proc min
+    dup.1 dup.1 swap lt
+    # => [a_lt_b, a, b]
+    cdrop
+    # => [min(a, b)]
 end
 
 # P2ID NOTE CREATION PROCEDURE
@@ -550,6 +565,10 @@ end
 #!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
 #!   surplus requested tokens.
 #!
+#! A per-fill floor rejects any fill below `min(min_fill_step, min_requested_amount)`. Clamping to
+#! `min_requested_amount` keeps a shrinking remainder completable, and `min_fill_step == 0` disables
+#! the floor.
+#!
 #! Account fill and note fill payouts are computed separately (rather than summing
 #! first) because the account fill portion must be credited to the consumer's vault
 #! on its own, while the combined total is needed to size the remainder note.
@@ -613,6 +632,19 @@ proc execute_pswap
     # => [sum_lo, sum_hi]
 
     swap mul.MAX_U32 add
+    # => [fill_amount]
+
+    # Reject fills below the effective per-fill floor (see the proc doc comment).
+    dup
+    # => [fill_amount, fill_amount]
+
+    mem_load.MIN_FILL_STEP_ITEM loc_load.EXEC_AMT_MIN_REQUESTED exec.min
+    # => [effective_floor, fill_amount, fill_amount]
+
+    lt
+    # => [fill_below_floor, fill_amount]
+
+    assertz.err=ERR_PSWAP_FILL_BELOW_MINIMUM
     # => [fill_amount]
 
     # fill_reference = max(fill, min_requested_amount).
