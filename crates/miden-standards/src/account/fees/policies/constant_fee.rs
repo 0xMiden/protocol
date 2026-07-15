@@ -58,8 +58,6 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// value words): the amount is looked up in the fee schedule under the note's script root, and
 /// note scripts without a schedule entry estimate to an amount of 0.
 ///
-/// Both storage slots are populated at account creation and there are no on-chain setters.
-///
 /// ## Storage layout
 ///
 /// - [`Self::fee_asset_id_slot_name`] value slot: the [`AssetId`] word of the fungible asset the

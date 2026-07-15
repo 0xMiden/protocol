@@ -4,9 +4,6 @@
 # registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches fee
 # estimation to `compute_note_fee` via `dyncall`.
 #
-# Both storage slots are populated once at account creation (via the `ConstantFeePolicy` Rust
-# type) and there are no on-chain setters.
-#
 # Storage layout:
 # - `fee_asset_id` word: the ID of the asset the fee is charged in.
 # - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]. The default (unset) entry is

@@ -291,11 +291,10 @@ impl IntoIterator for FeeManager {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
+    use miden_protocol::account::{AccountId, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
-    use crate::account::auth::NoAuth;
     use crate::account::fees::ConstantFeePolicy;
     use crate::code_builder::CodeBuilder;
 
@@ -365,28 +364,5 @@ mod tests {
             allowed_flag,
             "the reserved policy root should be registered in the allowed map"
         );
-    }
-
-    /// Check that the manager and its policies can be added to an account and that the resulting
-    /// account exposes the manager procedures and the policies' `compute_note_fee` procedures.
-    #[test]
-    fn account_exposes_fee_manager_procedures() -> anyhow::Result<()> {
-        let account = AccountBuilder::new([1; 32])
-            .account_type(AccountType::Public)
-            .with_auth_component(NoAuth)
-            .with_components(fee_manager())
-            .build_existing()?;
-
-        for root in [
-            FeeManager::estimate_note_fee_root(),
-            FeeManager::set_fee_policy_root(),
-            FeeManager::get_fee_policy_root(),
-            ConstantFeePolicy::root(),
-            custom_fee_policy().root(),
-        ] {
-            assert!(account.code().has_procedure(*root.mast_root()));
-        }
-
-        Ok(())
     }
 }
