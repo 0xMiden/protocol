@@ -5,6 +5,7 @@
 ### Changes
 
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
+- [BREAKING] Migrated the `miden-agglayer` library, components and note scripts to `miden-project.toml` projects ([#3306](https://github.com/0xMiden/protocol/pull/3306)). 
 
 ## v0.16.0-alpha.2 (2026-07-13)
 
