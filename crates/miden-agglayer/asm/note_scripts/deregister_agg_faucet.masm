@@ -21,7 +21,7 @@ const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET
 #! clearing every registry/metadata entry the bridge holds for it.
 #!
 #! This note can only be consumed by the Agglayer Bridge account targeted by the note attachment,
-#! and only if it was sent by the bridge admin.
+#! and only if it was sent by a holder of the faucet manager role.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::deregister_faucet procedure.

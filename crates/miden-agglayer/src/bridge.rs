@@ -1,22 +1,24 @@
 extern crate alloc;
 
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, ONE, Word, ZERO};
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountComponent,
     AccountId,
+    AccountProcedureRoot,
+    RoleSymbol,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
+use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -58,18 +60,6 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 // bridge config
 // ------------------------------------------------------------------------------------------------
 
-static BRIDGE_ADMIN_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::admin_account_id")
-        .expect("bridge admin account ID storage slot name should be valid")
-});
-static GER_INJECTOR_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::ger_injector_account_id")
-        .expect("GER injector account ID storage slot name should be valid")
-});
-static GER_REMOVER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::ger_remover_account_id")
-        .expect("GER remover account ID storage slot name should be valid")
-});
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::ger_map")
         .expect("GER map storage slot name should be valid")
@@ -131,6 +121,108 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("LET num_leaves storage slot name should be valid")
 });
 
+// BRIDGE RBAC ROLES
+// ================================================================================================
+
+static FAUCET_MANAGER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
+    RoleSymbol::new("FAUCET_MNGR").expect("FAUCET_MNGR role symbol should be valid")
+});
+static GER_INJECTOR_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
+    RoleSymbol::new("GER_INJECTOR").expect("GER_INJECTOR role symbol should be valid")
+});
+static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
+    RoleSymbol::new("GER_REMOVER").expect("GER_REMOVER role symbol should be valid")
+});
+
+/// The assembled bridge account component code, used to resolve the roots of the bridge's
+/// role-gated procedures.
+static BRIDGE_COMPONENT_CODE: LazyLock<AccountComponentCode> =
+    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_library()));
+
+procedure_root!(
+    REGISTER_FAUCET_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "register_faucet",
+    AggLayerBridge::code()
+);
+procedure_root!(
+    STORE_FAUCET_METADATA_HASH_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "store_faucet_metadata_hash",
+    AggLayerBridge::code()
+);
+procedure_root!(
+    UPDATE_GER_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "update_ger",
+    AggLayerBridge::code()
+);
+procedure_root!(
+    REMOVE_GER_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "remove_ger",
+    AggLayerBridge::code()
+);
+procedure_root!(
+    DEREGISTER_FAUCET_ROOT,
+    AggLayerBridge::COMPONENT_NAMESPACE,
+    "deregister_faucet",
+    AggLayerBridge::code()
+);
+
+/// The accounts that initially hold each of the bridge's privileged RBAC roles.
+///
+/// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
+/// set of bridge procedures:
+/// - `FAUCET_MNGR` gates `register_faucet` and `store_faucet_metadata_hash`.
+/// - `GER_INJECTOR` gates `update_ger`.
+/// - `GER_REMOVER` gates `remove_ger`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeRoles {
+    faucet_managers: BTreeSet<AccountId>,
+    ger_injectors: BTreeSet<AccountId>,
+    ger_removers: BTreeSet<AccountId>,
+}
+
+impl BridgeRoles {
+    /// Creates the initial bridge role membership from the holders of each role.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the three roles is given an empty
+    /// set of holders.
+    pub fn new(
+        faucet_managers: BTreeSet<AccountId>,
+        ger_injectors: BTreeSet<AccountId>,
+        ger_removers: BTreeSet<AccountId>,
+    ) -> Result<Self, AgglayerBridgeError> {
+        for (role, members) in [
+            (AggLayerBridge::faucet_manager_role(), &faucet_managers),
+            (AggLayerBridge::ger_injector_role(), &ger_injectors),
+            (AggLayerBridge::ger_remover_role(), &ger_removers),
+        ] {
+            if members.is_empty() {
+                return Err(AgglayerBridgeError::EmptyBridgeRole(role));
+            }
+        }
+
+        Ok(Self {
+            faucet_managers,
+            ger_injectors,
+            ger_removers,
+        })
+    }
+
+    /// Returns the RBAC role-membership map used to seed the account's RBAC component.
+    pub(crate) fn role_members(&self) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
+        BTreeMap::from([
+            (AggLayerBridge::faucet_manager_role(), self.faucet_managers.clone()),
+            (AggLayerBridge::ger_injector_role(), self.ger_injectors.clone()),
+            (AggLayerBridge::ger_remover_role(), self.ger_removers.clone()),
+        ])
+    }
+}
+
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
 /// It reexports the procedures from `agglayer::bridge`. When linking against this
@@ -146,11 +238,16 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
 ///   AggLayer Faucet.
 ///
+/// ## Access control
+///
+/// The bridge's privileged roles are managed by the account's RBAC stack
+/// (`RoleBasedAccessControl` + `Authority`), installed alongside this component at account
+/// creation. The role-gated procedures call `authority::assert_authorized`, which requires the note
+/// sender to hold the role mapped to the procedure. See [`BridgeRoles`] and
+/// [`AggLayerBridge::procedure_roles`].
+///
 /// ## Storage Layout
 ///
-/// - [`Self::bridge_admin_id_slot_name`]: Stores the bridge admin account ID.
-/// - [`Self::ger_injector_id_slot_name`]: Stores the GER injector account ID.
-/// - [`Self::ger_remover_id_slot_name`]: Stores the GER remover account ID.
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
 /// - [`Self::removed_ger_hash_chain_lo_slot_name`]: Stores the lower 128 bits of the removed-GER
 ///   keccak256 hash chain.
@@ -176,12 +273,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Claim validation compares the leaf's `destination_network` to the global MASM constant
 /// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
 /// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
-#[derive(Debug, Clone)]
-pub struct AggLayerBridge {
-    bridge_admin_id: AccountId,
-    ger_injector_id: AccountId,
-    ger_remover_id: AccountId,
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AggLayerBridge;
 
 impl AggLayerBridge {
     // CONSTANTS
@@ -194,41 +287,77 @@ impl AggLayerBridge {
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
-    // CONSTRUCTORS
+    /// Namespace of the assembled bridge account component library (the
+    /// `asm/components/bridge.masm` wrapper). Procedure roots are resolved as
+    /// `<namespace>::<proc_name>`.
+    const COMPONENT_NAMESPACE: &'static str = "bridge";
+
+    // RBAC ROLES
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new AggLayer bridge component with the standard configuration.
-    pub fn new(
-        bridge_admin_id: AccountId,
-        ger_injector_id: AccountId,
-        ger_remover_id: AccountId,
-    ) -> Self {
-        Self {
-            bridge_admin_id,
-            ger_injector_id,
-            ger_remover_id,
-        }
+    /// Returns the assembled bridge account component code.
+    pub fn code() -> &'static AccountComponentCode {
+        &BRIDGE_COMPONENT_CODE
+    }
+
+    /// Returns the `FAUCET_MNGR` role symbol. Holders may register faucets and store faucet
+    /// metadata (`register_faucet`, `store_faucet_metadata_hash`).
+    pub fn faucet_manager_role() -> RoleSymbol {
+        FAUCET_MANAGER_ROLE.clone()
+    }
+
+    /// Returns the `GER_INJECTOR` role symbol. Holders may inject GERs (`update_ger`).
+    pub fn ger_injector_role() -> RoleSymbol {
+        GER_INJECTOR_ROLE.clone()
+    }
+
+    /// Returns the `GER_REMOVER` role symbol. Holders may remove GERs (`remove_ger`).
+    pub fn ger_remover_role() -> RoleSymbol {
+        GER_REMOVER_ROLE.clone()
+    }
+
+    /// Returns the procedure root of the bridge's `register_faucet` procedure.
+    pub fn register_faucet_root() -> AccountProcedureRoot {
+        *REGISTER_FAUCET_ROOT
+    }
+
+    /// Returns the procedure root of the bridge's `store_faucet_metadata_hash` procedure.
+    pub fn store_faucet_metadata_hash_root() -> AccountProcedureRoot {
+        *STORE_FAUCET_METADATA_HASH_ROOT
+    }
+
+    /// Returns the procedure root of the bridge's `update_ger` procedure.
+    pub fn update_ger_root() -> AccountProcedureRoot {
+        *UPDATE_GER_ROOT
+    }
+
+    /// Returns the procedure root of the bridge's `remove_ger` procedure.
+    pub fn remove_ger_root() -> AccountProcedureRoot {
+        *REMOVE_GER_ROOT
+    }
+
+    /// Returns the procedure root of the bridge's `deregister_faucet` procedure.
+    pub fn deregister_faucet_root() -> AccountProcedureRoot {
+        *DEREGISTER_FAUCET_ROOT
+    }
+
+    /// Returns the fixed procedure-to-role map used to configure the account's `Authority`
+    /// (`RbacControlled`) component. Each role-gated bridge procedure is mapped to the role
+    /// required to invoke it.
+    pub fn procedure_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
+        BTreeMap::from([
+            (Self::register_faucet_root(), Self::faucet_manager_role()),
+            (Self::store_faucet_metadata_hash_root(), Self::faucet_manager_role()),
+            (Self::deregister_faucet_root(), Self::faucet_manager_role()),
+            (Self::update_ger_root(), Self::ger_injector_role()),
+            (Self::remove_ger_root(), Self::ger_remover_role()),
+        ])
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     // --- bridge config ----
-
-    /// Storage slot name for the bridge admin account ID.
-    pub fn bridge_admin_id_slot_name() -> &'static StorageSlotName {
-        &BRIDGE_ADMIN_ID_SLOT_NAME
-    }
-
-    /// Storage slot name for the GER injector account ID.
-    pub fn ger_injector_id_slot_name() -> &'static StorageSlotName {
-        &GER_INJECTOR_ID_SLOT_NAME
-    }
-
-    /// Storage slot name for the GER remover account ID.
-    pub fn ger_remover_id_slot_name() -> &'static StorageSlotName {
-        &GER_REMOVER_ID_SLOT_NAME
-    }
 
     /// Storage slot name for the GERs map.
     pub fn ger_map_slot_name() -> &'static StorageSlotName {
@@ -538,9 +667,6 @@ impl AggLayerBridge {
             &*FAUCET_REGISTRY_MAP_SLOT_NAME,
             &*TOKEN_REGISTRY_MAP_SLOT_NAME,
             &*FAUCET_METADATA_MAP_SLOT_NAME,
-            &*BRIDGE_ADMIN_ID_SLOT_NAME,
-            &*GER_INJECTOR_ID_SLOT_NAME,
-            &*GER_REMOVER_ID_SLOT_NAME,
             &*REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME,
             &*REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
@@ -551,11 +677,7 @@ impl AggLayerBridge {
 }
 
 impl From<AggLayerBridge> for AccountComponent {
-    fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
-        let ger_injector_word = AccountIdKey::new(bridge.ger_injector_id).as_word();
-        let ger_remover_word = AccountIdKey::new(bridge.ger_remover_id).as_word();
-
+    fn from(_bridge: AggLayerBridge) -> Self {
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
@@ -565,9 +687,6 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(FAUCET_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
-            StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
-            StorageSlot::with_value(GER_INJECTOR_ID_SLOT_NAME.clone(), ger_injector_word),
-            StorageSlot::with_value(GER_REMOVER_ID_SLOT_NAME.clone(), ger_remover_word),
             StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
@@ -592,6 +711,8 @@ pub enum AgglayerBridgeError {
         "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
     )]
     CodeCommitmentMismatch,
+    #[error("bridge role {0} must have at least one initial holder")]
+    EmptyBridgeRole(RoleSymbol),
 }
 
 // HELPER FUNCTIONS

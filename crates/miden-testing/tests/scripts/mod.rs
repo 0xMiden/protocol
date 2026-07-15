@@ -1,5 +1,6 @@
 mod allowlist;
 mod authority;
+mod batch_fee;
 mod blocklist;
 mod code_inspection;
 mod expiration;

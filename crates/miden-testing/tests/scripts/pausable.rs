@@ -272,11 +272,11 @@ fn pause_unpause_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
 }
 
 /// Builds an RBAC faucet whose pause / unpause are gated per-procedure. Any authority-gated
-/// procedure not present in `roles` falls back to the ADMIN role check.
+/// procedure not present in `procedure_roles` falls back to the ADMIN role check.
 fn add_rbac_faucet_with_pause(
     builder: &mut MockChainBuilder,
     admin: AccountId,
-    roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     seed: u8,
     mutable_max_supply: bool,
 ) -> anyhow::Result<Account> {
@@ -291,7 +291,7 @@ fn add_rbac_faucet_with_pause(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { admin, roles })
+        .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
