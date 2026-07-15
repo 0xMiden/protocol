@@ -548,7 +548,10 @@ fn add_rbac_faucet_with_allowlist(
         .account_type(AccountType::Public)
         .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { admin, roles: allowlister_roles() })
+        .with_components(AccessControl::Rbac {
+            admin,
+            procedure_roles: allowlister_roles(),
+        })
         .with_components(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())

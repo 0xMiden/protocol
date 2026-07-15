@@ -9,15 +9,55 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
-use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
+use crate::{
+    BridgeRoles,
+    CgiChainHash,
+    EthAddress,
+    EthAmount,
+    ExitRoot,
+    GlobalIndex,
+    LeafData,
+    MetadataHash,
+    create_bridge_account_builder,
+};
+
+// BRIDGE ACCOUNT HELPERS
+// ================================================================================================
+
+/// Creates an existing bridge account seeded with a single holder per operational role and a
+/// fixed dummy account as the built-in `ADMIN` role member.
+pub fn create_existing_bridge_account_with_roles(
+    seed: Word,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+) -> Account {
+    let roles = BridgeRoles::new(
+        BTreeSet::from([faucet_manager]),
+        BTreeSet::from([ger_injector]),
+        BTreeSet::from([ger_remover]),
+    )
+    .expect("single-holder role sets are non-empty");
+
+    let admin_account =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    create_bridge_account_builder(seed, admin_account, roles)
+        .build_existing()
+        .expect("bridge account should be valid")
+}
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
