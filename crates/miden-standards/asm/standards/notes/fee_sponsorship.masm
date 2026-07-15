@@ -94,10 +94,6 @@ end
 #! - Consuming a companion note without sponsorship costs the *account*, so the account's auth
 #!   procedure rejects that. It is not this script's concern.
 #!
-#! On the sponsorship path the script leaves the note's assets untouched: collecting them is the
-#! consuming account's job (for a network account, typically its auth procedure). This keeps the
-#! note free of any wallet-interface requirement on the consuming account.
-#!
 #! If the note is never consumed alongside its companion note, the reclaimer may reclaim it once the
 #! reclaim block height is reached. Once the bound companion note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
