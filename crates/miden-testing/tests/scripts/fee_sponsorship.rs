@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -7,7 +5,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
-use miden_protocol::note::{Note, NoteAssets, NoteId, NoteTag, NoteType, PartialNoteMetadata};
+use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -51,11 +49,6 @@ fn collect_fee_tx_script(fee_asset: Asset) -> anyhow::Result<TransactionScript> 
         asset_id = fee_asset.to_id_word(),
     );
     Ok(CodeBuilder::default().compile_tx_script(src)?)
-}
-
-/// Note args pointing the sponsorship script at the bound feature note's input index.
-fn sponsorship_args(sponsorship_note: &Note, feature_note_idx: u16) -> BTreeMap<NoteId, Word> {
-    BTreeMap::from([(sponsorship_note.id(), FeeSponsorshipNote::create_args(feature_note_idx))])
 }
 
 /// Who the sponsorship names as its reclaimer.
@@ -144,7 +137,6 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         .build_transaction(network_account.id())
         .authenticated_input_note(sponsorship_note.id())
         .authenticated_input_note(feature_note.id())
-        .extend_note_args(sponsorship_args(&sponsorship_note, 1))
         .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()
@@ -180,7 +172,6 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
         .build_transaction(network_account.id())
         .authenticated_input_note(sponsorship_note.id())
         .authenticated_input_note(feature_note.id())
-        .extend_note_args(sponsorship_args(&sponsorship_note, 1))
         .build()?
         .execute()
         .await;
@@ -253,7 +244,6 @@ async fn script_rejects_note_without_exactly_one_asset() -> anyhow::Result<()> {
         .build_transaction(network_account.id())
         .authenticated_input_note(assetless_sponsorship.id())
         .authenticated_input_note(feature_note.id())
-        .extend_note_args(sponsorship_args(&assetless_sponsorship, 1))
         .build()?
         .execute()
         .await;
@@ -263,39 +253,10 @@ async fn script_rejects_note_without_exactly_one_asset() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// An index hint that does not point at the bound feature note fails the presence check and falls
-/// into the reclaim path, even though the feature note is present in the transaction.
-///
-/// This pins the hint's verification: a wrong hint can only fail the check, never fake a match.
-#[tokio::test]
-async fn wrong_index_hint_falls_back_to_reclaim() -> anyhow::Result<()> {
-    let Fixture {
-        mock_chain,
-        network_account,
-        feature_note,
-        sponsorship_note,
-        ..
-    } = setup(None, Reclaimer::Sender)?;
-
-    // the hint points at the sponsorship note itself (index 0) instead of the feature note
-    let result = mock_chain
-        .build_transaction(network_account.id())
-        .authenticated_input_note(sponsorship_note.id())
-        .authenticated_input_note(feature_note.id())
-        .extend_note_args(sponsorship_args(&sponsorship_note, 0))
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED);
-
-    Ok(())
-}
-
 /// The order in which the two notes are consumed does not matter.
 ///
-/// The consumer names the bound feature note's input index in the note args, so the check does not
-/// depend on the feature note having executed first or sitting at a particular index.
+/// The presence check reads input notes by index, which the prologue has already materialized, so
+/// it does not depend on the feature note having executed first.
 #[rstest]
 #[tokio::test]
 async fn note_order_does_not_matter(
@@ -310,17 +271,16 @@ async fn note_order_does_not_matter(
         ..
     } = setup(None, Reclaimer::Sender)?;
 
-    let ((first, second), feature_note_idx) = if sponsorship_first {
-        ((&sponsorship_note, &feature_note), 1)
+    let (first, second) = if sponsorship_first {
+        (&sponsorship_note, &feature_note)
     } else {
-        ((&feature_note, &sponsorship_note), 0)
+        (&feature_note, &sponsorship_note)
     };
 
     mock_chain
         .build_transaction(network_account.id())
         .authenticated_input_note(first.id())
         .authenticated_input_note(second.id())
-        .extend_note_args(sponsorship_args(&sponsorship_note, feature_note_idx))
         .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()
@@ -350,7 +310,6 @@ async fn anyone_consuming_the_feature_note_takes_the_sponsorship() -> anyhow::Re
         .build_transaction(stranger.id())
         .authenticated_input_note(sponsorship_note.id())
         .authenticated_input_note(feature_note.id())
-        .extend_note_args(sponsorship_args(&sponsorship_note, 1))
         .tx_script(collect_fee_tx_script(fee_asset)?)
         .build()?
         .execute()

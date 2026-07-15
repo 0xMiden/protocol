@@ -140,16 +140,6 @@ impl FeeSponsorshipNote {
         FEE_SPONSORSHIP_SCRIPT.root()
     }
 
-    /// Creates the note arguments for consuming the sponsorship alongside its bound feature note.
-    ///
-    /// `feature_note_idx` is the index of the bound feature note among the transaction's input
-    /// notes. The script recomputes the input note ID at this index and compares it against the
-    /// bound [`NoteId`] in storage, so a wrong index can only fail the presence check, never fake
-    /// a match. A reclaim consumption needs no arguments.
-    pub fn create_args(feature_note_idx: u16) -> Word {
-        Word::from([Felt::from(feature_note_idx), Felt::ZERO, Felt::ZERO, Felt::ZERO])
-    }
-
     /// Returns the account ID of the network account the note's tag routes to.
     ///
     /// The tag is a discovery hint for the network transaction builder; the script itself does not
