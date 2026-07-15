@@ -17,8 +17,9 @@ doctest = false
 test    = false
 
 [dependencies]
-fs-err             = { workspace = true }
-miden-assembly     = { features = ["std"], workspace = true }
-miden-mast-package = { features = ["std"], workspace = true }
-regex              = { workspace = true }
-walkdir            = { workspace = true }
+fs-err                 = { workspace = true }
+miden-assembly         = { features = ["std"], workspace = true }
+miden-mast-package     = { features = ["std"], workspace = true }
+miden-package-registry = { features = ["std"], workspace = true }
+regex                  = { workspace = true }
+walkdir                = { workspace = true }

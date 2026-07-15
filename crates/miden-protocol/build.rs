@@ -12,16 +12,18 @@ use miden_build_utils::{
     ErrorModule,
     NamedError,
     PROJECT_MANIFEST,
+    assemble_project_at_path,
     build_assembler,
     extract_all_masm_errors,
     generate_error_file,
     is_masm_file,
+    registry_with,
     write_release_package,
 };
 use miden_core::events::EventId;
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageExport};
-use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_package_registry::InMemoryPackageRegistry;
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -86,8 +88,7 @@ fn main() -> Result<()> {
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
     // The miden-core library is provided through an in-memory registry
-    let mut store = InMemoryPackageRegistry::default();
-    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
+    let mut store = registry_with([CoreLibrary::default().package()])?;
 
     // compile transaction kernel
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
@@ -116,12 +117,11 @@ fn compile_batch_kernel(
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let mut project_assembler =
-        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
-
-    let batch_kernel_package = project_assembler
-        .assemble(ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET), BUILD_PROFILE)?;
+    let batch_kernel_package = assemble_project_at_path(
+        manifest_path,
+        ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
+        store,
+    )?;
 
     batch_kernel_package.write_masp_file(target_dir).into_diagnostic()
 }
@@ -199,11 +199,7 @@ fn compile_kernel_testing_lib(
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let mut assembler =
-        build_assembler(source_manager).for_project_at_path(core_manifest, store)?;
-
-    let package = assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+    let package = assemble_project_at_path(core_manifest, ProjectTargetSelector::Library, store)?;
 
     package.write_masp_file(target_dir).into_diagnostic()
 }
@@ -326,12 +322,8 @@ fn compile_protocol_lib(
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let mut project_assembler =
-        build_assembler(source_manager).for_project_at_path(manifest_path, store)?;
-
     let protocol_package =
-        project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+        assemble_project_at_path(manifest_path, ProjectTargetSelector::Library, store)?;
 
     protocol_package.write_masp_file(target_dir).into_diagnostic()?;
 

@@ -9,9 +9,11 @@ use miden_build_utils::{
     BUILD_PROFILE,
     ErrorModule,
     PROJECT_MANIFEST,
+    assemble_project_at_path,
     build_assembler,
     extract_all_masm_errors,
     generate_error_file,
+    registry_with,
     write_release_package,
 };
 use miden_core_lib::CoreLibrary;
@@ -56,14 +58,13 @@ fn main() -> Result<()> {
     // The miden-core library is provided through an in-memory registry
     let mut registry = build_registry()?;
 
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let assembler = build_assembler(source_manager.clone());
-
     // compile standards library (includes note scripts and transaction scripts) and seed it into
     // the registry
-    compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
+    compile_standards_lib(&source_dir, &target_dir, &mut registry)?;
 
     // compile account components
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let assembler = build_assembler(source_manager.clone());
     compile_account_components(
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
@@ -84,19 +85,13 @@ fn main() -> Result<()> {
 /// and `miden-core` dependencies, so that the `miden-protocol` dependency declared by the standards
 /// projects can be resolved during project assembly.
 fn build_registry() -> Result<InMemoryPackageRegistry> {
-    let mut registry = InMemoryPackageRegistry::default();
-
     // The protocol package declares dependencies on the kernel and core packages, so all three
     // must be available in the registry for project dependency resolution to succeed.
-    for package in [
+    registry_with([
         CoreLibrary::default().package(),
         Arc::new(Package::from(ProtocolLib::default())),
         TransactionKernel::package(),
-    ] {
-        registry.cache_package(package).into_diagnostic()?;
-    }
-
-    Ok(registry)
+    ])
 }
 
 // COMPILE STANDARDS LIB
@@ -107,14 +102,12 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
 fn compile_standards_lib(
     source_dir: &Path,
     target_dir: &Path,
-    assembler: Assembler,
     registry: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST);
 
-    let package = assembler
-        .for_project_at_path(manifest_path, registry)?
-        .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+    let package =
+        assemble_project_at_path(manifest_path, ProjectTargetSelector::Library, registry)?;
 
     package.write_masp_file(target_dir).into_diagnostic()?;
 

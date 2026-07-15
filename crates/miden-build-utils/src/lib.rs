@@ -1,7 +1,7 @@
 //! Build-time helpers shared by the `build.rs` scripts of the Miden workspace crates.
 //!
-//! These utilities locate and copy MASM sources, extract MASM error constants into
-//! generated Rust files, and assemble and write MAST packages.
+//! These utilities locate MASM sources, extract MASM error constants into generated Rust
+//! files, and set up the registry and assembler used to build and write MAST packages.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -10,10 +10,11 @@ use std::sync::Arc;
 use std::{env, io};
 
 use fs_err as fs;
-use miden_assembly::debuginfo::SourceManager;
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result};
-use miden_assembly::{Assembler, Report};
+use miden_assembly::{Assembler, ProjectTargetSelector, Report};
 use miden_mast_package::Package;
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -91,6 +92,36 @@ pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> R
 /// Returns a new [`Assembler`] using the provided source manager, with warnings treated as errors.
 pub fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
     Assembler::new(source_manager).with_warnings_as_errors(true)
+}
+
+/// Creates an in-memory package registry seeded with `packages`.
+///
+/// The seed packages are the dependencies that projects assembled against this registry are
+/// allowed to resolve (e.g. the core, kernel, and protocol libraries).
+pub fn registry_with(
+    packages: impl IntoIterator<Item = Arc<Package>>,
+) -> Result<InMemoryPackageRegistry> {
+    let mut registry = InMemoryPackageRegistry::default();
+    for package in packages {
+        registry.cache_package(package).into_diagnostic()?;
+    }
+    Ok(registry)
+}
+
+/// Assembles `selector` from the Miden project manifest at `manifest_path`, resolving
+/// dependencies against `registry`, and returns the assembled package.
+///
+/// Uses a fresh default source manager and the shared [`BUILD_PROFILE`], with warnings treated
+/// as errors (see [`build_assembler`]).
+pub fn assemble_project_at_path(
+    manifest_path: impl AsRef<Path>,
+    selector: ProjectTargetSelector,
+    registry: &mut InMemoryPackageRegistry,
+) -> Result<Arc<Package>> {
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    build_assembler(source_manager)
+        .for_project_at_path(manifest_path.as_ref(), registry)?
+        .assemble(selector, BUILD_PROFILE)
 }
 
 /// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
