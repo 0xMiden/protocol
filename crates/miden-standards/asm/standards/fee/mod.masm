@@ -48,12 +48,6 @@ const MAX_CONVERTED_AMOUNT_HI_LIMB = 0x80000000
 # Multiplier recombining the u64 limbs of the converted amount into a felt (2^32).
 const U32_LIMB_MULTIPLIER = 0x0000000100000000
 
-# Domain-separation tag for the fee conversion-info commitment ("fee" in hex), mixed into the
-# auth-args commitment as the word [FEE_DOMAIN_TAG, 0, 0, 0] so the commitment cannot collide
-# with hashes computed in other contexts.
-# Must be kept in sync with the Rust `FeeConversionInfo` commitment computation.
-const FEE_DOMAIN_TAG = 0xFEE
-
 # load_conversion_info locals: the conversion info word loaded from the advice map.
 const LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC = 0
 
@@ -76,10 +70,9 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! Loads and verifies the fee conversion info committed to by the auth args.
 #!
 #! If the advice map contains an entry for the auth args, the entry must be the preimage
-#! [SALT, CONVERSION_INFO] of the domain-separated commitment
-#! AUTH_ARGS = hash(FEE_DOMAIN || hash(CONVERSION_INFO || SALT)); the verified conversion info is
-#! returned. If no entry exists, the empty word is returned to indicate that no conversion
-#! info was committed.
+#! [SALT, CONVERSION_INFO] of the commitment AUTH_ARGS = hash(CONVERSION_INFO || SALT); the
+#! verified conversion info is returned. If no entry exists, the empty word is returned to
+#! indicate that no conversion info was committed.
 #!
 #! For now this procedure only decodes the auth args; in the future it could also make an FPI
 #! call to an oracle to obtain the conversion rate.
@@ -91,8 +84,7 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #!   Operand stack: [CONVERSION_INFO]
 #!
 #! Where:
-#! - AUTH_ARGS is the domain-separated commitment hash(FEE_DOMAIN || hash(CONVERSION_INFO ||
-#!   SALT)) to the conversion info.
+#! - AUTH_ARGS is the commitment hash(CONVERSION_INFO || SALT) to the conversion info.
 #! - SALT is an arbitrary word (e.g. used for replay protection by the caller).
 #! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed.
@@ -135,13 +127,6 @@ pub proc load_conversion_info(auth_args: word) -> ConversionInfo
             # keep the conversion info around for after the commitment check
             loc_storew_le.LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC
             # => [CONVERSION_INFO, SALT, AUTH_ARGS]
-
-            exec.poseidon2::merge
-            # => [INNER_COMMITMENT, AUTH_ARGS]
-
-            # mix in the FEE domain tag for domain separation
-            push.0.0.0 push.FEE_DOMAIN_TAG
-            # => [FEE_DOMAIN, INNER_COMMITMENT, AUTH_ARGS]
 
             exec.poseidon2::merge
             # => [COMMITMENT, AUTH_ARGS]
