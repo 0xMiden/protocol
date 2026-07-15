@@ -71,7 +71,7 @@ fn add_owner_faucet(
 fn add_rbac_faucet(
     builder: &mut MockChainBuilder,
     admin: AccountId,
-    roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     seed: u8,
 ) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
@@ -84,7 +84,7 @@ fn add_rbac_faucet(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { admin, roles })
+        .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
