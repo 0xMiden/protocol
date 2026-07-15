@@ -24,7 +24,10 @@ const ASM_COMPONENTS_DIR: &str = "components";
 const PROJECT_MANIFEST: &str = "miden-project.toml";
 
 /// The build profile used when assembling the Miden projects.
-const BUILD_PROFILE: &str = "release";
+///
+/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
+/// information; consumers can strip it as needed.
+const BUILD_PROFILE: &str = "dev";
 
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
@@ -33,8 +36,8 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/standards directory into a package. Note scripts are included in
-///   this library.
+/// - Compiles the contents of asm/standards directory into a package. Note scripts and transaction
+///   scripts are included in this library.
 /// - Compiles the contents of asm/components directory into individual packages.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
@@ -56,7 +59,8 @@ fn main() -> Result<()> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
     let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
-    // compile standards library (includes note scripts) and seed it into the registry
+    // compile standards library (includes note scripts and transaction scripts) and seed it into
+    // the registry
     compile_standards_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
 
     // compile account components
@@ -113,9 +117,39 @@ fn compile_standards_lib(
         .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
     package.write_masp_file(target_dir).into_diagnostic()?;
+
+    write_release_package(&package)?;
+
     registry.cache_package(package).into_diagnostic()?;
 
     Ok(())
+}
+
+/// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
+fn write_release_package(package: &Package) -> Result<()> {
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
+    let out_path = Path::new(&out_dir);
+    // OUT_DIR is `<target>/<profile>/build/<pkg>-<hash>/out` so the profile dir is its 3rd
+    // ancestor.
+    let profile_dir = out_path
+        .ancestors()
+        .nth(3)
+        .expect("OUT_DIR should live under <target>/<profile>/build/<pkg>/out");
+
+    let name: &str = &package.name;
+    let final_path = profile_dir.join(name).with_extension(Package::EXTENSION);
+
+    let tmp = out_path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+    // Because multiple build-script runs may write this same path, the package is created as a temp
+    // file and atomically renamed into place.
+    let tmp_path = profile_dir.join(format!(".{name}.{tmp}.masp.tmp"));
+
+    package.write_to_file(&tmp_path).into_diagnostic()?;
+    std::fs::rename(&tmp_path, &final_path).into_diagnostic()
 }
 
 // COMPILE ACCOUNT COMPONENTS

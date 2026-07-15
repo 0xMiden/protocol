@@ -18,6 +18,9 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
+const UNIQUE_OUTER_INDEX_LOC=0
+const UNIQUE_INNER_INDEX_LOC=1
+
 # CONSTANTS
 # =================================================================================================
 
@@ -77,7 +80,9 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
 
-const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
+const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
+
+const ERR_SIGNER_INDEX_OUT_OF_BOUNDS = "signer index must be less than the number of approvers"
 
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 
@@ -85,145 +90,12 @@ const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and pro
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
-const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "cannot set procedure threshold for procedure root that is not one of the account's procedures"
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
 
-#! Remove old approver public keys and the corresponding scheme ids from the approver public key and
-#! scheme id mappings.
-#!
-#! This procedure clears the approver entries in the range [new_num_of_approvers,
-#! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
-#! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
-#!
-#! Caller contract: before calling this, the caller must have already updated THRESHOLD_CONFIG_SLOT
-#! so that the threshold is still reachable with the reduced signer set, i.e. threshold <=
-#! new_num_of_approvers. Otherwise the account is left with a threshold that no remaining quorum can
-#! reach, making it permanently unable to authenticate. In-tree this is guaranteed by
-#! `update_signers_and_threshold`, which calls `assert_threshold_is_reachable` before this procedure.
-#!
-#! Inputs: [init_num_of_approvers, new_num_of_approvers]
-#! Outputs: []
-#!
-#! Where:
-#! - init_num_of_approvers is the original number of approvers before the update
-#! - new_num_of_approvers is the new number of approvers after the update
-#!
-#! Panics if:
-#! - init_num_of_approvers or new_num_of_approvers is not a u32 value.
-pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
-    dup.1 dup.1
-    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
-    u32lt
-    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
+const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
 
-    while.true
-        # => [i, new_num_of_approvers]
-
-        sub.1
-        # => [i-1, new_num_of_approvers]
-
-        # clear scheme id at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        # clear public key at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        dup.1 dup.1
-        u32lt
-        # => [should_loop, i-1, new_num_of_approvers]
-    end
-
-    drop drop
-end
-
-#! Asserts the threshold is reachable with the given number of approvers, i.e. threshold is not
-#! greater than num_approvers.
-#!
-#! Inputs:  [num_approvers, threshold]
-#! Outputs: []
-#!
-#! Panics if:
-#! - num_approvers or threshold is not a u32 value.
-#! - threshold > num_approvers.
-pub proc assert_threshold_is_reachable
-    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
-    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
-end
-
-#! Asserts that all configured per-procedure threshold overrides are less than or equal to
-#! number of approvers.
-#!
-#! Inputs:  [num_approvers]
-#! Outputs: []
-#! Panics if:
-#! - any configured procedure threshold is not a u32 value.
-#! - any configured procedure threshold exceeds num_approvers.
-proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
-    exec.active_account::get_num_procedures
-    # => [num_procedures, num_approvers]
-
-    # num_procedures is always >= MIN_NUM_PROCEDURES (2), so enter the loop unconditionally
-    push.1
-    # => [should_continue, num_procedures, num_approvers]
-    while.true
-        sub.1 dup
-        # => [num_procedures-1, num_procedures-1, num_approvers]
-
-        exec.active_account::get_procedure_root
-        # => [PROC_ROOT, num_procedures-1, num_approvers]
-
-        push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-        # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, num_approvers]
-
-        # Use the *current* policy state, not the initial one; otherwise a `set_proc_threshold`
-        # call earlier in the same transaction that raised a threshold above the new num_approvers
-        # would be missed and the multisig could end up with an unreachable threshold.
-        exec.active_account::get_map_item
-        # => [[proc_threshold, 0, 0, 0], num_procedures-1, num_approvers]
-
-        movdn.3 drop drop drop
-        # => [proc_threshold, num_procedures-1, num_approvers]
-
-        dup.2
-        # => [num_approvers, proc_threshold, num_procedures-1, num_approvers]
-
-        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
-        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [num_procedures-1, num_approvers]
-
-        dup neq.0
-        # => [should_continue, num_procedures-1, num_approvers]
-    end
-    # => [num_procedures-1, num_approvers]
-
-    drop drop
-    # => []
-end
+# PUBLIC INTERFACE
+# =================================================================================================
 
 #! Update threshold config, add & remove approvers, and update the approver scheme ids
 #!
@@ -234,6 +106,9 @@ end
 #! ratio (e.g. a 2-of-2 override becomes 2-of-N). To preserve the intended security level, operators
 #! must re-evaluate and, where appropriate, raise the affected overrides via `set_procedure_threshold`
 #! in the same transaction that grows the signer set; this procedure neither performs nor prompts it.
+#!
+#! Security: like editing an override, this is gated only at the default threshold and can be used
+#! to weaken a stricter setup. See the `AuthMultisig` Rust type's documentation.
 #!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
@@ -365,6 +240,11 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     drop
     # => [pad(12)]
 
+    # assert all approver public keys are unique.
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
+    exec.assert_unique_approver_public_keys
+    # => [pad(12)]
+
     # compare initial vs current multisig config
 
     # load init_num_of_approvers & new_num_of_approvers
@@ -373,6 +253,583 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
 
     exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
+end
+
+#! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [default_threshold, num_approvers, pad(14)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_threshold_and_num_approvers
+    exec.get_current_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, pad(16)]
+
+    # truncate the stack
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_approvers, pad(14)]
+end
+
+#! Sets or clears a per-procedure threshold override.
+#!
+#! Security: a raised override is only as strong as the default threshold, since lowering it is
+#! gated only at the default. See the `AuthMultisig` Rust type's documentation.
+#!
+#! Inputs: [proc_threshold, PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - PROC_ROOT is the root of the account procedure whose override is being updated.
+#! - proc_threshold is the override threshold to set.
+#!   - if proc_threshold == 0, override is cleared and the default threshold applies.
+#!   - if proc_threshold > 0, it must be <= current num_approvers.
+#!
+#! Panics if:
+#! - proc_threshold is not a u32 value.
+#! - current num_approvers is not a u32 value.
+#! - proc_threshold > current num_approvers.
+#! - PROC_ROOT is not one of the account's procedures.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_procedure_threshold
+    exec.get_current_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
+
+    drop
+    # => [num_approvers, proc_threshold, PROC_ROOT]
+
+    dup.1 swap
+    # => [num_approvers, proc_threshold, proc_threshold, PROC_ROOT]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [proc_threshold, PROC_ROOT]
+
+    movdn.4 dupw
+    # => [PROC_ROOT, PROC_ROOT, proc_threshold]
+
+    exec.active_account::has_procedure
+    assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, proc_threshold]
+
+    movup.4
+    # => [proc_threshold, PROC_ROOT]
+
+    # Store [proc_threshold, 0, 0, 0] = PROC_THRESHOLD_WORD, where proc_threshold == 0 acts as clear.
+    push.0.0.0
+    movup.3
+    swapw
+    # => [PROC_ROOT, PROC_THRESHOLD_WORD]
+
+    push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+    # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, PROC_THRESHOLD_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_PROC_THRESHOLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Returns signer public key at index i
+#!
+#! Reads the initial account state: the returned signer reflects the approver set at the start of
+#! the transaction, not any updates made earlier in the same transaction.
+#!
+#! Inputs:  [index, pad(15)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Panics if:
+#! - index is not a u32 value.
+#! - index is greater than or equal to the number of approvers.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_signer_at
+    # Bounds check: index must be < num_approvers
+    dup exec.get_initial_threshold_and_num_approvers drop
+    # => [num_approvers, index, index]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32
+    u32lt assert.err=ERR_SIGNER_INDEX_OUT_OF_BOUNDS
+    # => [index]
+
+    dup
+    # => [index, index]
+
+    exec.signature::create_approver_map_key
+    # => [APPROVER_MAP_KEY, index]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
+
+    exec.native_account::get_initial_map_item
+    # => [PUB_KEY, index]
+
+    movup.4
+    # => [index, PUB_KEY]
+
+    exec.signature::create_approver_map_key
+    # => [APPROVER_MAP_KEY, PUB_KEY]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
+
+    exec.native_account::get_initial_map_item
+    # => [[scheme_id, 0, 0, 0], PUB_KEY]
+
+    movdn.7 drop drop drop
+    # => [PUB_KEY, scheme_id, pad(15)]
+
+    # truncate the stack
+    repeat.4 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns 1 if PUB_KEY is a signer, else 0.
+#!
+#! Reads the initial account state: the result reflects the approver set at the start of the
+#! transaction, not any updates made earlier in the same transaction.
+#!
+#! Inputs:  [PUB_KEY, pad(12)]
+#! Outputs: [is_signer, pad(15)]
+#! Locals:
+#! 0: is_signer_found
+#! 1: current_signer_index
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc is_signer(pub_key: word) -> felt
+    # initialize is_signer_found = false
+    push.0 loc_store.IS_SIGNER_FOUND_LOC
+    # => [PUB_KEY]
+
+    exec.get_initial_threshold_and_num_approvers
+    # => [threshold, num_approvers, PUB_KEY]
+
+    drop
+    # => [num_approvers, PUB_KEY]
+
+    dup neq.0
+    # => [has_remaining_signers, num_approvers, PUB_KEY]
+
+    while.true
+        # => [i, PUB_KEY]
+
+        sub.1
+        # => [i-1, PUB_KEY]
+
+        # store i-1 for this loop iteration before map lookup
+        dup loc_store.CURRENT_SIGNER_INDEX_LOC
+        # => [i-1, PUB_KEY]
+
+        exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, PUB_KEY]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
+
+        exec.native_account::get_initial_map_item
+        # => [CURRENT_PUB_KEY, PUB_KEY]
+
+        dupw.1 exec.word::eq
+        # => [is_pub_key_match, PUB_KEY]
+
+        loc_store.IS_SIGNER_FOUND_LOC
+        # => [PUB_KEY]
+
+        loc_load.CURRENT_SIGNER_INDEX_LOC
+        # => [i-1, PUB_KEY]
+
+        dup neq.0
+        # => [has_remaining_signers, i-1, PUB_KEY]
+
+        loc_load.IS_SIGNER_FOUND_LOC not
+        # => [!is_signer_found, has_remaining_signers, i-1, PUB_KEY]
+
+        and
+        # => [should_loop, i-1, PUB_KEY]
+    end
+
+    drop dropw
+    # => [pad(16)]
+
+    loc_load.IS_SIGNER_FOUND_LOC
+    # => [is_signer, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [is_signer, pad(15)]
+end
+
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Remove old approver public keys and the corresponding scheme ids from the approver public key and
+#! scheme id mappings.
+#!
+#! This procedure clears the approver entries in the range [new_num_of_approvers,
+#! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
+#! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
+#!
+#! Caller contract: before calling this, the caller must have already updated THRESHOLD_CONFIG_SLOT
+#! so that the threshold is still reachable with the reduced signer set, i.e. threshold <=
+#! new_num_of_approvers. Otherwise the account is left with a threshold that no remaining quorum can
+#! reach, making it permanently unable to authenticate. In-tree this is guaranteed by
+#! `update_signers_and_threshold`, which calls `assert_threshold_is_reachable` before this procedure.
+#!
+#! Inputs: [init_num_of_approvers, new_num_of_approvers]
+#! Outputs: []
+#!
+#! Where:
+#! - init_num_of_approvers is the original number of approvers before the update
+#! - new_num_of_approvers is the new number of approvers after the update
+#!
+#! Panics if:
+#! - init_num_of_approvers or new_num_of_approvers is not a u32 value.
+#!
+#! Invocation: exec
+pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+    dup.1 dup.1
+    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
+    u32lt
+    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
+
+    while.true
+        # => [i, new_num_of_approvers]
+
+        sub.1
+        # => [i-1, new_num_of_approvers]
+
+        # clear scheme id at APPROVER_MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
+
+        padw swapw
+        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_of_approvers]
+
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        # clear public key at APPROVER_MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
+
+        padw swapw
+        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_of_approvers]
+
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        dup.1 dup.1
+        u32lt
+        # => [should_loop, i-1, new_num_of_approvers]
+    end
+
+    drop drop
+end
+
+#! Asserts the threshold is reachable with the given number of approvers, i.e. threshold is not
+#! greater than num_approvers.
+#!
+#! Inputs:  [num_approvers, threshold]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_approvers or threshold is not a u32 value.
+#! - threshold > num_approvers.
+#!
+#! Invocation: exec
+pub proc assert_threshold_is_reachable
+    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
+    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+end
+
+#! Asserts that the `num_approvers` public keys currently stored in APPROVER_PUBLIC_KEYS_SLOT are
+#! pairwise distinct, reverting on the first duplicate.
+#!
+#! Reads the current account state, so it validates the keys just written by the caller.
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#! Panics if:
+#! - any two approver public keys are equal.
+#!
+#! Cost: O(num_approvers^2) map reads; num_approvers is small for a multisig.
+#!
+#! Invocation: exec
+@locals(2)
+pub proc assert_unique_approver_public_keys(num_approvers: u32)
+    dup neq.0
+    # => [outer_continue, num_approvers]
+    while.true
+        sub.1
+        # => [i]
+
+        dup loc_store.UNIQUE_OUTER_INDEX_LOC
+        # => [i]
+
+        # read PK_i from the current state
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        exec.active_account::get_map_item
+        # => [PK_I, i]
+
+        movup.4
+        # => [i, PK_I]
+
+        dup neq.0
+        # => [inner_continue, i, PK_I]
+        while.true
+            sub.1
+            # => [j, PK_I]
+
+            dup loc_store.UNIQUE_INNER_INDEX_LOC
+            exec.signature::create_approver_map_key
+            # => [APPROVER_MAP_KEY, PK_I]
+
+            push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+            exec.active_account::get_map_item
+            # => [PK_J, PK_I]
+
+            # assert PK_I != PK_J
+            dupw.1 exec.word::eq
+            # => [is_equal, PK_I]
+
+            assertz.err=ERR_DUPLICATE_APPROVER_PUBLIC_KEY
+            # => [PK_I]
+
+            loc_load.UNIQUE_INNER_INDEX_LOC
+            # => [j, PK_I]
+
+            dup neq.0
+            # => [inner_continue, j, PK_I]
+        end
+        # => [0, PK_I]
+
+        drop dropw
+        # => []
+
+        loc_load.UNIQUE_OUTER_INDEX_LOC
+        # => [i]
+
+        dup neq.0
+        # => [outer_continue, i]
+    end
+
+    drop
+    # => []
+end
+
+#! Returns the initial threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
+#!
+#! Inputs: []
+#! Outputs: [default_threshold, num_approvers]
+#!
+#! Invocation: exec
+pub proc get_initial_threshold_and_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.native_account::get_initial_item
+    # => [default_threshold, num_approvers, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_approvers]
+end
+
+#! Records the transaction as executed and asserts it was not already executed, providing replay
+#! protection and finalizing multisig authentication.
+#!
+#! Writes IS_EXECUTED_FLAG into EXECUTED_TXS_SLOT keyed by MSG via set_map_item, then asserts the
+#! slot did not already hold the flag.
+#!
+#! Inputs:  [MSG]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the same transaction has already been executed
+#!
+#! Invocation: exec
+pub proc record_and_assert_new_tx(msg: word)
+    push.IS_EXECUTED_FLAG
+    # => [[is_executed, 0, 0, 0], MSG]
+
+    swapw
+    # => [TX_SUMMARY_COMMITMENT, IS_EXECUTED_FLAG]
+
+    push.EXECUTED_TXS_SLOT[0..2]
+    # => [txs_slot_suffix, txs_slot_prefix, MSG, IS_EXECUTED_FLAG]
+
+    # Set the key value pair in the map to mark transaction as executed
+    exec.native_account::set_map_item
+    # => [[is_executed, 0, 0, 0]]
+
+    movdn.3 drop drop drop
+    # => [is_executed]
+
+    assertz.err=ERR_TX_ALREADY_EXECUTED
+    # => []
+end
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! with multi-signature support
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_poseidon2
+#!
+#! This procedure implements multi-signature authentication by:
+#! 1. Computing the transaction summary message that needs to be signed
+#! 2. Verifying signatures from multiple required signers against their public keys
+#! 3. Ensuring the minimum threshold of valid signatures is met
+#!
+#! Inputs:
+#!   Operand stack: [SALT]
+#!   Advice map: {
+#!     h(SIG_0, MSG): SIG_0,
+#!     h(SIG_1, MSG): SIG_1,
+#!     h(SIG_n, MSG): SIG_n
+#!   }
+#! Outputs:
+#!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!
+#! Where:
+#! - SALT is a cryptographically random nonce folded into the signed message, and thus into the
+#!   TX_SUMMARY_COMMITMENT, so that otherwise-identical transactions produce distinct commitments and
+#!   can run concurrently. That commitment's uniqueness is what `record_and_assert_new_tx` records and checks to
+#!   enforce replay protection; `auth_tx` itself records nothing, so a wrapper must call
+#!   `record_and_assert_new_tx` for replay protection to hold.
+#! - SIG_i is the signature from the i-th signer.
+#! - MSG is the transaction message being signed.
+#! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
+#!
+#! Panics if:
+#! - insufficient number of valid signatures (below threshold).
+#!
+#! Invocation: exec
+pub proc auth_tx(salt: word)
+    exec.native_account::incr_nonce drop
+    # => [SALT]
+
+    # ------ Computing transaction summary ------
+
+    exec.auth::create_tx_summary
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+
+    # insert tx summary into advice provider for extraction by the host
+    adv.insert_hqword
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+
+    # the commitment to the tx summary is the message that is signed
+    exec.auth::hash_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying approver signatures ------
+
+    exec.get_initial_threshold_and_num_approvers
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    movdn.5
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    exec.::miden::standards::auth::signature::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    # ------ Checking threshold is >= num_verified_signatures ------
+
+    movup.5
+    # => [default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    exec.compute_transaction_threshold
+    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    u32assert2 u32lt
+    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+    # If signatures are non-existent the tx will fail here.
+    if.true
+        emit.AUTH_UNAUTHORIZED_EVENT
+        push.0 assert.err="insufficient number of signatures"
+    end
+
+    # TX_SUMMARY_COMMITMENT is returned so wrappers can run optional checks
+    # (e.g. guardian verification) before replay-protection finalization.
+    # => [TX_SUMMARY_COMMITMENT]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that all configured per-procedure threshold overrides are less than or equal to
+#! number of approvers.
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#! Panics if:
+#! - any configured procedure threshold is not a u32 value.
+#! - any configured procedure threshold exceeds num_approvers.
+proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
+    exec.active_account::get_num_procedures
+    # => [num_procedures, num_approvers]
+
+    # num_procedures is always >= MIN_NUM_PROCEDURES (2), so enter the loop unconditionally
+    push.1
+    # => [should_continue, num_procedures, num_approvers]
+    while.true
+        sub.1 dup
+        # => [num_procedures-1, num_procedures-1, num_approvers]
+
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, num_procedures-1, num_approvers]
+
+        push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+        # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, num_approvers]
+
+        # Use the *current* policy state, not the initial one; otherwise a `set_proc_threshold`
+        # call earlier in the same transaction that raised a threshold above the new num_approvers
+        # would be missed and the multisig could end up with an unreachable threshold.
+        exec.active_account::get_map_item
+        # => [[proc_threshold, 0, 0, 0], num_procedures-1, num_approvers]
+
+        movdn.3 drop drop drop
+        # => [proc_threshold, num_procedures-1, num_approvers]
+
+        dup.2
+        # => [num_approvers, proc_threshold, num_procedures-1, num_approvers]
+
+        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+        # => [num_procedures-1, num_approvers]
+
+        dup neq.0
+        # => [should_continue, num_procedures-1, num_approvers]
+    end
+    # => [num_procedures-1, num_approvers]
+
+    drop drop
+    # => []
 end
 
 # Computes the effective transaction threshold based on called procedures and per-procedure
@@ -497,21 +954,6 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     # => [effective_transaction_threshold]
 end
 
-#! Returns the initial threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
-#!
-#! Inputs: []
-#! Outputs: [default_threshold, num_approvers]
-#!
-#! Invocation: exec
-pub proc get_initial_threshold_and_num_approvers
-    push.THRESHOLD_CONFIG_SLOT[0..2]
-    exec.native_account::get_initial_item
-    # => [default_threshold, num_approvers, 0, 0]
-
-    movup.2 drop movup.2 drop
-    # => [default_threshold, num_approvers]
-end
-
 #! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
 #!
 #! This is the internal `exec` helper shared by internal callers and the public `call`
@@ -528,326 +970,4 @@ proc get_current_threshold_and_num_approvers
 
     movup.2 drop movup.2 drop
     # => [default_threshold, num_approvers]
-end
-
-#! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [default_threshold, num_approvers, pad(14)]
-#!
-#! Invocation: call
-@account_procedure
-pub proc get_threshold_and_num_approvers
-    exec.get_current_threshold_and_num_approvers
-    # => [default_threshold, num_approvers, pad(16)]
-
-    # truncate the stack
-    movup.2 drop movup.2 drop
-    # => [default_threshold, num_approvers, pad(14)]
-end
-
-#! Sets or clears a per-procedure threshold override.
-#!
-#! Inputs: [proc_threshold, PROC_ROOT]
-#! Outputs: []
-#!
-#! Where:
-#! - PROC_ROOT is the root of the account procedure whose override is being updated.
-#! - proc_threshold is the override threshold to set.
-#!   - if proc_threshold == 0, override is cleared and the default threshold applies.
-#!   - if proc_threshold > 0, it must be <= current num_approvers.
-#!
-#! Panics if:
-#! - proc_threshold is not a u32 value.
-#! - current num_approvers is not a u32 value.
-#! - proc_threshold > current num_approvers.
-#! - PROC_ROOT is not one of the account's procedures.
-#!
-#! Invocation: call
-@account_procedure
-pub proc set_procedure_threshold
-    exec.get_current_threshold_and_num_approvers
-    # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
-
-    drop
-    # => [num_approvers, proc_threshold, PROC_ROOT]
-
-    dup.1 swap
-    # => [num_approvers, proc_threshold, proc_threshold, PROC_ROOT]
-
-    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [proc_threshold, PROC_ROOT]
-
-    movdn.4 dupw
-    # => [PROC_ROOT, PROC_ROOT, proc_threshold]
-
-    exec.active_account::has_procedure
-    assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
-    # => [PROC_ROOT, proc_threshold]
-
-    movup.4
-    # => [proc_threshold, PROC_ROOT]
-
-    # Store [proc_threshold, 0, 0, 0] = PROC_THRESHOLD_WORD, where proc_threshold == 0 acts as clear.
-    push.0.0.0
-    movup.3
-    swapw
-    # => [PROC_ROOT, PROC_THRESHOLD_WORD]
-
-    push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-    # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, PROC_THRESHOLD_WORD]
-
-    exec.native_account::set_map_item
-    # => [OLD_PROC_THRESHOLD_WORD]
-
-    dropw
-    # => []
-end
-
-#! Returns signer public key at index i
-#!
-#! Inputs:  [index, pad(15)]
-#! Outputs: [PUB_KEY, scheme_id, pad(11)]
-#!
-#! Panics if:
-#! - index is not a u32 value.
-#!
-#! Invocation: call
-@account_procedure
-pub proc get_signer_at
-    u32assert.err=ERR_SIGNER_INDEX_NOT_U32
-    # => [index]
-
-    dup
-    # => [index, index]
-
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, index]
-
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
-
-    exec.native_account::get_initial_map_item
-    # => [PUB_KEY, index]
-
-    movup.4
-    # => [index, PUB_KEY]
-
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, PUB_KEY]
-
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0], PUB_KEY]
-
-    movdn.7 drop drop drop
-    # => [PUB_KEY, scheme_id, pad(15)]
-
-    # truncate the stack
-    repeat.4 movup.5 drop end
-    # => [PUB_KEY, scheme_id, pad(11)]
-end
-
-
-#! Returns 1 if PUB_KEY is a current signer, else 0.
-#!
-#! Inputs:  [PUB_KEY, pad(12)]
-#! Outputs: [is_signer, pad(15)]
-#! Locals:
-#! 0: is_signer_found
-#! 1: current_signer_index
-#!
-#! Invocation: call
-@locals(2)
-@account_procedure
-pub proc is_signer(pub_key: word) -> felt
-    # initialize is_signer_found = false
-    push.0 loc_store.IS_SIGNER_FOUND_LOC
-    # => [PUB_KEY]
-
-    exec.get_initial_threshold_and_num_approvers
-    # => [threshold, num_approvers, PUB_KEY]
-
-    drop
-    # => [num_approvers, PUB_KEY]
-
-    dup neq.0
-    # => [has_remaining_signers, num_approvers, PUB_KEY]
-
-    while.true
-        # => [i, PUB_KEY]
-
-        sub.1
-        # => [i-1, PUB_KEY]
-
-        # store i-1 for this loop iteration before map lookup
-        dup loc_store.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, PUB_KEY]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-        exec.native_account::get_initial_map_item
-        # => [CURRENT_PUB_KEY, PUB_KEY]
-
-        dupw.1 exec.word::eq
-        # => [is_pub_key_match, PUB_KEY]
-
-        loc_store.IS_SIGNER_FOUND_LOC
-        # => [PUB_KEY]
-
-        loc_load.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        dup neq.0
-        # => [has_remaining_signers, i-1, PUB_KEY]
-
-        loc_load.IS_SIGNER_FOUND_LOC not
-        # => [!is_signer_found, has_remaining_signers, i-1, PUB_KEY]
-
-        and
-        # => [should_loop, i-1, PUB_KEY]
-    end
-
-    drop dropw
-    # => [pad(16)]
-
-    loc_load.IS_SIGNER_FOUND_LOC
-    # => [is_signer, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [is_signer, pad(15)]
-end
-
-#! Records the transaction as executed and asserts it was not already executed, providing replay
-#! protection and finalizing multisig authentication.
-#!
-#! Writes IS_EXECUTED_FLAG into EXECUTED_TXS_SLOT keyed by MSG via set_map_item, then asserts the
-#! slot did not already hold the flag.
-#!
-#! Inputs:  [MSG]
-#! Outputs: []
-#!
-#! Panics if:
-#! - the same transaction has already been executed
-#!
-#! Invocation: exec
-pub proc record_and_assert_new_tx(msg: word)
-    push.IS_EXECUTED_FLAG
-    # => [[is_executed, 0, 0, 0], MSG]
-
-    swapw
-    # => [TX_SUMMARY_COMMITMENT, IS_EXECUTED_FLAG]
-
-    push.EXECUTED_TXS_SLOT[0..2]
-    # => [txs_slot_suffix, txs_slot_prefix, MSG, IS_EXECUTED_FLAG]
-
-    # Set the key value pair in the map to mark transaction as executed
-    exec.native_account::set_map_item
-    # => [[is_executed, 0, 0, 0]]
-
-    movdn.3 drop drop drop
-    # => [is_executed]
-
-    assertz.err=ERR_TX_ALREADY_EXECUTED
-    # => []
-end
-
-#! Authenticate a transaction using the signature scheme specified by scheme_id 
-#! with multi-signature support
-#!
-#! Supported schemes:
-#! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
-#!
-#! This procedure implements multi-signature authentication by:
-#! 1. Computing the transaction summary message that needs to be signed
-#! 2. Verifying signatures from multiple required signers against their public keys
-#! 3. Ensuring the minimum threshold of valid signatures is met
-#!
-#! Inputs:
-#!   Operand stack: [SALT]
-#!   Advice map: {
-#!     h(SIG_0, MSG): SIG_0,
-#!     h(SIG_1, MSG): SIG_1,
-#!     h(SIG_n, MSG): SIG_n
-#!   }
-#! Outputs:
-#!   Operand stack: [TX_SUMMARY_COMMITMENT]
-#!
-#! Where:
-#! - SALT is a cryptographically random nonce folded into the signed message, and thus into the
-#!   TX_SUMMARY_COMMITMENT, so that otherwise-identical transactions produce distinct commitments and
-#!   can run concurrently. That commitment's uniqueness is what `record_and_assert_new_tx` records and checks to
-#!   enforce replay protection; `auth_tx` itself records nothing, so a wrapper must call
-#!   `record_and_assert_new_tx` for replay protection to hold.
-#! - SIG_i is the signature from the i-th signer.
-#! - MSG is the transaction message being signed.
-#! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
-#!
-#! Panics if:
-#! - insufficient number of valid signatures (below threshold).
-#!
-#! Invocation: call
-pub proc auth_tx(salt: word)
-    exec.native_account::incr_nonce drop
-    # => [SALT]
-
-    # ------ Computing transaction summary ------
-
-    exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    # insert tx summary into advice provider for extraction by the host
-    adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    # the commitment to the tx summary is the message that is signed
-    exec.auth::hash_tx_summary
-    # => [TX_SUMMARY_COMMITMENT]
-
-    # ------ Verifying approver signatures ------
-
-    exec.get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    movdn.5
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    exec.::miden::standards::auth::signature::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    # ------ Checking threshold is >= num_verified_signatures ------
-
-    movup.5
-    # => [default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    exec.compute_transaction_threshold
-    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    u32assert2 u32lt
-    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
-
-    # If signatures are non-existent the tx will fail here.
-    if.true
-        emit.AUTH_UNAUTHORIZED_EVENT
-        push.0 assert.err="insufficient number of signatures"
-    end
-
-    # TX_SUMMARY_COMMITMENT is returned so wrappers can run optional checks
-    # (e.g. guardian verification) before replay-protection finalization.
-    # => [TX_SUMMARY_COMMITMENT]
 end

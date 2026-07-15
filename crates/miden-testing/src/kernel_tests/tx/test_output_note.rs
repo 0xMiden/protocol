@@ -89,8 +89,6 @@ async fn test_create_note() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use miden::protocol::output_note
-
         use miden::tx_kernel_core::prologue
 
         begin
@@ -100,8 +98,7 @@ async fn test_create_note() -> anyhow::Result<()> {
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
-            exec.output_note::create
-
+            call.::mock::account::create_note
             # truncate the stack
             swapdw dropw dropw
         end
@@ -180,8 +177,7 @@ fn note_creation_script(tag: Felt) -> String {
                 push.{NOTE_TYPE_PUBLIC}
                 push.{tag}
 
-                exec.output_note::create
-
+                call.::mock::account::create_note
                 # clean the stack
                 dropw dropw
             end
@@ -211,8 +207,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
-            exec.output_note::create
-        end
+            call.::mock::account::create_note        end
         ",
         tag = NoteTag::new(1234 << 16 | 5678),
         recipient = Word::from([0, 1, 2, 3u32]),
@@ -312,7 +307,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             push.{recipient_1}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag_1}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             push.{ASSET_1_VALUE}
@@ -324,7 +319,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             push.{recipient_2}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag_2}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             dup
@@ -432,6 +427,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
 
     let code = format!(
         "
+        use miden::core::sys
         use miden::protocol::output_note
 
         use miden::tx_kernel_core::prologue
@@ -443,22 +439,22 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
-            exec.output_note::create
-            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
 
             # assert that the index of the created note equals zero
             dup assertz.err=\"index of the created note should be zero\"
-            # => [note_idx]
+            # => [note_idx, pad(15)]
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
-            # => [ASSET_ID, ASSET_VALUE, note_idx]
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
 
             call.output_note::add_asset
-            # => []
+            # => [pad(15)]
 
             # truncate the stack
-            dropw dropw dropw
+            exec.sys::truncate_stack
         end
         ",
         recipient = recipient,
@@ -512,7 +508,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             push.{recipient}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # assert that the index of the created note equals zero
@@ -641,7 +637,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             push.{recipient}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             dup
@@ -714,6 +710,7 @@ async fn test_add_assets_around_max_per_note(
 
     let code = format!(
         "
+        use miden::core::sys
         use miden::tx_kernel_core::prologue
         use miden::protocol::output_note
 
@@ -723,10 +720,13 @@ async fn test_add_assets_around_max_per_note(
             push.{recipient}
             push.{NOTE_TYPE_PUBLIC}
             push.{tag}
-            exec.output_note::create
-            # => [note_idx]
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
 
             {add_assets_code}
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
         ",
         recipient = recipient,
@@ -816,7 +816,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
             push.{tag}
             # => [tag, note_type, RECIPIENT]
 
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # clean the stack
@@ -916,7 +916,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # move the asset 0 to the note
@@ -990,7 +990,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         assets_number_1 = output_note_1.assets().num_assets(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -1066,7 +1066,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         METADATA = output_note.metadata().to_metadata_word(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -1185,7 +1185,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -1353,7 +1353,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             push.{ATTACHMENT}
@@ -1373,7 +1373,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         ATTACHMENT = attachment_word,
     );
 
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
@@ -1424,7 +1424,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # Store attachment words to memory
@@ -1448,7 +1448,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
         num_words = words.len(),
     );
 
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
@@ -1603,7 +1603,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # add first word attachment (note_idx = 0)
@@ -1660,7 +1660,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
         EXPECTED_COMMITMENT_1 = commitment_1,
     );
 
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
@@ -1715,7 +1715,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx]
 
             # add first word attachment (note_idx = 0)
@@ -1790,7 +1790,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
         attachment1_num_words = attachment_1.num_words(),
     );
 
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
@@ -1897,7 +1897,7 @@ async fn test_find_attachment(
         EXPECTED_WORD = word_1,
     );
 
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = mock_chain
         .build_tx_context(account.id(), &[spawn_note.id()], &[])?
@@ -2053,7 +2053,7 @@ fn create_output_note(note: &Note) -> String {
         push.{RECIPIENT}
         push.{note_type}
         push.{tag}
-        exec.output_note::create
+        call.::mock::account::create_note
         # => [note_idx]
     ",
         RECIPIENT = note.recipient().digest(),

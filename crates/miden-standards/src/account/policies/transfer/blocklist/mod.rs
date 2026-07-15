@@ -6,9 +6,9 @@ use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot,
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::utils::sync::LazyLock;
 
-mod owner_controlled;
+mod manager;
 
-pub use owner_controlled::BlocklistOwnerControlled;
+pub use manager::BlocklistManager;
 
 // BLOCKED ACCOUNTS STORAGE
 // ================================================================================================
@@ -31,7 +31,7 @@ static BLOCKED_ACCOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// procedures live in the standards library at
 /// `miden::standards::faucets::policies::transfer::blocklist` as `Invocation: exec` helpers —
 /// they perform no authorization and must be wrapped by an auth-checking admin component (see
-/// [`BlocklistOwnerControlled`]) before being exposed on a faucet.
+/// [`BlocklistManager`]) before being exposed on a faucet.
 ///
 /// ## Storage
 ///

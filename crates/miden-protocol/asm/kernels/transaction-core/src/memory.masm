@@ -1,27 +1,24 @@
 use miden::core::mem
-use {
-    ACCOUNT_PROCEDURE_DATA_LENGTH,
-    MAX_ASSETS_PER_NOTE,
-    NOTE_MEM_SIZE,
-    WORD_NUM_ELEMENTS,
-} from miden::tx_kernel_core::constants
-
-pub type AccountId = struct { prefix: felt, suffix: felt }
+use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
+    from miden::tx_kernel_core::constants
+use {AccountId} from miden::protocol_utils::types
 
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 64"
 
-const ERR_ACCOUNT_IS_NOT_NATIVE="the active account is not native"
+const ERR_ACCOUNT_IS_NOT_NATIVE = "the active account is not native"
 
-const ERR_ACCOUNT_STACK_OVERFLOW="depth of the nested FPI calls exceeded 64"
+const ERR_ACCOUNT_STACK_OVERFLOW = "depth of the nested FPI calls exceeded 64"
 
-const ERR_ACCOUNT_STACK_UNDERFLOW="failed to end foreign context because the active account is the native account"
+const ERR_ACCOUNT_STACK_UNDERFLOW =
+    "failed to end foreign context because the active account is the native account"
 
-const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT="creation of a foreign context against the native account is forbidden"
+const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT =
+    "creation of a foreign context against the native account is forbidden"
 
-const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maximum"
+const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED = "number of link map entries exceeds maximum"
 
 # MEMORY ADDRESS CONSTANTS
 # =================================================================================================
@@ -68,22 +65,22 @@ pub const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
-const ACCOUNT_STACK_TOP_PTR=20
+const ACCOUNT_STACK_TOP_PTR = 20
 
 # Pointer to the first element on the account stack.
-const MIN_ACCOUNT_STACK_PTR=21
+const MIN_ACCOUNT_STACK_PTR = 21
 
 # Pointer to the last element on the account stack.
-const MAX_ACCOUNT_STACK_PTR=84
+const MAX_ACCOUNT_STACK_PTR = 84
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the global inputs section begins.
-const GLOBAL_INPUTS_SECTION_OFFSET=400
+const GLOBAL_INPUTS_SECTION_OFFSET = 400
 
 # The memory address at which the transaction reference block's commitment is stored.
-const BLOCK_COMMITMENT_PTR=400
+const BLOCK_COMMITMENT_PTR = 400
 
 # The memory address at which the native account ID provided as a global transaction input is
 # stored.
@@ -91,63 +88,63 @@ const GLOBAL_ACCOUNT_ID_SUFFIX_PTR = 404
 const GLOBAL_ACCOUNT_ID_PREFIX_PTR = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1
 
 # The memory address at which the initial account commitment is stored.
-const INIT_ACCOUNT_COMMITMENT_PTR=408
+const INIT_ACCOUNT_COMMITMENT_PTR = 408
 
 # The memory address at which the initial nonce is stored.
-const INIT_NONCE_PTR=412
+const INIT_NONCE_PTR = 412
 
 # The memory address at which the initial vault root of the native account is stored.
-const INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR=416
+const INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR = 416
 
 # The memory address at which the initial storage commitment of the native account is stored.
-const INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR=420
+const INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR = 420
 
 # The memory address at which the input notes commitment is stored.
-const INPUT_NOTES_COMMITMENT_PTR=424
+const INPUT_NOTES_COMMITMENT_PTR = 424
 
 # The memory address at which the transaction script mast root is stored.
-pub const TX_SCRIPT_ROOT_PTR=428
+pub const TX_SCRIPT_ROOT_PTR = 428
 
 # The memory address at which the transaction script arguments are stored.
-const TX_SCRIPT_ARGS_PTR=432
+const TX_SCRIPT_ARGS_PTR = 432
 
 # The memory address at which the auth procedure arguments are stored.
-const AUTH_ARGS_PTR=436
+const AUTH_ARGS_PTR = 436
 
 # GLOBAL BLOCK DATA
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the block data section begins
-pub const BLOCK_DATA_SECTION_OFFSET=800
+pub const BLOCK_DATA_SECTION_OFFSET = 800
 
 # The memory address at which the previous block commitment is stored
-const PREV_BLOCK_COMMITMENT_PTR=800
+const PREV_BLOCK_COMMITMENT_PTR = 800
 
 # The memory address at which the chain commitment is stored
-const CHAIN_COMMITMENT_PTR=804
+const CHAIN_COMMITMENT_PTR = 804
 
 # The memory address at which the account root is stored
-const ACCT_DB_ROOT_PTR=808
+const ACCT_DB_ROOT_PTR = 808
 
 # The memory address at which the nullifier root is stored
-const NULLIFIER_ROOT_PTR=812
+const NULLIFIER_ROOT_PTR = 812
 
 # The memory address at which the tx commitment is stored
-const TX_COMMITMENT_PTR=816
+const TX_COMMITMENT_PTR = 816
 
 # The memory address at which the kernel commitment is stored
-const TX_KERNEL_COMMITMENT_PTR=820
+const TX_KERNEL_COMMITMENT_PTR = 820
 
 # The memory address at which the proof commitment is stored
-const VALIDATOR_KEY_COMMITMENT_PTR=824
+const VALIDATOR_KEY_COMMITMENT_PTR = 824
 
 # The memory address at which the block metadata is stored [block_number, version, timestamp, 0]
-const BLOCK_METADATA_PTR=828
+const BLOCK_METADATA_PTR = 828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
 # [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 # [0, 0, 0, 0]
-const FEE_PARAMETERS_PTR=832
+const FEE_PARAMETERS_PTR = 832
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
@@ -157,28 +154,28 @@ const FEE_FAUCET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
 const FEE_FAUCET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
-const NOTE_ROOT_PTR=840
+const NOTE_ROOT_PTR = 840
 
 # PARTIAL BLOCKCHAIN
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the chain data section begins
-pub const PARTIAL_BLOCKCHAIN_PTR=1200
+pub const PARTIAL_BLOCKCHAIN_PTR = 1200
 
 # The memory address at which the total number of leaves in the partial blockchain is stored
-const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR=1200
+const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR = 1200
 
 # The memory address at which the partial blockchain peaks are stored
-const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
+const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 1204
 
 # KERNEL DATA
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the number of the kernel procedures is stored.
-const NUM_KERNEL_PROCEDURES_PTR=1600
+const NUM_KERNEL_PROCEDURES_PTR = 1600
 
 # The memory address at which the hashes of kernel procedures begin.
-pub const KERNEL_PROCEDURES_PTR=1604
+pub const KERNEL_PROCEDURES_PTR = 1604
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
@@ -186,100 +183,109 @@ pub const KERNEL_PROCEDURES_PTR=1604
 # The largest memory address which can be used to load the foreign account data.
 # It is computed as `2048 * 64 * 4` -- this is the memory address where the data block of the 64th
 # account starts.
-pub const MAX_FOREIGN_ACCOUNT_PTR=524288
+pub const MAX_FOREIGN_ACCOUNT_PTR = 524288
 
 # The memory address at which the native account data is stored.
-pub const NATIVE_ACCOUNT_DATA_PTR=8192
+pub const NATIVE_ACCOUNT_DATA_PTR = 8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
-pub const ACCOUNT_DATA_LENGTH=8192
+pub const ACCOUNT_DATA_LENGTH = 8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
-pub const ACCT_NONCE_OFFSET=0
-pub const ACCT_ID_AND_NONCE_OFFSET=0
-pub const ACCT_ID_SUFFIX_OFFSET=2
-pub const ACCT_ID_PREFIX_OFFSET=3
-const ACCT_VAULT_ROOT_OFFSET=4
-const ACCT_STORAGE_COMMITMENT_OFFSET=8
-const ACCT_CODE_COMMITMENT_OFFSET=12
-const ACCT_CORE_DATA_SECTION_END_OFFSET=16
-const ACCT_NUM_PROCEDURES_OFFSET=28
-const ACCT_PROCEDURES_SECTION_OFFSET=32
-const ACCT_PROCEDURES_CALL_TRACKING_OFFSET=1060
-const ACCT_NUM_STORAGE_SLOTS_OFFSET=1316
+pub const ACCT_NONCE_OFFSET = 0
+pub const ACCT_ID_AND_NONCE_OFFSET = 0
+pub const ACCT_ID_SUFFIX_OFFSET = 2
+pub const ACCT_ID_PREFIX_OFFSET = 3
+const ACCT_VAULT_ROOT_OFFSET = 4
+const ACCT_STORAGE_COMMITMENT_OFFSET = 8
+const ACCT_CODE_COMMITMENT_OFFSET = 12
+const ACCT_CORE_DATA_SECTION_END_OFFSET = 16
+const ACCT_NUM_PROCEDURES_OFFSET = 28
+const ACCT_PROCEDURES_SECTION_OFFSET = 32
+const ACCT_PROCEDURES_CALL_TRACKING_OFFSET = 1060
+const ACCT_NUM_STORAGE_SLOTS_OFFSET = 1316
 # Offset at which a copy of the initial account's storage slot section is kept. This section is
 # only present for the native account.
-const ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET=1320
+const ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET = 1320
 
 # Offset at which the account's active storage slot section is kept. This section contains the
 # current values of the account storage slots.
-const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=3360
+const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET = 3360
 
 # NATIVE ACCOUNT DELTA
 # -------------------------------------------------------------------------------------------------
 
 # The link map pointer at which the delta of the asset vault is stored.
-pub const ACCOUNT_UPDATE_ASSET_PTR=532480
+pub const ACCOUNT_UPDATE_ASSET_PTR = 532480
 
 # The section of link map pointers where storage map patches are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
 # delta at that slot index. Slot indices that are not map slots are simply unused.
 # The section spans `MAX_NUM_STORAGE_SLOTS` (255) entries, one per possible slot index.
-const ACCOUNT_PATCH_STORAGE_MAP_SECTION=ACCOUNT_UPDATE_ASSET_PTR+4
+const ACCOUNT_PATCH_STORAGE_MAP_SECTION = ACCOUNT_UPDATE_ASSET_PTR + 4
+
+# UPGRADE COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the native account code upgrade commitment is stored.
+pub const CODE_UPGRADE_COMMITMENT_PTR = 532744
+
+# The memory address at which the native account storage upgrade commitment is stored.
+pub const STORAGE_UPGRADE_COMMITMENT_PTR = 532748
 
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the input note section begins.
-const INPUT_NOTE_SECTION_OFFSET=4194304
+const INPUT_NOTE_SECTION_OFFSET = 4194304
 
 # The memory address at which the nullifier section of the input notes begins.
-const INPUT_NOTE_NULLIFIER_SECTION_PTR=4194308
+const INPUT_NOTE_NULLIFIER_SECTION_PTR = 4194308
 
 # The memory address at which the input note data section begins.
-const INPUT_NOTE_DATA_SECTION_OFFSET=4259840
+const INPUT_NOTE_DATA_SECTION_OFFSET = 4259840
 
 # The memory address at which the number of input notes is stored.
-const NUM_INPUT_NOTES_PTR=INPUT_NOTE_SECTION_OFFSET
+const NUM_INPUT_NOTES_PTR = INPUT_NOTE_SECTION_OFFSET
 
 # The offsets at which data of an input note is stored relative to the start of its data segment
-const INPUT_NOTE_DETAILS_COMMITMENT_OFFSET=0
-const INPUT_NOTE_CORE_DATA_OFFSET=4
-const INPUT_NOTE_SERIAL_NUM_OFFSET=4
-const INPUT_NOTE_SCRIPT_ROOT_OFFSET=8
-const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
-const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
-const INPUT_NOTE_METADATA_OFFSET=20
-const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=24
-const INPUT_NOTE_RECIPIENT_OFFSET=28
-const INPUT_NOTE_ARGS_OFFSET=32
-const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
-const INPUT_NOTE_NUM_ASSETS_OFFSET=40
-const INPUT_NOTE_ASSETS_OFFSET=44
+const INPUT_NOTE_DETAILS_COMMITMENT_OFFSET = 0
+const INPUT_NOTE_CORE_DATA_OFFSET = 4
+const INPUT_NOTE_SERIAL_NUM_OFFSET = 4
+const INPUT_NOTE_SCRIPT_ROOT_OFFSET = 8
+const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET = 12
+const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 16
+const INPUT_NOTE_METADATA_OFFSET = 20
+const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET = 24
+const INPUT_NOTE_RECIPIENT_OFFSET = 28
+const INPUT_NOTE_ARGS_OFFSET = 32
+const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET = 36
+const INPUT_NOTE_NUM_ASSETS_OFFSET = 40
+const INPUT_NOTE_ASSETS_OFFSET = 44
 
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the output notes section begins.
-pub const OUTPUT_NOTE_SECTION_OFFSET=16777216
+pub const OUTPUT_NOTE_SECTION_OFFSET = 16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
-const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET=0
-const OUTPUT_NOTE_METADATA_OFFSET=4
-const OUTPUT_NOTE_RECIPIENT_OFFSET=8
-const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=12
-const OUTPUT_NOTE_NUM_ASSETS_OFFSET=13
-const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET=14
-const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET=15
-const OUTPUT_NOTE_ATTACHMENT_0_OFFSET=16
-const OUTPUT_NOTE_ATTACHMENT_1_OFFSET=20
-const OUTPUT_NOTE_ATTACHMENT_2_OFFSET=24
-const OUTPUT_NOTE_ATTACHMENT_3_OFFSET=28
-const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=32
-const OUTPUT_NOTE_ASSETS_OFFSET=36
+const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET = 0
+const OUTPUT_NOTE_METADATA_OFFSET = 4
+const OUTPUT_NOTE_RECIPIENT_OFFSET = 8
+const OUTPUT_NOTE_DIRTY_FLAG_OFFSET = 12
+const OUTPUT_NOTE_NUM_ASSETS_OFFSET = 13
+const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET = 14
+const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET = 15
+const OUTPUT_NOTE_ATTACHMENT_0_OFFSET = 16
+const OUTPUT_NOTE_ATTACHMENT_1_OFFSET = 20
+const OUTPUT_NOTE_ATTACHMENT_2_OFFSET = 24
+const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 28
+const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 32
+const OUTPUT_NOTE_ASSETS_OFFSET = 36
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -287,21 +293,21 @@ const OUTPUT_NOTE_ASSETS_OFFSET=36
 # The inclusive start of the link map dynamic memory region.
 # Chosen as a number greater than 2^25 such that all entry pointers are multiples of
 # LINK_MAP_ENTRY_SIZE. That enables a simpler check in assert_entry_ptr_is_valid.
-pub const LINK_MAP_REGION_START_PTR=33554448
+pub const LINK_MAP_REGION_START_PTR = 33554448
 
 # The non-inclusive end of the link map dynamic memory region.
 # This happens to be 2^26, but if it is changed, it should be chosen as a number such that
 # LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR is a multiple of LINK_MAP_ENTRY_SIZE,
 # because that enables checking whether a newly allocated entry pointer is at the end of the range
 # using equality rather than lt/gt in link_map_malloc.
-pub const LINK_MAP_REGION_END_PTR=67108864
+pub const LINK_MAP_REGION_END_PTR = 67108864
 
 # LINK_MAP_REGION_START_PTR + the currently used size stored at this pointer defines the next
 # entry pointer that will be allocated.
-const LINK_MAP_USED_MEMORY_SIZE=33554432
+const LINK_MAP_USED_MEMORY_SIZE = 33554432
 
 # The size of each map entry, i.e. four words.
-pub const LINK_MAP_ENTRY_SIZE=16
+pub const LINK_MAP_ENTRY_SIZE = 16
 
 # MEMORY PROCEDURES
 # =================================================================================================
@@ -720,7 +726,7 @@ end
 #!
 #! Where:
 #! - version is the protocol version of the transaction reference block.
-const BLOCK_METADATA_VERSION_PTR=BLOCK_METADATA_PTR+1
+const BLOCK_METADATA_VERSION_PTR = BLOCK_METADATA_PTR + 1
 pub proc get_blk_version
     mem_load.BLOCK_METADATA_VERSION_PTR
 end
@@ -732,7 +738,7 @@ end
 #!
 #! Where:
 #! - timestamp is the timestamp of the reference block for this transaction.
-const BLOCK_METADATA_TIMESTAMP_PTR=BLOCK_METADATA_PTR+2
+const BLOCK_METADATA_TIMESTAMP_PTR = BLOCK_METADATA_PTR + 2
 pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
@@ -747,6 +753,18 @@ end
 #!   transaction.
 pub proc get_verification_base_fee
     mem_load.VERIFICATION_BASE_FEE_PTR
+end
+
+#! Returns the fee faucet ID from the transaction's reference block.
+#!
+#! Inputs:  []
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
+#!
+#! Where:
+#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
+#!   the native fee asset.
+pub proc get_fee_faucet_id
+    mem_load.FEE_FAUCET_ID_PREFIX_PTR mem_load.FEE_FAUCET_ID_SUFFIX_PTR
 end
 
 #! Returns the chain commitment of the transaction reference block.
@@ -1243,6 +1261,28 @@ pub proc set_account_storage_commitment
     mem_storew_le
 end
 
+#! Sets the native account code upgrade commitment.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+pub proc set_code_upgrade_commitment
+    mem_storew_le.CODE_UPGRADE_COMMITMENT_PTR dropw
+end
+
+#! Sets the native account storage upgrade commitment.
+#!
+#! Inputs:  [STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+pub proc set_storage_upgrade_commitment
+    mem_storew_le.STORAGE_UPGRADE_COMMITMENT_PTR dropw
+end
+
 #! Sets the dirty flag for the native account storage commitment.
 #!
 #! This binary flag specifies whether the storage commitment stored in the native account data is
@@ -1347,7 +1387,7 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_native_account_initial_storage_slots_ptr
-  push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 ### ACCOUNT DELTA #################################################
@@ -1369,16 +1409,16 @@ end
 #! Inputs:  []
 #! Outputs: []
 pub proc mem_copy_native_account_initial_storage_slots
-  exec.get_native_account_initial_storage_slots_ptr
-  exec.get_native_account_active_storage_slots_ptr
-  # => [active_storage_slots_ptr, initial_storage_slots_ptr]
+    exec.get_native_account_initial_storage_slots_ptr
+    exec.get_native_account_active_storage_slots_ptr
+    # => [active_storage_slots_ptr, initial_storage_slots_ptr]
 
-  # each slot takes up two words
-  exec.get_num_storage_slots mul.2
-  # => [num_storage_slot_words, active_storage_slots_ptr, initial_storage_slots_ptr]
+    # each slot takes up two words
+    exec.get_num_storage_slots mul.2
+    # => [num_storage_slot_words, active_storage_slots_ptr, initial_storage_slots_ptr]
 
-  exec.mem::memcopy_words
-  # => []
+    exec.mem::memcopy_words
+    # => []
 end
 
 # INPUT NOTES

@@ -3,6 +3,7 @@ use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
+use miden::standards::assets::fungible_asset
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use {DEFAULT_TAG} from miden::standards::note_tag
@@ -286,7 +287,7 @@ end
 #!
 #! Invocation: exec
 proc convert_asset
-    swapw exec.asset::fungible_value_into_amount movdn.4
+    swapw exec.fungible_asset::value_into_amount movdn.4
     # => [ASSET_ID, amount]
 
     exec.asset::id_into_faucet_id
@@ -646,35 +647,28 @@ proc create_burn_note
     push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
-    # pad the stack before the call invocation
-    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, note_type, RECIPIENT, pad(10)]
-
-    call.output_note::create
-    # => [note_idx, pad(15)]
+    exec.output_note::create
+    # => [note_idx]
 
     # duplicate note_idx: one for add_word_attachment, one for add_asset
     dup
-    # => [note_idx, note_idx, pad(15)]
+    # => [note_idx, note_idx]
 
     padw loc_loadw_le.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
+    # => [NOTE_ATTACHMENT, note_idx, note_idx]
 
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [scheme, NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
+    # => [scheme, NOTE_ATTACHMENT, note_idx, note_idx]
 
     # network_account_target is a word-sized attachment
     exec.output_note::add_word_attachment
-    # => [note_idx, pad(15)]
+    # => [note_idx]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
-    # => [pad(15)]
-
-    dropw dropw dropw drop drop drop
     # => []
 end
 

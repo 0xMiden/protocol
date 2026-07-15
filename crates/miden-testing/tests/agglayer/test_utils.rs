@@ -24,6 +24,7 @@ use miden_processor::{
     Program,
     StackInputs,
 };
+use miden_protocol::ProtocolLib;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
@@ -63,6 +64,9 @@ pub async fn execute_program_with_default_host(
     for (event_name, handler) in std_lib.handlers() {
         host.register_handler(event_name, handler)?;
     }
+
+    let protocol_lib = ProtocolLib::default();
+    host.load_library(protocol_lib.mast_forest()).unwrap();
 
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();

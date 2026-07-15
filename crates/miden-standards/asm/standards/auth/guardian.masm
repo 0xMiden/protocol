@@ -46,11 +46,12 @@ const GUARDIAN_SCHEME_ID_SLOT = word("miden::standards::auth::guardian::scheme")
 const GUARDIAN_MAP_KEY = [0, 0, 0, 0]
 
 # ERRORS
-# -------------------------------------------------------------------------------------------------
+# =================================================================================================
+
 const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 
 # PUBLIC INTERFACE
-# ================================================================================================
+# =================================================================================================
 
 #! Updates the guardian public key.
 #!
@@ -107,6 +108,9 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # => []
 end
 
+# PUBLIC HELPERS
+# =================================================================================================
+
 #! Conditionally verifies a guardian signature.
 #!
 #! Inputs:  [MSG]
@@ -126,11 +130,14 @@ pub proc verify_signature(msg: word)
     # => [was_update_guardian_public_key_called, MSG]
 
     if.true
-        exec.tx_policy::assert_only_one_non_auth_procedure_called
-        # => [MSG]
-
+        # Check the notes first: creating an output note requires calling `create_note`, which
+        # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
+        # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
         exec.tx_policy::assert_no_output_notes
+        # => [MSG]
+
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
         # => [MSG]
 
         dropw

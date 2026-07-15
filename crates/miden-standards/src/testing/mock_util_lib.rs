@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 
+use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::{
     DefaultSourceManager,
     Library,
@@ -12,7 +13,10 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::StandardsLib;
+use crate::testing::mock_account_code::MockAccountCodeExt;
 
+// Note: note creation must originate from the account context. These helpers therefore delegate to
+// the account procedures exposed by the mock account, which perform the actual creation.
 const MOCK_UTIL_LIBRARY_CODE: &str = "
     use miden::protocol::output_note
     use {NOTE_TYPE_PRIVATE} from miden::protocol::note
@@ -21,12 +25,16 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     #! Inputs:  []
     #! Outputs: [note_idx]
     pub proc create_default_note
+        padw padw push.0.0
         push.1.2.3.4           # = RECIPIENT
         push.NOTE_TYPE_PRIVATE # = NoteType::Private
         push.0                 # = NoteTag
-        # => [tag, note_type, RECIPIENT]
+        # => [tag, note_type, RECIPIENT, pad(16)]
 
-        exec.output_note::create
+        call.::mock::account::create_note
+        # => [note_idx, pad(16)]
+
+        movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx]
     end
 
@@ -77,6 +85,10 @@ static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     assembler
         .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
         .expect("dynamically linking standards library should work");
+    // Link the mock account library so the helpers' delegating `mock::account::*` calls resolve.
+    assembler
+        .link_package(Arc::new(AccountCode::mock_account_library()), Linkage::Dynamic)
+        .expect("dynamically linking mock account library should work");
     *assembler
         .assemble_library("mock-util", root, None::<&str>)
         .expect("mock util library should be valid")

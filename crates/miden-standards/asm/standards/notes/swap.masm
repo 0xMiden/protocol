@@ -1,9 +1,9 @@
 use miden::protocol::active_note
 use miden::protocol::asset
-use miden::protocol::output_note
 use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
+use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
@@ -53,6 +53,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #! - miden::standards::wallets::basic::move_asset_to_note procedure.
+#! - miden::standards::note::note_creator::create_note procedure.
 #!
 #! Inputs:  [ARGS]
 #! Outputs: []
@@ -92,9 +93,6 @@ pub proc main
         mem_load.PAYBACK_NOTE_TYPE_PTR
         mem_load.PAYBACK_TAG_PTR
         # => [tag, note_type, PAYBACK_RECIPIENT]
-
-        exec.output_note::create
-        # => [note_idx]
     else
         # --- PUBLIC PAYBACK ---
         # Derive P2ID serial = SWAP_SERIAL with the least significant element +1.
@@ -106,14 +104,25 @@ pub proc main
         mem_load.PAYBACK_TAG_PTR
         # => [tag, note_type, s0', s1, s2, s3]
 
-        # Load prefix then suffix so suffix ends on top, as `p2id::new` expects.
+        # Load prefix then suffix so suffix ends on top, as `p2id::prepare_note` expects.
         mem_load.PAYBACK_TARGET_PREFIX_PTR
         mem_load.PAYBACK_TARGET_SUFFIX_PTR
         # => [target_suffix, target_prefix, tag, note_type, s0', s1, s2, s3]
 
-        exec.p2id::new
-        # => [note_idx]
+        exec.p2id::prepare_note
+        # => [tag, note_type, PAYBACK_RECIPIENT]
     end
+    # => [tag, note_type, PAYBACK_RECIPIENT]
+
+    # Note creation must originate from the account context, so route through the account's
+    # `create_note` procedure. Pad the stack for the `call` convention.
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, PAYBACK_RECIPIENT, pad(10)]
+
+    call.note_creator::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
     # --- move requested asset into the payback P2ID note
@@ -134,7 +143,7 @@ pub proc main
     # --- move offered asset from the SWAP note into the consumer's account
 
     # store the number of note assets to memory starting at address ASSET_PTR
-    push.ASSET_PTR exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(8)]
 
     # make sure the number of assets is 1

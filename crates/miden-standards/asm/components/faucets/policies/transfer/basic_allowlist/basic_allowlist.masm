@@ -3,6 +3,6 @@
 # Exposes the `check_policy` procedure so its MAST root can be registered as the active
 # (or allowed) transfer policy on a `TokenPolicyManager`. Installs the `allowed_accounts`
 # storage map (defined by the sibling `allowlist` primitive); admin updates go through a
-# companion auth-gated component (see `allowlist/owner_controlled.masm`).
+# companion auth-gated component (see `allowlist/manager/manager.masm`).
 
 pub use {check_policy} from miden::standards::faucets::policies::transfer::basic_allowlist

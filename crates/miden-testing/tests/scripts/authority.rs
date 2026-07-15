@@ -33,14 +33,11 @@ use super::pausable::{
     ADMIN_ID,
     NON_OWNER_ID,
     OWNER_ID,
-    build_grant_role_note,
-    build_note,
     build_pause_note,
     build_set_max_supply_note,
     execute_note_on_faucet,
-    role,
-    test_account_id,
 };
+use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
 
 // FAUCET BUILDERS
 // ================================================================================================

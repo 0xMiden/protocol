@@ -9,13 +9,9 @@ use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
 use miden::core::word
-use {
-    KERNEL_PROCEDURES_PTR,
-    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
-    UPCOMING_FOREIGN_PROCEDURE_PTR,
-} from miden::tx_kernel_core::memory
-
-pub type AccountId = struct { prefix: felt, suffix: felt }
+use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
+    from miden::tx_kernel_core::memory
+use {AccountId} from miden::protocol_utils::types
 
 # NOTE
 # =================================================================================================
@@ -29,25 +25,35 @@ pub type AccountId = struct { prefix: felt, suffix: felt }
 # ERRORS
 # =================================================================================================
 
-const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS="provided kernel procedure offset is out of bounds"
+const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
+    "provided kernel procedure offset is out of bounds"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note assets of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note assets of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note recipient of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note recipient of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note metadata of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note metadata of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note storage of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note storage of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note script root of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note serial number of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note attachments of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note attachments of active note because no note is currently being processed"
 
-const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO =
+    "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
+    "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
@@ -61,13 +67,33 @@ const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals 
 #! - the invocation of the kernel procedure does not originate from the account context.
 #!
 #! Invocation: exec
-proc authenticate_account_origin
+proc authenticate_and_track_account_origin
     # get the hash of the caller
     padw caller
     # => [CALLER]
 
     # assert that the caller is from the user context
     exec.account::authenticate_and_track_procedure
+    # => []
+end
+
+#! Asserts that the invocation of a kernel procedure originates from the account context, without
+#! tracking the call (read-only counterpart of `authenticate_and_track_account_origin`).
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the invocation of the kernel procedure does not originate from the account context.
+#!
+#! Invocation: exec
+proc authenticate_account_origin
+    # get the hash of the caller
+    padw caller
+    # => [CALLER]
+
+    # assert that the caller is a procedure of the active account (drop the returned index)
+    exec.account::assert_procedure_in_account drop
     # => []
 end
 
@@ -108,11 +134,15 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_commitment
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
     # => [pad(16)]
 
     # get the initial account commitment
@@ -132,8 +162,15 @@ end
 #! Where:
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_compute_commitment
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [pad(16)]
+
     # compute the active account commitment
     exec.account::compute_commitment
     # => [ACCOUNT_COMMITMENT, pad(16)]
@@ -161,10 +198,19 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment
+    # These two checks are strictly redundant here: a non-empty delta requires the nonce to be
+    # incremented, which is already gated to the auth procedure, and an empty delta only ever
+    # commits to the (public) empty word. We keep them for consistency with the other account
+    # procedures and may drop them later.
+    exec.memory::assert_native_account
+    exec.authenticate_and_track_account_origin
+
     # compute the account delta commitment
     exec.account_update::compute_delta_commitment
     # => [DELTA_COMMITMENT, pad(16)]
@@ -172,6 +218,33 @@ pub proc account_compute_delta_commitment
     # truncate the stack
     swapw dropw
     # => [ACCOUNT_COMMITMENT, pad(12)]
+end
+
+#! Records the commitments describing an upgrade of the native account's code and storage.
+#!
+#! This procedure is currently a no-op beyond storing the two commitments in kernel memory.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: dynexec
+pub proc account_upgrade
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.memory::set_code_upgrade_commitment
+    # => [STORAGE_UPGRADE_COMMITMENT, pad(12)]
+
+    exec.memory::set_storage_upgrade_commitment
+    # => [pad(16)]
 end
 
 #! Returns the ID of the specified account.
@@ -231,8 +304,15 @@ end
 #! Where:
 #! - nonce is the active account's nonce.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_get_nonce
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [pad(16)]
+
     # get the account nonce
     exec.account::get_nonce
     # => [nonce, pad(16)]
@@ -286,7 +366,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_code_commitment
-    # authenticate that the procedure invocation originates from the account context
+    # assert that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
 
@@ -309,11 +389,15 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_storage_commitment
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
     # => [pad(16)]
 
     # get the initial account storage commitment
@@ -336,7 +420,7 @@ end
 #! Invocation: dynexec
 pub proc account_compute_storage_commitment
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [pad(16)]
 
     # compute the account storage commitment
@@ -364,7 +448,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_item
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the account storage item
@@ -398,7 +482,7 @@ pub proc account_set_item
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # set the account storage item
@@ -424,7 +508,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_map_item
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the map item from account storage
@@ -453,7 +537,7 @@ pub proc account_get_initial_item
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the initial account storage item
@@ -489,7 +573,7 @@ pub proc account_get_initial_map_item
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the initial map item from account storage
@@ -524,7 +608,7 @@ pub proc account_set_map_item
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # set the new map item
@@ -546,11 +630,15 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_vault_root
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
     # => [pad(16)]
 
     # get the initial account vault root
@@ -570,8 +658,15 @@ end
 #! Where:
 #! - VAULT_ROOT is the root of the account vault.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_get_vault_root
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [pad(16)]
+
     # fetch the account vault root
     exec.memory::get_account_vault_root
     # => [VAULT_ROOT, pad(16)]
@@ -608,7 +703,7 @@ pub proc account_add_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # add the specified asset to the account vault, emitting the corresponding events
@@ -639,7 +734,7 @@ pub proc account_remove_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
@@ -657,8 +752,15 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_get_asset
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [ASSET_ID, pad(12)]
+
     exec.asset::validate_id
     # => [ASSET_ID, pad(12)]
 
@@ -678,11 +780,15 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
@@ -702,11 +808,16 @@ end
 #! - was_called is 1 if the procedure was called at least once during tx execution, 0 otherwise.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
 #! - the procedure root is not part of the account code.
 #! - the invocation of this procedure does not originate from the native account.
 #!
 #! Invocation: dynexec
 pub proc account_was_procedure_called
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [PROC_ROOT, pad(12)]
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [PROC_ROOT, pad(12)]
@@ -724,8 +835,15 @@ end
 #! Where:
 #! - num_procedures is the number of procedures in the active account.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_get_num_procedures
+    # assert that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [pad(16)]
+
     # get the number of procedures
     exec.memory::get_num_account_procedures
     # => [num_procedures, pad(16)]
@@ -745,10 +863,15 @@ end
 #! - PROC_ROOT is the hash of the procedure.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: dynexec
 pub proc account_get_procedure_root
+    # assert that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [index, pad(15)]
+
     # get the procedure root
     exec.account::get_procedure_root
     # => [PROC_ROOT, pad(15)]
@@ -771,8 +894,15 @@ end
 #! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is 
 #!   available on the active account.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: dynexec
 pub proc account_has_procedure
+    # assert that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [PROC_ROOT, pad(12)]
+
     # check if the procedure was called
     exec.account::has_procedure
     # => [is_procedure_available, pad(15)]
@@ -794,7 +924,7 @@ end
 #! Invocation: dynexec
 pub proc account_has_storage_slot
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # check whether the storage slot exists
@@ -830,7 +960,7 @@ pub proc faucet_mint_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # mint the asset
@@ -864,7 +994,7 @@ pub proc faucet_burn_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_account_origin
+    exec.authenticate_and_track_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # burn the asset
@@ -875,7 +1005,10 @@ end
 # INPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the assets information of the specified input note.
+#! Returns the initial assets information of the specified input note.
+#!
+#! The returned commitment and number of assets are the ones the note was created with; they do
+#! not change when assets are removed from the note during transaction execution.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
@@ -883,20 +1016,20 @@ end
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
-#! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified input note.
-#! - num_assets is the number of assets in the specified input note.
+#! - note_index is the index of the input note whose assets info should be returned.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets the specified input note was created
+#!   with.
+#! - num_assets is the number of assets the specified input note was created with.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_assets_info
-    # get the input note pointer depending on whether the requested note is current or it was 
-    # requested by index.
+pub proc input_note_get_initial_assets_info
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
 
@@ -905,8 +1038,157 @@ pub proc input_note_get_assets_info
     dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
     # => [input_note_ptr, pad(15)]
 
-    # get the assets info
-    exec.input_note::get_assets_info
+    # get the initial assets info
+    exec.input_note::get_initial_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, pad(15)]
+
+    # truncate the stack
+    movupw.2 dropw
+    # => [ASSETS_COMMITMENT, num_assets, pad(11)]
+end
+
+#! Returns the asset at the specified index in the specified input note.
+#!
+#! The asset is returned as it currently is: if it was removed from the note, the returned
+#! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
+#!
+#! Inputs:  [is_active_note, asset_index, note_index, pad(13)]
+#! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether we should return the asset from the
+#!   active note or from the note with the specified index.
+#! - asset_index is the index of the asset to return.
+#! - note_index is the index of the input note whose asset should be returned.
+#! - ASSET_ID is the asset ID of the asset at the specified index.
+#! - ASSET_VALUE is the value of the asset at the specified index.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the asset index is greater or equal to the number of assets in the note.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_get_asset
+    # bring note_index directly above is_active_note so the note pointer can be resolved
+    movup.2 swap
+    # => [is_active_note, note_index, asset_index, pad(13)]
+
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, asset_index, pad(13)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, asset_index, pad(13)]
+
+    # get the asset
+    exec.input_note::get_asset
+    # => [ASSET_ID, ASSET_VALUE, pad(14)]
+
+    # truncate the stack
+    movupw.2 dropw movup.8 drop movup.8 drop
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+end
+
+#! Removes an asset from the specified input note.
+#!
+#! For instance, if the note holds a fungible asset with amount 100 under ASSET_ID, and
+#! ASSET_VALUE has amount 30, then the value remaining in the note has amount 70.
+#!
+#! If the entire asset value is removed, the asset's slot in the note is cleared, i.e. set to
+#! (EMPTY_WORD, EMPTY_WORD). This is always the case for non-composable assets.
+#!
+#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+#! Outputs: [FINAL_ASSET_VALUE, pad(12)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether the asset should be removed from the
+#!   active note or from the note with the specified index.
+#! - ASSET_ID is the asset ID of the asset to remove from the note.
+#! - ASSET_VALUE is the value of the asset to remove from the note.
+#! - note_index is the index of the input note from which the asset should be removed.
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
+#!   the EMPTY_WORD if the entire asset was removed.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#! - the asset's composition is Custom (not yet supported).
+#! - the asset is not present in the note.
+#! - the asset is not composable and is not present in the note with the exact value.
+#! - the amount of the fungible asset in the note is less than the amount to be removed.
+#!
+#! Invocation: dynexec
+pub proc input_note_remove_asset
+    # bring note_index directly above is_active_note so the note pointer can be resolved
+    movup.9 swap
+    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr, pad(7)]
+
+    # remove the asset from the note
+    exec.input_note::remove_asset
+    # => [FINAL_ASSET_VALUE, pad(14)]
+
+    movup.4 drop movup.4 drop
+    # => [FINAL_ASSET_VALUE, pad(12)]
+end
+
+#! Removes all remaining assets from the specified input note.
+#!
+#! Returns a commitment to the removed assets and stores them in the advice map under that
+#! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
+#! the assets that remained in the note at the time of the call, i.e. excluding assets that were
+#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#!
+#! The note's initial assets info (see input_note_get_initial_assets_info) is not affected by this
+#! procedure.
+#!
+#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether the assets should be removed from the
+#!   active note or from the note with the specified index.
+#! - note_index is the index of the input note from which the assets should be removed.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets removed by this procedure.
+#! - num_assets is the number of assets removed by this procedure.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#!   from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_remove_all_assets
+    # get the input note pointer depending on whether the requested note is the active one or if it
+    # was requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, pad(15)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, pad(15)]
+
+    # remove all remaining assets from the note
+    exec.input_note::remove_all_assets
     # => [ASSETS_COMMITMENT, num_assets, pad(15)]
 
     # truncate the stack
@@ -933,7 +1215,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_recipient
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1013,7 +1295,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_serial_number
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1054,7 +1336,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_storage_info
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1098,7 +1380,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_script_root
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -1173,8 +1455,16 @@ end
 #! - RECIPIENT is the recipient of the note.
 #! - note_idx is the index of the created note.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account.
+#!
 #! Invocation: dynexec
 pub proc output_note_create
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_and_track_account_origin
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [tag, note_type, RECIPIENT, pad(10)]
@@ -1484,6 +1774,25 @@ pub proc tx_compute_fee
     # => [fee_amount, pad(15)]
 end
 
+#! Returns the fee faucet ID of the transaction's reference block.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+#!
+#! Where:
+#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
+#!   the native fee asset.
+#!
+#! Invocation: dynexec
+pub proc tx_get_fee_faucet_id
+    exec.memory::get_fee_faucet_id
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(16)]
+
+    # truncate the stack
+    movup.2 drop movup.2 drop
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+end
+
 #! Returns the block commitment of the reference block.
 #!
 #! Inputs:  [pad(16)]
@@ -1559,7 +1868,11 @@ end
 #! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi(foreign_account_id: AccountId, foreign_proc_root: word, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(
+    foreign_account_id: AccountId,
+    foreign_proc_root: word,
+    foreign_procedure_input_15: felt
+)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
     # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]

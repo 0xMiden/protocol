@@ -22,12 +22,13 @@ members = [
   "faucets/policies/mint/owner_controlled/owner_only",
   "faucets/policies/policy_manager",
   "faucets/policies/transfer/allow_all",
-  "faucets/policies/transfer/allowlist/owner_controlled",
+  "faucets/policies/transfer/allowlist/manager",
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
-  "faucets/policies/transfer/blocklist/owner_controlled",
+  "faucets/policies/transfer/blocklist/manager",
   "inspection/code_inspection",
   "inspection/schema_commitment",
+  "note/note_creator",
   "wallets/basic_wallet",
 ]
 
@@ -35,6 +36,6 @@ members = [
 version = "0.16.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.22" }
+miden-core      = { linkage = "dynamic", version = "0.25" }
 miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
 miden-standards = { linkage = "static", version = "0.16.0" }
