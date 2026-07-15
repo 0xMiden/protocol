@@ -17,7 +17,7 @@ pub type ConversionRate = struct { num: u32, den: u32 }
 
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
 #! native fee asset, laid out as [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den].
-#! The empty word serves as the "no conversion info committed" sentinel; it can never be valid
+#! The empty word indicates that no conversion info was committed; it can never be valid
 #! conversion info, since a zero faucet ID prefix and a zero-denominator rate are both invalid.
 pub type ConversionInfo = word
 
@@ -78,8 +78,8 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! If the advice map contains an entry for the auth args, the entry must be the preimage
 #! [SALT, CONVERSION_INFO] of the domain-separated commitment
 #! AUTH_ARGS = hash(FEE_DOMAIN || hash(CONVERSION_INFO || SALT)); the verified conversion info is
-#! returned. If no entry exists, the empty word is returned as the "no conversion info committed"
-#! sentinel.
+#! returned. If no entry exists, the empty word is returned to indicate that no conversion
+#! info was committed.
 #!
 #! For now this procedure only decodes the auth args; in the future it could also make an FPI
 #! call to an oracle to obtain the conversion rate.
@@ -94,8 +94,8 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! - AUTH_ARGS is the domain-separated commitment hash(FEE_DOMAIN || hash(CONVERSION_INFO ||
 #!   SALT)) to the conversion info.
 #! - SALT is an arbitrary word (e.g. used for replay protection by the caller).
-#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den] (in memory
-#!   order), or the empty word if no conversion info was committed.
+#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den], or the empty
+#!   word if no conversion info was committed.
 #!
 #! Panics if:
 #! - the loaded conversion info does not match the AUTH_ARGS commitment.
@@ -103,14 +103,14 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! Invocation: exec
 @locals(4)
 pub proc load_conversion_info(auth_args: word) -> ConversionInfo
-    # empty auth args carry no commitment; return the sentinel without touching the advice map
+    # empty auth args carry no commitment; return the empty word without touching the advice map
     # (the advice map may legitimately contain an empty-word key, e.g. for a note's empty
     # attachments commitment, so the empty key must not be interpreted as conversion info)
     padw eqw
     # => [is_empty, EMPTY_WORD, AUTH_ARGS]
 
     if.true
-        # return one of the two empty words as the sentinel
+        # return one of the two empty words
         dropw
         # => [EMPTY_WORD]
     else
@@ -152,7 +152,7 @@ pub proc load_conversion_info(auth_args: word) -> ConversionInfo
             padw loc_loadw_le.LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC
             # => [CONVERSION_INFO]
         else
-            # no conversion info was committed; return the empty word sentinel
+            # no conversion info was committed; return the empty word
             dropw padw
             # => [EMPTY_WORD]
         end

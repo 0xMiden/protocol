@@ -31,8 +31,8 @@ const ERR_FEE_CONVERSION_INFO_MISSING = "paying a non-zero fee requires conversi
 #! 1/1.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
-#! note is created, no conversion info is required (the empty-word sentinel is accepted) and the
-#! account vault is left untouched.
+#! note is created, no conversion info is required (the empty word is accepted) and the account
+#! vault is left untouched.
 #!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO]
 #! Outputs: []
@@ -40,8 +40,8 @@ const ERR_FEE_CONVERSION_INFO_MISSING = "paying a non-zero fee requires conversi
 #! Where:
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
-#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den] (in memory
-#!   order), or the empty word if no conversion info was committed.
+#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den], or the empty
+#!   word if no conversion info was committed.
 #!
 #! Panics if:
 #! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
