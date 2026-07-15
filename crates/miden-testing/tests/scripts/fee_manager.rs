@@ -12,7 +12,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy, ZeroFeePolicy};
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_FEE_POLICY_ROOT_NOT_ALLOWED, ERR_SENDER_NOT_OWNER};
@@ -37,13 +37,14 @@ fn priced_root() -> NoteScriptRoot {
 
 /// Builds a `FeeManager` whose active policy is a `ConstantFeePolicy` charging [`FEE_AMOUNT`]
 /// (in the test faucet's asset) for notes with the [`priced_root`] script root, and whose
-/// allowed-policies map additionally registers the `ZeroFeePolicy` for runtime switching.
+/// allowed-policies map additionally registers the user-defined [`custom_fee_policy`] for
+/// runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
     let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
     Ok(FeeManager::builder()
         .active_fee_policy(FeePolicy::constant(constant_fee_policy))
-        .allowed_fee_policy(FeePolicy::zero())
+        .allowed_fee_policy(custom_fee_policy()?)
         .build())
 }
 
@@ -380,17 +381,18 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     Ok(())
 }
 
-/// The owner switches the active fee policy from the constant fee policy to the zero fee policy
-/// via `set_fee_policy`, after which `estimate_note_fee` estimates the previously priced root at
-/// zero fee.
+/// The owner switches the active fee policy from the constant fee policy to the user-defined
+/// custom policy via `set_fee_policy`, after which `estimate_note_fee` prices the previously
+/// priced root with the custom policy's logic instead of the schedule.
 #[tokio::test]
-async fn set_fee_policy_switches_to_zero_fee() -> anyhow::Result<()> {
+async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
     let account = build_fee_account_with_switching(owner_account_id)?;
 
-    let set_policy_note_script = create_set_fee_policy_note_script(ZeroFeePolicy::root().as_word());
+    let set_policy_note_script =
+        create_set_fee_policy_note_script(custom_fee_policy()?.root().as_word());
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -412,9 +414,11 @@ async fn set_fee_policy_switches_to_zero_fee() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    // With the zero fee policy active, the previously priced root estimates to the all-zero fee
-    // asset.
-    let tx_script_code = estimate_note_fee_tx_script_code(Word::empty(), Word::empty());
+    // With the custom policy active, the previously priced root is priced by the custom logic:
+    // the fee asset ID echoes STORAGE_COMMITMENT (all zeros in this script) and the amount is
+    // the fixed custom fee.
+    let tx_script_code =
+        estimate_note_fee_tx_script_code(Word::empty(), fee_value_word(CUSTOM_FEE_AMOUNT)?);
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     mock_chain
@@ -475,7 +479,8 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
 
     let account = build_fee_account_with_switching(owner_account_id)?;
 
-    let set_policy_note_script = create_set_fee_policy_note_script(ZeroFeePolicy::root().as_word());
+    let set_policy_note_script =
+        create_set_fee_policy_note_script(custom_fee_policy()?.root().as_word());
     let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
     let set_policy_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)

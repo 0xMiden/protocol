@@ -28,7 +28,6 @@ members = [
   "faucets/policies/transfer/blocklist/manager",
   "fees/fee_manager",
   "fees/policies/constant_fee",
-  "fees/policies/zero_fee",
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",

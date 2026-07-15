@@ -6,10 +6,8 @@ use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use thiserror::Error;
 
 mod constant_fee;
-mod zero_fee;
 
 pub use constant_fee::ConstantFeePolicy;
-pub use zero_fee::ZeroFeePolicy;
 
 // FEE POLICY ERROR
 // ================================================================================================
@@ -31,8 +29,8 @@ pub enum FeePolicyError {
 /// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct via [`Self::constant`], [`Self::zero`], or [`Self::custom`]. Pass to the
-/// [`super::FeeManager`] builder via `active_fee_policy` or `allowed_fee_policy`.
+/// Construct via [`Self::constant`] or [`Self::custom`]. Pass to the [`super::FeeManager`]
+/// builder via `active_fee_policy` or `allowed_fee_policy`.
 #[derive(Debug, Clone)]
 pub struct FeePolicy {
     root: AccountProcedureRoot,
@@ -45,14 +43,6 @@ impl FeePolicy {
         Self {
             root: ConstantFeePolicy::root(),
             components: vec![policy.into()],
-        }
-    }
-
-    /// Returns a fee policy estimating every note at zero fee.
-    pub fn zero() -> Self {
-        Self {
-            root: ZeroFeePolicy::root(),
-            components: vec![ZeroFeePolicy.into()],
         }
     }
 

@@ -290,22 +290,46 @@ impl IntoIterator for FeeManager {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::component::AccountComponentMetadata;
     use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
     use crate::account::auth::NoAuth;
-    use crate::account::fees::{ConstantFeePolicy, ZeroFeePolicy};
+    use crate::account::fees::ConstantFeePolicy;
+    use crate::code_builder::CodeBuilder;
 
     fn fee_faucet_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing account ID should be valid")
     }
 
+    /// Builds a minimal user-defined fee policy, mirroring how a contract developer registers a
+    /// reserved policy for runtime switching.
+    fn custom_fee_policy() -> FeePolicy {
+        const NAME: &str = "test::fees::custom_policy";
+        let masm_source = "
+            @account_procedure
+            pub proc compute_note_fee
+                dropw dropw dropw dropw
+            end
+        ";
+        let code = CodeBuilder::default()
+            .compile_component_code(NAME, masm_source)
+            .expect("custom fee policy should compile");
+        let root = code
+            .get_procedure_root_by_path(format!("{NAME}::compute_note_fee").as_str())
+            .expect("custom fee policy should export compute_note_fee");
+        let component = AccountComponent::new(code, vec![], AccountComponentMetadata::mock(NAME))
+            .expect("custom fee policy component should be valid");
+        FeePolicy::custom(root, [component])
+            .expect("custom fee policy root should be in the component")
+    }
+
     fn fee_manager() -> FeeManager {
         FeeManager::builder()
             .active_fee_policy(FeePolicy::constant(ConstantFeePolicy::new(fee_faucet_id())))
-            .allowed_fee_policy(FeePolicy::zero())
+            .allowed_fee_policy(custom_fee_policy())
             .build()
     }
 
@@ -337,7 +361,7 @@ mod tests {
             "the active policy root should be registered in the allowed map"
         );
         assert_eq!(
-            map.get(&StorageMapKey::new(ZeroFeePolicy::root().as_word())),
+            map.get(&StorageMapKey::new(custom_fee_policy().root().as_word())),
             allowed_flag,
             "the reserved policy root should be registered in the allowed map"
         );
@@ -358,7 +382,7 @@ mod tests {
             FeeManager::set_fee_policy_root(),
             FeeManager::get_fee_policy_root(),
             ConstantFeePolicy::root(),
-            ZeroFeePolicy::root(),
+            custom_fee_policy().root(),
         ] {
             assert!(account.code().has_procedure(*root.mast_root()));
         }
