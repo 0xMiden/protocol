@@ -4,6 +4,7 @@ members = [
   "bin/bench-transaction",
   "crates/miden-agglayer",
   "crates/miden-block-prover",
+  "crates/miden-build-utils",
   "crates/miden-protocol",
   "crates/miden-standards",
   "crates/miden-testing",
@@ -38,6 +39,7 @@ lto           = true
 # Workspace crates
 miden-agglayer     = { default-features = false, path = "crates/miden-agglayer", version = "0.16.0-alpha.1" }
 miden-block-prover = { default-features = false, path = "crates/miden-block-prover", version = "0.16.0-alpha.1" }
+miden-build-utils  = { default-features = false, path = "crates/miden-build-utils", version = "0.16.0-alpha.1" }
 miden-protocol     = { default-features = false, path = "crates/miden-protocol", version = "0.16.0-alpha.1" }
 miden-standards    = { default-features = false, path = "crates/miden-standards", version = "0.16.0-alpha.1" }
 miden-testing      = { default-features = false, path = "crates/miden-testing", version = "0.16.0-alpha.1" }

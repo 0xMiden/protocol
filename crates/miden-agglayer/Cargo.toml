@@ -49,9 +49,9 @@ serde_json     = { features = ["std"], workspace = true }
 fs-err                = { workspace = true }
 miden-assembly        = { workspace = true }
 miden-assembly-syntax = { workspace = true }
+miden-build-utils     = { workspace = true }
 miden-core            = { workspace = true }
 miden-crypto          = { workspace = true }
 miden-protocol        = { features = ["testing"], workspace = true }
 miden-standards       = { workspace = true }
 regex                 = { workspace = true }
-walkdir               = { workspace = true }

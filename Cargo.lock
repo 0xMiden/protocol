@@ -1493,6 +1493,7 @@ dependencies = [
  "fs-err",
  "miden-assembly",
  "miden-assembly-syntax",
+ "miden-build-utils",
  "miden-core",
  "miden-crypto",
  "miden-protocol",
@@ -1503,7 +1504,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "walkdir",
 ]
 
 [[package]]
@@ -1580,6 +1580,17 @@ version = "0.16.0-alpha.1"
 dependencies = [
  "miden-protocol",
  "thiserror",
+]
+
+[[package]]
+name = "miden-build-utils"
+version = "0.16.0-alpha.1"
+dependencies = [
+ "fs-err",
+ "miden-assembly",
+ "miden-mast-package",
+ "regex",
+ "walkdir",
 ]
 
 [[package]]
@@ -1870,6 +1881,7 @@ dependencies = [
  "getrandom 0.4.3",
  "miden-assembly",
  "miden-assembly-syntax",
+ "miden-build-utils",
  "miden-core",
  "miden-core-lib",
  "miden-crypto",
@@ -1937,8 +1949,8 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bon",
- "fs-err",
  "miden-assembly",
+ "miden-build-utils",
  "miden-core-lib",
  "miden-mast-package",
  "miden-package-registry",
@@ -1946,9 +1958,7 @@ dependencies = [
  "miden-protocol",
  "miden-standards",
  "rand 0.10.2",
- "regex",
  "thiserror",
- "walkdir",
 ]
 
 [[package]]

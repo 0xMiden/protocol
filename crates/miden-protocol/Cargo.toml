@@ -72,6 +72,7 @@ tempfile       = { version = "3.19" }
 [build-dependencies]
 fs-err                 = { workspace = true }
 miden-assembly         = { features = ["std"], workspace = true }
+miden-build-utils      = { workspace = true }
 miden-core             = { workspace = true }
 miden-core-lib         = { workspace = true }
 miden-mast-package     = { features = ["std"], workspace = true }

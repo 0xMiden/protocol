@@ -6,7 +6,19 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, Path as MasmPath, ProjectTargetSelector};
+use miden_assembly::{Path as MasmPath, ProjectTargetSelector};
+use miden_build_utils::{
+    BUILD_PROFILE,
+    ErrorModule,
+    NamedError,
+    PROJECT_MANIFEST,
+    build_assembler,
+    copy_directory,
+    extract_all_masm_errors,
+    generate_error_file,
+    is_masm_file,
+    write_release_package,
+};
 use miden_core::events::EventId;
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageExport};
@@ -25,15 +37,6 @@ const ASM_PROTOCOL_UTILS_DIR: &str = "protocol_utils";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
 const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
-
-/// Name of the manifest file defining a Miden project.
-const PROJECT_MANIFEST: &str = "miden-project.toml";
-
-/// The build profile used when assembling the Miden projects.
-///
-/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
-/// information; consumers can strip it as needed.
-const BUILD_PROFILE: &str = "dev";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
@@ -81,7 +84,7 @@ fn main() -> Result<()> {
     let build_dir = env::var("OUT_DIR").unwrap();
     let src = Path::new(&crate_dir).join(ASM_DIR);
     let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
+    copy_directory(src, &dst, ASM_DIR)?;
 
     // set source directory to {OUT_DIR}/asm
     let source_dir = dst.join(ASM_DIR);
@@ -345,38 +348,6 @@ fn compile_protocol_lib(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a new [Assembler] using the provided source manager, with warnings treated as errors.
-fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
-    Assembler::new(source_manager).with_warnings_as_errors(true)
-}
-
-/// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
-fn write_release_package(package: &Package) -> Result<()> {
-    let out_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
-    let out_path = Path::new(&out_dir);
-    // OUT_DIR is `<target>/<profile>/build/<pkg>-<hash>/out` so the profile dir is its 3rd
-    // ancestor.
-    let profile_dir = out_path
-        .ancestors()
-        .nth(3)
-        .expect("OUT_DIR should live under <target>/<profile>/build/<pkg>/out");
-
-    let name: &str = &package.name;
-    let final_path = profile_dir.join(name).with_extension(Package::EXTENSION);
-
-    let unique = out_path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
-    // Because multiple build-script runs may write this same path, the package is created as a temp
-    // file and atomically renamed into place.
-    let tmp_path = profile_dir.join(format!(".{name}.{unique}.masp.tmp"));
-
-    package.write_to_file(&tmp_path).into_diagnostic()?;
-    fs::rename(&tmp_path, &final_path).into_diagnostic()
-}
-
 fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
     path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
 }
@@ -414,26 +385,25 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // ------------------------------------------
 
     let shared_utils_dir = asm_source_dir.join(ASM_PROTOCOL_UTILS_DIR);
-    let shared_utils_errors = shared::extract_all_masm_errors(&shared_utils_dir)
-        .context("failed to extract all masm errors")?;
+    let shared_utils_errors =
+        extract_all_masm_errors(&shared_utils_dir).context("failed to extract all masm errors")?;
 
     // Transaction kernel errors
     // ------------------------------------------
 
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
-    let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
-        .context("failed to extract all masm errors")?;
+    let mut errors =
+        extract_all_masm_errors(&tx_kernel_dir).context("failed to extract all masm errors")?;
     // Most kernel error constants live in the tx kernel core library, which is a separate project.
     let kernel_core_dir = asm_source_dir.join(ASM_TX_KERNEL_CORE_DIR);
     errors.extend(
-        shared::extract_all_masm_errors(&kernel_core_dir)
-            .context("failed to extract all masm errors")?,
+        extract_all_masm_errors(&kernel_core_dir).context("failed to extract all masm errors")?,
     );
     errors.extend_from_slice(&shared_utils_errors);
     validate_tx_kernel_category(&errors)?;
 
-    shared::generate_error_file(
-        shared::ErrorModule {
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(TX_KERNEL_ERRORS_RS_FILE),
             array_name: TX_KERNEL_ERRORS_ARRAY_NAME,
             is_crate_local: true,
@@ -445,12 +415,12 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // ------------------------------------------
 
     let protocol_dir = asm_source_dir.join(ASM_PROTOCOL_DIR);
-    let mut errors = shared::extract_all_masm_errors(&protocol_dir)
-        .context("failed to extract all masm errors")?;
+    let mut errors =
+        extract_all_masm_errors(&protocol_dir).context("failed to extract all masm errors")?;
     errors.extend(shared_utils_errors);
 
-    shared::generate_error_file(
-        shared::ErrorModule {
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(PROTOCOL_LIB_ERRORS_RS_FILE),
             array_name: PROTOCOL_LIB_ERRORS_ARRAY_NAME,
             is_crate_local: true,
@@ -463,7 +433,7 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
 
 /// Validates that all error names in the provided slice start with a known tx kernel error
 /// category.
-fn validate_tx_kernel_category(errors: &[shared::NamedError]) -> Result<()> {
+fn validate_tx_kernel_category(errors: &[NamedError]) -> Result<()> {
     for error in errors {
         if !TX_KERNEL_ERROR_CATEGORIES
             .iter()
@@ -505,7 +475,7 @@ fn extract_all_event_definitions(asm_source_dir: &Path) -> Result<BTreeMap<Strin
     // Walk all MASM files
     for entry in WalkDir::new(asm_source_dir) {
         let entry = entry.into_diagnostic()?;
-        if !shared::is_masm_file(entry.path()).into_diagnostic()? {
+        if !is_masm_file(entry.path()).into_diagnostic()? {
             continue;
         }
         let file_contents = fs::read_to_string(entry.path()).into_diagnostic()?;
@@ -587,244 +557,4 @@ fn generate_event_file_content(
     }
 
     Ok(output)
-}
-
-/// This module should be kept in sync with the copy in miden-standards' build.rs.
-mod shared {
-    use std::collections::BTreeMap;
-    use std::fmt::Write;
-    use std::io::{self};
-    use std::path::{Path, PathBuf};
-
-    use fs_err as fs;
-    use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-    use regex::Regex;
-    use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Returns true if the provided path resolves to a file with `.masm` extension.
-    ///
-    /// # Errors
-    /// Returns an error if the path could not be converted to a UTF-8 string.
-    pub fn is_masm_file(path: &Path) -> io::Result<bool> {
-        if let Some(extension) = path.extension() {
-            let extension = extension
-                .to_str()
-                .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
-                .to_lowercase();
-            Ok(extension == "masm")
-        } else {
-            Ok(false)
-        }
-    }
-
-    /// Extract all masm errors from the given path and returns a map by error category.
-    pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>> {
-        // We use a BTree here to order the errors by their categories which is the first part after
-        // the ERR_ prefix and to allow for the same error to be defined multiple times in
-        // different files (as long as the constant name and error messages match).
-        let mut errors = BTreeMap::new();
-
-        // Walk all files of the kernel source directory.
-        for entry in WalkDir::new(asm_source_dir) {
-            let entry = entry.into_diagnostic()?;
-            if !is_masm_file(entry.path()).into_diagnostic()? {
-                continue;
-            }
-            let file_contents = std::fs::read_to_string(entry.path()).into_diagnostic()?;
-            extract_masm_errors(&mut errors, &file_contents)?;
-        }
-
-        let errors = errors
-            .into_iter()
-            .map(|(error_name, error)| NamedError { name: error_name, message: error.message })
-            .collect();
-
-        Ok(errors)
-    }
-
-    /// Extracts the errors from a single masm file and inserts them into the provided map.
-    pub fn extract_masm_errors(
-        errors: &mut BTreeMap<ErrorName, ExtractedError>,
-        file_contents: &str,
-    ) -> Result<()> {
-        let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
-
-        for capture in regex.captures_iter(file_contents) {
-            let error_name = capture
-                .name("name")
-                .expect("error name should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-            let error_message = capture
-                .name("message")
-                .expect("error code should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-
-            if let Some(ExtractedError { message: existing_error_message, .. }) =
-                errors.get(&error_name)
-                && existing_error_message != &error_message
-            {
-                return Err(Report::msg(format!(
-                    "Transaction kernel error constant ERR_{error_name} is already defined elsewhere but its error message is different"
-                )));
-            }
-
-            // Enforce the "no trailing punctuation" rule from the Rust error guidelines on MASM
-            // errors.
-            if error_message.ends_with(".") {
-                return Err(Report::msg(format!(
-                    "Error messages should not end with a period: `ERR_{error_name}: {error_message}`"
-                )));
-            }
-
-            errors.insert(error_name, ExtractedError { message: error_message });
-        }
-
-        Ok(())
-    }
-
-    pub fn is_new_error_category<'a>(
-        last_error: &mut Option<&'a str>,
-        current_error: &'a str,
-    ) -> bool {
-        let is_new = match last_error {
-            Some(last_err) => {
-                let last_category =
-                    last_err.split("_").next().expect("there should be at least one entry");
-                let new_category =
-                    current_error.split("_").next().expect("there should be at least one entry");
-                last_category != new_category
-            },
-            None => false,
-        };
-
-        last_error.replace(current_error);
-
-        is_new
-    }
-
-    /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the file at the path specified in the module.
-    pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
-        let mut output = String::new();
-
-        if module.is_crate_local {
-            writeln!(output, "use crate::errors::MasmError;\n").unwrap();
-        } else {
-            writeln!(output, "use miden_protocol::errors::MasmError;\n").unwrap();
-        }
-
-        writeln!(
-            output,
-            "// This file is generated by build.rs, do not modify manually.
-// It is generated by extracting errors from the MASM files in the `./asm` directory.
-//
-// To add a new error, define a constant in MASM of the pattern `const ERR_<CATEGORY>_...`.
-// Try to fit the error into a pre-existing category if possible (e.g. Account, Note, ...).
-"
-        )
-        .unwrap();
-
-        writeln!(
-            output,
-            "// {}
-// ================================================================================================
-",
-            module.array_name.replace("_", " ")
-        )
-        .unwrap();
-
-        let mut last_error = None;
-        for named_error in errors.iter() {
-            let NamedError { name, message } = named_error;
-
-            // Group errors into blocks separate by newlines.
-            if is_new_error_category(&mut last_error, name) {
-                writeln!(output).into_diagnostic()?;
-            }
-
-            writeln!(output, "/// Error Message: \"{message}\"").into_diagnostic()?;
-            writeln!(
-                output,
-                r#"pub const ERR_{name}: MasmError = MasmError::from_static_str("{message}");"#
-            )
-            .into_diagnostic()?;
-        }
-
-        fs::write(module.file_path, output).into_diagnostic()?;
-
-        Ok(())
-    }
-
-    pub type ErrorName = String;
-
-    #[derive(Debug, Clone)]
-    pub struct ExtractedError {
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct NamedError {
-        pub name: ErrorName,
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ErrorModule {
-        pub file_path: PathBuf,
-        pub array_name: &'static str,
-        pub is_crate_local: bool,
-    }
 }
