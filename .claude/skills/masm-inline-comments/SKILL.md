@@ -90,6 +90,18 @@ Use the vocabulary already established in the surrounding code and doc comments.
 
 Inline comments explain what the code does for a future reader, not why a particular PR made a change. Avoid PR narrative and framing such as "this is the X that prevents Y"; describe the operation and its purpose as the code stands.
 
+### 7. Accessing a word's individual elements
+
+When accessing individual elements of a word, show the word destructured into elements, grouped with brackets, e.g.:
+
+```
+# => [ASSET_ID, ASSET_VALUE]
+# => [[asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE]
+
+dup
+# => [asset_class_suffix, ASSET_ID, ASSET_VALUE]
+```
+
 ## Examples
 
 **Good:**

@@ -755,6 +755,18 @@ pub proc get_verification_base_fee
     mem_load.VERIFICATION_BASE_FEE_PTR
 end
 
+#! Returns the fee faucet ID from the transaction's reference block.
+#!
+#! Inputs:  []
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
+#!
+#! Where:
+#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
+#!   the native fee asset.
+pub proc get_fee_faucet_id
+    mem_load.FEE_FAUCET_ID_PREFIX_PTR mem_load.FEE_FAUCET_ID_SUFFIX_PTR
+end
+
 #! Returns the chain commitment of the transaction reference block.
 #!
 #! Inputs:  []
