@@ -7,7 +7,7 @@ use miden_protocol::{Felt, Hasher, Word};
 // FEE PAYMENT INFO
 // ================================================================================================
 
-/// Conversion info instructing `miden::standards::fee::auth::singlesig::pay_fee` which asset to pay
+/// Conversion info instructing `miden::standards::fee::pay_fee` which asset to pay
 /// the transaction fee in.
 ///
 /// The fee amount computed by the transaction kernel is denominated in the native fee asset;

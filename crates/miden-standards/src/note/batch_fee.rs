@@ -132,7 +132,7 @@ impl BatchFeeNote {
     // SERIAL NUMBER DERIVATION
     // --------------------------------------------------------------------------------------------
 
-    /// Derives the serial number that `miden::standards::fee::auth::singlesig::pay_fee` uses for
+    /// Derives the serial number that `miden::standards::fee::pay_fee` uses for
     /// the BATCH_FEE note it creates during a transaction.
     ///
     /// The serial number is `hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
