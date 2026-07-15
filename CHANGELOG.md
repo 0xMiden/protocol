@@ -2,8 +2,13 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
+
 ### Changes
 
+- Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 - [BREAKING] Migrated the `miden-agglayer` library, components and note scripts to `miden-project.toml` projects ([#3306](https://github.com/0xMiden/protocol/pull/3306)). 
 
