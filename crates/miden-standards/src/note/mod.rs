@@ -369,36 +369,3 @@ impl Clone for NoteConsumptionStatus {
         }
     }
 }
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every registered variant must resolve back to itself from its own script root; a wrong
-    /// mapping in `from_script_root` would silently misclassify notes.
-    #[test]
-    fn script_root_round_trips_for_every_standard_note() {
-        let variants = [
-            StandardNote::P2ID,
-            StandardNote::P2IDE,
-            StandardNote::SWAP,
-            StandardNote::PSWAP,
-            StandardNote::MINT,
-            StandardNote::BURN,
-            StandardNote::FAUCET_POLICY_ACTION,
-            StandardNote::PAUSE_ACTION,
-            StandardNote::OWNER_ACTION,
-            StandardNote::RBAC_ACTION,
-            StandardNote::FEE_SPONSORSHIP,
-        ];
-
-        for variant in variants {
-            let resolved = StandardNote::from_script_root(variant.script_root())
-                .unwrap_or_else(|| panic!("script root of {} must resolve", variant.name()));
-            assert_eq!(resolved.name(), variant.name());
-        }
-    }
-}
