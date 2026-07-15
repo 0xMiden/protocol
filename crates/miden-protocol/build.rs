@@ -13,7 +13,6 @@ use miden_build_utils::{
     NamedError,
     PROJECT_MANIFEST,
     build_assembler,
-    copy_directory,
     extract_all_masm_errors,
     generate_error_file,
     is_masm_file,
@@ -79,15 +78,9 @@ fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
-    let dst = Path::new(&build_dir).to_path_buf();
-    copy_directory(src, &dst, ASM_DIR)?;
-
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
+    let source_dir = Path::new(&crate_dir).join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);

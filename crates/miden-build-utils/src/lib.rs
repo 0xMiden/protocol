@@ -11,7 +11,7 @@ use std::{env, io};
 
 use fs_err as fs;
 use miden_assembly::debuginfo::SourceManager;
-use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result};
 use miden_assembly::{Assembler, Report};
 use miden_mast_package::Package;
 use regex::Regex;
@@ -31,50 +31,6 @@ pub const BUILD_PROFILE: &str = "dev";
 
 // MASM SOURCE FILE HELPERS
 // ================================================================================================
-
-/// Recursively copies `src` into `dst`.
-///
-/// This function will overwrite the existing files if re-executed.
-pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(src: T, dst: R, asm_dir: &str) -> Result<()> {
-    let mut prefix = src.as_ref().canonicalize().unwrap();
-    // keep all the files inside the `asm` folder
-    prefix.pop();
-
-    let target_dir = dst.as_ref().join(asm_dir);
-    if target_dir.exists() {
-        // Clear existing asm files that were copied earlier which may no longer exist.
-        fs::remove_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to remove ASM directory")?;
-    }
-
-    // Recreate the directory structure.
-    fs::create_dir_all(&target_dir)
-        .into_diagnostic()
-        .wrap_err("failed to create ASM directory")?;
-
-    let dst = dst.as_ref();
-    let mut todo = vec![src.as_ref().to_path_buf()];
-
-    while let Some(goal) = todo.pop() {
-        for entry in fs::read_dir(goal).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                let src_dir = path.canonicalize().unwrap();
-                let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                if !dst_dir.exists() {
-                    fs::create_dir_all(&dst_dir).unwrap();
-                }
-                todo.push(src_dir);
-            } else {
-                let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                fs::copy(&path, dst_file).unwrap();
-            }
-        }
-    }
-
-    Ok(())
-}
 
 /// Returns a vector with paths to all MASM files in the specified directory.
 ///

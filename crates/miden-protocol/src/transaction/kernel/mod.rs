@@ -534,7 +534,7 @@ pub(crate) mod source_manager_ext {
 
     /// Implements the logic of the above function with error handling.
     fn load(source_manager: &dyn SourceManager) -> io::Result<()> {
-        for file in get_masm_files(concat!(env!("OUT_DIR"), "/asm"))? {
+        for file in get_masm_files(concat!(env!("CARGO_MANIFEST_DIR"), "/asm"))? {
             source_manager.load_file(&file).map_err(io::Error::other)?;
         }
 
