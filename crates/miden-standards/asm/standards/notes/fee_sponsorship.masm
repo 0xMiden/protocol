@@ -32,6 +32,8 @@ const NUM_STORAGE_ITEMS = 7
 
 const ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fee sponsorship note expects exactly 7 note storage items"
 
+const ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET = "fee sponsorship note must contain exactly one asset"
+
 const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "fee sponsorship reclaim is disabled"
 
 const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim fee sponsorship note because the reclaim block height is not reached yet"
@@ -83,7 +85,8 @@ end
 #! FEE_SPONSORSHIP script: verifies that the bound feature note is consumed by the same
 #! transaction; otherwise it attempts a reclaim.
 #!
-#! The note carries the fee for exactly one feature note, named by the note ID in its storage.
+#! The note carries the fee for exactly one feature note, named by the note ID in its storage. The
+#! fee is a single asset; carrying exactly one asset keeps fee collection simple.
 #!
 #! The note does not restrict who may consume it; it only requires the bound feature note to be
 #! consumed alongside it. Consumption rights are thereby inherited from the feature note: whoever
@@ -120,6 +123,7 @@ end
 #!
 #! Panics if:
 #! - the number of note storage items is not 7.
+#! - the note does not carry exactly one asset.
 #! - feature_note_idx is greater or equal to the total number of input notes.
 #! - the input note at feature_note_idx is not the bound feature note, and the note cannot be
 #!   reclaimed (reclaim is disabled, the reclaim block height is not reached, or the active account
@@ -136,6 +140,12 @@ pub proc main
     # => [num_storage_items, feature_note_idx, pad(12)]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [feature_note_idx, pad(12)]
+
+    exec.active_note::get_initial_num_assets
+    # => [num_assets, feature_note_idx, pad(12)]
+
+    eq.1 assert.err=ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET
     # => [feature_note_idx, pad(12)]
 
     exec.note_id::compute_input_note_id

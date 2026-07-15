@@ -44,9 +44,9 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// A FEE_SPONSORSHIP note: carries the fee for exactly one feature note.
 ///
 /// Under the sponsorship fee model, the feature note (`BURN`, `CLAIM`, `B2AGG`, ...) stays
-/// entirely fee-unaware. The fee travels in this separate note, which names the feature note it
-/// pays for by carrying that note's [`NoteId`] in its note storage. The note carries no
-/// attachments; its tag routes it to the network account the feature note targets.
+/// entirely fee-unaware. The fee travels in this separate note as exactly one asset; the note
+/// names the feature note it pays for by carrying that note's [`NoteId`] in its note storage. The
+/// note carries no attachments; its tag routes it to the network account the feature note targets.
 ///
 /// # Consumption
 ///
@@ -80,6 +80,9 @@ impl FeeSponsorshipNote {
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
     ///
+    /// The fee is exactly one asset; the note script rejects notes carrying any other number of
+    /// assets, which keeps fee collection simple.
+    ///
     /// The reclaimer, the account allowed to reclaim the note after `reclaim_height`, defaults to
     /// `sender` when left unset.
     ///
@@ -87,14 +90,12 @@ impl FeeSponsorshipNote {
     ///
     /// Returns an error if:
     /// - the target account is not public. A network note's tag must route to a public account.
-    /// - `assets` is empty. A sponsorship that pays nothing is never intended.
-    /// - `assets` contains duplicates or exceeds the protocol limit (see [`NoteAssets::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] assets: Vec<Asset>,
         sender: AccountId,
         #[builder(name = target_account)] target: AccountId,
         feature_note_id: NoteId,
+        #[builder(into)] asset: Asset,
         serial_number: Word,
         reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
@@ -102,11 +103,9 @@ impl FeeSponsorshipNote {
         if !target.is_public() {
             return Err(NoteError::other("fee sponsorship target account must be public"));
         }
-        if assets.is_empty() {
-            return Err(NoteError::other("a fee sponsorship note must contain at least one asset"));
-        }
 
-        let assets = NoteAssets::new(assets)?;
+        let assets =
+            NoteAssets::new(vec![asset]).expect("a single asset is a valid note asset list");
         // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
         let reclaimer = reclaimer.unwrap_or(sender);
         let storage = FeeSponsorshipNoteStorage::new(feature_note_id, reclaimer, reclaim_height);
@@ -178,20 +177,6 @@ impl FeeSponsorshipNote {
 
 // BUILDER EXTENSIONS
 // ================================================================================================
-
-impl<S: fee_sponsorship_note_builder::State> FeeSponsorshipNoteBuilder<S> {
-    /// Adds a single asset to the note.
-    pub fn asset(mut self, asset: impl Into<Asset>) -> Self {
-        self.assets.push(asset.into());
-        self
-    }
-
-    /// Adds multiple assets to the note.
-    pub fn assets(mut self, assets: impl IntoIterator<Item = impl Into<Asset>>) -> Self {
-        self.assets.extend(assets.into_iter().map(Into::into));
-        self
-    }
-}
 
 impl<S: fee_sponsorship_note_builder::State> FeeSponsorshipNoteBuilder<S>
 where
@@ -440,22 +425,6 @@ mod tests {
         let note = Note::from(sponsorship);
         assert_eq!(note.storage().items()[4], reclaimer.suffix());
         assert_eq!(note.storage().items()[5], reclaimer.prefix().as_felt());
-    }
-
-    /// A sponsorship that pays nothing is never intended, so the constructor rejects it.
-    #[test]
-    fn builder_rejects_empty_assets() {
-        let err = FeeSponsorshipNote::builder()
-            .sender(sponsor())
-            .target_account(network_account())
-            .feature_note_id(feature_note_id())
-            .serial_number(Word::empty())
-            .build()
-            .expect_err("a sponsorship without assets must be rejected");
-
-        assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("must contain at least one asset"))
-        });
     }
 
     /// The tag of a network note must route to a public account.

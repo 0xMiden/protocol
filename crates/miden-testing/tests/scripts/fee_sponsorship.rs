@@ -4,18 +4,19 @@ use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
-use miden_protocol::note::{Note, NoteId, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteId, NoteTag, NoteType, PartialNoteMetadata};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET,
     ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
     ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
     ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
 };
-use miden_standards::note::FeeSponsorshipNote;
+use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -225,6 +226,39 @@ async fn sponsorship_cannot_be_consumed_without_feature_note(
         .await;
 
     assert_transaction_executor_error!(result, expected_err);
+
+    Ok(())
+}
+
+/// The script rejects a sponsorship note that does not carry exactly one asset.
+///
+/// The Rust builder cannot produce such a note, so it is assembled by hand from the raw parts.
+#[tokio::test]
+async fn script_rejects_note_without_exactly_one_asset() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::empty());
+    let mut builder = MockChain::builder();
+    let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+
+    let storage = FeeSponsorshipNoteStorage::new(feature_note.id(), sponsor.id(), None);
+    let metadata = PartialNoteMetadata::new(sponsor.id(), NoteType::Public)
+        .with_tag(NoteTag::with_account_target(network_account.id()));
+    let assetless_sponsorship =
+        Note::new(NoteAssets::default(), metadata, storage.into_recipient(rng.draw_word()));
+    builder.add_output_note(RawOutputNote::Full(assetless_sponsorship.clone()));
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(assetless_sponsorship.id())
+        .authenticated_input_note(feature_note.id())
+        .extend_note_args(sponsorship_args(&assetless_sponsorship, 1))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET);
 
     Ok(())
 }
