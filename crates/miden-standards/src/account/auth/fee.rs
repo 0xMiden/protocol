@@ -12,14 +12,10 @@ use miden_protocol::{Felt, Hasher, Word};
 ///
 /// The fee amount computed by the transaction kernel is denominated in the native fee asset;
 /// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
-/// To pay in the native fee asset, use [`Self::native`], which commits to the native fee faucet
-/// at rate 1/1.
+/// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::trivial`].
 ///
-/// The conversion info is committed to via the transaction's auth args: the auth args must be set
-/// to [`Self::auth_args`], which is the hash of the conversion info together with a caller-chosen
-/// salt, and the advice map must contain the preimage under that commitment (see
-/// [`Self::advice_map_entry`]). The salt slot keeps the auth args usable as a unique salt for
-/// replay protection while committing to the conversion info.
+/// For signature-based authentication components the conversion info is typically committed to
+/// via the transaction's auth args (see [`Self::auth_args`] and [`Self::advice_map_entry`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeeConversionInfo {
     faucet_id: AccountId,
@@ -45,14 +41,10 @@ impl FeeConversionInfo {
         Ok(Self { faucet_id, rate_num, rate_den })
     }
 
-    /// Creates fee conversion info paying the fee in the native fee asset issued by
-    /// `fee_faucet_id` (from the reference block's fee parameters), i.e. at rate 1/1.
-    pub fn native(fee_faucet_id: AccountId) -> Self {
-        Self {
-            faucet_id: fee_faucet_id,
-            rate_num: 1,
-            rate_den: 1,
-        }
+    /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
+    /// trivial rate 1/1, e.g. to pay in the native fee asset itself.
+    pub fn trivial(faucet_id: AccountId) -> Self {
+        Self { faucet_id, rate_num: 1, rate_den: 1 }
     }
 
     // PUBLIC ACCESSORS
@@ -90,12 +82,18 @@ impl FeeConversionInfo {
     }
 
     /// Returns the auth args committing to this conversion info under the given salt.
+    ///
+    /// The commitment is the hash of the conversion info together with the caller-chosen salt,
+    /// so the signature over the transaction summary authorizes the payment asset and rate. The
+    /// salt slot keeps the auth args usable as a unique salt for replay protection while
+    /// committing to the conversion info.
     pub fn auth_args(&self, salt: Word) -> Word {
         Hasher::merge(&[self.to_word(), salt])
     }
 
     /// Returns the advice map entry that must accompany the auth args commitment: the key is
-    /// [`Self::auth_args`] and the value is the preimage `[SALT, CONVERSION_INFO]`.
+    /// [`Self::auth_args`] and the value is the preimage `[SALT, CONVERSION_INFO]`, which
+    /// `miden::standards::fee::load_conversion_info` reads and verifies in-VM.
     pub fn advice_map_entry(&self, salt: Word) -> (Word, Vec<Felt>) {
         let mut value = Vec::with_capacity(8);
         value.extend(salt.iter());

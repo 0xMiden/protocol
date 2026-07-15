@@ -51,7 +51,7 @@ fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
 /// returns the executed transaction together with the wallet's initial nonce.
 ///
 /// When no conversion info entry is provided, the fee is paid in the native fee asset via
-/// [`FeeConversionInfo::native`] at rate 1/1.
+/// [`FeeConversionInfo::trivial`] at rate 1/1.
 async fn execute_fee_paying_tx(
     auth_scheme: AuthScheme,
     extra_assets: &[Asset],
@@ -70,7 +70,7 @@ async fn execute_fee_paying_tx(
     let initial_nonce = account.nonce();
 
     let (args, advice_value) = conversion_info_entry.unwrap_or_else(|| {
-        FeeConversionInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
+        FeeConversionInfo::trivial(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
     });
 
     let executed_transaction = mock_chain
@@ -413,7 +413,7 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let (args, advice_value) =
-        FeeConversionInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
+        FeeConversionInfo::trivial(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
 
     let result = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -528,7 +528,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     let tx_script_src = format!("@transaction_script\npub proc main\n{body}\nend");
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
 
-    let (args, advice_value) = FeeConversionInfo::native(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+    let (args, advice_value) = FeeConversionInfo::trivial(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .advice_map_entry(Word::from([9u32, 10, 11, 12]));
 
     let executed_transaction = mock_chain
