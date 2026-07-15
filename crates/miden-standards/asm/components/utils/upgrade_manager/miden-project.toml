@@ -1,10 +1,10 @@
 [package]
-name              = "miden-standards-access-upgrade-manager"
+name              = "miden-standards-utils-upgrade-manager"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::access::upgrade::manager"
+namespace = "miden::standards::components::utils::upgrade::manager"
 path      = "upgrade_manager.masm"
 
 [dependencies]

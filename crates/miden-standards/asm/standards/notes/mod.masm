@@ -10,4 +10,3 @@ pub mod pause_action
 pub mod pswap
 pub mod rbac_action
 pub mod swap
-pub mod upgrade

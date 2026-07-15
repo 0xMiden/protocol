@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::extensions::UpgradeManager;
+use miden_standards::account::utils::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -17,7 +17,6 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
-use miden_standards::note::{UpgradeNote, UpgradeNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -401,36 +400,44 @@ fn build_upgradeable_network_account(
         .build_existing()?)
 }
 
-/// Builds an [`UpgradeNote`] from `sender`, targeting `account`, carrying fixed commitment words.
-fn build_upgrade_note(sender: AccountId, account: AccountId) -> anyhow::Result<Note> {
-    Ok(UpgradeNote::builder()
-        .sender(sender)
-        .target(account)
-        .storage(UpgradeNoteStorage::new(
-            Word::from([1, 2, 3, 4u32]),
-            Word::from([5, 6, 7, 8u32]),
-        ))
-        .serial_number(Word::from([9, 9, 9, 9u32]))
-        .build()?
-        .into())
+/// Builds an ad-hoc note from `sender` whose script calls the `UpgradeManager::upgrade` procedure
+/// with two fixed commitment words pushed directly on the stack, matching the procedure layout
+/// `[CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]`.
+///
+/// The commitment values are immaterial here; these tests only exercise the allowlist and authority
+/// paths, not the stored commitments. The script root is independent of `sender`, so it can be
+/// allowlisted regardless of who sends the note.
+fn build_upgrade_note(sender: AccountId) -> anyhow::Result<Note> {
+    let script = "
+        use miden::standards::utils::account_upgrade
+
+        @note_script
+        pub proc main
+            padw padw
+            push.5.6.7.8
+            push.1.2.3.4
+            call.account_upgrade::upgrade
+            dropw dropw dropw dropw
+        end
+    ";
+    Ok(NoteBuilder::new(sender, &mut rand::rng()).code(script).build()?)
 }
 
-/// Consuming an allowlisted `UpgradeNote` sent by the owner runs the full note -> `upgrade` ->
+/// Consuming an allowlisted upgrade note sent by the owner runs the full note -> `upgrade` ->
 /// `assert_authorized` -> kernel path without panicking.
 #[tokio::test]
 async fn test_auth_network_account_accepts_authorized_upgrade_note() -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
-    let account =
-        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
-    let note = build_upgrade_note(owner, account.id())?;
+    let note = build_upgrade_note(owner)?;
+    let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -438,22 +445,22 @@ async fn test_auth_network_account_accepts_authorized_upgrade_note() -> anyhow::
     Ok(())
 }
 
-/// An `UpgradeNote` whose script root is not in the allowlist must be rejected by the auth
+/// An upgrade note whose script root is not in the allowlist must be rejected by the auth
 /// component, even though its sender is the owner.
 #[tokio::test]
 async fn test_auth_network_account_rejects_non_allowlisted_upgrade_note() -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     // Allowlist a placeholder root, not the upgrade note root.
     let account = build_upgradeable_network_account(owner, vec![placeholder_script_root()])?;
-    let note = build_upgrade_note(owner, account.id())?;
+    let note = build_upgrade_note(owner)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await;
@@ -463,25 +470,24 @@ async fn test_auth_network_account_rejects_non_allowlisted_upgrade_note() -> any
     Ok(())
 }
 
-/// An allowlisted `UpgradeNote` whose sender is not the owner must be rejected: the `upgrade`
+/// An allowlisted upgrade note whose sender is not the owner must be rejected: the `upgrade`
 /// procedure's `assert_authorized` owner check fails while the note script runs.
 #[tokio::test]
 async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
-    let account =
-        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
 
     // The note sender is not the owner, so the OwnerControlled authority check must reject it.
     let not_owner = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
-    let note = build_upgrade_note(not_owner, account.id())?;
+    let note = build_upgrade_note(not_owner)?;
+    let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await;

@@ -5,7 +5,6 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
-  "access/upgrade_manager",
   "access/warden",
   "auth/guarded_multisig",
   "auth/multisig",
@@ -30,6 +29,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
+  "utils/upgrade_manager",
   "wallets/basic_wallet",
 ]
 

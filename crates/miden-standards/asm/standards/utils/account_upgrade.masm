@@ -1,4 +1,4 @@
-# miden::standards::extensions::account_upgrade
+# miden::standards::utils::account_upgrade
 #
 # Native-account upgrade manager. Exposes `upgrade` as an `Invocation: call` procedure gated by the
 # account-wide `Authority` component. This makes a single upgrade procedure work uniformly for a

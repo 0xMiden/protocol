@@ -7,7 +7,7 @@ use crate::procedure_root;
 // UPGRADE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-access-upgrade-manager.masp");
+account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-utils-upgrade-manager.masp");
 
 procedure_root!(
     UPGRADE_MANAGER_UPGRADE,
@@ -37,7 +37,7 @@ pub struct UpgradeManager;
 
 impl UpgradeManager {
     /// The name of the component.
-    const NAME: &'static str = "miden::standards::components::access::upgrade::manager";
+    const NAME: &'static str = "miden::standards::components::utils::upgrade::manager";
 
     const UPGRADE_PROC_NAME: &'static str = "upgrade";
 

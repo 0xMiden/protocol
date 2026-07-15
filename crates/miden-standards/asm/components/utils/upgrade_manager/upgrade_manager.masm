@@ -5,4 +5,4 @@
 # Companion component required:
 # - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac`).
 
-pub use {upgrade} from miden::standards::extensions::account_upgrade
+pub use {upgrade} from miden::standards::utils::account_upgrade
