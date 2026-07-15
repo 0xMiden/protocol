@@ -22,7 +22,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::decode_block_height;
+use super::decode_optional_block_height;
 use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
@@ -348,11 +348,11 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         )
         .map_err(|err| NoteError::other_with_source("failed to create target account id", err))?;
 
-        let reclaim_height = decode_block_height(
+        let reclaim_height = decode_optional_block_height(
             note_storage[Self::RECLAIM_HEIGHT_IDX],
             "invalid reclaim height in note storage",
         )?;
-        let timelock_height = decode_block_height(
+        let timelock_height = decode_optional_block_height(
             note_storage[Self::TIMELOCK_HEIGHT_IDX],
             "invalid timelock height in note storage",
         )?;

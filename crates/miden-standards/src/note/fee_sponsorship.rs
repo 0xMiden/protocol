@@ -21,7 +21,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::decode_block_height;
+use super::decode_optional_block_height;
 use crate::StandardsLib;
 
 // NOTE SCRIPT
@@ -328,16 +328,12 @@ impl TryFrom<&[Felt]> for FeeSponsorshipNoteStorage {
             NoteError::other_with_source("failed to create reclaimer account id", err)
         })?;
 
-        let reclaim_height = decode_block_height(
+        let reclaim_height = decode_optional_block_height(
             note_storage[Self::RECLAIM_HEIGHT_IDX],
             "invalid reclaim height in note storage",
         )?;
 
-        Ok(Self {
-            feature_note_id,
-            reclaimer,
-            reclaim_height,
-        })
+        Ok(Self::new(feature_note_id, reclaimer, reclaim_height))
     }
 }
 

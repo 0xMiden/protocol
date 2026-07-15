@@ -310,7 +310,7 @@ impl StandardNote {
 /// Decodes an optional block height stored as a single storage item, where zero encodes `None`.
 ///
 /// `error_msg` names the field being decoded so that a caller can tell the heights apart.
-pub(crate) fn decode_block_height(
+pub(crate) fn decode_optional_block_height(
     item: Felt,
     error_msg: &'static str,
 ) -> Result<Option<BlockNumber>, NoteError> {
