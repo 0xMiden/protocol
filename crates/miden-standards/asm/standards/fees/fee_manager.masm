@@ -42,21 +42,19 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
 #! Returns the estimated fee for a note with the given parameters.
 #!
-#! Dispatches to the active fee policy via dynamic execution; the policy derives the fee from the
-#! note parameters. External callers (typically an authentication component on another account,
-#! via FPI) `call` into this procedure to learn the fee this account charges for the note.
+#! Dispatches to the active fee policy via dynamic execution: all note parameters are forwarded
+#! to the policy, which derives the fee from them. External callers (typically an authentication
+#! component on another account, via FPI) `call` into this procedure to learn the fee this
+#! account charges for the note.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage (reserved, currently unused by
-#!   the shipped policies).
-#! - ASSETS_COMMITMENT is the commitment to the note's assets (reserved, currently unused by the
-#!   shipped policies).
-#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments (reserved, currently
-#!   unused by the shipped policies).
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!

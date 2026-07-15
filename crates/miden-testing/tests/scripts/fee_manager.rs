@@ -71,7 +71,7 @@ fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Result<Account>
 
 /// Builds a transaction script that calls `estimate_note_fee` and asserts the returned fee
 /// asset. The tx script argument supplies NOTE_SCRIPT_ROOT on top of the initial operand stack;
-/// the zeros below it serve as the reserved commitments, forming the full 16-felt
+/// the zeros below it serve as the remaining note parameters, forming the full 16-felt
 /// `estimate_note_fee` inputs. A wrong result aborts the transaction, so successful execution
 /// proves the returned fee asset.
 fn estimate_note_fee_tx_script_code(
@@ -184,7 +184,7 @@ async fn estimate_note_fee_via_fpi() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // The tx script argument supplies NOTE_SCRIPT_ROOT on top of the initial operand stack; the
-    // zeros below it serve as the reserved commitments, forming the full 16-felt
+    // zeros below it serve as the remaining note parameters, forming the full 16-felt
     // `estimate_note_fee` inputs. The procedure root is interpolated directly so the foreign
     // library does not need to be linked.
     let tx_script_code = format!(
