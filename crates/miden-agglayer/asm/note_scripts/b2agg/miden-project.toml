@@ -7,7 +7,7 @@ namespace = "agglayer::note_scripts::b2agg"
 path      = "b2agg.masm"
 
 [dependencies]
+miden-agglayer.workspace  = true
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
-miden-agglayer.workspace  = true

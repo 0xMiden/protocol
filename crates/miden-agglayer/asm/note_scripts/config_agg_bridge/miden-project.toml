@@ -7,7 +7,7 @@ namespace = "agglayer::note_scripts::config_agg_bridge"
 path      = "config_agg_bridge.masm"
 
 [dependencies]
+miden-agglayer.workspace  = true
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
-miden-agglayer.workspace  = true
