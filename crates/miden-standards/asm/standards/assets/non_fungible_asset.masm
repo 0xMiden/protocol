@@ -2,7 +2,17 @@
 #!
 #! Provides procedures for creating non-fungible assets.
 
+use miden::protocol::asset
 use {COMPOSITION_NONE} from miden::protocol::asset
+
+# ERRORS
+# ================================================================================================
+
+const ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE = "non-fungible asset ID's composition must be non-fungible"
+
+const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0 = "the asset class suffix in a non-fungible asset ID must match hash0 of the asset value"
+
+const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1 = "the asset class prefix in a non-fungible asset ID must match hash1 of the asset value"
 
 # PROCEDURES
 # ================================================================================================
@@ -36,6 +46,38 @@ pub proc create
     # word
     dup.3 dup.3
     # => [hash0, hash1, faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Validates that a non-fungible asset is well formed.
+#!
+#! Only the value's binding to the asset ID and the composition are checked; the structure of
+#! the asset ID's account ID is validated by the kernel and not re-checked here.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value (data commitment) of the asset to validate.
+#!
+#! Panics if:
+#! - the asset ID's composition is not non-fungible (None).
+#! - the asset class suffix of the asset ID does not match hash0 of the value.
+#! - the asset class prefix of the asset ID does not match hash1 of the value.
+#!
+#! Invocation: exec
+pub proc validate
+    # assert the asset composition is non-fungible (None)
+    exec.asset::id_to_composition
+    eq.COMPOSITION_NONE
+    assert.err=ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE]
+    # => [[asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], [hash0, hash1, hash2, hash3]]
+
+    # assert that hash0 matches asset_class_suffix and hash1 matches asset_class_prefix
+    dup.4 dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0
+    dup.5 dup.2 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1
     # => [ASSET_ID, ASSET_VALUE]
 end
 

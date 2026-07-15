@@ -2,9 +2,14 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
+
 ### Changes
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public BATCH_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
+- Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
