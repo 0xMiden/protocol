@@ -254,7 +254,9 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
 /// Builds a raw advice-map entry committing to the given conversion info word, bypassing the
 /// validation in [`FeeConversionInfo`]. Used to exercise the in-VM validation of malformed rates.
 fn raw_conversion_entry(conversion_word: Word, salt: Word) -> (Word, Vec<Felt>) {
-    let key = Hasher::merge(&[conversion_word, salt]);
+    // must mirror the domain-separated commitment computed by FeeConversionInfo::auth_args
+    let fee_domain = Word::from([Felt::from(0xfee_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let key = Hasher::merge(&[fee_domain, Hasher::merge(&[conversion_word, salt])]);
     let mut value = Vec::with_capacity(8);
     value.extend(salt.iter());
     value.extend(conversion_word.iter());

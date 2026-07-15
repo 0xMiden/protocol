@@ -90,8 +90,15 @@ impl FeeConversionInfo {
     }
 
     /// Returns the auth args committing to this conversion info under the given salt.
+    ///
+    /// The commitment is domain-separated with the FEE domain tag:
+    /// `hash(FEE_DOMAIN || hash(CONVERSION_INFO || SALT))`. Must be kept in sync with
+    /// `load_conversion_info` in the `miden::standards::fee` MASM module.
     pub fn auth_args(&self, salt: Word) -> Word {
-        Hasher::merge(&[self.to_word(), salt])
+        // Domain-separation tag for the fee conversion-info commitment ("fee" in hex).
+        let fee_domain = Word::from([Felt::from(0xfee_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+
+        Hasher::merge(&[fee_domain, Hasher::merge(&[self.to_word(), salt])])
     }
 
     /// Returns the advice map entry that must accompany the auth args commitment: the key is
