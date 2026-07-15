@@ -53,8 +53,6 @@ pub proc main
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items]
 
-    # use eq.0 rather than assertz: assertz requires a binary value, so for counts greater than
-    # one it would trap with a generic non-binary-value error instead of the named error below
     eq.0 assert.err=ERR_BATCH_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
