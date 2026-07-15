@@ -79,7 +79,7 @@ end
 # =================================================================================================
 
 #! FEE_SPONSORSHIP script: verifies that the companion note this note sponsors is consumed by the
-#! same transaction, leaving the note's assets in place; otherwise it attempts a reclaim.
+#! same transaction; otherwise it attempts a reclaim.
 #!
 #! The note carries the fee for exactly one companion note, named by the note ID in its storage.
 #!
@@ -89,19 +89,17 @@ end
 #!
 #! The sponsorship and the companion note it sponsors must be consumed together. Two checks enforce
 #! this, and each sits with the party it protects:
-#! - Consuming the sponsorship without its companion note costs the *sponsor*, so this script rejects
-#!   it.
-#! - Consuming a companion note without sponsorship costs the *account*, so the account's auth
-#!   procedure rejects that. It is not this script's concern.
+#! - consuming the sponsorship without its companion note would take the sponsor's fee without the
+#!   sponsored work happening, so this script rejects it.
+#! - consuming a companion note without its sponsorship would leave the consuming account unpaid,
+#!   so guarding against that is the account's job (its auth procedure), not this script's.
 #!
 #! If the note is never consumed alongside its companion note, the reclaimer may reclaim it once the
 #! reclaim block height is reached. Once the bound companion note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
-#! assets. The reclaimer is named in the note storage; the creator sets it, defaulting to the
-#! sender.
+#! assets.
 #!
-#! Only the reclaim path moves assets, so only reclaiming requires that the consuming account
-#! exposes:
+#! The reclaim path requires that the consuming account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
 #! Inputs:  [NOTE_ARGS, pad(12)]
