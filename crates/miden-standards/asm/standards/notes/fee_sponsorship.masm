@@ -28,13 +28,13 @@ const NUM_STORAGE_ITEMS = 7
 # ERRORS
 # =================================================================================================
 
-const ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "FEE_SPONSORSHIP note expects exactly 7 note storage items"
+const ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fee sponsorship note expects exactly 7 note storage items"
 
-const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "FEE_SPONSORSHIP reclaim is disabled"
+const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "fee sponsorship reclaim is disabled"
 
-const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim FEE_SPONSORSHIP note because the reclaim block height is not reached yet"
+const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim fee sponsorship note because the reclaim block height is not reached yet"
 
-const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim FEE_SPONSORSHIP note because the reclaiming account is not the reclaimer"
+const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim fee sponsorship note because the reclaiming account is not the reclaimer"
 
 # HELPER PROCEDURES
 # =================================================================================================

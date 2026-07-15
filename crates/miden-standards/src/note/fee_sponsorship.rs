@@ -111,7 +111,7 @@ impl FeeSponsorshipNote {
             return Err(NoteError::other("fee sponsorship target account must be public"));
         }
         if assets.is_empty() {
-            return Err(NoteError::other("a FEE_SPONSORSHIP note must contain at least one asset"));
+            return Err(NoteError::other("a fee sponsorship note must contain at least one asset"));
         }
 
         let assets = NoteAssets::new(assets)?;
