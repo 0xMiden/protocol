@@ -89,17 +89,15 @@ end
 #! consumed alongside it. Consumption rights are thereby inherited from the feature note: whoever
 #! may consume the feature note may take its sponsorship in the same transaction.
 #!
-#! The sponsorship and its bound feature note must be consumed together. Two checks enforce
-#! this, and each sits with the party it protects:
-#! - consuming the sponsorship without its bound feature note would take the sponsor's fee without
-#!   the sponsored work happening, so this script rejects it.
-#! - consuming a feature note without its sponsorship would leave the consuming account unpaid,
-#!   so guarding against that is the account's job (its auth procedure), not this script's.
+#! Two checks keep sponsorships and feature notes paired:
+#! - the consuming account's auth procedure is expected to enforce that each feature note's cost is
+#!   covered, so a feature note cannot be consumed without its fee being paid.
+#! - this script enforces that the sponsorship is never consumed by itself, preventing its fee from
+#!   being collected without the sponsored work happening.
 #!
-#! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
-#! reclaim block height is reached. Once the bound feature note is consumed by some other
-#! transaction, the presence check can never pass again and reclaim is the only way to recover the
-#! assets.
+#! If the note is never consumed alongside its bound feature note, the reclaimer may reclaim it
+#! once the reclaim block height is reached; once the feature note is consumed by some other
+#! transaction, reclaim is the only way to recover the assets.
 #!
 #! The reclaim path requires that the consuming account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.

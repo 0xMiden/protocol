@@ -60,18 +60,11 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The mirror-image check (that a feature note is not consumed *without* sponsorship) protects
 /// the consuming account rather than the sponsor, and so lives in the account's auth procedure.
 ///
-/// On the sponsorship path the script leaves the note's assets untouched, so the note demands no
-/// wallet interface from the account that consumes it. Collecting the assets is the consuming
-/// account's job (for a network account, typically its auth procedure); asset conservation forces
-/// the transaction to claim them somewhere. Only the reclaim path moves assets, into the
-/// reclaimer's vault.
-///
 /// # Reclaim
 ///
 /// Every consumption without the bound feature note is a reclaim: the note returns to its
-/// `reclaimer`, once `reclaim_height` is reached. Reclaim is load-bearing rather than a
-/// convenience: if the bound feature note is consumed by some other transaction, this note's
-/// presence check can never pass again, and reclaim is the only way to recover the assets.
+/// `reclaimer` once `reclaim_height` is reached. If the bound feature note is consumed by some
+/// other transaction, reclaim is the only way to recover the assets.
 #[derive(Debug, Clone)]
 pub struct FeeSponsorshipNote {
     sender: AccountId,
