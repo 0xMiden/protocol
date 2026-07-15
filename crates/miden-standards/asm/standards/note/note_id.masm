@@ -7,21 +7,10 @@
 #! output, and active notes, mirroring the kernel's own derivation.
 
 use miden::core::crypto::hashes::poseidon2
-use miden::core::word
 
 use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::output_note
-use miden::protocol::tx
-
-# CONSTANTS
-# ================================================================================================
-
-#! Local memory offset at which find_input_note_by_id stages the note ID it searches for.
-const TARGET_NOTE_ID_LOC = 0
-
-#! Local memory offset at which find_input_note_by_id stages the index of the matched note.
-const MATCHED_INDEX_LOC = 4
 
 # PROCEDURES
 # ================================================================================================
@@ -157,76 +146,4 @@ pub proc compute_output_note_id
 
     exec.compute_note_id
     # => [NOTE_ID]
-end
-
-#! Finds the input note with the specified ID among the transaction's input notes.
-#!
-#! Every input note's ID is recomputed and compared against the provided ID; the search takes no
-#! index hint from the caller, so it cannot be misdirected by whoever assembles the transaction.
-#!
-#! Inputs:  [NOTE_ID]
-#! Outputs: [is_found, note_idx]
-#!
-#! Where:
-#! - NOTE_ID is the ID of the input note to look for.
-#! - is_found is 1 if an input note with the specified ID exists, 0 otherwise.
-#! - note_idx is the index of the matching input note; it is only meaningful if is_found is 1.
-#!
-#! Invocation: exec
-@locals(8)
-pub proc find_input_note_by_id
-    loc_storew_le.TARGET_NOTE_ID_LOC dropw
-    # => []
-
-    push.0 loc_store.MATCHED_INDEX_LOC
-    # => []
-
-    push.0
-    # => [is_found]
-
-    exec.tx::get_num_input_notes
-    # => [num_notes, is_found]
-
-    dup neq.0
-    # => [should_loop, num_notes, is_found]
-
-    while.true
-        # the counter holds the number of notes not yet inspected; the note at counter - 1 is
-        # inspected next, so after sub.1 the value doubles as that note's index
-        sub.1
-        # => [note_idx, is_found]
-
-        dup exec.compute_input_note_id
-        # => [NOTE_ID, note_idx, is_found]
-
-        padw loc_loadw_le.TARGET_NOTE_ID_LOC
-        # => [TARGET_NOTE_ID, NOTE_ID, note_idx, is_found]
-
-        exec.word::eq
-        # => [is_match, note_idx, is_found]
-
-        if.true
-            dup loc_store.MATCHED_INDEX_LOC
-            push.1
-        else
-            push.0
-        end
-        # => [is_match, note_idx, is_found]
-
-        movup.2 or
-        # => [is_found, note_idx]
-
-        swap
-        # => [note_idx, is_found]
-
-        dup neq.0
-        # => [should_loop, note_idx, is_found]
-    end
-    # => [note_idx, is_found]
-
-    drop
-    # => [is_found]
-
-    loc_load.MATCHED_INDEX_LOC swap
-    # => [is_found, note_idx]
 end
