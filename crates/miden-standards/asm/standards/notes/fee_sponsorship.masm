@@ -13,11 +13,11 @@ use miden::standards::wallets::basic as basic_wallet
 const STORAGE_PTR = 0
 
 # Note storage layout (7 items, loaded at STORAGE_PTR by get_storage):
-# - COMPANION_NOTE_ID       [0..3] : ID of the companion note this sponsorship pays for
+# - FEATURE_NOTE_ID       [0..3] : ID of the feature note this sponsorship pays for
 # - reclaimer_suffix      [4]    : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix      [5]    : prefix of the account allowed to reclaim the note
 # - reclaim_block_height  [6]    : block height at or after which the reclaimer may reclaim (0 = disabled)
-const COMPANION_NOTE_ID_ITEM = STORAGE_PTR
+const FEATURE_NOTE_ID_ITEM = STORAGE_PTR
 const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR + 4
 const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 5
 const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
@@ -78,24 +78,24 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! FEE_SPONSORSHIP script: verifies that the companion note this note sponsors is consumed by the
-#! same transaction; otherwise it attempts a reclaim.
+#! FEE_SPONSORSHIP script: verifies that the bound feature note is consumed by the same
+#! transaction; otherwise it attempts a reclaim.
 #!
-#! The note carries the fee for exactly one companion note, named by the note ID in its storage.
+#! The note carries the fee for exactly one feature note, named by the note ID in its storage.
 #!
-#! The note does not restrict who may consume it; it only requires the bound companion note to be
-#! consumed alongside it. Consumption rights are thereby inherited from the companion note: whoever
-#! may consume the companion note may take its sponsorship in the same transaction.
+#! The note does not restrict who may consume it; it only requires the bound feature note to be
+#! consumed alongside it. Consumption rights are thereby inherited from the feature note: whoever
+#! may consume the feature note may take its sponsorship in the same transaction.
 #!
-#! The sponsorship and the companion note it sponsors must be consumed together. Two checks enforce
+#! The sponsorship and its bound feature note must be consumed together. Two checks enforce
 #! this, and each sits with the party it protects:
-#! - consuming the sponsorship without its companion note would take the sponsor's fee without the
-#!   sponsored work happening, so this script rejects it.
-#! - consuming a companion note without its sponsorship would leave the consuming account unpaid,
+#! - consuming the sponsorship without its bound feature note would take the sponsor's fee without
+#!   the sponsored work happening, so this script rejects it.
+#! - consuming a feature note without its sponsorship would leave the consuming account unpaid,
 #!   so guarding against that is the account's job (its auth procedure), not this script's.
 #!
-#! If the note is never consumed alongside its companion note, the reclaimer may reclaim it once the
-#! reclaim block height is reached. Once the bound companion note is consumed by some other
+#! If the note is never consumed alongside its feature note, the reclaimer may reclaim it once the
+#! reclaim block height is reached. Once the bound feature note is consumed by some other
 #! transaction, the presence check can never pass again and reclaim is the only way to recover the
 #! assets.
 #!
@@ -109,14 +109,14 @@ end
 #! - NOTE_ARGS are the note arguments, which this script ignores.
 #!
 #! Note storage is assumed to be as follows:
-#! - COMPANION_NOTE_ID is the ID of the companion note this sponsorship pays for.
+#! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
 #! - reclaimer_{suffix, prefix} identify the account allowed to reclaim the note.
 #! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note,
 #!   or 0 if reclaim is disabled.
 #!
 #! Panics if:
 #! - the number of note storage items is not 7.
-#! - the bound companion note is not consumed by this transaction, and the note cannot be reclaimed
+#! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
 #!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
 #!   the reclaimer).
 #! - the note is reclaimed and the reclaiming account does not expose the
@@ -132,13 +132,13 @@ pub proc main
     eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
-    padw mem_loadw_le.COMPANION_NOTE_ID_ITEM
-    # => [COMPANION_NOTE_ID, pad(16)]
+    padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
+    # => [FEATURE_NOTE_ID, pad(16)]
 
     # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
     # script rather than in the consuming account because the sponsor trusts neither the consuming
     # account nor the transaction builder. The search takes no index hint from the note args: an
-    # incorrect hint would revert a transaction whose companion note is in fact present, handing
+    # incorrect hint would revert a transaction whose feature note is in fact present, handing
     # the builder a griefing vector.
     exec.note_id::find_input_note_by_id
     # => [is_found, note_idx, pad(16)]
@@ -146,14 +146,14 @@ pub proc main
     swap drop
     # => [is_found, pad(16)]
 
-    # with the companion note present, the sponsorship path is a no-op: the assets stay in the note
-    # for the consuming account to collect, and who may get here is decided by the companion note's
+    # with the feature note present, the sponsorship path is a no-op: the assets stay in the note
+    # for the consuming account to collect, and who may get here is decided by the feature note's
     # own consumption rules. Invert the flag so the branch below handles the absent case (reclaim).
     not
     # => [is_absent, pad(16)]
 
     if.true
-        # reclaim path: without the companion note the assets may only return to the reclaimer named
+        # reclaim path: without the feature note the assets may only return to the reclaimer named
         # in the note storage
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
         # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]
