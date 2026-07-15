@@ -1,5 +1,6 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::output_note
@@ -104,18 +105,12 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 pub proc load_conversion_info(auth_args: word) -> ConversionInfo
     # empty auth args carry no commitment; return the empty word without touching the advice map
     # (the advice map may legitimately contain an empty-word key, e.g. for a note's empty
-    # attachments commitment, so the empty key must not be interpreted as conversion info)
-    padw eqw
-    # => [is_empty, EMPTY_WORD, AUTH_ARGS]
+    # attachments commitment, so the empty key must not be interpreted as conversion info);
+    # in that case the auth args already are the empty word to return
+    exec.word::testz not
+    # => [has_commitment, AUTH_ARGS]
 
     if.true
-        # return one of the two empty words
-        dropw
-        # => [EMPTY_WORD]
-    else
-        dropw
-        # => [AUTH_ARGS]
-
         # check whether conversion info was provided for the auth args commitment
         adv.has_mapkey adv_push
         # => [has_conversion_info, AUTH_ARGS]

@@ -1,3 +1,4 @@
+use miden::core::word
 use miden::protocol::tx
 use {ConversionInfo} from miden::standards::fee
 use miden::standards::assets::fungible_asset
@@ -73,10 +74,7 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
         # => [CONVERSION_INFO, fee_amount]
 
         # a non-zero fee requires committed conversion info
-        padw eqw
-        # => [is_empty, EMPTY_WORD, CONVERSION_INFO, fee_amount]
-
-        assertz.err=ERR_FEE_CONVERSION_INFO_MISSING dropw
+        exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
         # => [CONVERSION_INFO, fee_amount]
 
         # convert the fee amount into the payment asset's amount
