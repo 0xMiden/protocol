@@ -1,3 +1,5 @@
+use miden::core::word
+
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -106,7 +108,11 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - NOTE_ARGS are the note arguments, which this script ignores.
+#! - NOTE_ARGS = [feature_note_idx, 0, 0, 0] (top of stack first), where feature_note_idx is the
+#!   index of the bound feature note among the transaction's input notes. The script recomputes
+#!   the input note ID at this index and compares it against the ID in storage, so a wrong index
+#!   can only fail the presence check, never fake a match. A consumption without the bound feature
+#!   note (a reclaim) needs no arguments.
 #!
 #! Note storage is assumed to be as follows:
 #! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
@@ -116,50 +122,51 @@ end
 #!
 #! Panics if:
 #! - the number of note storage items is not 7.
-#! - the bound feature note is not consumed by this transaction, and the note cannot be reclaimed
-#!   (reclaim is disabled, the reclaim block height is not reached, or the active account is not
-#!   the reclaimer).
+#! - feature_note_idx is greater or equal to the total number of input notes.
+#! - the input note at feature_note_idx is not the bound feature note, and the note cannot be
+#!   reclaimed (reclaim is disabled, the reclaim block height is not reached, or the active account
+#!   is not the reclaimer).
 #! - the note is reclaimed and the reclaiming account does not expose the
 #!   miden::standards::wallets::basic::receive_asset procedure.
 @note_script
 pub proc main
-    dropw
-    # => [pad(16)]
+    # keep the first note argument (the feature note index hint), drop the rest
+    movdn.3 drop drop drop
+    # => [feature_note_idx, pad(12)]
 
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, pad(16)]
+    # => [num_storage_items, feature_note_idx, pad(12)]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    # => [pad(16)]
+    # => [feature_note_idx, pad(12)]
+
+    exec.note_id::compute_input_note_id
+    # => [NOTE_ID, pad(12)]
 
     padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
-    # => [FEATURE_NOTE_ID, pad(16)]
+    # => [BOUND_FEATURE_NOTE_ID, NOTE_ID, pad(12)]
 
-    # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
-    # script rather than in the consuming account because the sponsor trusts neither the consuming
-    # account nor the transaction builder. The search takes no index hint from the note args: an
-    # incorrect hint would revert a transaction whose feature note is in fact present, handing
-    # the builder a griefing vector.
-    exec.note_id::find_input_note_by_id
-    # => [is_found, note_idx, pad(16)]
+    # the consumer points at the bound feature note via the index hint; recomputing the ID at that
+    # index and comparing it against the ID in storage verifies the hint, so a wrong hint can only
+    # fail the check, never fake a match
+    exec.word::eq
+    # => [is_found, pad(12)]
 
-    swap drop
-    # => [is_found, pad(16)]
-
-    # with the feature note present, the sponsorship path is a no-op: the assets stay in the note
-    # for the consuming account to collect, and who may get here is decided by the feature note's
-    # own consumption rules. Invert the flag so the branch below handles the absent case (reclaim).
+    # with the bound feature note present, the sponsorship path is a no-op: the assets stay in the
+    # note for the consuming account to collect, and who may get here is decided by the feature
+    # note's own consumption rules. Invert the flag so the branch below handles the absent case
+    # (reclaim).
     not
-    # => [is_absent, pad(16)]
+    # => [is_absent, pad(12)]
 
     if.true
-        # reclaim path: without the feature note the assets may only return to the reclaimer named
-        # in the note storage
+        # reclaim path: without the bound feature note the assets may only return to the reclaimer
+        # named in the note storage
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
-        # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]
+        # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(12)]
 
         exec.reclaim_note
-        # => [pad(16)]
+        # => [pad(12)]
     end
     # => [pad(16)]
 end
