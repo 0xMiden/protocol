@@ -135,6 +135,7 @@ pub struct RoleBasedAccessControl {
 }
 
 impl RoleBasedAccessControl {
+    /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::rbac";
 
     /// The built-in default admin role symbol. A role whose delegated admin is unset is
@@ -142,6 +143,29 @@ impl RoleBasedAccessControl {
     ///
     /// Keep in sync with the `ADMIN_ROLE` constant in `asm/standards/access/rbac.masm`.
     pub const ADMIN_ROLE: &'static str = "ADMIN";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns an RBAC component whose `ADMIN` role is seeded with `initial_admins` and whose
+    /// additional roles are each seeded with the given `role_members` set at construction.
+    ///
+    /// Each seeded role's delegated admin is left unset, so — like any role — it is administered
+    /// by the `ADMIN` role until an admin is delegated via `set_role_admin`. This lets an account
+    /// be created already populated with role holders alongside the bootstrap administrator. A role
+    /// mapped to an empty member set is dropped: a role with no members is a no-op.
+    pub fn new(
+        initial_admins: BTreeSet<AccountId>,
+        role_members: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
+    ) -> Self {
+        Self {
+            initial_admins,
+            initial_role_members: role_members,
+        }
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns the built-in default admin [`RoleSymbol`].
     pub fn admin_role() -> RoleSymbol {
@@ -156,49 +180,6 @@ impl RoleBasedAccessControl {
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &RBAC_CODE
-    }
-
-    /// Returns an RBAC component whose `ADMIN` role is seeded with the given `initial_admin`.
-    ///
-    /// The initial admin bootstraps role administration: it can grant every role (including
-    /// `ADMIN`), configure delegated admins, and later hand off or renounce its own `ADMIN`
-    /// membership. Additional roles are populated at runtime via the `grant_role`,
-    /// `set_role_admin`, etc. procedures exposed by the component.
-    pub fn new(initial_admin: AccountId) -> Self {
-        Self {
-            initial_admins: BTreeSet::from([initial_admin]),
-            initial_role_members: BTreeMap::new(),
-        }
-    }
-
-    /// Returns an RBAC component whose `ADMIN` role is seeded with the given `initial_admins`.
-    ///
-    /// Passing an empty set produces a component with no initial administrator, which cannot
-    /// manage any role until `ADMIN` membership is established by other means; prefer
-    /// [`new`][Self::new] unless that is intended.
-    pub fn with_admins(initial_admins: BTreeSet<AccountId>) -> Self {
-        Self {
-            initial_admins,
-            initial_role_members: BTreeMap::new(),
-        }
-    }
-
-    /// Returns an RBAC component whose `ADMIN` role is seeded with `initial_admins` and whose
-    /// additional roles are each seeded with the given `role_members` set at construction.
-    ///
-    /// Each seeded role's delegated admin is left unset, so — like any role — it is administered
-    /// by the `ADMIN` role until an admin is delegated via `set_role_admin`. This lets an account
-    /// be created already populated with role holders alongside the bootstrap administrator. A role
-    /// mapped to an empty member set is dropped: a role with no members is a no-op.
-    pub fn with_role_members(
-        initial_admins: BTreeSet<AccountId>,
-        mut role_members: BTreeMap<RoleSymbol, BTreeSet<AccountId>>,
-    ) -> Self {
-        role_members.retain(|_, members| !members.is_empty());
-        Self {
-            initial_admins,
-            initial_role_members: role_members,
-        }
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -359,7 +340,8 @@ mod tests {
         // and the member count always matches the number of membership entries.
         let admins = [test_admin(1), test_admin(2), test_admin(3)];
         let component: AccountComponent =
-            RoleBasedAccessControl::with_admins(admins.iter().copied().collect()).into();
+            RoleBasedAccessControl::new(admins.iter().copied().collect(), BTreeMap::default())
+                .into();
 
         let admin_symbol = RoleBasedAccessControl::admin_role().as_element();
 
@@ -391,7 +373,7 @@ mod tests {
     #[test]
     fn with_admins_empty_seeds_no_admin() {
         let component: AccountComponent =
-            RoleBasedAccessControl::with_admins(BTreeSet::new()).into();
+            RoleBasedAccessControl::new(BTreeSet::default(), BTreeMap::default()).into();
 
         // No membership entries and an empty config: the component starts with no administrator.
         let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());

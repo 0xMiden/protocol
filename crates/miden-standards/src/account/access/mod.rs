@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 
 use miden_protocol::Felt;
@@ -81,7 +81,7 @@ impl IntoIterator for AccessControl {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
             AccessControl::Rbac { admin, procedure_roles } => vec![
-                RoleBasedAccessControl::new(admin).into(),
+                RoleBasedAccessControl::new(BTreeSet::from([admin]), BTreeMap::default()).into(),
                 Authority::RbacControlled { procedure_roles }.into(),
             ]
             .into_iter(),

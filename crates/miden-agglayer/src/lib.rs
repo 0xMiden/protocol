@@ -149,10 +149,7 @@ fn create_bridge_account_builder(
     Account::builder(seed.into())
         .account_type(AccountType::Public)
         .with_component(AggLayerBridge)
-        .with_component(RoleBasedAccessControl::with_role_members(
-            BTreeSet::from([admin]),
-            roles.role_members(),
-        ))
+        .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })

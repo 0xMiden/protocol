@@ -928,7 +928,7 @@ fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Resul
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_component(RoleBasedAccessControl::with_role_members(
+        .with_component(RoleBasedAccessControl::new(
             BTreeSet::from([admin]),
             BTreeMap::from([
                 (minter_role.clone(), BTreeSet::from([minter])),

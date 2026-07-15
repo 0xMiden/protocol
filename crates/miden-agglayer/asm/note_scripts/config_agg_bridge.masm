@@ -39,7 +39,7 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! token registry, and faucet metadata map.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
-#! attachment, and only if the note was sent by a holder of the faucet admin role.
+#! attachment, and only if the note was sent by a holder of the faucet manager role.
 #! Upon consumption, it registers the faucet ID, origin token address mapping, scale factor,
 #! origin network, is_native flag, and metadata hash in the bridge.
 #!

@@ -72,7 +72,7 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the global exit root injector.
+#! - the note sender does not hold the global exit root injector role.
 #! - the GER has already been registered in storage.
 #!
 #! Invocation: call
@@ -116,7 +116,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the global exit root remover.
+#! - the note sender does not hold the global exit root remover role.
 #! - the GER is not currently registered in the bridge's GER map.
 #!
 #! Invocation: call
@@ -206,13 +206,13 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender does not hold the faucet admin role.
+#! - the note sender does not hold the faucet manager role.
 #!
 #! Invocation: call
 @locals(14)
 @account_procedure
 pub proc register_faucet
-    # assert the note sender is authorized for this procedure (holds the faucet admin role).
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
     # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
@@ -354,12 +354,12 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender does not hold the faucet admin role.
+#! - the note sender does not hold the faucet manager role.
 #!
 #! Invocation: call
 @account_procedure
 pub proc store_faucet_metadata_hash
-    # assert the note sender is authorized for this procedure (holds the faucet admin role).
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
@@ -395,7 +395,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender does not hold the faucet admin role.
+#! - the note sender does not hold the faucet manager role.
 #! - the faucet is not currently registered in the faucet registry.
 #!
 #! Locals:
@@ -406,7 +406,7 @@ end
 @locals(2)
 @account_procedure
 pub proc deregister_faucet
-    # assert the note sender is authorized for this procedure (holds the faucet admin role).
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
     # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
 
