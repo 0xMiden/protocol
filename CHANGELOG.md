@@ -8,6 +8,7 @@
 
 ### Changes
 
+- Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
