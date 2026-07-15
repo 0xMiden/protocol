@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added a minimal `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure over a fixed per-note-script fee schedule ([#3307](https://github.com/0xMiden/protocol/pull/3307)).
+- Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (`ConstantFeePolicy`, `ZeroFeePolicy`) switchable via the authority-gated `set_fee_policy` ([#3307](https://github.com/0xMiden/protocol/pull/3307)).
 
 ### Changes
 

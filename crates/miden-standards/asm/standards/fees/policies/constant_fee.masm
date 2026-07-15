@@ -1,0 +1,84 @@
+# miden::standards::fees::policies::constant_fee
+#
+# Constant fee policy: derives the fee from a fixed per-note-script fee schedule. Designed to be
+# registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches its
+# `estimate_note_fee` procedure to `compute_note_fee` via dynamic execution.
+#
+# Both storage slots are populated once at account creation (via the `ConstantFeePolicy` Rust
+# type) and there are no on-chain setters.
+#
+# Storage layout:
+# - `fee_asset_id` word: the ID of the asset the fee is charged in.
+# - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]. The default (unset) entry is
+#   the zero word, so unpriced note scripts estimate to a fee amount of 0.
+
+use miden::protocol::active_account
+
+# CONSTANTS
+# =================================================================================================
+
+# Slot holding the ID of the asset the fee is charged in.
+const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::fee_asset_id")
+
+# Slot holding the per-note-script fee schedule.
+# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]
+const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
+
+# POLICY PROCEDURES
+# =================================================================================================
+
+#! Fee policy returning the constant fee scheduled for the note's script root.
+#!
+#! The fee amount is looked up in the fee schedule under a key built from the note parameters. In
+#! the current version the key is just NOTE_SCRIPT_ROOT; note scripts without a schedule entry
+#! estimate to a fee amount of 0.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage (reserved, currently unused).
+#! - ASSETS_COMMITMENT is the commitment to the note's assets (reserved, currently unused).
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments (reserved, currently
+#!   unused).
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Invocation: dynexec
+# TODO(call invocation)
+@account_procedure
+pub proc compute_note_fee
+    exec.build_note_fee_lookup_key
+    # => [LOOKUP_KEY, pad(12)]
+
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, LOOKUP_KEY, pad(12)]
+
+    exec.active_account::get_map_item
+    # => [FEE_ASSET_VALUE, pad(12)]
+
+    push.FEE_ASSET_ID_SLOT[0..2] exec.active_account::get_item
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
+
+    # drop the excess padding to restore the stack depth for the call boundary
+    movupw.3 dropw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Builds the fee schedule lookup key from the note parameters.
+#!
+#! In the current version the lookup key is just NOTE_SCRIPT_ROOT; the remaining parameters are
+#! reserved for future fee logic.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [LOOKUP_KEY]
+#!
+#! Invocation: exec
+proc build_note_fee_lookup_key
+    swapw.3 dropw dropw dropw
+    # => [LOOKUP_KEY]
+end

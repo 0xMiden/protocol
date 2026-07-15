@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-fees-policies-zero-fee"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::fees::policies::zero_fee"
+path      = "zero_fee.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
