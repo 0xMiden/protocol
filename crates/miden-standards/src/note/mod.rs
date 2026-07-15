@@ -7,6 +7,9 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+mod batch_fee;
+pub use batch_fee::BatchFeeNote;
+
 mod burn;
 pub use burn::BurnNote;
 
@@ -72,6 +75,7 @@ pub enum StandardNote {
     OWNER_ACTION,
     RBAC_ACTION,
     FEE_SPONSORSHIP,
+    BATCH_FEE,
 }
 
 impl StandardNote {
@@ -120,6 +124,9 @@ impl StandardNote {
         if root == FeeSponsorshipNote::script_root() {
             return Some(Self::FEE_SPONSORSHIP);
         }
+        if root == BatchFeeNote::script_root() {
+            return Some(Self::BATCH_FEE);
+        }
 
         None
     }
@@ -141,6 +148,7 @@ impl StandardNote {
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
             Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
+            Self::BATCH_FEE => "BATCH_FEE",
         }
     }
 
@@ -160,6 +168,7 @@ impl StandardNote {
             // RbacAction storage is variable per action; this returns the upper bound.
             Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
+            Self::BATCH_FEE => BatchFeeNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -177,6 +186,7 @@ impl StandardNote {
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
+            Self::BATCH_FEE => BatchFeeNote::script(),
         }
     }
 
@@ -194,6 +204,7 @@ impl StandardNote {
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
+            Self::BATCH_FEE => BatchFeeNote::script_root(),
         }
     }
 
@@ -234,6 +245,8 @@ impl StandardNote {
     ///     - check that depending on whether the target account is reclaimer or receiver, it could
     ///       be either consumed, or consumed after timelock height, or consumed after reclaim
     ///       height.
+    /// - for `BATCH_FEE` note:
+    ///     - check that note storage is empty; the note is otherwise consumable by any account.
     fn is_consumable_inner(
         &self,
         note: &Note,
@@ -294,6 +307,19 @@ impl StandardNote {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
             "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account".into()
         )))
+                }
+            },
+
+            // BATCH_FEE notes carry no target restriction: any account can consume them, as long as
+            // the note carries no storage items (the note script rejects any other
+            // storage shape).
+            StandardNote::BATCH_FEE => {
+                if usize::from(note.storage().num_items()) != BatchFeeNote::NUM_STORAGE_ITEMS {
+                    Ok(Some(NoteConsumptionStatus::NeverConsumable(
+                        "BATCH_FEE note carries unexpected storage items".into(),
+                    )))
+                } else {
+                    Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                 }
             },
 

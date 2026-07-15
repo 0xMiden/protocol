@@ -1,3 +1,4 @@
+pub mod batch_fee
 pub mod burn
 pub mod faucet_policy_action
 pub mod fee_sponsorship

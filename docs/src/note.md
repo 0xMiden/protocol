@@ -241,6 +241,22 @@ The P2IDE note script extends P2ID with additional features including time-locki
 - Conditional payments that can be reclaimed if not consumed
 - Time-delayed transfers
 
+### BATCH_FEE
+
+The BATCH_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
+
+**Key characteristics:**
+
+- **Purpose:** Fee payment to a batch builder
+- **Storage:** Carries no storage items
+- **Note type:** Always public
+- **Assets:** Carries one or more assets of the sender's choosing - the note is unopinionated about which assets are used to pay
+- **Tag:** The unique `0xFEE` tag. Its 18 least significant bits are non-zero, so it can never collide with a default account-target tag (those have their 18 least significant bits set to zero)
+- **Validation:** None - unlike P2ID, there is no target account check, so the note is consumable by any account. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
+- **Requirements:** Consuming account must expose the `miden::standards::wallets::basic::receive_asset` procedure
+
+**Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
+
 ### SWAP
 
 The SWAP note script implements atomic asset swapping functionality.

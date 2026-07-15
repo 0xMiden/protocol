@@ -1,16 +1,18 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_agglayer::errors::{ERR_FAUCET_NOT_REGISTERED, ERR_SENDER_NOT_BRIDGE_ADMIN};
+use miden_agglayer::errors::ERR_FAUCET_NOT_REGISTERED;
 use miden_agglayer::{
     AggLayerBridge,
+    AgglayerBridgeError,
+    BridgeRoles,
     ConfigAggBridgeNote,
     ConversionMetadata,
     DeregisterAggFaucetNote,
     EthAddress,
     MetadataHash,
-    create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
@@ -25,7 +27,10 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+use super::test_utils::create_existing_bridge_account_with_roles;
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -36,6 +41,36 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
     let origin_network_packed = u32::from_le_bytes(origin_network.to_be_bytes());
     elements.push(Felt::from(origin_network_packed));
     StorageMapKey::from_raw(Hasher::hash_elements(&elements))
+}
+
+/// Pins the bridge's procedure-to-role authorization map: each role-gated procedure must map to
+/// the expected role. Resolving the procedure roots also exercises the component-library lookup,
+/// so a broken namespace or missing export would fail here.
+#[test]
+fn test_bridge_procedure_roles_mapping() {
+    let roles = AggLayerBridge::procedure_roles();
+
+    assert_eq!(roles.len(), 5, "exactly the five role-gated procedures must be mapped");
+    assert_eq!(
+        roles.get(&AggLayerBridge::register_faucet_root()),
+        Some(&AggLayerBridge::faucet_manager_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::store_faucet_metadata_hash_root()),
+        Some(&AggLayerBridge::faucet_manager_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::deregister_faucet_root()),
+        Some(&AggLayerBridge::faucet_manager_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::update_ger_root()),
+        Some(&AggLayerBridge::ger_injector_role()),
+    );
+    assert_eq!(
+        roles.get(&AggLayerBridge::remove_ger_root()),
+        Some(&AggLayerBridge::ger_remover_role()),
+    );
 }
 
 /// Tests that a CONFIG_AGG_BRIDGE note registers a faucet in the bridge's faucet registry.
@@ -50,8 +85,8 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
 async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (note sender)
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT (note sender)
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -66,9 +101,9 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     })?;
 
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -103,7 +138,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -144,8 +179,8 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (note sender)
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT (note sender)
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -159,9 +194,9 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -189,7 +224,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -202,7 +237,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -259,6 +294,97 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     Ok(())
 }
 
+/// A note sender that does not hold the `FAUCET_MNGR` role cannot register a faucet:
+/// `register_faucet` reverts via the account's `Authority` role check with `ERR_SENDER_LACKS_ROLE`.
+#[tokio::test]
+async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account_with_roles(
+        builder.rng_mut().draw_word(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let faucet_to_register =
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([7; 32]);
+
+    // The GER injector (who does not hold the FAUCET_MNGR role) attempts to send the
+    // CONFIG_AGG_BRIDGE note.
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address: EthAddress::from_hex(
+                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            )
+            .unwrap(),
+            scale: 0,
+            origin_network: 1,
+            is_native: false,
+            metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+        },
+        ger_injector.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[config_note])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    Ok(())
+}
+
+/// `BridgeRoles::new` rejects an empty holder set for any role so a bridge cannot be deployed with
+/// an unfillable role.
+#[test]
+fn bridge_roles_new_rejects_empty_role() {
+    let account = |seed: u8| {
+        AccountId::builder()
+            .account_type(AccountType::Public)
+            .build_with_seed([seed; 32])
+    };
+    let (a, b, c) = (account(1), account(2), account(3));
+
+    // A non-empty set for every role succeeds.
+    assert!(
+        BridgeRoles::new(BTreeSet::from([a]), BTreeSet::from([b]), BTreeSet::from([c]),).is_ok()
+    );
+
+    // An empty set for any single role is rejected.
+    for empty in 0..3 {
+        let sets: [BTreeSet<AccountId>; 3] = core::array::from_fn(|i| {
+            if i == empty {
+                BTreeSet::new()
+            } else {
+                BTreeSet::from([a])
+            }
+        });
+        let [faucet_managers, ger_injectors, ger_removers] = sets;
+        let err = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers).unwrap_err();
+        assert!(matches!(err, AgglayerBridgeError::EmptyBridgeRole(_)));
+    }
+}
+
 /// Builds the `faucet_metadata_map` sub-key for a faucet: `[sub_key, 0, suffix, prefix]`.
 ///
 /// Mirrors the key layout written by `register_faucet` / read by `get_faucet_conversion_info`.
@@ -281,7 +407,7 @@ fn faucet_metadata_key(faucet: AccountId, sub_key: u8) -> StorageMapKey {
 async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -292,9 +418,9 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -321,13 +447,13 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
     let deregister_note = DeregisterAggFaucetNote::create(
         faucet_to_register,
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -423,7 +549,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -433,9 +559,9 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -461,13 +587,13 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
             is_native: true,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
     let deregister_note = DeregisterAggFaucetNote::create(
         faucet_to_register,
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -531,14 +657,14 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
 
 /// Tests that DEREGISTER_AGG_FAUCET rejects invalid deregistrations:
 /// - an unregistered faucet panics with `ERR_FAUCET_NOT_REGISTERED`;
-/// - a non-admin sender panics with `ERR_SENDER_NOT_BRIDGE_ADMIN`, even when the faucet is
-///   registered (so the panic comes from the auth check, not the registration check);
+/// - a non-admin sender panics with `ERR_SENDER_LACKS_ROLE`, even when the faucet is registered (so
+///   the panic comes from the auth check, not the registration check);
 /// - an already-deregistered faucet panics with `ERR_FAUCET_NOT_REGISTERED`, demonstrating that
 ///   deregistration revokes the faucet end-to-end (this is the exact check in-flight B2AGG / CLAIM
 ///   notes rely on).
 #[rstest::rstest]
 #[case::unregistered_faucet(false, false, false, ERR_FAUCET_NOT_REGISTERED)]
-#[case::non_admin_sender(true, false, true, ERR_SENDER_NOT_BRIDGE_ADMIN)]
+#[case::non_admin_sender(true, false, true, ERR_SENDER_LACKS_ROLE)]
 #[case::already_deregistered(true, true, false, ERR_FAUCET_NOT_REGISTERED)]
 #[tokio::test]
 async fn test_deregister_agg_faucet_rejects_invalid(
@@ -549,7 +675,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -562,9 +688,9 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -592,7 +718,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
                 is_native: false,
                 metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
             },
-            bridge_admin.id(),
+            faucet_manager.id(),
             bridge_account.id(),
             builder.rng_mut(),
         )?)
@@ -604,7 +730,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
     let prior_deregister_note = if deregister_first {
         Some(DeregisterAggFaucetNote::create(
             faucet_id,
-            bridge_admin.id(),
+            faucet_manager.id(),
             bridge_account.id(),
             builder.rng_mut(),
         )?)
@@ -615,7 +741,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
     let sender = if sender_is_attacker {
         attacker.id()
     } else {
-        bridge_admin.id()
+        faucet_manager.id()
     };
     let deregister_note =
         DeregisterAggFaucetNote::create(faucet_id, sender, bridge_account.id(), builder.rng_mut())?;
