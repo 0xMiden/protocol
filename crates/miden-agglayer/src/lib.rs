@@ -73,13 +73,15 @@ static AGGLAYER_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
 static BRIDGE_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
-    Package::read_from_bytes_trusted(bytes).expect("shipped bridge component package is well-formed")
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped bridge component package is well-formed")
 });
 
 static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
-    Package::read_from_bytes_trusted(bytes).expect("shipped faucet component package is well-formed")
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped faucet component package is well-formed")
 });
 
 /// Returns the AggLayer Library containing all agglayer modules.
