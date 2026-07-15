@@ -48,6 +48,13 @@ const MAX_CONVERTED_AMOUNT_HI_LIMB = 0x80000000
 # Multiplier recombining the u64 limbs of the converted amount into a felt (2^32).
 const U32_LIMB_MULTIPLIER = 0x0000000100000000
 
+# Domain-separation tag for the fee note's serial number ("fee" in hex): the serial number is
+# derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce, account_id_suffix,
+# account_id_prefix]) with FEE_DOMAIN = [FEE_DOMAIN_TAG, 0, 0, 0], so a fee note's serial number
+# cannot collide with serial numbers derived from similar tuples in other contexts.
+# Must be kept in sync with the Rust `BatchFeeNote::derive_serial_number`.
+const FEE_DOMAIN_TAG = 0xFEE
+
 # load_conversion_info locals: the conversion info word loaded from the advice map.
 const LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC = 0
 
@@ -241,8 +248,9 @@ end
 #! Creates a new BATCH_FEE output note and funds it with the provided asset from the native
 #! account's vault.
 #!
-#! The note's serial number is derived from the native account ID, the account's initial nonce
-#! and the reference block number, making it deterministic and client-precomputable.
+#! The note's serial number is derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
+#! account_id_suffix, account_id_prefix]), making it deterministic and client-precomputable
+#! while domain-separating it from serial numbers derived in other contexts.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
@@ -267,7 +275,12 @@ pub proc create_and_fund_fee_note(asset: Asset)
     exec.tx::get_block_number
     # => [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
-    # the top four elements form the note's serial number
+    # domain-separate the serial number by hashing the tuple with the FEE domain tag
+    push.0.0.0 push.FEE_DOMAIN_TAG
+    # => [FEE_DOMAIN, [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix],
+    #     ASSET_ID, ASSET_VALUE]
+
+    exec.poseidon2::merge
     # => [SERIAL_NUM, ASSET_ID, ASSET_VALUE]
 
     exec.batch_fee::prepare_note

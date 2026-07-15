@@ -18,7 +18,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 
 use crate::StandardsLib;
 
@@ -135,9 +135,11 @@ impl BatchFeeNote {
     /// Derives the serial number that `miden::standards::fee::auth::singlesig::pay_fee` uses for
     /// the BATCH_FEE note it creates during a transaction.
     ///
-    /// The serial number is `[ref_block_num, initial_nonce, account_id_suffix,
-    /// account_id_prefix]`, which is unique per (account, nonce) pair and lets clients precompute
-    /// the note's recipient before executing the transaction.
+    /// The serial number is `hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
+    /// account_id_suffix, account_id_prefix])` with the FEE domain tag `[0xFEE, 0, 0, 0]`. It is
+    /// unique per (account, nonce) pair and lets clients precompute the note's recipient before
+    /// executing the transaction, while the domain tag separates it from serial numbers derived
+    /// from similar tuples in other contexts.
     ///
     /// This derivation must be kept in sync with `create_and_fund_fee_note` in the
     /// `miden::standards::fee` MASM module.
@@ -146,12 +148,16 @@ impl BatchFeeNote {
         initial_nonce: Felt,
         ref_block_num: BlockNumber,
     ) -> Word {
-        Word::from([
+        // Domain-separation tag for the fee note's serial number ("fee" in hex).
+        let fee_domain = Word::from([Felt::from(0xfee_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+        let tuple = Word::from([
             Felt::from(ref_block_num.as_u32()),
             initial_nonce,
             sender.suffix(),
             sender.prefix().as_felt(),
-        ])
+        ]);
+
+        Hasher::merge(&[fee_domain, tuple])
     }
 }
 
