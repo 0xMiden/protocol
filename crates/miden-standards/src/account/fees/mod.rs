@@ -3,7 +3,7 @@
 //! [`FeeManager`] is structured like the token policy managers
 //! (see [`crate::account::policies`]): it owns an `active_fee_policy_proc_root` slot plus an
 //! `allowed_fee_policy_proc_roots` map slot for set-time validation, and its `estimate_note_fee`
-//! procedure dispatches to the active fee policy via `dynexec`. The actual fee computation logic
+//! procedure dispatches to the active fee policy via `dyncall`. The actual fee computation logic
 //! lives in fee policy components ([`ConstantFeePolicy`]), and the active
 //! policy can be switched to any allowlisted policy root through the authority-gated
 //! `set_fee_policy` procedure (authorized via the account-wide

@@ -69,7 +69,7 @@ fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
         #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
         #!
-        #! Invocation: dynexec
+        #! Invocation: call
         @account_procedure
         pub proc compute_note_fee
             # keep STORAGE_COMMITMENT as the fee asset ID, dropping the other note parameters

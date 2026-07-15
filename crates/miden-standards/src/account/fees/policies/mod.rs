@@ -26,7 +26,7 @@ pub enum FeePolicyError {
 
 /// Descriptor for a fee policy registered with a [`super::FeeManager`].
 ///
-/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
 /// Construct via [`Self::constant`] or [`Self::custom`]. Pass to the [`super::FeeManager`]

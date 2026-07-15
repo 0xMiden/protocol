@@ -1,8 +1,8 @@
 # miden::standards::fees::policies::constant_fee
 #
 # Constant fee policy: derives the fee from a fixed per-note-script fee schedule. Designed to be
-# registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches its
-# `estimate_note_fee` procedure to `compute_note_fee` via dynamic execution.
+# registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches fee
+# estimation to `compute_note_fee` via `dyncall`.
 #
 # Both storage slots are populated once at account creation (via the `ConstantFeePolicy` Rust
 # type) and there are no on-chain setters.
@@ -45,8 +45,7 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Invocation: call
 @account_procedure
 pub proc compute_note_fee
     exec.build_note_fee_lookup_key

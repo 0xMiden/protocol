@@ -2,7 +2,7 @@
 //!
 //! [`FeeManager`] mirrors the token policy managers: it owns an `active_fee_policy_proc_root`
 //! slot plus an `allowed_fee_policy_proc_roots` map slot for validating policy-switching at set
-//! time, and its `estimate_note_fee` procedure dispatches to the active fee policy via `dynexec`.
+//! time, and its `estimate_note_fee` procedure dispatches to the active fee policy via `dyncall`.
 //! The actual fee computation logic lives in fee policy components (see
 //! [`super::policies`]).
 
@@ -84,7 +84,7 @@ static ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Lazy
 /// The component exposes:
 /// - `estimate_note_fee`: designed to be `call`ed by external callers - typically via FPI from the
 ///   authentication component of an account that creates a note targeted at this account. It
-///   dispatches to the active fee policy via `dynexec`; the policy derives the fee this account
+///   dispatches to the active fee policy via `dyncall`; the policy derives the fee this account
 ///   charges for a note with the given parameters and returns it as a fee asset (asset ID and value
 ///   words).
 /// - `set_fee_policy` / `get_fee_policy`: switch and read the active fee policy root. Switching is
