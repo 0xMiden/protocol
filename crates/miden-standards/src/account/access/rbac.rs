@@ -59,9 +59,8 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// revoke, or re-point (`set_role_admin`) that role.
 ///
 /// The component is seeded at construction with one or more members of the `ADMIN` role (see
-/// [`new`][Self::new] / [`with_admins`][Self::with_admins]); this bootstraps administration.
-/// The `ADMIN` role administers itself, so `ADMIN` membership can be granted, revoked, and
-/// renounced through the standard API.
+/// [`new`][Self::new]); this bootstraps administration. The `ADMIN` role administers itself, so
+/// `ADMIN` membership can be granted, revoked, and renounced through the standard API.
 ///
 /// ## Role hierarchy and exclusive delegation
 ///
