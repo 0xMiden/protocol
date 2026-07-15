@@ -185,12 +185,14 @@ pub proc find_input_note_by_id
     # => [is_found]
 
     exec.tx::get_num_input_notes
-    # => [note_idx, is_found]
+    # => [num_notes, is_found]
 
     dup neq.0
-    # => [should_loop, note_idx, is_found]
+    # => [should_loop, num_notes, is_found]
 
     while.true
+        # the counter holds the number of notes not yet inspected; the note at counter - 1 is
+        # inspected next, so after sub.1 the value doubles as that note's index
         sub.1
         # => [note_idx, is_found]
 
