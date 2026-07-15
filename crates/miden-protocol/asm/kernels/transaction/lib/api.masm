@@ -1774,6 +1774,25 @@ pub proc tx_compute_fee
     # => [fee_amount, pad(15)]
 end
 
+#! Returns the fee faucet ID of the transaction's reference block.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+#!
+#! Where:
+#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
+#!   the native fee asset.
+#!
+#! Invocation: dynexec
+pub proc tx_get_fee_faucet_id
+    exec.memory::get_fee_faucet_id
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(16)]
+
+    # truncate the stack
+    movup.2 drop movup.2 drop
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+end
+
 #! Returns the block commitment of the reference block.
 #!
 #! Inputs:  [pad(16)]
