@@ -7,28 +7,28 @@ use miden_protocol::{Felt, Hasher, Word};
 // FEE PAYMENT INFO
 // ================================================================================================
 
-/// Payment info instructing `miden::standards::auth::fee::pay_fee` which asset to pay the
-/// transaction fee in.
+/// Conversion info instructing `miden::standards::fee::auth::singlesig::pay_fee` which asset to pay
+/// the transaction fee in.
 ///
 /// The fee amount computed by the transaction kernel is denominated in the native fee asset;
 /// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
 /// To pay in the native fee asset, use [`Self::native`], which commits to the native fee faucet
 /// at rate 1/1.
 ///
-/// The payment info is committed to via the transaction's auth args: the auth args must be set
-/// to [`Self::auth_args`], which is the hash of the payment info together with a caller-chosen
+/// The conversion info is committed to via the transaction's auth args: the auth args must be set
+/// to [`Self::auth_args`], which is the hash of the conversion info together with a caller-chosen
 /// salt, and the advice map must contain the preimage under that commitment (see
 /// [`Self::advice_map_entry`]). The salt slot keeps the auth args usable as a unique salt for
-/// replay protection while committing to the payment info.
+/// replay protection while committing to the conversion info.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FeePaymentInfo {
+pub struct FeeConversionInfo {
     faucet_id: AccountId,
     rate_num: u32,
     rate_den: u32,
 }
 
-impl FeePaymentInfo {
-    /// Creates new fee payment info paying the fee in the asset issued by `faucet_id` at the
+impl FeeConversionInfo {
+    /// Creates new fee conversion info paying the fee in the asset issued by `faucet_id` at the
     /// rate `rate_num / rate_den`.
     ///
     /// # Errors
@@ -45,7 +45,7 @@ impl FeePaymentInfo {
         Ok(Self { faucet_id, rate_num, rate_den })
     }
 
-    /// Creates fee payment info paying the fee in the native fee asset issued by
+    /// Creates fee conversion info paying the fee in the native fee asset issued by
     /// `fee_faucet_id` (from the reference block's fee parameters), i.e. at rate 1/1.
     pub fn native(fee_faucet_id: AccountId) -> Self {
         Self {
@@ -76,10 +76,10 @@ impl FeePaymentInfo {
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the payment info encoded as a word.
+    /// Returns the conversion info encoded as a word.
     ///
-    /// The layout must be kept in sync with `load_payment_info` in the
-    /// `miden::standards::auth::fee` MASM module.
+    /// The layout must be kept in sync with `load_conversion_info` in the
+    /// `miden::standards::fee` MASM module.
     pub fn to_word(&self) -> Word {
         Word::from([
             self.faucet_id.prefix().as_felt(),
@@ -89,13 +89,13 @@ impl FeePaymentInfo {
         ])
     }
 
-    /// Returns the auth args committing to this payment info under the given salt.
+    /// Returns the auth args committing to this conversion info under the given salt.
     pub fn auth_args(&self, salt: Word) -> Word {
         Hasher::merge(&[self.to_word(), salt])
     }
 
     /// Returns the advice map entry that must accompany the auth args commitment: the key is
-    /// [`Self::auth_args`] and the value is the preimage `[SALT, PAYMENT_INFO]`.
+    /// [`Self::auth_args`] and the value is the preimage `[SALT, CONVERSION_INFO]`.
     pub fn advice_map_entry(&self, salt: Word) -> (Word, Vec<Felt>) {
         let mut value = Vec::with_capacity(8);
         value.extend(salt.iter());
@@ -123,15 +123,15 @@ mod tests {
     /// A zero rate numerator or denominator is rejected by construction.
     #[test]
     fn zero_rates_are_rejected() {
-        assert!(FeePaymentInfo::new(faucet(), 0, 1).is_err());
-        assert!(FeePaymentInfo::new(faucet(), 1, 0).is_err());
-        assert!(FeePaymentInfo::new(faucet(), 1, 1).is_ok());
+        assert!(FeeConversionInfo::new(faucet(), 0, 1).is_err());
+        assert!(FeeConversionInfo::new(faucet(), 1, 0).is_err());
+        assert!(FeeConversionInfo::new(faucet(), 1, 1).is_ok());
     }
 
     /// The advice map value is the preimage of the auth args commitment.
     #[test]
     fn advice_map_value_is_commitment_preimage() {
-        let payment_info = FeePaymentInfo::new(faucet(), 2, 3).unwrap();
+        let payment_info = FeeConversionInfo::new(faucet(), 2, 3).unwrap();
         let salt = Word::from([1u32, 2, 3, 4]);
 
         let (key, value) = payment_info.advice_map_entry(salt);

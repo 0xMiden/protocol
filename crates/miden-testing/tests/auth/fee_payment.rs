@@ -8,15 +8,15 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::FeePaymentInfo;
+use miden_standards::account::auth::FeeConversionInfo;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
+    ERR_FEE_CONVERSION_INFO_MISSING,
     ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
     ERR_FEE_CONVERSION_RATE_NOT_U32,
     ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
     ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
-    ERR_FEE_PAYMENT_INFO_COMMITMENT_MISMATCH,
-    ERR_FEE_PAYMENT_INFO_MISSING,
 };
 use miden_standards::note::BatchFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -31,7 +31,7 @@ const VERIFICATION_BASE_FEE: u32 = 500;
 // regression-test that the estimates remain upper bounds of the measured cycle counts.
 //
 // Must be kept in sync with `miden::standards::auth::signature` (scheme estimates) and
-// `miden::standards::auth::fee` (pay_fee and epilogue margins).
+// `miden::standards::fee` (pay_fee and epilogue margins).
 const ECDSA_K256_KECCAK_AUTH_CYCLES: usize = 8000;
 const FALCON_512_POSEIDON2_AUTH_CYCLES: usize = 80000;
 const PAY_FEE_CYCLES: usize = 8192;
@@ -50,12 +50,12 @@ fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
 /// Executes an empty transaction against a singlesig wallet on a fee-charging mock chain and
 /// returns the executed transaction together with the wallet's initial nonce.
 ///
-/// When no payment info entry is provided, the fee is paid in the native fee asset via
-/// [`FeePaymentInfo::native`] at rate 1/1.
+/// When no conversion info entry is provided, the fee is paid in the native fee asset via
+/// [`FeeConversionInfo::native`] at rate 1/1.
 async fn execute_fee_paying_tx(
     auth_scheme: AuthScheme,
     extra_assets: &[Asset],
-    payment_info_entry: Option<(Word, Vec<miden_protocol::Felt>)>,
+    conversion_info_entry: Option<(Word, Vec<miden_protocol::Felt>)>,
 ) -> anyhow::Result<(ExecutedTransaction, miden_protocol::Felt)> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
@@ -69,8 +69,8 @@ async fn execute_fee_paying_tx(
 
     let initial_nonce = account.nonce();
 
-    let (args, advice_value) = payment_info_entry.unwrap_or_else(|| {
-        FeePaymentInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
+    let (args, advice_value) = conversion_info_entry.unwrap_or_else(|| {
+        FeeConversionInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
     });
 
     let executed_transaction = mock_chain
@@ -165,7 +165,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10_000_000)?.into();
 
-    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 2, 1)?;
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (executed_transaction, _) = execute_fee_paying_tx(
@@ -227,7 +227,7 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
     // the rate must produce a non-zero remainder for this test to exercise the round-up branch
     assert_ne!(native_amount % 3, 0, "test setup should produce a non-zero division remainder");
 
-    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 1, 3)?;
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 1, 3)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (converted_tx, _) = execute_fee_paying_tx(
@@ -252,7 +252,7 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
 }
 
 /// Builds a raw advice-map entry committing to the given conversion info word, bypassing the
-/// validation in [`FeePaymentInfo`]. Used to exercise the in-VM validation of malformed rates.
+/// validation in [`FeeConversionInfo`]. Used to exercise the in-VM validation of malformed rates.
 fn raw_conversion_entry(conversion_word: Word, salt: Word) -> (Word, Vec<Felt>) {
     let key = Hasher::merge(&[conversion_word, salt]);
     let mut value = Vec::with_capacity(8);
@@ -289,7 +289,7 @@ async fn execute_with_conversion_entry(
 #[tokio::test]
 async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let conversion_info = FeePaymentInfo::new(payment_faucet_id, 2, 1)?;
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let (key, mut value) = conversion_info.advice_map_entry(salt);
@@ -298,7 +298,7 @@ async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
 
     let result = execute_with_conversion_entry((key, value)).await?;
 
-    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_INFO_COMMITMENT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH);
 
     Ok(())
 }
@@ -359,7 +359,7 @@ async fn non_u32_conversion_rate_aborts() -> anyhow::Result<()> {
 async fn converted_amount_overflow_aborts() -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     // a maximum base fee times a maximum u32 rate overflows the u64 product
-    let conversion_info = FeePaymentInfo::new(payment_faucet_id, u32::MAX, 1)?;
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, u32::MAX, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let mut builder = MockChain::builder().verification_base_fee(u32::MAX);
@@ -413,7 +413,7 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let (args, advice_value) =
-        FeePaymentInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
+        FeeConversionInfo::native(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
 
     let result = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -431,9 +431,9 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A non-zero fee without a payment info entry for the auth args aborts with a dedicated error.
+/// A non-zero fee without a conversion info entry for the auth args aborts with a dedicated error.
 #[tokio::test]
-async fn fee_payment_fails_without_payment_info() -> anyhow::Result<()> {
+async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
     let fee_asset: Asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?.into();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
@@ -447,14 +447,14 @@ async fn fee_payment_fails_without_payment_info() -> anyhow::Result<()> {
 
     let result = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_INFO_MISSING);
+    assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_MISSING);
 
     Ok(())
 }
 
 /// The static cycle-estimate constants are upper bounds of the actually measured cycle counts.
 /// If this test fails, the constants in `miden::standards::auth::signature` /
-/// `miden::standards::auth::fee` must be raised (and the mirrors above updated).
+/// `miden::standards::fee` must be raised (and the mirrors above updated).
 #[rstest]
 #[case::falcon(AuthScheme::Falcon512Poseidon2, FALCON_512_POSEIDON2_AUTH_CYCLES)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak, ECDSA_K256_KECCAK_AUTH_CYCLES)]
@@ -528,7 +528,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     let tx_script_src = format!("@transaction_script\npub proc main\n{body}\nend");
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
 
-    let (args, advice_value) = FeePaymentInfo::native(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+    let (args, advice_value) = FeeConversionInfo::native(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .advice_map_entry(Word::from([9u32, 10, 11, 12]));
 
     let executed_transaction = mock_chain

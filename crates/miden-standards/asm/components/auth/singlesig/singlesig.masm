@@ -2,8 +2,9 @@
 #
 # See the `AuthBasicSignature` Rust type's documentation for more details.
 
-use miden::standards::auth::fee
 use miden::standards::auth::signature
+use miden::standards::fee
+use miden::standards::fee::auth::singlesig as singlesig_fee
 use miden::protocol::native_account
 
 # CONSTANTS
@@ -22,12 +23,13 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! It first pays the transaction fee by creating and funding a public BATCH_FEE note (see
-#! miden::standards::auth::fee::pay_fee). The payment asset and conversion rate are committed to
-#! via the AUTH_ARGS (native fee asset at rate 1/1 for plain native payment). On chains with a zero
-#! verification base fee no note is created. Because the fee is paid before the transaction
-#! summary is created, the fee note and the vault withdrawal funding it are covered by the
-#! signature.
+#! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
+#! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
+#! funding a public BATCH_FEE note (see miden::standards::fee::auth::singlesig::pay_fee). The
+#! payment asset and conversion rate are committed to via the AUTH_ARGS (native fee asset at rate
+#! 1/1 for plain native payment). On chains with a zero verification base fee no note is created.
+#! Because the fee is paid before the transaction summary is created, the fee note and the vault
+#! withdrawal funding it are covered by the signature.
 #!
 #! It then increments the nonce of the account, independent of whether the account's state has
 #! changed or not, and computes and signs the following message (in memory order):
@@ -44,26 +46,32 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #! Invocation: call
 @auth_script
 pub proc auth_tx(auth_args: word)
+    # Decode the fee conversion info committed to by the auth args.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.fee::load_conversion_info
+    # => [CONVERSION_INFO, pad(12)]
+
     # Fetch the signature scheme id from storage.
     # ---------------------------------------------------------------------------------------------
 
     push.SCHEME_ID_SLOT[0..2] exec.native_account::get_initial_item
-    # => [scheme_id, 0, 0, 0, AUTH_ARGS, pad(12)]
+    # => [scheme_id, 0, 0, 0, CONVERSION_INFO, pad(12)]
 
     movdn.3 drop drop drop
-    # => [scheme_id, AUTH_ARGS, pad(12)]
+    # => [scheme_id, CONVERSION_INFO, pad(12)]
 
     # Pay the transaction fee before the summary is created so that the BATCH_FEE note and the
     # vault withdrawal funding it are covered by the signed transaction summary.
     # ---------------------------------------------------------------------------------------------
 
     dup exec.signature::estimate_authentication_cycles
-    # => [num_extra_cycles, scheme_id, AUTH_ARGS, pad(12)]
+    # => [num_extra_cycles, scheme_id, CONVERSION_INFO, pad(12)]
 
     swap movdn.5
-    # => [num_extra_cycles, AUTH_ARGS, scheme_id, pad(12)]
+    # => [num_extra_cycles, CONVERSION_INFO, scheme_id, pad(12)]
 
-    exec.fee::pay_fee
+    exec.singlesig_fee::pay_fee
     # => [scheme_id, pad(12)]
 
     # Fetch public key commitment from storage.

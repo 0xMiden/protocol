@@ -2,7 +2,6 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
 
-pub mod fee
 pub mod guardian
 pub mod multisig
 pub mod multisig_smart

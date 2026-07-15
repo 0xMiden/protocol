@@ -132,15 +132,15 @@ impl BatchFeeNote {
     // SERIAL NUMBER DERIVATION
     // --------------------------------------------------------------------------------------------
 
-    /// Derives the serial number that `miden::standards::auth::fee::pay_fee` uses for the
-    /// BATCH_FEE note it creates during a transaction.
+    /// Derives the serial number that `miden::standards::fee::auth::singlesig::pay_fee` uses for
+    /// the BATCH_FEE note it creates during a transaction.
     ///
     /// The serial number is `[ref_block_num, initial_nonce, account_id_suffix,
     /// account_id_prefix]`, which is unique per (account, nonce) pair and lets clients precompute
     /// the note's recipient before executing the transaction.
     ///
     /// This derivation must be kept in sync with `create_and_fund_fee_note` in the
-    /// `miden::standards::auth::fee` MASM module.
+    /// `miden::standards::fee` MASM module.
     pub fn derive_serial_number(
         sender: AccountId,
         initial_nonce: Felt,
