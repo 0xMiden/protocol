@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -26,7 +25,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::Package;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
@@ -41,9 +40,9 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/note_scripts/miden-agglayer-config_agg_bridge.masp"
     ));
-    let library = Library::read_from_bytes(bytes)
-        .expect("shipped CONFIG_AGG_BRIDGE script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
+    let package = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped CONFIG_AGG_BRIDGE script package is well-formed");
+    NoteScript::from_package(&package).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
 });
 
 // CONVERSION METADATA
