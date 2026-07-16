@@ -1,6 +1,7 @@
 pub mod batch_fee
 pub mod burn
 pub mod faucet_policy_action
+pub mod fee_sponsorship
 pub mod mint
 pub mod mint_fungible
 pub mod mint_non_fungible
