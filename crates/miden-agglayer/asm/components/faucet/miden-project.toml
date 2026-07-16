@@ -1,0 +1,14 @@
+[package]
+name              = "miden-agglayer-faucet"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "agglayer::components::faucet"
+path      = "faucet.masm"
+
+[dependencies]
+miden-agglayer.workspace  = true
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
