@@ -25,6 +25,10 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 # signature branch can decode the fee conversion info they commit to.
 const AUTH_ARGS_LOC = 0
 
+# Estimated upper bound on the number of cycles the exempt (no-signature) branch spends after
+# pay_fee returns: the account commitment comparison and the nonce increment.
+const ACL_EXEMPT_POST_FEE_CYCLES = 1024
+
 #! Authenticate a transaction using the signature scheme specified by scheme_id, paying the
 #! transaction fee when a signature is required.
 #!
@@ -42,20 +46,23 @@ const AUTH_ARGS_LOC = 0
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
 #!
-#! Fee payment happens only on the authenticated (signature) branch: it decodes the fee
-#! conversion info committed to by the AUTH_ARGS (see miden::standards::fee::load_conversion_info)
-#! and pays the transaction fee by creating and funding a public BATCH_FEE note (see
-#! miden::standards::fee::pay_fee) before the transaction summary is created, so the fee note and
-#! the vault withdrawal funding it are covered by the signature. The payment asset and conversion
-#! rate are committed to via the AUTH_ARGS (native fee asset at rate 1/1 for plain native
-#! payment). On chains with a zero verification base fee no note is created.
+#! Both branches pay the transaction fee by creating and funding a public BATCH_FEE note (see
+#! miden::standards::fee::pay_fee); on chains with a zero verification base fee no note is
+#! created.
 #!
-#! The exempt (no-signature) branch deliberately does NOT pay a fee: without a signature over the
-#! transaction summary there is nothing to bind the caller-supplied conversion info to, so paying
-#! a caller-controlled fee there would let an unauthenticated party withdraw an arbitrary amount
-#! from the vault. On a fee-charging chain an exempt transaction therefore produces no fee note
-#! and is rejected by the batch builder (fail-closed); exempt operations are intended for
-#! zero-fee chains or operations that do not require inclusion in a fee-charging batch.
+#! On the authenticated (signature) branch, the payment asset and conversion rate are committed
+#! to by the AUTH_ARGS (see miden::standards::fee::load_conversion_info; native fee asset at rate
+#! 1/1 for plain native payment), and the fee is paid before the transaction summary is created,
+#! so the fee note and the vault withdrawal funding it are covered by the signature.
+#!
+#! The exempt (no-signature) branch always pays in the native fee asset at rate 1/1 (see
+#! miden::standards::fee::native_conversion_info), mirroring the network account component: with
+#! no signer to authorize a conversion rate, the caller-supplied AUTH_ARGS cannot be trusted to
+#! select the payment asset, so the branch ignores any committed conversion info and pays plainly
+#! in the kernel-attested native asset. Paying on the exempt branch also means exempt
+#! transactions cannot evade fees on fee-charging chains. Note that the fee payment withdraws
+#! from the vault, so on fee-charging chains the account state always changes and the nonce
+#! always increments.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -171,6 +178,20 @@ pub proc auth_tx_acl(auth_args: word)
 
         exec.signature::authenticate_transaction
     else
+        # ------ Pay the transaction fee in the native fee asset ------
+
+        # with no signer to authorize a committed conversion rate, the exempt branch ignores the
+        # auth args and pays plainly in the kernel-attested native fee asset (mirroring the
+        # network account component), so exempt transactions cannot evade fees
+        exec.fee::native_conversion_info
+        # => [CONVERSION_INFO, pad(16)]
+
+        push.ACL_EXEMPT_POST_FEE_CYCLES
+        # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
+
+        exec.fee::pay_fee
+        # => [pad(16)]
+
         # ------ Check if initial account commitment differs from current commitment ------
 
         exec.native_account::get_initial_commitment

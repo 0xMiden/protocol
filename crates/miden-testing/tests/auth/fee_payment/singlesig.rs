@@ -799,8 +799,9 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
 
 /// The ACL auth procedure pays the transaction fee before signature verification when a
 /// non-exempt procedure (the wallet's `receive_asset` via a P2ID note) forces authentication.
-/// The exempt (no-signature) branch is covered in `auth::singlesig_acl`, where it must NOT pay a
-/// fee (see `acl_exempt_branch_does_not_pay_fee`).
+/// The exempt (no-signature) branch is covered in `auth::singlesig_acl`, where it must pay in
+/// the native fee asset, ignoring any committed conversion info (see
+/// `acl_exempt_branch_pays_native_fee_note`).
 #[tokio::test]
 async fn singlesig_acl_pays_fee_note_on_signature_path() -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;

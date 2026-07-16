@@ -82,23 +82,24 @@ impl AuthSingleSigAclConfig {
 ///
 /// ## Fees
 ///
-/// `auth_tx_acl` pays the transaction fee only on the authenticated (signature) branch, via
+/// `auth_tx_acl` pays the transaction fee on both branches via
 /// `miden::standards::fee::pay_fee`: it creates a public BATCH_FEE note (see
-/// [`BatchFeeNote`](crate::note::BatchFeeNote)) funded from the account's vault before the
-/// transaction summary is created, so the note is covered by the signature. On fee-charging
-/// chains the account must therefore hold a sufficient balance of the payment asset. The payment
-/// asset and conversion rate are committed to via the transaction's auth args (see
-/// [`FeeConversionInfo`](super::FeeConversionInfo) and
-/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
-/// 1/1 for plain native payment). On chains with a zero verification base fee no note is
-/// created.
+/// [`BatchFeeNote`](crate::note::BatchFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the payment asset. On
+/// chains with a zero verification base fee no note is created.
 ///
-/// The exempt (no-signature) branch deliberately does not pay a fee: without a signature over the
-/// transaction summary there is nothing to bind the caller-supplied conversion info to, and
-/// paying a caller-controlled fee there would let an unauthenticated party withdraw an arbitrary
-/// amount from the vault. On a fee-charging chain an exempt transaction thus creates no fee note
-/// and is rejected by the batch builder (fail-closed); exempt operations are intended for
-/// zero-fee chains or for operations that do not require inclusion in a fee-charging batch.
+/// On the authenticated (signature) branch, the payment asset and conversion rate are committed
+/// to via the transaction's auth args (see [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
+/// 1/1 for plain native payment), and the fee is paid before the transaction summary is created,
+/// so the fee note is covered by the signature.
+///
+/// The exempt (no-signature) branch always pays in the native fee asset at rate 1/1, mirroring
+/// [`AuthNetworkAccount`](super::AuthNetworkAccount): with no signer to authorize a conversion
+/// rate, the caller-supplied auth args cannot be trusted to select the payment asset, so the
+/// branch ignores any committed conversion info and pays plainly in the kernel-attested native
+/// asset. Paying on the exempt branch also means exempt transactions cannot evade fees on
+/// fee-charging chains.
 ///
 /// ## Authentication Logic
 ///

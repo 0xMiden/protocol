@@ -17,9 +17,9 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageSlot,
 };
-use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
@@ -38,7 +38,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::BurnNote;
+use miden_standards::note::{BatchFeeNote, BurnNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::faucet::user_faucet_single_sig_acl;
 use miden_standards::testing::note::NoteBuilder;
@@ -54,17 +54,21 @@ use crate::prove_and_verify_transaction;
 // TESTS
 // ================================================================================================
 
-/// Security regression: the ACL exempt (no-signature) branch must NOT pay a transaction fee.
+/// The ACL exempt (no-signature) branch pays the transaction fee in the native fee asset,
+/// ignoring any conversion info committed via the auth args.
 ///
-/// Paying a fee withdraws a caller-controlled amount from the vault (the conversion rate is read
-/// from caller-supplied advice). On the exempt branch there is no signature over the transaction
-/// summary to bind that amount, so paying there would let an unauthenticated party drain the
-/// vault into a public BATCH_FEE note. This test runs a state-changing exempt procedure
-/// (`set_item`) on a fee-charging chain with no registered authenticator, supplies an inflated
-/// conversion-info commitment via the auth args, and asserts that no fee note is created (the
-/// vault is not drained).
+/// With no signature over the transaction summary there is no signer to authorize a
+/// caller-supplied conversion rate, so the exempt branch pays plainly in the kernel-attested
+/// native fee asset at rate 1/1 (mirroring the network account component); paying (rather than
+/// skipping the fee) also means exempt transactions cannot evade fees. This test runs a
+/// state-changing exempt procedure (`set_item`) on a fee-charging chain with no registered
+/// authenticator, supplies an inflated conversion-rate commitment via the auth args, and asserts
+/// a native fee note covering the computed fee is created at rate 1/1 (the inflated rate is
+/// ignored).
 #[tokio::test]
-async fn acl_exempt_branch_does_not_pay_fee() -> anyhow::Result<()> {
+async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
+    const VERIFICATION_BASE_FEE: u32 = 500;
+
     let (_get_item, set_item, _account_procedure_1) = mock_component_proc_roots();
 
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
@@ -87,11 +91,12 @@ async fn acl_exempt_branch_does_not_pay_fee() -> anyhow::Result<()> {
         .with_assets([fee_asset.into()])
         .build_existing()?;
 
-    let mut builder = MockChain::builder().verification_base_fee(500);
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    // an inflated conversion rate that would create a (drain) fee note if the exempt branch paid
+    // an inflated conversion rate that would double the paid amount if the exempt branch honored
+    // the committed conversion info
     let conversion_info = FeeConversionInfo::new(fee_faucet_id, 2, 1)?;
     let (args, advice_value) =
         commit_fee_conversion_info(conversion_info, Word::from([9u32, 10, 11, 12]));
@@ -107,9 +112,36 @@ async fn acl_exempt_branch_does_not_pay_fee() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    // no BATCH_FEE note is created: the exempt branch did not pay a fee, so the vault was not
-    // drained despite the inflated rate
-    assert_eq!(executed.output_notes().num_notes(), 0);
+    // exactly one output note is created: a public BATCH_FEE note carrying the native fee asset
+    assert_eq!(executed.output_notes().num_notes(), 1);
+    let output_note = executed.output_notes().get_note(0);
+    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+
+    let assets = output_note.assets();
+    assert_eq!(assets.num_assets(), 1);
+    let asset = assets.iter().next().expect("fee note should carry an asset");
+    let Asset::Fungible(paid_asset) = asset else {
+        panic!("fee note asset should be fungible");
+    };
+    assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
+
+    // the paid amount covers the computed fee at rate 1/1 with a bounded overshoot; the inflated
+    // 2/1 rate committed via the auth args was ignored (honoring it would have doubled the
+    // amount, far exceeding the bound)
+    let required_fee = executed.compute_fee();
+    assert!(
+        paid_asset.amount() >= required_fee,
+        "paid fee {} should cover the required fee {required_fee}",
+        paid_asset.amount()
+    );
+    let max_overpayment = u64::from(3 * VERIFICATION_BASE_FEE);
+    assert!(
+        paid_asset.amount().as_u64() <= required_fee.as_u64() + max_overpayment,
+        "paid fee {} should not exceed the required fee {required_fee} by more than \
+         {max_overpayment}",
+        paid_asset.amount()
+    );
 
     Ok(())
 }
