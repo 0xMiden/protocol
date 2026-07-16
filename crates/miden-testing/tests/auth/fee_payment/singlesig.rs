@@ -22,10 +22,10 @@ use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
+use super::VERIFICATION_BASE_FEE;
+
 // CONSTANTS
 // ================================================================================================
-
-const VERIFICATION_BASE_FEE: u32 = 500;
 
 // The cycle-estimate constants used by the fee-paying auth flow. These are Rust mirrors used to
 // regression-test that the estimates remain upper bounds of the measured cycle counts.
