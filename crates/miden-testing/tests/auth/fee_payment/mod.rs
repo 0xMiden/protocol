@@ -1,4 +1,5 @@
 mod network;
+mod no_auth;
 mod singlesig;
 
 // CONSTANTS
