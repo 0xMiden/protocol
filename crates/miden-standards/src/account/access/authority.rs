@@ -83,8 +83,8 @@ const RBAC_CONTROLLED: u8 = 2;
 ///
 /// # Per-procedure roles under [`Authority::RbacControlled`]
 ///
-/// Under RBAC, each gated procedure can be assigned its own role via `roles`, keyed by the
-/// procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
+/// Under RBAC, each gated procedure can be assigned its own role via `procedure_roles`, keyed by
+/// the procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
 /// runtime `assert_authorized` identifies the calling procedure via the `caller` instruction and
 /// looks up its role. A procedure without a mapping falls back to the `ADMIN` role check.
 ///
@@ -116,12 +116,13 @@ pub enum Authority {
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///
-    /// `roles` maps a gated procedure's [`AccountProcedureRoot`] to the role required to invoke it.
-    /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
-    /// component to be installed on the account. the MASM helper calls into
-    /// `rbac::assert_sender_has_role` and will fail to link otherwise.
+    /// `procedure_roles` maps a gated procedure's [`AccountProcedureRoot`] to the role required to
+    /// invoke it. Requires the
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
+    /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
+    /// fail to link otherwise.
     RbacControlled {
-        roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+        procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,
 }
 
@@ -185,8 +186,8 @@ impl Authority {
             AUTH_CONTROLLED => Ok(Self::AuthControlled),
             OWNER_CONTROLLED => Ok(Self::OwnerControlled),
             RBAC_CONTROLLED => {
-                let roles = Self::read_roles_from_storage(storage)?;
-                Ok(Self::RbacControlled { roles })
+                let procedure_roles = Self::read_roles_from_storage(storage)?;
+                Ok(Self::RbacControlled { procedure_roles })
             },
             other => Err(AuthorityError::InvalidAuthority(other.into())),
         }
@@ -306,8 +307,8 @@ impl From<Authority> for AccountComponent {
 
         let mut slots = vec![StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), value.to_word())];
 
-        if let Authority::RbacControlled { roles } = value {
-            let entries = roles.into_iter().map(|(proc_root, role)| {
+        if let Authority::RbacControlled { procedure_roles } = value {
+            let entries = procedure_roles.into_iter().map(|(proc_root, role)| {
                 (StorageMapKey::new(proc_root.as_word()), role_value_word(&role))
             });
             slots.push(StorageSlot::with_map(

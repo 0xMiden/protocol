@@ -1,5 +1,6 @@
 pub mod burn
 pub mod faucet_policy_action
+pub mod fee_sponsorship
 pub mod mint
 pub mod mint_fungible
 pub mod mint_non_fungible
@@ -10,3 +11,4 @@ pub mod pause_action
 pub mod pswap
 pub mod rbac_action
 pub mod swap
+pub mod tx_fee
