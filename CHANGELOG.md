@@ -12,6 +12,7 @@
 
 ### Changes
 
+- `ConstantFeePolicy` now aborts fee estimation for note scripts without a fee schedule entry instead of estimating them to a fee of 0; to make a note script free, schedule an explicit 0 fee for it. Fee schedule entries are stored as `[fee_amount, 0, 0, 1]`, where the last element is a set-marker distinguishing scheduled entries from unset keys ([#3326](https://github.com/0xMiden/protocol/issues/3326)).
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 - [BREAKING] Added an optional per-fill `min_fill_step` floor to PSWAP notes: a fill below `min(min_fill_step, min_requested_amount)` is rejected, preventing a swap from being chipped away by dust-minting partial fills. Also fixed the creator ID field order in `PswapNoteStorage` ([#3203](https://github.com/0xMiden/protocol/issues/3203)).

@@ -66,6 +66,7 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: call
 @account_procedure
@@ -136,6 +137,7 @@ end
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 pub proc estimate_note_fee_internal(
@@ -166,6 +168,7 @@ end
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 @locals(4)
