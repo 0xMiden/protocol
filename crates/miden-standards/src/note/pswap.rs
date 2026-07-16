@@ -50,9 +50,9 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// | `[0]` | Requested asset faucet ID suffix |
 /// | `[1]` | Requested asset faucet ID prefix |
 /// | `[2]` | Requested asset amount |
-/// | `[3]` | Payback note type (0 = private, 1 = public) |
-/// | `[4-5]` | Creator account ID (suffix, prefix) |
-/// | `[6]` | Minimum fill step (0 = no floor) |
+/// | `[3]` | Minimum fill step (0 = no floor) |
+/// | `[4]` | Payback note type (0 = private, 1 = public) |
+/// | `[5-6]` | Creator account ID (suffix, prefix) |
 ///
 /// The payback note tag is derived at runtime from the creator account ID
 /// (via `note_tag::create_account_target` in MASM) rather than stored.
@@ -149,13 +149,13 @@ impl From<PswapNoteStorage> for NoteStorage {
             storage.min_requested_asset.faucet_id().suffix(),
             storage.min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(storage.min_requested_asset.amount()),
-            // Payback note type [3]
+            // Minimum fill step [3]
+            Felt::from(storage.min_fill_step),
+            // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Creator ID [4-5] (suffix, prefix)
+            // Creator ID [5-6] (suffix, prefix)
             storage.creator_account_id.suffix(),
             storage.creator_account_id.prefix().as_felt(),
-            // Minimum fill step [6]
-            Felt::from(storage.min_fill_step),
         ];
         NoteStorage::new(storage_items)
             .expect("number of storage items should not exceed max storage items")
@@ -183,20 +183,20 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         let min_requested_asset = FungibleAsset::new(faucet_id, amount)
             .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?;
 
-        // [3] = payback_note_type
+        // [3] = min_fill_step (0 = no floor)
+        let min_fill_step = AssetAmount::new(note_storage[3].as_canonical_u64())
+            .map_err(|e| NoteError::other_with_source("failed to parse min_fill_step", e))?;
+
+        // [4] = payback_note_type
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[3].as_canonical_u64())
+            u8::try_from(note_storage[4].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [4-5] = creator account ID (suffix, prefix)
-        let creator_account_id = AccountId::try_from_elements(note_storage[4], note_storage[5])
+        // [5-6] = creator account ID (suffix, prefix)
+        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[6])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
-
-        // [6] = min_fill_step (0 = no floor)
-        let min_fill_step = AssetAmount::new(note_storage[6].as_canonical_u64())
-            .map_err(|e| NoteError::other_with_source("failed to parse min_fill_step", e))?;
 
         Ok(Self {
             min_requested_asset,
@@ -1070,16 +1070,16 @@ mod tests {
         let creator_id = dummy_creator_id();
         let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
 
-        // 7-element layout: [suffix, prefix, amount, note_type, creator_suffix, creator_prefix,
-        // min_fill_step]. Creator is stored suffix-first to match the requested-faucet convention.
+        // 7-element layout: [suffix, prefix, amount, min_fill_step, note_type, creator_suffix,
+        // creator_prefix]. Creator is stored suffix-first to match the requested-faucet convention.
         let storage_items = vec![
             min_requested_asset.faucet_id().suffix(),
             min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(min_requested_asset.amount()),
+            Felt::try_from(100u64).unwrap(),       // min_fill_step
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
             creator_id.suffix(),
             creator_id.prefix().as_felt(),
-            Felt::try_from(100u64).unwrap(), // min_fill_step
         ];
 
         let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();

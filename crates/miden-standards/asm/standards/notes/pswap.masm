@@ -28,20 +28,20 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
-# - payback_note_type          [3]  : 1 felt
-# - creator_id_suffix          [4]  : 1 felt
-# - creator_id_prefix          [5]  : 1 felt
-# - min_fill_step              [6]  : 1 felt
+# - min_fill_step              [3]  : 1 felt
+# - payback_note_type          [4]  : 1 felt
+# - creator_id_suffix          [5]  : 1 felt
+# - creator_id_prefix          [6]  : 1 felt
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
 # - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
+# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
 # - payback_note_type: The NoteType used for the P2ID payback note
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
-# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
 #
 # The payback note tag is derived at runtime from the creator's account ID
 # (via note_tag::create_account_target) rather than stored.
@@ -53,10 +53,10 @@ const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
 const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 3
-const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 4
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
-const MIN_FILL_STEP_ITEM = STORAGE_PTR + 6
+const MIN_FILL_STEP_ITEM = STORAGE_PTR + 3
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
+const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
 # =================================================================================================

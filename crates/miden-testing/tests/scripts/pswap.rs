@@ -906,12 +906,14 @@ async fn pswap_note_min_fill_step_test(
             expected_notes.push(RawOutputNote::Full(Note::from(remainder)));
         }
 
-        let tx_context = mock_chain
-            .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
-            .extend_expected_output_notes(expected_notes)
+        let executed_transaction = mock_chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(pswap_note.id())
+            .expected_output_notes(expected_notes)
             .extend_note_args(note_args_map)
-            .build()?;
-        let executed_transaction = tx_context.execute().await?;
+            .build()?
+            .execute()
+            .await?;
 
         let output_notes = executed_transaction.output_notes();
         let expected_count = if remainder_pswap.is_some() { 2 } else { 1 };
@@ -925,7 +927,7 @@ async fn pswap_note_min_fill_step_test(
         );
 
         // On a partial fill, the on-chain remainder must match the Rust remainder exactly. This
-        // proves the remainder inherits min_fill_step (stored at slot [6] and copied verbatim by
+        // proves the remainder inherits min_fill_step (stored at slot [3] and copied verbatim by
         // the MASM `compute_and_store_recipient` over all storage items).
         if let Some(remainder) = remainder_pswap {
             assert_eq!(
@@ -944,11 +946,13 @@ async fn pswap_note_min_fill_step_test(
             "Rust mirror must reject a fill below the floor",
         );
 
-        let tx_context = mock_chain
-            .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
+        let result = mock_chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(pswap_note.id())
             .extend_note_args(note_args_map)
-            .build()?;
-        let result = tx_context.execute().await;
+            .build()?
+            .execute()
+            .await;
         assert_transaction_executor_error!(result, ERR_PSWAP_FILL_BELOW_MINIMUM);
     }
 
