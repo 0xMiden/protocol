@@ -156,7 +156,8 @@ end
 
 #! Converts an amount at the given conversion rate, rounding up.
 #!
-#! The converted amount is ceil(amount * rate_num / rate_den).
+#! The converted amount is ceil(amount * rate_num / rate_den). A 1/1 rate returns the amount
+#! unchanged.
 #!
 #! Inputs:  [amount, rate_num, rate_den]
 #! Outputs: [converted_amount]
@@ -181,46 +182,55 @@ pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
     dup.1 neq.0 assert.err=ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO
     # => [rate_num, rate_den, amount]
 
-    # compute amount * rate_num as a u64 product
-    movup.2 u32split
-    # => [amount_lo, amount_hi, rate_num, rate_den]
+    # a 1/1 rate converts trivially; skip the u64 math
+    dup eq.1 dup.2 eq.1 and
+    # => [is_trivial_rate, rate_num, rate_den, amount]
 
-    movup.2 push.0 swap
-    # => [rate_num, 0, amount_lo, amount_hi, rate_den]
+    if.true
+        drop drop
+        # => [amount]
+    else
+        # compute amount * rate_num as a u64 product
+        movup.2 u32split
+        # => [amount_lo, amount_hi, rate_num, rate_den]
 
-    exec.u64::overflowing_mul
-    # => [overflow, prod_lo, prod_hi, rate_den]
+        movup.2 push.0 swap
+        # => [rate_num, 0, amount_lo, amount_hi, rate_den]
 
-    assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
-    # => [prod_lo, prod_hi, rate_den]
+        exec.u64::overflowing_mul
+        # => [overflow, prod_lo, prod_hi, rate_den]
 
-    # divide by rate_den, rounding up
-    movup.2 push.0 swap
-    # => [rate_den, 0, prod_lo, prod_hi]
+        assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+        # => [prod_lo, prod_hi, rate_den]
 
-    exec.u64::divmod
-    # => [rem_lo, rem_hi, quot_lo, quot_hi]
+        # divide by rate_den, rounding up
+        movup.2 push.0 swap
+        # => [rate_den, 0, prod_lo, prod_hi]
 
-    u32or neq.0
-    # => [round_up, quot_lo, quot_hi]
+        exec.u64::divmod
+        # => [rem_lo, rem_hi, quot_lo, quot_hi]
 
-    push.0 swap
-    # => [round_up, 0, quot_lo, quot_hi]
+        u32or neq.0
+        # => [round_up, quot_lo, quot_hi]
 
-    exec.u64::overflowing_add
-    # => [overflow, converted_lo, converted_hi]
+        push.0 swap
+        # => [round_up, 0, quot_lo, quot_hi]
 
-    assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
-    # => [converted_lo, converted_hi]
+        exec.u64::overflowing_add
+        # => [overflow, converted_lo, converted_hi]
 
-    # bound the high limb so the recombined amount stays below 2^63
-    dup.1 push.MAX_CONVERTED_AMOUNT_HI_LIMB u32lt
-    assert.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
-    # => [converted_lo, converted_hi]
+        assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+        # => [converted_lo, converted_hi]
 
-    # recombine the limbs into a felt amount
-    swap mul.U32_LIMB_MULTIPLIER add
-    # => [converted_amount]
+        # bound the high limb so the recombined amount stays below 2^63
+        dup.1 push.MAX_CONVERTED_AMOUNT_HI_LIMB u32lt
+        assert.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+        # => [converted_lo, converted_hi]
+
+        # recombine the limbs into a felt amount
+        swap mul.U32_LIMB_MULTIPLIER add
+        # => [converted_amount]
+    end
 end
 
 #! Adds the internal cycle margins of a pay_fee flow to the caller's estimate of remaining
