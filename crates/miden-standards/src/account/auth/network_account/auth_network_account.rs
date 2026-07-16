@@ -122,38 +122,24 @@ impl AuthNetworkAccount {
     const ADD_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "add_allowed_tx_script";
     const REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "remove_allowed_tx_script";
 
-    /// Returns the canonical [`AccountComponentName`] of this component.
-    pub const fn name() -> AccountComponentName {
-        AccountComponentName::from_static_str(Self::NAME)
-    }
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
 
-    /// Returns the [`AccountComponentCode`] of this component.
-    pub fn code() -> &'static AccountComponentCode {
-        &NETWORK_ACCOUNT_AUTH_CODE
-    }
-
-    /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
-    /// component.
-    pub fn add_allowed_note_script_root() -> AccountProcedureRoot {
-        *NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT
-    }
-
-    /// Returns the procedure root of the `remove_allowed_note_script` procedure exposed by this
-    /// component.
-    pub fn remove_allowed_note_script_root() -> AccountProcedureRoot {
-        *NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT
-    }
-
-    /// Returns the procedure root of the `add_allowed_tx_script` procedure exposed by this
-    /// component.
-    pub fn add_allowed_tx_script_root() -> AccountProcedureRoot {
-        *NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT
-    }
-
-    /// Returns the procedure root of the `remove_allowed_tx_script` procedure exposed by this
-    /// component.
-    pub fn remove_allowed_tx_script_root() -> AccountProcedureRoot {
-        *NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT
+    /// Allowlists the standardized [`NetworkAccountAllowlistActionNote`] script so the account's
+    /// allowlists can be managed after deployment by sending that note.
+    ///
+    /// This is opt-in: without it the account has no allowlisted admin note, so its allowlists are
+    /// effectively immutable. To authorize the mutations the note triggers, the account must also
+    /// compose an [`Authority`](crate::account::access::Authority) component in
+    /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+    /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode; the note's
+    /// sender is checked against it.
+    pub fn with_allowlist_management(mut self) -> Self {
+        let mut allowed_notes = self.allowed_notes.allowed_script_roots().clone();
+        allowed_notes.insert(NetworkAccountAllowlistActionNote::script_root());
+        self.allowed_notes = NetworkAccountNoteAllowlist::new(allowed_notes)
+            .expect("allowlist already contained at least root of the action note");
+        self
     }
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
@@ -189,21 +175,41 @@ impl AuthNetworkAccount {
         self
     }
 
-    /// Allowlists the standardized [`NetworkAccountAllowlistActionNote`] script so the account's
-    /// allowlists can be managed after deployment by sending that note.
-    ///
-    /// This is opt-in: without it the account has no allowlisted admin note, so its allowlists are
-    /// effectively immutable. To authorize the mutations the note triggers, the account must also
-    /// compose an [`Authority`](crate::account::access::Authority) component in
-    /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
-    /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode; the note's
-    /// sender is checked against it.
-    pub fn with_allowlist_management(mut self) -> Self {
-        let mut allowed_notes = self.allowed_notes.allowed_script_roots().clone();
-        allowed_notes.insert(NetworkAccountAllowlistActionNote::script_root());
-        self.allowed_notes = NetworkAccountNoteAllowlist::new(allowed_notes)
-            .expect("allowlist already contained roots plus the action note root");
-        self
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NETWORK_ACCOUNT_AUTH_CODE
+    }
+
+    /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
+    /// component.
+    pub fn add_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_note_script` procedure exposed by this
+    /// component.
+    pub fn remove_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `add_allowed_tx_script` procedure exposed by this
+    /// component.
+    pub fn add_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_tx_script` procedure exposed by this
+    /// component.
+    pub fn remove_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.

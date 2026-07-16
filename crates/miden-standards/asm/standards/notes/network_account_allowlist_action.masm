@@ -24,20 +24,20 @@ const SELECTOR_REMOVE_TX_SCRIPT = 3
 
 # Expected note storage item count: a selector plus the script root word. Identical for every
 # action.
-const NUM_ITEMS_ALLOWLIST_ACTION = 5
+const NUM_STORAGE_ITEMS = 5
 
 # ERRORS
 # =================================================================================================
 
 const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNKNOWN_SELECTOR = "network account allowlist action note selector does not match a known action"
 
-const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "network account allowlist action note storage item count does not match the selected action"
+const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account allowlist action note does not match the expected number"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! NetworkAccountAllowlistAction script: mutates a network account's script allowlists, dispatched on
-#! a selector stored in the first note storage item.
+#! NetworkAccountAllowlistAction script: mutates a network account's script allowlists, dispatched
+#! on a selector stored in the first note storage item.
 #!
 #! The selected action and its script root are read from the note storage (fixed at note creation,
 #! so authorization is bound to the note sender):
@@ -47,12 +47,14 @@ const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = 
 #! - `3` RemoveTxScript:   `[3, SCRIPT_ROOT]`.
 #!
 #! Authorization is enforced by the called `AuthNetworkAccount` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the configured
-#! owner or role; this script only dispatches to them.
+#! `Authority` component, which resolves the note sender against the configured owner or role.
 #!
-#! Requires that the account exposes the `miden::standards::auth::network_account::{add, remove}_
-#! allowed_{note, tx}_script` procedures (the `AuthNetworkAccount` component), backed by the
-#! `Authority` companion component.
+#! Requires that the account exposes the `miden::standards::auth::network_account` component
+#! procedures, namely:
+#! - `miden::standards::auth::network_account::add_allowed_note_script`
+#! - `miden::standards::auth::network_account::remove_allowed_note_script`
+#! - `miden::standards::auth::network_account::add_allowed_tx_script`
+#! - `miden::standards::auth::network_account::remove_allowed_tx_script`
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -63,6 +65,7 @@ const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = 
 #! - the note sender is not authorized (per the `AuthNetworkAccount` procedures).
 @note_script
 pub proc main
+    # drop the note script args
     dropw
     # => [pad(16)]
 
@@ -122,14 +125,15 @@ end
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
+#! - num_storage_items is the actual number of storage items in the note.
 #! - SCRIPT_ROOT is the script root read from the note storage.
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_ALLOWLIST_ACTION.
+#! - num_storage_items is not equal to the expected number.
 #!
 #! Invocation: exec
 proc load_script_root_window
-    eq.NUM_ITEMS_ALLOWLIST_ACTION
+    eq.NUM_STORAGE_ITEMS
     assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
@@ -147,9 +151,12 @@ end
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
+#! Where:
+#! - num_storage_items is the actual number of storage items in the note.
+#!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_ALLOWLIST_ACTION.
-#! - the note sender is not authorized (per `network_account::add_allowed_note_script`).
+#! - num_storage_items is not equal to the expected number.
+#! - the note sender is not authorized.
 #!
 #! Invocation: exec
 proc execute_add_note_script
@@ -168,8 +175,11 @@ end
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
+#! Where:
+#! - num_storage_items is the actual number of storage items in the note.
+#!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_ALLOWLIST_ACTION.
+#! - num_storage_items is not equal to the expected number.
 #! - the note sender is not authorized (per `network_account::remove_allowed_note_script`).
 #!
 #! Invocation: exec
@@ -189,8 +199,11 @@ end
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
+#! Where:
+#! - num_storage_items is the actual number of storage items in the note.
+#!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_ALLOWLIST_ACTION.
+#! - num_storage_items is not equal to the expected number.
 #! - the note sender is not authorized (per `network_account::add_allowed_tx_script`).
 #!
 #! Invocation: exec
@@ -210,8 +223,11 @@ end
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
+#! Where:
+#! - num_storage_items is the actual number of storage items in the note.
+#!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_ALLOWLIST_ACTION.
+#! - num_storage_items is not equal to the expected number.
 #! - the note sender is not authorized (per `network_account::remove_allowed_tx_script`).
 #!
 #! Invocation: exec

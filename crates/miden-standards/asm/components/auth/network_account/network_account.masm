@@ -8,9 +8,6 @@ use miden::core::word
 use miden::standards::auth::network_account
 use miden::standards::fee
 
-# Re-export the authority-gated allowlist management procedures so they are exposed on this
-# component. Their bodies live in the standards library module so the standardized
-# `NetworkAccountAllowlistActionNote` script can call them by their library path.
 pub use {add_allowed_note_script} from miden::standards::auth::network_account
 pub use {remove_allowed_note_script} from miden::standards::auth::network_account
 pub use {add_allowed_tx_script} from miden::standards::auth::network_account

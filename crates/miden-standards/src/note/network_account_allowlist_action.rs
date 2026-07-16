@@ -45,7 +45,7 @@ static NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock:
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component that a
 /// [`NetworkAccountAllowlistActionNote`] triggers on the network account that consumes it.
 ///
-/// Each variant adds or removes one script root from the note-script or tx-script allowlist.
+/// Each variant adds or removes one script root from the note script or tx script allowlist.
 /// Because the allowlist check reads the transaction's initial state, an update only takes effect
 /// from the account's next transaction.
 ///
@@ -55,13 +55,13 @@ static NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock:
 /// through the account-wide `Authority` component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkAccountAllowlistAction {
-    /// Add `script_root` to the note-script allowlist.
+    /// Adds `script_root` to the note script allowlist.
     AddNoteScript { script_root: NoteScriptRoot },
-    /// Remove `script_root` from the note-script allowlist.
+    /// Removes `script_root` from the note script allowlist.
     RemoveNoteScript { script_root: NoteScriptRoot },
-    /// Add `script_root` to the tx-script allowlist.
+    /// Adds `script_root` to the tx script allowlist.
     AddTxScript { script_root: TransactionScriptRoot },
-    /// Remove `script_root` from the tx-script allowlist.
+    /// Removes `script_root` from the tx script allowlist.
     RemoveTxScript { script_root: TransactionScriptRoot },
 }
 
@@ -76,7 +76,7 @@ impl NetworkAccountAllowlistAction {
     const SELECTOR_ADD_TX_SCRIPT: u8 = 2;
     const SELECTOR_REMOVE_TX_SCRIPT: u8 = 3;
 
-    /// Returns the selector and the affected script root (as a [`Word`]) of this action.
+    /// Returns the selector and the affected script root of this action.
     fn parts(self) -> (u8, Word) {
         match self {
             NetworkAccountAllowlistAction::AddNoteScript { script_root } => {
@@ -115,24 +115,17 @@ impl From<NetworkAccountAllowlistAction> for NoteStorage {
 // ================================================================================================
 
 /// A NetworkAccountAllowlistAction note: adds or removes a script root from a network account's
-/// note-script or tx-script allowlist.
+/// note script or tx script allowlist.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist
-/// procedures (`add_allowed_note_script`, `remove_allowed_note_script`, `add_allowed_tx_script`,
-/// `remove_allowed_tx_script`). Authorization is enforced by those procedures through the
-/// account-wide `Authority` component against the note sender, so the note carries no assets and
-/// its authorization is bound to `sender` at creation time.
+/// procedures. Authorization is enforced by those procedures through the account-wide `Authority`
+/// component against the note sender.
 ///
-/// For the consuming network account to accept this note, its own script root
-/// ([`Self::script_root`]) must be in the account's note-script allowlist; the
+/// For the consuming network account to accept this note, its own script root must be in the
+/// account's note script allowlist; the
 /// [`AuthNetworkAccount::with_allowlist_management`](crate::account::auth::AuthNetworkAccount::with_allowlist_management)
 /// constructor allowlists it automatically.
-///
-/// The note is always public (for network execution) and tagged for `account` — the network account
-/// whose allowlist is being mutated. The `sender` is the account authorized for the action per the
-/// account's `Authority` configuration (the owner under `Authority::OwnerControlled`, or a role
-/// member under `Authority::RbacControlled`).
 ///
 /// Construct one with the [builder](NetworkAccountAllowlistActionNote::builder); convert it into a
 /// protocol [`Note`] infallibly via `Note::from`.
@@ -328,29 +321,29 @@ mod tests {
     /// Storage is `[selector, SCRIPT_ROOT]` with the selector matching the action kind.
     #[test]
     fn storage_layout() {
-        let n_root = note_root(10);
-        let t_root = tx_root(20);
+        let note_root = note_root(10);
+        let tx_root = tx_root(20);
 
         let cases = [
             (
-                NetworkAccountAllowlistAction::AddNoteScript { script_root: n_root },
+                NetworkAccountAllowlistAction::AddNoteScript { script_root: note_root },
                 NetworkAccountAllowlistAction::SELECTOR_ADD_NOTE_SCRIPT,
-                n_root.as_word(),
+                note_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::RemoveNoteScript { script_root: n_root },
+                NetworkAccountAllowlistAction::RemoveNoteScript { script_root: note_root },
                 NetworkAccountAllowlistAction::SELECTOR_REMOVE_NOTE_SCRIPT,
-                n_root.as_word(),
+                note_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::AddTxScript { script_root: t_root },
+                NetworkAccountAllowlistAction::AddTxScript { script_root: tx_root },
                 NetworkAccountAllowlistAction::SELECTOR_ADD_TX_SCRIPT,
-                t_root.as_word(),
+                tx_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::RemoveTxScript { script_root: t_root },
+                NetworkAccountAllowlistAction::RemoveTxScript { script_root: tx_root },
                 NetworkAccountAllowlistAction::SELECTOR_REMOVE_TX_SCRIPT,
-                t_root.as_word(),
+                tx_root.as_word(),
             ),
         ];
 

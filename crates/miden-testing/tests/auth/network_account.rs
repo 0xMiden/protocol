@@ -332,7 +332,7 @@ fn build_owner_controlled_account(
     note_roots.insert(NetworkAccountAllowlistActionNote::script_root());
 
     let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
-        .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
         .with_auth_component(auth_component)
