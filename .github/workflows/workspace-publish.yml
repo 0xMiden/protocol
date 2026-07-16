@@ -3,13 +3,36 @@ name: Publish workspace to crates.io
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: "Crate to publish"
+        required: true
+        type: choice
+        options:
+          - miden-agglayer
+          - miden-block-prover
+          - miden-protocol
+          - miden-standards
+          - miden-testing
+          - miden-tx
+          - miden-tx-batch
+      tag:
+        description: "Release tag to publish from (e.g. v0.16.0-alpha.3)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+# Serialize publish runs so a manual backfill can't race a release publish.
+concurrency:
+  group: crates-io-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
-    if: ${{ github.repository_owner == '0xMiden' }}
+    if: ${{ github.event_name == 'release' && github.repository_owner == '0xMiden' }}
     runs-on: ubuntu-latest
     environment: release # Optional: for enhanced security
     permissions:
@@ -37,12 +60,124 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
+  # Manually publish a single crate from a release tag.
+  #
+  # Recovery path for partially published releases: `cargo publish --workspace`
+  # is not atomic, and a re-run of the release job hard-errors on the first
+  # already-published crate. This job backfills the missing crate(s) one at a
+  # time. It is idempotent: if the version is already on crates.io it no-ops.
+  #
+  # NOTE: steps are inlined rather than routed through the workspace-release
+  # composite action on purpose. Local composite actions resolve from the
+  # checked-out tree (the tag being published), so older tags would run an
+  # older composite that silently ignores unknown inputs and falls back to a
+  # full workspace publish.
+  publish-crate:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # Required for OIDC token exchange
+
+    steps:
+      - name: Validate tag input
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::'${TAG}' does not look like a release tag (expected e.g. v0.16.0)"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout repository at tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup +stable update --no-self-update
+          rustup default stable
+
+      - name: Verify crate is a publishable workspace member
+        id: crate
+        shell: bash
+        env:
+          CRATE: ${{ inputs.crate }}
+        run: |
+          set -euo pipefail
+          pkg="$(cargo metadata --no-deps --format-version 1 \
+            | jq -c --arg n "$CRATE" '.packages[] | select(.name == $n)')"
+          if [ -z "$pkg" ]; then
+            echo "::error::'${CRATE}' is not a workspace member at this tag"
+            exit 1
+          fi
+          # cargo metadata reports unrestricted publish as null; anything else
+          # (false -> [], or a registry allow-list) is off-limits for this job.
+          if [ "$(jq -c '.publish' <<<"$pkg")" != "null" ]; then
+            echo "::error::'${CRATE}' is not publishable to crates.io (package.publish restricts it)"
+            exit 1
+          fi
+          version="$(jq -r '.version' <<<"$pkg")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${CRATE}@${version}"
+
+      - name: Check whether version is already on crates.io
+        id: index
+        shell: bash
+        env:
+          CRATE: ${{ inputs.crate }}
+          VERSION: ${{ steps.crate.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Sparse index path scheme: 1/n, 2/na, 3/n/nam, na/me/name
+          name="${CRATE,,}"
+          case "${#name}" in
+            1) path="1/${name}" ;;
+            2) path="2/${name}" ;;
+            3) path="3/${name:0:1}/${name}" ;;
+            *) path="${name:0:2}/${name:2:2}/${name}" ;;
+          esac
+          # A 404 means the crate has never been published, i.e. not published.
+          if curl -fsSL "https://index.crates.io/${path}" 2>/dev/null \
+              | jq -se --arg v "$VERSION" 'any(.[]; .vers == $v)' >/dev/null; then
+            echo "::warning::${CRATE}@${VERSION} is already on crates.io; nothing to do"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate with crates.io
+        if: ${{ steps.index.outputs.published != 'true' }}
+        uses: rust-lang/crates-io-auth-action@63a7064947ceca9989005e118db3a5fecdc9259f # v1.0.0
+        id: auth
+
+      - name: Publish crate
+        if: ${{ steps.index.outputs.published != 'true' }}
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CRATE: ${{ inputs.crate }}
+        run: |
+          set -euo pipefail
+          echo "Publishing ${CRATE} to crates.io"
+          cargo publish -p "$CRATE"
+
   # Upload the pre-compiled artifacts (miden-protocol.masp) on the
   # GitHub release page.
   # Used by midenup to speed up installs.
   upload-artifacts:
     name: upload pre-built miden-protocol library artifacts
-    if: ${{ github.repository_owner == '0xMiden' }}
+    if: ${{ github.event_name == 'release' && github.repository_owner == '0xMiden' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
