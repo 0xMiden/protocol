@@ -30,6 +30,7 @@
 - Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
+- [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
 

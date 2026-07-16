@@ -35,6 +35,11 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network
 /// - the transaction script root, if any, is present in the component's tx-script allowlist, and
 /// - every consumed input note has a script root present in the component's note-script allowlist.
 ///
+/// If both checks pass, the procedure pays the transaction fee by creating a public BATCH_FEE
+/// note funded from the account's vault in the native fee asset at rate 1/1 (see
+/// `miden::standards::fee::pay_fee` and `miden::standards::fee::native_conversion_info`). On
+/// chains with a zero verification base fee no note is created.
+///
 /// Because a network account has no signature gate by default, a transaction script is an
 /// unconstrained code path that could call the account's procedures directly. The tx-script
 /// allowlist constrains this to a fixed set of owner-approved scripts; an empty tx-script allowlist
