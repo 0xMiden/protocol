@@ -64,7 +64,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
-use miden_standards::note::{BatchFeeNote, BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -727,16 +727,16 @@ impl MockChainBuilder {
         Ok(note)
     }
 
-    /// Creates a new BATCH_FEE note from the provided parameters and adds it to the list of genesis
+    /// Creates a new TX_FEE note from the provided parameters and adds it to the list of genesis
     /// notes.
     ///
     /// In the created [`MockChain`], the note will be immediately spendable by any account.
-    pub fn add_batch_fee_note(
+    pub fn add_tx_fee_note(
         &mut self,
         sender_account_id: AccountId,
         assets: &[Asset],
     ) -> Result<Note, NoteError> {
-        let note: Note = BatchFeeNote::builder()
+        let note: Note = TxFeeNote::builder()
             .sender(sender_account_id)
             .assets(assets.iter().copied())
             .generate_serial_number(&mut self.rng)
