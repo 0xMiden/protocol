@@ -22,6 +22,7 @@ use super::{
     NetworkAccountTxScriptAllowlist,
 };
 use crate::account::account_component_code;
+use crate::note::NetworkAccountAllowlistActionNote;
 use crate::procedure_root;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
@@ -188,6 +189,23 @@ impl AuthNetworkAccount {
         self
     }
 
+    /// Allowlists the standardized [`NetworkAccountAllowlistActionNote`] script so the account's
+    /// allowlists can be managed after deployment by sending that note.
+    ///
+    /// This is opt-in: without it the account has no allowlisted admin note, so its allowlists are
+    /// effectively immutable. To authorize the mutations the note triggers, the account must also
+    /// compose an [`Authority`](crate::account::access::Authority) component in
+    /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+    /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode; the note's
+    /// sender is checked against it.
+    pub fn with_allowlist_management(mut self) -> Self {
+        let mut allowed_notes = self.allowed_notes.allowed_script_roots().clone();
+        allowed_notes.insert(NetworkAccountAllowlistActionNote::script_root());
+        self.allowed_notes = NetworkAccountNoteAllowlist::new(allowed_notes)
+            .expect("allowlist already contained roots plus the action note root");
+        self
+    }
+
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
     pub fn allowed_note_scripts_slot() -> &'static StorageSlotName {
         NetworkAccountNoteAllowlist::slot_name()
@@ -289,5 +307,35 @@ mod tests {
                 panic!("allowlist slots must be maps");
             };
         }
+    }
+
+    #[test]
+    fn with_allowlist_management_allowlists_action_note() {
+        use crate::note::NetworkAccountAllowlistActionNote;
+
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let account = AccountBuilder::new([0; 32])
+            .with_auth_component(
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a]))
+                    .expect("non-empty allowlist should construct")
+                    .with_allowlist_management(),
+            )
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building with AuthNetworkAccount failed");
+
+        let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
+            .expect("allowlist should be reconstructable from account storage");
+
+        assert!(
+            allowlist
+                .allowed_script_roots()
+                .contains(&NetworkAccountAllowlistActionNote::script_root()),
+            "with_allowlist_management should allowlist the action note root",
+        );
+        assert!(
+            allowlist.allowed_script_roots().contains(&root_a),
+            "with_allowlist_management should preserve the existing allowlist entries",
+        );
     }
 }
