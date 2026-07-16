@@ -1,22 +1,14 @@
-use std::collections::BTreeSet;
-
-use miden_protocol::account::auth::{AuthScheme, PublicKey};
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::{
-    Approver,
-    ApproverSet,
-    FeeConversionInfo,
-    commit_fee_conversion_info,
-};
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
@@ -28,47 +20,25 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
-use miden_tx::TransactionExecutorError;
-use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
-use super::super::multisig::setup_keys_and_authenticators_with_scheme;
-use super::VERIFICATION_BASE_FEE;
+use super::{
+    ECDSA_K256_KECCAK_AUTH_CYCLES,
+    FALCON_512_POSEIDON2_AUTH_CYCLES,
+    PAY_FEE_CYCLES,
+    POST_AUTH_EPILOGUE_BASE_CYCLES,
+    POST_AUTH_EPILOGUE_PER_NOTE_CYCLES,
+    VERIFICATION_BASE_FEE,
+};
 
-// CONSTANTS
+// HELPER FUNCTIONS
 // ================================================================================================
-
-// The cycle-estimate constants used by the fee-paying auth flow. These are Rust mirrors used to
-// regression-test that the estimates remain upper bounds of the measured cycle counts. There is
-// no build-time link between the MASM `const`s and these copies, so each must be updated by hand
-// when its MASM counterpart changes; the assertions below only catch a MASM value that becomes
-// too LOW (measured cycles exceed the mirror), which is the direction that matters.
-//
-// Must be kept in sync with `miden::standards::auth::signature` (per-scheme estimates and
-// `MULTISIG_AUTH_BASE_CYCLES`) and `miden::standards::fee` (`PAY_FEE_CYCLES` and the epilogue
-// margins).
-const ECDSA_K256_KECCAK_AUTH_CYCLES: usize = 8000;
-const FALCON_512_POSEIDON2_AUTH_CYCLES: usize = 80000;
-const MULTISIG_AUTH_BASE_CYCLES: usize = 8192;
-const PAY_FEE_CYCLES: usize = 8192;
-const POST_AUTH_EPILOGUE_BASE_CYCLES: usize = 4096;
-const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
-
-/// The cycle estimate the multisig auth component passes to `pay_fee` for the given number of
-/// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
-/// procedure cycles.
-fn multisig_auth_estimate(num_signers: usize) -> usize {
-    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
-}
 
 /// The post-auth epilogue estimate used by `pay_fee` for a transaction with the given number of
 /// output notes (including the fee note).
 fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
     POST_AUTH_EPILOGUE_BASE_CYCLES + POST_AUTH_EPILOGUE_PER_NOTE_CYCLES * num_output_notes
 }
-
-// HELPER FUNCTIONS
-// ================================================================================================
 
 /// Executes an empty transaction against a singlesig wallet on a fee-charging mock chain and
 /// returns the executed transaction together with the wallet's initial nonce.
@@ -580,273 +550,6 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
         post_auth_epilogue <= epilogue_estimate,
         "post-auth epilogue took {post_auth_epilogue} cycles for {NUM_NOTES} output notes, \
          exceeding the estimate of {epilogue_estimate}",
-    );
-
-    Ok(())
-}
-
-// PER-COMPONENT FEE PAYMENT TESTS
-// ================================================================================================
-
-/// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
-/// carrying a single native fee asset whose amount covers the required fee. Returns the fee
-/// asset for further assertions.
-fn assert_single_fee_note(
-    executed_transaction: &ExecutedTransaction,
-) -> anyhow::Result<FungibleAsset> {
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    let output_note = executed_transaction.output_notes().get_note(0);
-
-    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
-    assert_eq!(output_note.metadata().note_type(), NoteType::Public);
-
-    let assets = output_note.assets();
-    assert_eq!(assets.num_assets(), 1);
-    let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(fee_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
-    assert_eq!(fee_asset.faucet_id(), ACCOUNT_ID_FEE_FAUCET.try_into()?);
-
-    let required_fee = executed_transaction.compute_fee();
-    assert!(
-        fee_asset.amount() >= required_fee,
-        "paid fee {} should cover the required fee {required_fee}",
-        fee_asset.amount()
-    );
-
-    Ok(*fee_asset)
-}
-
-/// Builds an [`ApproverSet`] of `num_approvers` signers of the given scheme with the given
-/// threshold, along with the (public key, authenticator) pairs of the first `threshold` signers.
-fn multisig_fixture(
-    num_approvers: usize,
-    threshold: usize,
-    auth_scheme: AuthScheme,
-) -> anyhow::Result<(ApproverSet, Vec<(PublicKey, BasicAuthenticator)>)> {
-    let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(num_approvers, threshold, auth_scheme)?;
-
-    let approvers = public_keys
-        .iter()
-        .zip(auth_schemes.iter())
-        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
-        .collect();
-    let approver_set = ApproverSet::new(approvers, u32::try_from(threshold)?)?;
-
-    let signers = public_keys.into_iter().zip(authenticators).collect();
-
-    Ok((approver_set, signers))
-}
-
-/// Executes an empty transaction against a wallet with the multisig auth component on a
-/// fee-charging mock chain: runs once without signatures to obtain the transaction summary,
-/// asserts the auth args serve as the summary salt, signs the summary with all provided signers,
-/// and executes the signed transaction.
-async fn execute_fee_paying_multisig_tx(
-    auth: Auth,
-    signers: Vec<(PublicKey, BasicAuthenticator)>,
-) -> anyhow::Result<ExecutedTransaction> {
-    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet_with_assets(auth, [fee_asset])?;
-    let mock_chain = builder.build()?;
-
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
-        Word::from([9u32, 10, 11, 12]),
-    );
-
-    let tx_context_builder = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .auth_args(args)
-        .extend_advice_map([(args, advice_value)]);
-
-    // execute once without signatures to obtain the transaction summary that must be signed
-    let tx_summary = tx_context_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    // the auth args (the conversion info commitment) serve as the transaction summary salt
-    assert_eq!(tx_summary.salt(), args);
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
-
-    let mut signed_builder = tx_context_builder;
-    for (public_key, authenticator) in &signers {
-        let signature =
-            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
-        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
-    }
-
-    Ok(signed_builder.build()?.execute().await?)
-}
-
-/// The multisig auth procedure pays the transaction fee by creating a TX_FEE note funded with
-/// the native fee asset, and the measured auth cycles stay within the multisig cycle estimate.
-/// This is the regression guard for `signature::estimate_multisig_authentication_cycles`. The
-/// ECDSA case additionally exercises the (large) overshoot of the Falcon-based per-signer bound
-/// for a cheaper scheme.
-#[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[tokio::test]
-async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
-    let (approver_set, signers) = multisig_fixture(2, 2, auth_scheme)?;
-
-    let executed_transaction = execute_fee_paying_multisig_tx(
-        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
-        signers,
-    )
-    .await?;
-
-    assert_single_fee_note(&executed_transaction)?;
-
-    // two approver signatures are verified
-    let measurements = executed_transaction.measurements();
-    let auth_estimate = multisig_auth_estimate(2);
-    assert!(
-        measurements.auth_procedure <= auth_estimate,
-        "multisig auth procedure took {} cycles, exceeding the estimate of {auth_estimate}",
-        measurements.auth_procedure,
-    );
-
-    Ok(())
-}
-
-/// On a fee-charging chain, replaying a signed multisig transaction (same auth args / salt and
-/// signatures) is rejected: after the first execution the account nonce and the reference block
-/// advance, so the replayed transaction's fee note serial number and thus its summary commitment
-/// differ from the signed one, and the stale signatures fail verification.
-#[tokio::test]
-async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()> {
-    let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::Falcon512Poseidon2)?;
-
-    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
-        [fee_asset],
-    )?;
-    let mut mock_chain = builder.build()?;
-
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
-        Word::from([13u32, 14, 15, 16]),
-    );
-
-    let tx_context_builder = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .auth_args(args)
-        .extend_advice_map([(args, advice_value.clone())]);
-
-    let tx_summary = tx_context_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-    assert_eq!(tx_summary.salt(), args);
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
-
-    let mut signatures = Vec::new();
-    for (public_key, authenticator) in &signers {
-        let signature =
-            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
-        signatures.push((public_key.to_commitment(), signature));
-    }
-
-    let mut signed_builder = tx_context_builder;
-    for (pub_key_commitment, signature) in &signatures {
-        signed_builder = signed_builder.add_signature(*pub_key_commitment, msg, signature.clone());
-    }
-    let executed_transaction = signed_builder.build()?.execute().await?;
-    assert_single_fee_note(&executed_transaction)?;
-
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-    mock_chain.prove_next_block()?;
-
-    // attempt to replay the same transaction with the same auth args and signatures
-    let mut replay_builder = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .auth_args(args)
-        .extend_advice_map([(args, advice_value)]);
-    for (pub_key_commitment, signature) in &signatures {
-        replay_builder = replay_builder.add_signature(*pub_key_commitment, msg, signature.clone());
-    }
-    let result = replay_builder.build()?.execute().await;
-
-    assert!(
-        matches!(result, Err(TransactionExecutorError::Unauthorized(_))),
-        "replayed multisig transaction should be rejected as unauthorized"
-    );
-
-    Ok(())
-}
-
-/// The ACL auth procedure pays the transaction fee before signature verification when a
-/// non-exempt procedure (the wallet's `receive_asset` via a P2ID note) forces authentication.
-/// The exempt (no-signature) branch is covered in `auth::singlesig_acl`, where it must pay in
-/// the native fee asset, ignoring any committed conversion info (see
-/// `acl_exempt_branch_pays_native_fee_note`).
-#[tokio::test]
-async fn singlesig_acl_pays_fee_note_on_signature_path() -> anyhow::Result<()> {
-    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::Acl {
-            exempt_procedures: BTreeSet::new(),
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        [fee_asset],
-    )?;
-
-    // consuming a P2ID note calls the non-exempt `receive_asset`, forcing the signature branch
-    let p2id_note = builder.add_p2id_note(
-        ACCOUNT_ID_SENDER.try_into()?,
-        account.id(),
-        &[FungibleAsset::mock(100)],
-        NoteType::Public,
-    )?;
-    let mock_chain = builder.build()?;
-
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
-        Word::from([9u32, 10, 11, 12]),
-    );
-
-    let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[p2id_note.id()], &[])?
-        .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
-        .build()?
-        .execute()
-        .await?;
-
-    assert_single_fee_note(&executed_transaction)?;
-
-    let measurements = executed_transaction.measurements();
-    let auth_estimate = FALCON_512_POSEIDON2_AUTH_CYCLES + PAY_FEE_CYCLES;
-    assert!(
-        measurements.auth_procedure <= auth_estimate,
-        "ACL signature-path auth procedure took {} cycles, exceeding the estimate of \
-         {auth_estimate}",
-        measurements.auth_procedure,
     );
 
     Ok(())
