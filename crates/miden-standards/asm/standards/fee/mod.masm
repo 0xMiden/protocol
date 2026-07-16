@@ -7,7 +7,7 @@ use miden::protocol::output_note
 use miden::protocol::tx
 use {Asset} from miden::protocol::types
 use miden::standards::assets::fungible_asset
-use miden::standards::notes::batch_fee
+use miden::standards::notes::tx_fee
 
 # TYPE ALIASES
 # =================================================================================================
@@ -248,7 +248,7 @@ pub proc apply_cycle_margins(num_extra_cycles: felt) -> felt
     # => [num_estimated_extra_cycles]
 end
 
-#! Creates a new BATCH_FEE output note and funds it with the provided asset from the
+#! Creates a new TX_FEE output note and funds it with the provided asset from the
 #! account's vault.
 #!
 #! The note's serial number is derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
@@ -285,7 +285,7 @@ pub proc create_and_fund_fee_note(asset: Asset)
     exec.poseidon2::merge
     # => [SERIAL_NUM, ASSET_ID, ASSET_VALUE]
 
-    exec.batch_fee::prepare_note
+    exec.tx_fee::prepare_note
     # => [tag, note_type, RECIPIENT, ASSET_ID, ASSET_VALUE]
 
     exec.output_note::create
@@ -306,11 +306,11 @@ pub proc create_and_fund_fee_note(asset: Asset)
     # => []
 end
 
-#! Computes the transaction fee and pays it by creating and funding a public BATCH_FEE note.
+#! Computes the transaction fee and pays it by creating and funding a public TX_FEE note.
 #!
 #! This is the fee payment flow for all account types: the caller supplies the decoded
 #! conversion info and invokes this procedure from the authentication procedure BEFORE any
-#! transaction summary is created, so that the BATCH_FEE note and the vault withdrawal funding
+#! transaction summary is created, so that the TX_FEE note and the vault withdrawal funding
 #! it are covered by a signature where one exists. Signature-based components (e.g. singlesig,
 #! multisig) obtain the conversion info from the auth args via load_conversion_info, so the
 #! signer authorizes the payment asset and rate; network accounts pay in the native fee asset

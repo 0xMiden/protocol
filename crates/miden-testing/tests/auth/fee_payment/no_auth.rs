@@ -5,7 +5,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::BatchFeeNote;
+use miden_standards::note::TxFeeNote;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::MockChain;
 
@@ -47,7 +47,7 @@ async fn execute_no_auth_tx(
 // TESTS
 // ================================================================================================
 
-/// The no-auth procedure pays the transaction fee by creating a BATCH_FEE note funded from the
+/// The no-auth procedure pays the transaction fee by creating a TX_FEE note funded from the
 /// account's own vault in the native fee asset, covering the computed fee.
 #[tokio::test]
 async fn no_auth_pays_fee_note() -> anyhow::Result<()> {
@@ -60,7 +60,7 @@ async fn no_auth_pays_fee_note() -> anyhow::Result<()> {
     // exactly one output note is created: the fee note
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
     let output_note = executed_transaction.output_notes().get_note(0);
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
 
     // the note carries the native fee asset, covering the computed fee
     let assets = output_note.assets();
