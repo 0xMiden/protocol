@@ -6,6 +6,7 @@ pub mod fees;
 pub mod inspection;
 pub mod interface;
 pub mod policies;
+pub mod upgrade;
 pub mod wallets;
 
 pub use inspection::AccountBuilderSchemaCommitmentExt;

@@ -32,12 +32,11 @@ use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
-use super::multisig::setup_keys_and_authenticators_with_scheme;
+use super::super::multisig::setup_keys_and_authenticators_with_scheme;
+use super::VERIFICATION_BASE_FEE;
 
 // CONSTANTS
 // ================================================================================================
-
-const VERIFICATION_BASE_FEE: u32 = 500;
 
 // The cycle-estimate constants used by the fee-paying auth flow. These are Rust mirrors used to
 // regression-test that the estimates remain upper bounds of the measured cycle counts. There is

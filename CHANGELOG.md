@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added the `UpgradeManager` account component for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
 - Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (first policy: `ConstantFeePolicy`) switchable via the authority-gated `set_fee_policy` ([#3309](https://github.com/0xMiden/protocol/pull/3309)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 
@@ -30,6 +31,7 @@
 - [BREAKING] The multisig auth component now pays transaction fees via `miden::standards::fee::pay_fee` before the transaction summary is created (so the fee note is covered by the approver signatures). The auth args are interpreted as the fee conversion info commitment `hash(CONVERSION_INFO || SALT)` and continue to serve as the summary salt, preserving replay protection. The singlesig ACL component pays the fee only on its authenticated (signature) branch. Adds the `signature::estimate_multisig_authentication_cycles` MASM helper bounding multisig authentication cost by the number of signers ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
+- [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
 
