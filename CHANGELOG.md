@@ -29,7 +29,7 @@
 - Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - [BREAKING] Replaced the owner-only transfer allowlist/blocklist admin components (`AllowlistOwnerControlled` / `BlocklistOwnerControlled`) with authority-gated `AllowlistManager` / `BlocklistManager` ([#3277](https://github.com/0xMiden/protocol/pull/3277)).
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
-- [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged.
+- [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 
 ## v0.16.0-alpha.2 (2026-07-13)
 
