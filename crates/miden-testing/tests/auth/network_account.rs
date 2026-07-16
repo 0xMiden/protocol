@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::utils::UpgradeManager;
+use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -409,7 +409,7 @@ fn build_upgradeable_network_account(
 /// allowlisted regardless of who sends the note.
 fn build_upgrade_note(sender: AccountId) -> anyhow::Result<Note> {
     let script = "
-        use miden::standards::utils::account_upgrade
+        use miden::standards::account_upgrade
 
         @note_script
         pub proc main

@@ -9,7 +9,7 @@ use miden_protocol::transaction::memory::{
 };
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::utils::UpgradeManager;
+use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::testing::note::NoteBuilder;
 
 use crate::TestTransactionBuilder;
@@ -57,7 +57,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
         r#"
         use miden::tx_kernel_core::prologue
         use miden::tx_kernel_core::note as note_internal
-        use miden::standards::utils::account_upgrade
+        use miden::standards::account_upgrade
 
         begin
             exec.prologue::prepare_transaction

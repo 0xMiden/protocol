@@ -31,7 +31,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
-  "utils/upgrade_manager",
+  "upgrade/manager",
   "wallets/basic_wallet",
 ]
 

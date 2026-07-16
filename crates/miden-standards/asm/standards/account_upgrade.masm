@@ -1,8 +1,7 @@
-# miden::standards::utils::account_upgrade
+# miden::standards::account_upgrade
 #
-# Native-account upgrade manager. Exposes `upgrade` as an `Invocation: call` procedure gated by the
-# account-wide `Authority` component. This makes a single upgrade procedure work uniformly for a
-# network account.
+# Account upgrade manager. Exposes `upgrade` as an `Invocation: call` procedure gated by the
+# account-wide `Authority` component.
 #
 # Companion component required on the account:
 # - `Authority` — provides the auth dispatch the body calls into.
@@ -13,8 +12,8 @@ use miden::protocol::native_account
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Records the commitments describing an upgrade of the native account's code and storage, gated by
-#! the account-wide `Authority` component.
+#! Records the commitments describing an upgrade of the account's code and storage, gated by the
+#! account-wide `Authority` component.
 #!
 #! This is currently a no-op beyond storing the two commitments in kernel memory (via the protocol
 #! `native_account::upgrade` wrapper); the actual application of the upgrade is not yet implemented,

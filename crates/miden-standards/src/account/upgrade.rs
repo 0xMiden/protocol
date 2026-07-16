@@ -7,7 +7,7 @@ use crate::procedure_root;
 // UPGRADE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-utils-upgrade-manager.masp");
+account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-upgrade-manager.masp");
 
 procedure_root!(
     UPGRADE_MANAGER_UPGRADE,
@@ -37,7 +37,7 @@ pub struct UpgradeManager;
 
 impl UpgradeManager {
     /// The name of the component.
-    const NAME: &'static str = "miden::standards::components::utils::upgrade::manager";
+    const NAME: &'static str = "miden::standards::components::upgrade::manager";
 
     const UPGRADE_PROC_NAME: &'static str = "upgrade";
 
@@ -60,7 +60,7 @@ impl UpgradeManager {
 impl From<UpgradeManager> for AccountComponent {
     fn from(_: UpgradeManager) -> Self {
         let metadata = AccountComponentMetadata::new(UpgradeManager::NAME)
-            .with_description("Code and storage upgrades for network accounts.");
+            .with_description("Code and storage upgrades for accounts.");
 
         AccountComponent::new(UpgradeManager::code().clone(), vec![], metadata).expect(
             "upgrade manager component should satisfy the requirements of a valid account component",
