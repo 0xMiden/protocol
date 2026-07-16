@@ -23,10 +23,10 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! fee is paid before the transaction summary is created, the fee note and the vault withdrawal
 #! funding it are covered by the approver signatures.
 #!
-#! The AUTH_ARGS then continue to serve as the transaction summary salt: since
-#! AUTH_ARGS = hash(CONVERSION_INFO || SALT), they remain unique per (salt, conversion info)
-#! pair, so otherwise-identical transactions still produce distinct summary commitments and the
-#! replay protection enforced by record_and_assert_new_tx is preserved.
+#! The AUTH_ARGS (= hash(CONVERSION_INFO || SALT)) then continue to serve as the transaction
+#! summary salt. The uniqueness that replay protection relies on originates from the
+#! caller-chosen SALT: distinct salts produce distinct commitments and therefore distinct
+#! summary commitments, which record_and_assert_new_tx records and checks.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]

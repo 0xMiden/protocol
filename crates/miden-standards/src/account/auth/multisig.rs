@@ -148,9 +148,11 @@ impl AuthMultisigConfig {
 /// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
 /// 1/1 for plain native payment). On chains with a zero verification base fee no note is
 /// created. The fee note is created before the transaction summary, so it is covered by the
-/// approver signatures. The auth args (the commitment `hash(CONVERSION_INFO || SALT)`) continue
-/// to serve as the transaction summary salt: they remain unique per (salt, conversion info)
-/// pair, preserving replay protection.
+/// approver signatures. The auth args word (the commitment `hash(CONVERSION_INFO || SALT)`)
+/// continues to serve as the transaction summary salt; the uniqueness that replay protection
+/// relies on originates from the caller-chosen `SALT`: distinct salts produce distinct
+/// commitments and therefore distinct signed summaries, which `record_and_assert_new_tx`
+/// records and checks.
 ///
 /// # Privacy
 ///
