@@ -23,6 +23,7 @@ mod network_account;
 pub use network_account::{
     AuthNetworkAccount,
     NetworkAccount,
+    NetworkAccountError,
     NetworkAccountNoteAllowlist,
     NetworkAccountNoteAllowlistError,
     NetworkAccountTxScriptAllowlist,
