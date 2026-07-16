@@ -16,6 +16,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -133,7 +134,9 @@ fn create_agglayer_faucet_component(
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
-/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
+/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
+/// tx-script allowlist contains only the canonical [`ExpirationTransactionScript`] so the network
+/// transaction builder can bound how long the bridge's transactions stay valid.
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
@@ -145,7 +148,10 @@ fn create_bridge_account_builder(
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_injector_id, ger_remover_id))
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
-                .expect("bridge note allowlist is non-empty"),
+                .expect("bridge note allowlist is non-empty")
+                .with_allowed_tx_scripts(
+                    [ExpirationTransactionScript::script_root()].into_iter().collect(),
+                ),
         )
 }
 
@@ -190,7 +196,9 @@ pub fn create_existing_bridge_account(
 ///   produced by the manager; `BurnAllowAll` is installed separately as the additional allowed burn
 ///   policy procedure.
 /// - The [`AuthNetworkAccount`] auth component, initialized with
-///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes.
+///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes. The
+///   tx-script allowlist contains only the canonical [`ExpirationTransactionScript`] so the network
+///   transaction builder can bound how long the faucet's transactions stay valid.
 fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -221,7 +229,10 @@ fn create_agglayer_faucet_builder(
         .with_component(BurnAllowAll)
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerFaucet::allowed_notes())
-                .expect("faucet note allowlist is non-empty"),
+                .expect("faucet note allowlist is non-empty")
+                .with_allowed_tx_scripts(
+                    [ExpirationTransactionScript::script_root()].into_iter().collect(),
+                ),
         )
 }
 
@@ -297,4 +308,45 @@ pub fn create_existing_agglayer_faucet_with_callbacks(
     .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()
     .expect("agglayer faucet account should be valid")
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::StorageMapKey;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+
+    use super::*;
+
+    /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`] in
+    /// their tx-script allowlist so the network transaction builder can bound how long their
+    /// transactions stay valid.
+    #[test]
+    fn agglayer_accounts_allowlist_expiration_tx_script() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let bridge = create_existing_bridge_account(Word::default(), id, id, id);
+        let faucet = create_existing_agglayer_faucet(
+            Word::default(),
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::ZERO,
+            id,
+        );
+
+        for account in [bridge, faucet] {
+            // The expiration tx-script root is flagged as allowed ([1, 0, 0, 0]) in the map.
+            let stored = account
+                .storage()
+                .get_map_item(
+                    AuthNetworkAccount::allowed_tx_scripts_slot(),
+                    StorageMapKey::new(ExpirationTransactionScript::script_root().as_word()),
+                )
+                .unwrap();
+            assert_eq!(stored, [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
+        }
+    }
 }
