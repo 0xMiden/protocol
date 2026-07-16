@@ -20,11 +20,16 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
+use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable, PausableManager};
-use miden_standards::account::auth::AuthSingleSigAcl;
+use miden_standards::account::auth::{
+    AuthSingleSigAcl,
+    FeeConversionInfo,
+    commit_fee_conversion_info,
+};
 use miden_standards::account::faucets::{Description, FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -48,6 +53,66 @@ use crate::prove_and_verify_transaction;
 
 // TESTS
 // ================================================================================================
+
+/// Security regression: the ACL exempt (no-signature) branch must NOT pay a transaction fee.
+///
+/// Paying a fee withdraws a caller-controlled amount from the vault (the conversion rate is read
+/// from caller-supplied advice). On the exempt branch there is no signature over the transaction
+/// summary to bind that amount, so paying there would let an unauthenticated party drain the
+/// vault into a public BATCH_FEE note. This test runs a state-changing exempt procedure
+/// (`set_item`) on a fee-charging chain with no registered authenticator, supplies an inflated
+/// conversion-info commitment via the auth args, and asserts that no fee note is created (the
+/// vault is not drained).
+#[tokio::test]
+async fn acl_exempt_branch_does_not_pay_fee() -> anyhow::Result<()> {
+    let (_get_item, set_item, _account_procedure_1) = mock_component_proc_roots();
+
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?;
+
+    // `set_item` is exempt, so calling it takes the no-signature branch while still changing state
+    // (making the transaction valid without requiring a signature).
+    let component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+    let (auth_component, _authenticator) = Auth::Acl {
+        exempt_procedures: BTreeSet::from([set_item]),
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    }
+    .build_component();
+
+    let account = AccountBuilder::new([0; 32])
+        .with_auth_component(auth_component)
+        .with_component(component)
+        .account_type(AccountType::Public)
+        .with_assets([fee_asset.into()])
+        .build_existing()?;
+
+    let mut builder = MockChain::builder().verification_base_fee(500);
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // an inflated conversion rate that would create a (drain) fee note if the exempt branch paid
+    let conversion_info = FeeConversionInfo::new(fee_faucet_id, 2, 1)?;
+    let (args, advice_value) =
+        commit_fee_conversion_info(conversion_info, Word::from([9u32, 10, 11, 12]));
+
+    // no authenticator is registered, so a successful execution proves the exempt (no-signature)
+    // branch ran
+    let executed = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(compile_call_set_item_script()?)
+        .auth_args(args)
+        .extend_advice_map([(args, advice_value)])
+        .build()?
+        .execute()
+        .await?;
+
+    // no BATCH_FEE note is created: the exempt branch did not pay a fee, so the vault was not
+    // drained despite the inflated rate
+    assert_eq!(executed.output_notes().num_notes(), 0);
+
+    Ok(())
+}
 
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]

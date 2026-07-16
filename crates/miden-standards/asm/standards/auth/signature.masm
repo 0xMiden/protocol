@@ -21,6 +21,15 @@ const FALCON_512_POSEIDON2_SCHEME_ID=2
 const ECDSA_K256_KECCAK_AUTH_CYCLES = 8000
 const FALCON_512_POSEIDON2_AUTH_CYCLES = 80000
 
+# Estimated upper bound on the number of cycles a multisig authentication flow spends outside of
+# per-signature verification: transaction summary creation and hashing, threshold config reads,
+# the per-procedure threshold/policy scans and replay-protection recording. The per-procedure
+# scans grow with the account's procedure count (bounded by the kernel's maximum), so accounts
+# with very many procedures may slightly under-estimate the fee; that fails closed (the batch
+# builder may reject the underpaying note) and is largely absorbed by the ilog2-domain fee
+# formula. Guarded by the fee-payment regression tests.
+const MULTISIG_AUTH_BASE_CYCLES = 8192
+
 # Local Memory Addresses for multisig operations
 const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
 const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
@@ -152,6 +161,35 @@ pub proc estimate_authentication_cycles
     # => [ecdsa_cycles, falcon_cycles, is_ecdsa]
 
     movup.2 cdrop
+    # => [num_cycles]
+end
+
+#! Returns a conservative upper bound on the number of cycles a multisig authentication flow
+#! takes when up to num_of_signers signatures are verified.
+#!
+#! Intended to be passed as the num_extra_cycles input of fee::pay_fee when fee payment happens
+#! right before the multisig authentication flow (summary creation, signature verification and
+#! replay-protection recording). Signature verification runs at most once per signer and every
+#! supported scheme's verification cost is bounded by the Falcon estimate (the most expensive
+#! scheme), so the bound is num_of_signers * FALCON_512_POSEIDON2_AUTH_CYCLES plus a base margin
+#! covering the rest of the flow. This is a per-signer worst case: a multisig with many approvers
+#! but a low threshold, or one using the cheaper ECDSA scheme, only verifies a few (cheaper)
+#! signatures, so the estimate can overshoot the real cost by roughly the approver-to-verified
+#! ratio. Overestimation only ever raises the fee, and because the fee grows with ilog2 of the
+#! cycle count each doubling of the overshoot costs at most one extra verification_base_fee unit,
+#! so even a 10x overshoot costs only a few fee units.
+#!
+#! Inputs:  [num_of_signers]
+#! Outputs: [num_cycles]
+#!
+#! Where:
+#! - num_of_signers is the maximum number of signature verifications the authentication flow can
+#!   perform (e.g. the number of approvers).
+#! - num_cycles is the estimated upper bound on the authentication flow's cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_multisig_authentication_cycles
+    mul.FALCON_512_POSEIDON2_AUTH_CYCLES add.MULTISIG_AUTH_BASE_CYCLES
     # => [num_cycles]
 end
 

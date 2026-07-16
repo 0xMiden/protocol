@@ -80,6 +80,26 @@ impl AuthSingleSigAclConfig {
 /// This makes the safe path the default - newly added setters cannot silently become
 /// permissionless by being forgotten in the configuration.
 ///
+/// ## Fees
+///
+/// `auth_tx_acl` pays the transaction fee only on the authenticated (signature) branch, via
+/// `miden::standards::fee::pay_fee`: it creates a public BATCH_FEE note (see
+/// [`BatchFeeNote`](crate::note::BatchFeeNote)) funded from the account's vault before the
+/// transaction summary is created, so the note is covered by the signature. On fee-charging
+/// chains the account must therefore hold a sufficient balance of the payment asset. The payment
+/// asset and conversion rate are committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
+/// 1/1 for plain native payment). On chains with a zero verification base fee no note is
+/// created.
+///
+/// The exempt (no-signature) branch deliberately does not pay a fee: without a signature over the
+/// transaction summary there is nothing to bind the caller-supplied conversion info to, and
+/// paying a caller-controlled fee there would let an unauthenticated party withdraw an arbitrary
+/// amount from the vault. On a fee-charging chain an exempt transaction thus creates no fee note
+/// and is rejected by the batch builder (fail-closed); exempt operations are intended for
+/// zero-fee chains or for operations that do not require inclusion in a fee-charging batch.
+///
 /// ## Authentication Logic
 ///
 /// Authentication is required when a kernel-detected procedure not on the exempt list was
