@@ -288,9 +288,9 @@ impl AggLayerBridge {
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
     /// Namespace of the assembled bridge account component library (the
-    /// `asm/components/bridge.masm` wrapper). Procedure roots are resolved as
+    /// `asm/components/bridge/bridge.masm` wrapper). Procedure roots are resolved as
     /// `<namespace>::<proc_name>`.
-    const COMPONENT_NAMESPACE: &'static str = "bridge";
+    const COMPONENT_NAMESPACE: &'static str = "agglayer::components::bridge";
 
     // RBAC ROLES
     // --------------------------------------------------------------------------------------------
