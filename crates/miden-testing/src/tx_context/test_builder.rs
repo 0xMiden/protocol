@@ -95,12 +95,11 @@ impl TestTransactionBuilder {
         Self::new(Account::mock_non_fungible_faucet(acct_id))
     }
 
-    /// Extend the advice inputs map with the provided iterator.
-    pub(crate) fn extend_advice_map(
-        mut self,
-        map_entries: impl IntoIterator<Item = (Word, Vec<Felt>)>,
-    ) -> Self {
-        self.advice_inputs.map.extend(map_entries);
+    /// Inserts a single key-value pair into the advice inputs map.
+    ///
+    /// To add multiple entries, call this repeatedly.
+    pub(crate) fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+        self.advice_inputs.map.insert(key, value);
         self
     }
 

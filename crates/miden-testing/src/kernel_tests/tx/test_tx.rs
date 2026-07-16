@@ -744,7 +744,7 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
 
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_input_key, tx_script_input_value.to_vec())])
+        .extend_advice_map(tx_script_input_key, tx_script_input_value.to_vec())
         .build()?;
 
     mock_tx.execute().await.context("failed to execute transaction")?;
@@ -788,7 +788,7 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
     // argument
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_args, advice_entry.as_elements().to_vec())])
+        .extend_advice_map(tx_script_args, advice_entry.as_elements().to_vec())
         .tx_script_args(tx_script_args)
         .build()?;
 
