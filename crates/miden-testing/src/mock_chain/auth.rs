@@ -100,6 +100,14 @@ impl Default for Auth {
 }
 
 impl Auth {
+    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::EcdsaK256Keccak`].
+    ///
+    /// ECDSA verifies much faster than Falcon, making it the better choice for tests where the
+    /// auth scheme itself is not under test.
+    pub fn basic_ecdsa() -> Self {
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak }
+    }
+
     /// Converts `self` into its corresponding authentication [`AccountComponent`] and an optional
     /// [`BasicAuthenticator`]. The component is always returned, but the authenticator is only
     /// `Some` when [`Auth::BasicAuth`] is passed."
