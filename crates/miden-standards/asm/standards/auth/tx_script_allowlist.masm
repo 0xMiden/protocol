@@ -1,8 +1,10 @@
 # Reusable tx-script allowlist primitive.
 #
-# Provides a single check used to restrict which transaction scripts an account will execute:
+# Provides the operations used to restrict which transaction scripts an account will execute:
 # - `assert_tx_script_allowed` accepts transactions that executed no tx script, and otherwise
 #   rejects transactions whose tx script root is not present in a storage map at the given slot id.
+# - `add_tx_script` / `remove_tx_script` mutate that storage map, adding or removing an allowed tx
+#   script root. These perform NO authorization; callers are responsible for gating them.
 #
 # This is designed to be composed into auth components. The caller owns the storage map and passes
 # the slot id (suffix, prefix) so the same logic can back multiple components, each with their own
@@ -11,6 +13,17 @@
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
+
+# CONSTANTS
+# =================================================================================================
+
+# Map entry value marking a tx script root as allowed. Any non-empty word works; [1, 0, 0, 0]
+# mirrors the Rust `ALLOWED_FLAG` for readability when inspecting storage.
+const ALLOWED_FLAG = [1, 0, 0, 0]
+
+# Map entry value marking a tx script root as not allowed. Writing the empty word removes a root:
+# the allowlist check treats the empty word as absent.
+const EMPTY_WORD = [0, 0, 0, 0]
 
 # ERRORS
 # =================================================================================================
@@ -65,5 +78,72 @@ pub proc assert_tx_script_allowed
         assert.err=ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
         # => []
     end
+    # => []
+end
+
+#! Adds a tx script root to the allowlist storage map at the given slot id.
+#!
+#! Marks `SCRIPT_ROOT` as an allowed transaction script root. Adding a root that is already allowed
+#! is a no-op. This procedure performs NO authorization; callers are responsible for gating it.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix,prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#! - SCRIPT_ROOT is the tx script root to add to the allowlist.
+#!
+#! Invocation: exec
+pub proc add_tx_script
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT]
+
+    movdn.5 movdn.5
+    # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    push.ALLOWED_FLAG swapw
+    # => [SCRIPT_ROOT, ALLOWED_FLAG, slot_id_suffix, slot_id_prefix]
+
+    movup.9 movup.9
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, ALLOWED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
+    # => []
+end
+
+#! Removes a tx script root from the allowlist storage map at the given slot id.
+#!
+#! Writes the empty word for `SCRIPT_ROOT`, which the allowlist check treats as not allowed.
+#! Removing a root that is not currently allowed is a no-op. This procedure performs NO
+#! authorization; callers are responsible for gating it.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix,prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#! - SCRIPT_ROOT is the tx script root to remove from the allowlist.
+#!
+#! Invocation: exec
+pub proc remove_tx_script
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT]
+
+    movdn.5 movdn.5
+    # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    push.EMPTY_WORD swapw
+    # => [SCRIPT_ROOT, EMPTY_WORD, slot_id_suffix, slot_id_prefix]
+
+    movup.9 movup.9
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, EMPTY_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
     # => []
 end

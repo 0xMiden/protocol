@@ -7,7 +7,12 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountComponentName, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    StorageSlotName,
+};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionScriptRoot;
 
@@ -17,8 +22,37 @@ use super::{
     NetworkAccountTxScriptAllowlist,
 };
 use crate::account::account_component_code;
+use crate::procedure_root;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
+
+procedure_root!(
+    NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT,
+    AuthNetworkAccount::COMPONENT_PATH,
+    AuthNetworkAccount::ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT,
+    AuthNetworkAccount::COMPONENT_PATH,
+    AuthNetworkAccount::REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT,
+    AuthNetworkAccount::COMPONENT_PATH,
+    AuthNetworkAccount::ADD_ALLOWED_TX_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT,
+    AuthNetworkAccount::COMPONENT_PATH,
+    AuthNetworkAccount::REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -59,17 +93,27 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
 ///
-/// Both allowlists are fixed at account creation: this component intentionally exports no procedure
-/// to mutate them after deployment. That is a limitation of this component rather than a safety
-/// requirement, and a user who needs a mutable allowlist can write their own component today. Note
-/// that the node would likely not yet respect updates made to the list after deployment, but there
-/// is in principle nothing preventing us from supporting mutation in the future.
+/// Both allowlists can be updated after deployment via the `add_allowed_note_script` /
+/// `remove_allowed_note_script` and `add_allowed_tx_script` / `remove_allowed_tx_script` account
+/// procedures. These are gated by the account-wide
+/// [`Authority`](crate::account::access::Authority) component, which must be composed onto the
+/// account in [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+/// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode.
+/// [`AuthControlled`](crate::account::access::Authority::AuthControlled) mode is unsafe here
+/// because this component's auth scheme is intentionally permissionless (any allowlisted script
+/// may run against the account), so authorization to mutate the allowlists must come from an owner
+/// or a role rather than from the auth scheme itself.
 ///
-/// Roots are matched exactly, so the allowlist must currently enumerate every root variant the
-/// account will ever consume (including across compiler/standard versions, e.g. P2ID). Until
-/// on-chain updates are supported, a missing root means that note is permanently and silently
-/// unconsumable; the ability to update the allowlist after deployment is expected to be added in
-/// the future.
+/// Because owner and role checks authenticate the note sender, an update is driven by a note the
+/// authorized party sends to the account (its script calls the relevant procedure); that admin
+/// note's own script root must already be in the note-script allowlist so the transaction passes
+/// auth. The auth procedure reads the allowlists from the transaction's initial state, so an update
+/// only takes effect from the next transaction. Off-chain, the network transaction builder must
+/// re-read the updated allowlist for changes to be reflected in note consumption.
+///
+/// Roots are matched exactly, so the allowlist must enumerate every root variant the account will
+/// consume (including across compiler/standard versions, e.g. P2ID). A missing root means that note
+/// is silently unconsumable until an authorized party adds the root.
 pub struct AuthNetworkAccount {
     allowed_notes: NetworkAccountNoteAllowlist,
     allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
@@ -79,6 +123,16 @@ impl AuthNetworkAccount {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::network_account";
 
+    /// The fully-qualified path of this component's compiled MASM library, used to resolve
+    /// procedure roots. This is the package namespace declared in `miden-project.toml`, which
+    /// differs from [`Self::NAME`].
+    const COMPONENT_PATH: &'static str = "miden::standards::components::auth::network_account";
+
+    const ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "add_allowed_note_script";
+    const REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "remove_allowed_note_script";
+    const ADD_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "add_allowed_tx_script";
+    const REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "remove_allowed_tx_script";
+
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
         AccountComponentName::from_static_str(Self::NAME)
@@ -87,6 +141,46 @@ impl AuthNetworkAccount {
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &NETWORK_ACCOUNT_AUTH_CODE
+    }
+
+    /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
+    /// component.
+    ///
+    /// Use it to key the
+    /// [`Authority::RbacControlled`](crate::account::access::Authority::RbacControlled)
+    /// role map.
+    pub fn add_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_note_script` procedure exposed by this
+    /// component.
+    ///
+    /// Use it to key the
+    /// [`Authority::RbacControlled`](crate::account::access::Authority::RbacControlled)
+    /// role map.
+    pub fn remove_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `add_allowed_tx_script` procedure exposed by this
+    /// component.
+    ///
+    /// Use it to key the
+    /// [`Authority::RbacControlled`](crate::account::access::Authority::RbacControlled)
+    /// role map.
+    pub fn add_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_tx_script` procedure exposed by this
+    /// component.
+    ///
+    /// Use it to key the
+    /// [`Authority::RbacControlled`](crate::account::access::Authority::RbacControlled)
+    /// role map.
+    pub fn remove_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT
     }
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
@@ -203,6 +297,22 @@ mod tests {
     fn auth_network_account_with_empty_allowlist_is_rejected() {
         let result = AuthNetworkAccount::with_allowed_notes(BTreeSet::new());
         assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
+    }
+
+    #[test]
+    fn auth_network_account_procedure_roots_resolve() {
+        // Each accessor resolves its procedure by path in the compiled component; a wrong path
+        // (e.g. NAME vs the MASM package namespace) would panic here.
+        let roots = [
+            AuthNetworkAccount::add_allowed_note_script_root(),
+            AuthNetworkAccount::remove_allowed_note_script_root(),
+            AuthNetworkAccount::add_allowed_tx_script_root(),
+            AuthNetworkAccount::remove_allowed_tx_script_root(),
+        ];
+
+        // The four procedures are distinct, so their roots must all differ.
+        let unique: BTreeSet<_> = roots.iter().collect();
+        assert_eq!(unique.len(), roots.len(), "procedure roots should be distinct");
     }
 
     #[test]
