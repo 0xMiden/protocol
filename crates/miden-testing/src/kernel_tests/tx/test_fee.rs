@@ -111,7 +111,7 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
 
 /// The `fee::native_conversion_info` standards helper returns the reference block's fee faucet
 /// ID at rate 1/1 in the `ConversionInfo` layout expected by `fee::pay_fee`. This pins the word
-/// layout `[faucet_id_prefix, faucet_id_suffix, rate_num, rate_den]`.
+/// layout `[faucet_id_suffix, faucet_id_prefix, rate_num, rate_den]`.
 #[tokio::test]
 async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
@@ -127,15 +127,15 @@ async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyho
             exec.prologue::prepare_transaction
 
             exec.::miden::standards::fee::native_conversion_info
-            # => [fee_faucet_id_prefix, fee_faucet_id_suffix, rate_num, rate_den]
+            # => [fee_faucet_id_suffix, fee_faucet_id_prefix, rate_num, rate_den]
 
             exec.sys::truncate_stack
         end
     ";
     let exec_output = tx_context.execute_code(code).await?;
 
-    assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.prefix().as_felt());
-    assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.suffix());
+    assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
+    assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());
     assert_eq!(exec_output.get_stack_element(2), Felt::from(1u32));
     assert_eq!(exec_output.get_stack_element(3), Felt::from(1u32));
 

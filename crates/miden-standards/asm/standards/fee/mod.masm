@@ -16,7 +16,7 @@ use miden::standards::notes::batch_fee
 pub type ConversionRate = struct { num: u32, den: u32 }
 
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
-#! native fee asset, laid out as [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den].
+#! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
 #! The empty word indicates that no conversion info was committed; it can never be valid
 #! conversion info, since a zero faucet ID prefix and a zero-denominator rate are both invalid.
 pub type ConversionInfo = word
@@ -95,7 +95,7 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! Where:
 #! - AUTH_ARGS is the commitment hash(CONVERSION_INFO || SALT) to the conversion info.
 #! - SALT is an arbitrary word (e.g. used for replay protection by the caller).
-#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den], or the empty
+#! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed.
 #!
 #! Panics if:
@@ -158,7 +158,7 @@ end
 #! Outputs: [CONVERSION_INFO]
 #!
 #! Where:
-#! - CONVERSION_INFO is [fee_faucet_id_prefix, fee_faucet_id_suffix, 1, 1].
+#! - CONVERSION_INFO is [fee_faucet_id_suffix, fee_faucet_id_prefix, 1, 1].
 #!
 #! Invocation: exec
 pub proc native_conversion_info() -> ConversionInfo
@@ -166,9 +166,6 @@ pub proc native_conversion_info() -> ConversionInfo
     # => [rate_num, rate_den]
 
     exec.tx::get_fee_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, rate_num, rate_den]
-
-    swap
     # => [CONVERSION_INFO]
 end
 
@@ -355,7 +352,7 @@ end
 #! Where:
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
-#! - CONVERSION_INFO is [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den], or the empty
+#! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed (only accepted when the computed fee is zero).
 #!
 #! Panics if:
@@ -392,17 +389,17 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
         # => [CONVERSION_INFO, fee_amount]
 
         # convert the fee amount into the payment asset's amount
-        # (CONVERSION_INFO reads [faucet_id_prefix, faucet_id_suffix, rate_num, rate_den])
+        # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
         movup.2 movup.3 movup.4
-        # => [fee_amount, rate_den, rate_num, faucet_id_prefix, faucet_id_suffix]
+        # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix]
 
         movup.2 swap
-        # => [fee_amount, rate_num, rate_den, faucet_id_prefix, faucet_id_suffix]
+        # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix]
 
         exec.convert_amount
-        # => [payment_amount, faucet_id_prefix, faucet_id_suffix]
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix]
 
-        movdn.2 swap
+        movdn.2
         # => [faucet_id_suffix, faucet_id_prefix, payment_amount]
 
         exec.fungible_asset::create

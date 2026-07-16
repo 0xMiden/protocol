@@ -308,8 +308,8 @@ fn conversion_word_with_rate(rate_num: Felt, rate_den: Felt) -> anyhow::Result<W
     let payment_faucet_id: miden_protocol::account::AccountId =
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     Ok(Word::from([
-        payment_faucet_id.prefix().as_felt(),
         payment_faucet_id.suffix(),
+        payment_faucet_id.prefix().as_felt(),
         rate_num,
         rate_den,
     ]))

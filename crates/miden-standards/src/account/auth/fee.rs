@@ -74,8 +74,8 @@ impl FeeConversionInfo {
     /// `miden::standards::fee` MASM module.
     pub fn to_word(&self) -> Word {
         Word::from([
-            self.faucet_id.prefix().as_felt(),
             self.faucet_id.suffix(),
+            self.faucet_id.prefix().as_felt(),
             Felt::from(self.rate_num),
             Felt::from(self.rate_den),
         ])
