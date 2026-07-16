@@ -30,62 +30,6 @@ pub const PROJECT_MANIFEST: &str = "miden-project.toml";
 /// information; consumers can strip it as needed.
 pub const BUILD_PROFILE: &str = "dev";
 
-// MASM SOURCE FILE HELPERS
-// ================================================================================================
-
-/// Returns a vector with paths to all MASM files in the specified directory.
-///
-/// All non-MASM files are skipped.
-pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-
-    let path = dir_path.as_ref();
-    if path.is_dir() {
-        for entry in WalkDir::new(path) {
-            let entry = entry.into_diagnostic()?;
-            let file_path = entry.path().to_path_buf();
-            if is_masm_file(&file_path).into_diagnostic()? {
-                files.push(file_path);
-            }
-        }
-    } else {
-        println!("cargo:warn=The specified path is not a directory.");
-    }
-
-    Ok(files)
-}
-
-/// Returns true if the provided path resolves to a file with `.masm` extension.
-///
-/// # Errors
-/// Returns an error if the path could not be converted to a UTF-8 string.
-pub fn is_masm_file(path: &Path) -> io::Result<bool> {
-    if let Some(extension) = path.extension() {
-        let extension = extension
-            .to_str()
-            .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
-            .to_lowercase();
-        Ok(extension == "masm")
-    } else {
-        Ok(false)
-    }
-}
-
-/// Writes `contents` to `path` only if the file doesn't exist or its current contents
-/// differ. This avoids updating the file's mtime when nothing changed, which prevents
-/// cargo from treating the crate as dirty on the next build.
-pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-    let path = path.as_ref();
-    let new_contents = contents.as_ref();
-    if path.exists() {
-        let existing = std::fs::read(path).into_diagnostic()?;
-        if existing == new_contents {
-            return Ok(());
-        }
-    }
-    std::fs::write(path, new_contents).into_diagnostic()
-}
-
 // PACKAGE ASSEMBLY HELPERS
 // ================================================================================================
 
@@ -238,6 +182,22 @@ pub fn is_new_error_category<'a>(last_error: &mut Option<&'a str>, current_error
     last_error.replace(current_error);
 
     is_new
+}
+
+/// Returns true if the provided path resolves to a file with `.masm` extension.
+///
+/// # Errors
+/// Returns an error if the path could not be converted to a UTF-8 string.
+pub fn is_masm_file(path: &Path) -> io::Result<bool> {
+    if let Some(extension) = path.extension() {
+        let extension = extension
+            .to_str()
+            .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
+            .to_lowercase();
+        Ok(extension == "masm")
+    } else {
+        Ok(false)
+    }
 }
 
 /// Generates the content of an error file for the given category and the set of errors and
