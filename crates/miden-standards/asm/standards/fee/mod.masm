@@ -17,8 +17,7 @@ pub type ConversionRate = struct { num: u32, den: u32 }
 
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
 #! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
-#! The empty word indicates that no conversion info was committed; it can never be valid
-#! conversion info, since a zero faucet ID prefix and a zero-denominator rate are both invalid.
+#! The empty word indicates that no conversion info was committed.
 pub type ConversionInfo = word
 
 # CONSTANTS
@@ -52,11 +51,7 @@ const U32_LIMB_MULTIPLIER = 0x0000000100000000
 # derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce, account_id_suffix,
 # account_id_prefix]) with FEE_DOMAIN = [FEE_DOMAIN_TAG, 0, 0, 0], so a fee note's serial number
 # cannot collide with serial numbers derived from similar tuples in other contexts.
-# Must be kept in sync with the Rust `BatchFeeNote::derive_serial_number`.
 const FEE_DOMAIN_TAG = 0xFEE
-
-# load_conversion_info locals: the conversion info word loaded from the advice map.
-const LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC = 0
 
 # ERRORS
 # =================================================================================================
@@ -102,12 +97,8 @@ const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit int
 #! - the loaded conversion info does not match the AUTH_ARGS commitment.
 #!
 #! Invocation: exec
-@locals(4)
 pub proc load_conversion_info(auth_args: word) -> ConversionInfo
-    # empty auth args carry no commitment; return the empty word without touching the advice map
-    # (the advice map may legitimately contain an empty-word key, e.g. for a note's empty
-    # attachments commitment, so the empty key must not be interpreted as conversion info);
-    # in that case the auth args already are the empty word to return
+    # empty auth args carry no commitment; return the empty word
     exec.word::testz not
     # => [has_commitment, AUTH_ARGS]
 
@@ -127,17 +118,14 @@ pub proc load_conversion_info(auth_args: word) -> ConversionInfo
             padw adv_loadw
             # => [CONVERSION_INFO, SALT, AUTH_ARGS]
 
-            # keep the conversion info around for after the commitment check
-            loc_storew_le.LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC
-            # => [CONVERSION_INFO, SALT, AUTH_ARGS]
+            # keep a copy of the conversion info around for after the commitment check
+            dupw movdnw.3
+            # => [CONVERSION_INFO, SALT, AUTH_ARGS, CONVERSION_INFO]
 
             exec.poseidon2::merge
-            # => [COMMITMENT, AUTH_ARGS]
+            # => [COMMITMENT, AUTH_ARGS, CONVERSION_INFO]
 
             assert_eqw.err=ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH
-            # => []
-
-            padw loc_loadw_le.LOAD_CONVERSION_INFO_CONVERSION_INFO_LOC
             # => [CONVERSION_INFO]
         else
             # no conversion info was committed; return the empty word
@@ -149,10 +137,7 @@ end
 
 #! Returns conversion info paying the fee in the native fee asset at rate 1/1.
 #!
-#! The faucet ID is read from the transaction's reference block via the get_fee_faucet_id
-#! kernel procedure, so - unlike conversion info committed via the auth args - the returned info
-#! requires no commitment to be trusted. Network accounts will use this to pay fees without a
-#! signature; any other account can use it to pay plainly in the native fee asset.
+#! The faucet ID is read from the transaction's reference block.
 #!
 #! Inputs:  []
 #! Outputs: [CONVERSION_INFO]
@@ -263,12 +248,11 @@ pub proc apply_cycle_margins(num_extra_cycles: felt) -> felt
     # => [num_estimated_extra_cycles]
 end
 
-#! Creates a new BATCH_FEE output note and funds it with the provided asset from the native
+#! Creates a new BATCH_FEE output note and funds it with the provided asset from the
 #! account's vault.
 #!
 #! The note's serial number is derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
-#! account_id_suffix, account_id_prefix]), making it deterministic and client-precomputable
-#! while domain-separating it from serial numbers derived in other contexts.
+#! account_id_suffix, account_id_prefix]).
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
