@@ -6,6 +6,7 @@ mod code_inspection;
 mod expiration;
 mod faucet;
 mod faucet_policy_action;
+mod fee_manager;
 mod fee_sponsorship;
 mod non_fungible_faucet;
 mod ownable2step;

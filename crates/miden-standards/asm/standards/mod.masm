@@ -5,6 +5,7 @@ pub mod auth
 pub mod data_structures
 pub mod faucets
 pub mod fee
+pub mod fees
 pub mod inspection
 pub mod note
 pub mod note_tag
