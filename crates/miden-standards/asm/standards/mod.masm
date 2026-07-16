@@ -1,4 +1,5 @@
 pub mod access
+pub mod account_upgrade
 pub mod assets
 pub mod attachments
 pub mod auth
