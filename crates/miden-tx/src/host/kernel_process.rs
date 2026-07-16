@@ -1,5 +1,4 @@
 use miden_processor::{ExecutionError, Felt, ProcessorState};
-use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
@@ -15,6 +14,7 @@ use miden_protocol::transaction::memory::{
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
 };
+use miden_protocol::{DoubleWord, Word};
 
 use crate::errors::TransactionKernelError;
 
@@ -262,9 +262,10 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
         recipient_digest: Word,
     ) -> Result<(NoteStorage, Word, Word), TransactionKernelError> {
         let (sn_script_hash, storage_commitment) =
-            read_double_word_from_adv_map(self, recipient_digest)?;
-        let (sn_hash, script_root) = read_double_word_from_adv_map(self, sn_script_hash)?;
-        let (serial_num, _) = read_double_word_from_adv_map(self, sn_hash)?;
+            read_double_word_from_adv_map(self, recipient_digest)?.into_tuple();
+        let (sn_hash, script_root) =
+            read_double_word_from_adv_map(self, sn_script_hash)?.into_tuple();
+        let (serial_num, _) = read_double_word_from_adv_map(self, sn_hash)?.into_tuple();
 
         let inputs = self.read_note_storage_from_adv_map(&storage_commitment)?;
 
@@ -319,7 +320,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Reads a double word (two [`Word`]s, 8 [`Felt`]s total) from the advice map.
+/// Reads a [`DoubleWord`] from the advice map.
 ///
 /// # Errors
 /// Returns an error if the key is not present in the advice map or if the data is malformed
@@ -327,18 +328,12 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
 fn read_double_word_from_adv_map(
     process: &ProcessorState,
     key: Word,
-) -> Result<(Word, Word), TransactionKernelError> {
+) -> Result<DoubleWord, TransactionKernelError> {
     let data = process
         .advice_provider()
         .get_mapped_values(&key)
         .ok_or_else(|| TransactionKernelError::MalformedRecipientData(vec![]))?;
 
-    if data.len() != 8 {
-        return Err(TransactionKernelError::MalformedRecipientData(data.to_vec()));
-    }
-
-    let first_word = Word::new([data[0], data[1], data[2], data[3]]);
-    let second_word = Word::new([data[4], data[5], data[6], data[7]]);
-
-    Ok((first_word, second_word))
+    DoubleWord::try_from(data)
+        .map_err(|_| TransactionKernelError::MalformedRecipientData(data.to_vec()))
 }

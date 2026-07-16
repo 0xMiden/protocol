@@ -5,6 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, ONE, Word, ZERO};
+use miden_protocol::DoubleWord;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
@@ -467,9 +468,9 @@ impl AggLayerBridge {
         Self::assert_bridge_account(bridge_account)?;
 
         // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
-        let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
-        let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
-        let ger_hash = Poseidon2::merge(&[ger_lower, ger_upper]);
+        let ger_words = DoubleWord::try_from(ger.to_elements().as_slice())
+            .expect("exit root should contain 8 felts");
+        let ger_hash = Poseidon2::merge(&[ger_words.lo(), ger_words.hi()]);
 
         // Get the value stored by the GER hash. If this GER was registered, the value would be
         // equal to [1, 0, 0, 0]
@@ -514,11 +515,8 @@ impl AggLayerBridge {
             .get_item(root_hi_slot)
             .expect("should be able to read LET root hi");
 
-        let mut root = Vec::with_capacity(8);
-        root.extend(root_lo.to_vec());
-        root.extend(root_hi.to_vec());
-
-        Ok(root)
+        let dword = DoubleWord::new(root_lo, root_hi);
+        Ok(dword.to_vec())
     }
 
     /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
