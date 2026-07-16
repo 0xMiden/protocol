@@ -262,8 +262,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let num_attachment_words = attachment_words.len();
 
     let mock_tx = TestTransactionBuilder::new(account)
-        .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
-        .extend_expected_output_notes(vec![
+        .input_notes(vec![input_note_1.clone(), input_note_2.clone()])
+        .expected_output_notes(vec![
             RawOutputNote::Full(output_note_1.clone()),
             RawOutputNote::Full(output_note_2.clone()),
         ])
@@ -779,7 +779,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
             [FungibleAsset::mock(100)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note_1])
+            .input_note(input_note_1)
             .build()?
     };
     let input_note_1 = mock_tx.tx_inputs().input_notes().get_note(0).note();
@@ -995,7 +995,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note_1)])
+        .expected_output_note(RawOutputNote::Full(output_note_1))
         .tx_script(tx_script)
         .build()?;
 
@@ -1071,7 +1071,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .tx_script(tx_script)
         .build()?;
 
@@ -1377,7 +1377,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
-        .extend_expected_output_notes(vec![output_note.clone()])
+        .expected_output_note(output_note.clone())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1452,7 +1452,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
-        .extend_expected_output_notes(vec![output_note.clone()])
+        .expected_output_note(output_note.clone())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1483,7 +1483,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let spawn_note = create_spawn_note([&output_note])?;
 
     let tx = TestTransactionBuilder::new(account)
-        .extend_input_notes([spawn_note].to_vec())
+        .input_note(spawn_note)
         .build()?
         .execute()
         .await?;
@@ -1664,7 +1664,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
-        .extend_expected_output_notes(vec![output_note.clone()])
+        .expected_output_note(output_note.clone())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1794,7 +1794,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
-        .extend_expected_output_notes(vec![output_note.clone()])
+        .expected_output_note(output_note.clone())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -1903,7 +1903,7 @@ async fn test_find_attachment(
     let tx = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(spawn_note.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .tx_script(tx_script)
         .build()?
         .execute()

@@ -36,7 +36,7 @@ async fn execute_with_output(
     let executed = chain
         .build_transaction(sender)
         .authenticated_input_note(spawn.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output)])
+        .expected_output_note(RawOutputNote::Full(output))
         .build()?
         .execute()
         .await?;

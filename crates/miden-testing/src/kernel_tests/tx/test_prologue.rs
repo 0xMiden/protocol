@@ -106,7 +106,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             [FungibleAsset::mock(111)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2, input_note_3])
+            .input_notes(vec![input_note_1, input_note_2, input_note_3])
             .build()?
     };
 

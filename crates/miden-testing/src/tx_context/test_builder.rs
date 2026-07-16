@@ -103,8 +103,16 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Extend the set of used input notes.
-    pub(crate) fn extend_input_notes(mut self, input_notes: Vec<Note>) -> Self {
+    /// Adds a single input note that the transaction consumes.
+    pub(crate) fn input_note(mut self, input_note: Note) -> Self {
+        self.input_notes.push(input_note);
+        self
+    }
+
+    /// Adds multiple input notes that the transaction consumes.
+    ///
+    /// This is the iterator equivalent of [`Self::input_note`].
+    pub(crate) fn input_notes(mut self, input_notes: Vec<Note>) -> Self {
         self.input_notes.extend(input_notes);
         self
     }
@@ -136,8 +144,16 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Extend the expected output notes.
-    pub(crate) fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
+    /// Adds a single expected output note that the transaction produces.
+    pub(crate) fn expected_output_note(mut self, output_note: RawOutputNote) -> Self {
+        self.expected_output_notes.push(output_note);
+        self
+    }
+
+    /// Adds multiple expected output notes that the transaction produces.
+    ///
+    /// This is the iterator equivalent of [`Self::expected_output_note`].
+    pub(crate) fn expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         self.expected_output_notes.extend(output_notes);
         self
     }
@@ -234,7 +250,7 @@ mod tests {
         );
 
         let executed = TestTransactionBuilder::with_existing_mock_account()
-            .extend_input_notes(vec![input_note.clone()])
+            .input_note(input_note.clone())
             .build()?
             .execute()
             .await?;

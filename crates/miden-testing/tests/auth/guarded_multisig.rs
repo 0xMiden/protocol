@@ -217,7 +217,7 @@ async fn test_guarded_multisig_signature_required(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .auth_args(salt);
 
     let tx_summary = mock_tx_builder
@@ -608,7 +608,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_output_script)
         .add_note_script(note_script)
-        .expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .auth_args(salt);
 
     let tx_summary = mock_tx_builder
@@ -816,7 +816,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .tx_script(update_guardian_script)
         .auth_args(salt);
     if let Some(out) = output_note {
-        mock_tx_builder = mock_tx_builder.expected_output_notes(vec![RawOutputNote::Full(out)]);
+        mock_tx_builder = mock_tx_builder.expected_output_note(RawOutputNote::Full(out));
     }
     let tx_summary = mock_tx_builder
         .clone()

@@ -150,7 +150,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .auth_args(salt);
 
     // Execute transaction without signatures - should fail
@@ -520,7 +520,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Execute transaction without signatures first to get tx summary
     let tx_summary_new = mock_tx_builder_new
         .clone()
-        .expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .build()?
         .execute()
         .await
@@ -546,7 +546,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Execute transaction with new signatures - should succeed
     let mock_tx_execute_new = mock_tx_builder_new
-        .expected_output_notes(vec![RawOutputNote::Full(output_note_new)])
+        .expected_output_note(RawOutputNote::Full(output_note_new))
         .add_signature(new_public_keys[0].to_commitment(), msg_new, sig_1_new)
         .add_signature(new_public_keys[1].to_commitment(), msg_new, sig_2_new)
         .add_signature(new_public_keys[2].to_commitment(), msg_new, sig_3_new)

@@ -52,8 +52,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         create_public_p2any_note(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(), [asset]);
 
     let mock_tx = TestTransactionBuilder::new(account.clone())
-        .extend_input_notes(vec![input_note_1])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_1.clone())])
+        .input_note(input_note_1)
+        .expected_output_note(RawOutputNote::Full(output_note_1.clone()))
         .build()?;
 
     let code = format!(
@@ -160,7 +160,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
     let output_note1 = create_p2any_note(account.id(), NoteType::Private, [asset1], &mut rng);
 
     let mock_tx = TestTransactionBuilder::new(account.clone())
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(output_note0.clone()),
             RawOutputNote::Full(output_note1.clone()),
         ])

@@ -116,7 +116,7 @@ pub async fn setup_circular_note_dependency_test()
         .build_transaction(account.clone())
         .unauthenticated_input_note(note_x.clone())
         .tx_script(tx_script_y)
-        .expected_output_notes(vec![RawOutputNote::Full(note_y.clone())])
+        .expected_output_note(RawOutputNote::Full(note_y.clone()))
         .build()?
         .execute()
         .await?;
@@ -135,7 +135,7 @@ pub async fn setup_circular_note_dependency_test()
         .build_transaction(updated_account)
         .unauthenticated_input_note(note_y)
         .tx_script(tx_script_x)
-        .expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
@@ -928,7 +928,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     let executed_tx2 = chain
         .build_transaction(updated_account)
         .tx_script(tx_script_x)
-        .expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;

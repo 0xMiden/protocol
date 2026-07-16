@@ -1400,7 +1400,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mock_tx = mock_chain
         .build_transaction(MockTransactionInput::AccountId(account.id()))
         .tx_script(tx_script)
-        .expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?;
 
     mock_tx.execute().await?;
@@ -1493,7 +1493,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     mock_chain
         .build_transaction(MockTransactionInput::AccountId(account.id()))
         .tx_script(tx_script)
-        .expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?
         .execute()
         .await?;

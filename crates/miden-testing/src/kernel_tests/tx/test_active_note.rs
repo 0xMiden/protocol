@@ -95,7 +95,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             [FungibleAsset::mock(100)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -146,7 +146,7 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
             [FungibleAsset::mock(100)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -211,7 +211,7 @@ async fn test_active_note_is_public_and_is_private(
             &mut rng,
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -257,7 +257,7 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
             [FungibleAsset::mock(100)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -303,7 +303,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             &mut rng,
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -656,7 +656,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
 
     // provide this input note to the mock transaction
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_input_notes(vec![input_note])
+        .input_note(input_note)
         .build()?;
 
     let tx_code = "
@@ -807,7 +807,7 @@ async fn test_note_find_attachment(
             .build()?;
 
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note0, input_note1])
+            .input_notes(vec![input_note0, input_note1])
             .build()?
     };
     assert_eq!(mock_tx.tx_inputs().input_notes().num_notes(), 2);

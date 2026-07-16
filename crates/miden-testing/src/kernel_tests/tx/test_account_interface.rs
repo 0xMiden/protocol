@@ -58,7 +58,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 
     let notes = vec![p2id_note, p2ide_note];
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_input_notes(notes.clone())
+        .input_notes(notes.clone())
         .build()?;
 
     let target_account_id = mock_tx.account().id();

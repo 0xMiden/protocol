@@ -386,7 +386,7 @@ async fn test_p2id_create_output_note_constructor() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(sender_account.id())
-        .expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .tx_script(tx_script)
         .build()?;
 

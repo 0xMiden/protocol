@@ -60,7 +60,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let create_swap_note_tx = mock_chain
         .build_transaction(sender_account.id())
         .tx_script(tx_script)
-        .expected_output_notes(vec![RawOutputNote::Full(swap_note.clone())])
+        .expected_output_note(RawOutputNote::Full(swap_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -252,7 +252,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     let consume_swap_note_tx = mock_chain
         .build_transaction(target_account.id())
         .authenticated_input_note(swap_note.id())
-        .expected_output_notes(vec![RawOutputNote::Full(payback_p2id_note)])
+        .expected_output_note(RawOutputNote::Full(payback_p2id_note))
         .build()?
         .execute()
         .await?;

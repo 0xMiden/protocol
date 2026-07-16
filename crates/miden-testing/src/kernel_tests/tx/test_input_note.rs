@@ -685,7 +685,7 @@ async fn test_remove_asset_fails(
             [fungible_asset, non_fungible_asset],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -726,7 +726,7 @@ async fn test_get_asset_index_out_of_bounds(#[case] get_asset_call: &str) -> any
         let input_note =
             create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 
@@ -793,7 +793,7 @@ async fn test_remove_asset(
             [fungible_asset, non_fungible_asset],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
+            .input_note(input_note)
             .build()?
     };
 

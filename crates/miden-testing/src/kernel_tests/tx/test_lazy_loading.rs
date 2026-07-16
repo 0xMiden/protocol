@@ -62,7 +62,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let tx_script = builder.compile_tx_script(code)?;
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_input_notes(vec![asset_note])
+        .input_note(asset_note)
         .with_source_manager(source_manager)
         .build()?;
     let account = mock_tx.account().clone();

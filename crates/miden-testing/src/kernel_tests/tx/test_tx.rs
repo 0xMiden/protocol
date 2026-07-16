@@ -113,7 +113,7 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let tx = mock_chain
         .build_transaction(account1.id())
         .authenticated_input_note(spawn_note.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -382,7 +382,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let mock_tx = TestTransactionBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),
         ])
@@ -987,7 +987,7 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
         .build_transaction(account.clone())
         .unauthenticated_input_note(note_x.clone())
         .tx_script(script)
-        .expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
