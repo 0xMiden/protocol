@@ -15,7 +15,7 @@ use miden_protocol::{Felt, Hasher, Word};
 /// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::trivial`].
 ///
 /// For signature-based authentication components the conversion info is typically committed to
-/// via the transaction's auth args (see [`Self::auth_args`] and [`Self::advice_map_entry`]).
+/// via the transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeeConversionInfo {
     faucet_id: AccountId,
@@ -80,27 +80,33 @@ impl FeeConversionInfo {
             Felt::from(self.rate_den),
         ])
     }
+}
 
-    /// Returns the auth args committing to this conversion info under the given salt.
-    ///
-    /// The commitment is the hash of the conversion info together with the caller-chosen salt,
-    /// so the signature over the transaction summary authorizes the payment asset and rate. The
-    /// salt slot keeps the auth args usable as a unique salt for replay protection while
-    /// committing to the conversion info.
-    pub fn auth_args(&self, salt: Word) -> Word {
-        Hasher::merge(&[self.to_word(), salt])
-    }
+// AUTH ARGS COMMITMENT
+// ================================================================================================
 
-    /// Returns the advice map entry that must accompany the auth args commitment: the key is
-    /// [`Self::auth_args`] and the value is the preimage `[SALT, CONVERSION_INFO]`, which
-    /// `miden::standards::fee::load_conversion_info` reads and verifies in-VM.
-    pub fn advice_map_entry(&self, salt: Word) -> (Word, Vec<Felt>) {
-        let mut value = Vec::with_capacity(8);
-        value.extend(salt.iter());
-        value.extend(self.to_word().iter());
+/// Commits to the given conversion info under `salt` for passing to the authentication
+/// procedure via the transaction's auth args.
+///
+/// Returns the auth args together with the advice map value holding their preimage: the auth
+/// args are the commitment `hash(CONVERSION_INFO || SALT)` and the advice map must map them to
+/// `[SALT, CONVERSION_INFO]`, which `miden::standards::fee::load_conversion_info` reads and
+/// verifies in-VM.
+///
+/// Committing via the auth args means the signature over the transaction summary authorizes the
+/// payment asset and rate, while the salt slot keeps the auth args usable as a unique salt for
+/// replay protection.
+pub fn commit_fee_conversion_info(
+    conversion_info: FeeConversionInfo,
+    salt: Word,
+) -> (Word, Vec<Felt>) {
+    let info_word = conversion_info.to_word();
 
-        (self.auth_args(salt), value)
-    }
+    let mut value = Vec::with_capacity(8);
+    value.extend(salt.iter());
+    value.extend(info_word.iter());
+
+    (Hasher::merge(&[info_word, salt]), value)
 }
 
 // TESTS
@@ -132,9 +138,9 @@ mod tests {
         let payment_info = FeeConversionInfo::new(faucet(), 2, 3).unwrap();
         let salt = Word::from([1u32, 2, 3, 4]);
 
-        let (key, value) = payment_info.advice_map_entry(salt);
+        let (key, value) = commit_fee_conversion_info(payment_info, salt);
 
-        assert_eq!(key, payment_info.auth_args(salt));
+        assert_eq!(key, Hasher::merge(&[payment_info.to_word(), salt]));
         assert_eq!(value.len(), 8);
         assert_eq!(&value[..4], salt.as_elements());
         assert_eq!(&value[4..], payment_info.to_word().as_elements());

@@ -89,17 +89,21 @@ impl BatchFeeNote {
     /// Expected number of storage items of the BATCH_FEE note.
     pub const NUM_STORAGE_ITEMS: usize = 0;
 
-    /// The unique note tag of BATCH_FEE notes (`0xFEE`, "fee" in hex).
+    /// The raw `u32` value of [`Self::TAG`] (`0xFEE`, "fee" in hex), also used as the
+    /// domain-separation tag by [`Self::derive_serial_number`].
+    ///
+    /// This constant must be kept in sync with the `BATCH_FEE_NOTE_TAG` and `FEE_DOMAIN_TAG`
+    /// constants in the standards MASM library.
+    pub const TAG_ID: u32 = 0xfee;
+
+    /// The unique note tag of BATCH_FEE notes.
     ///
     /// The tag's 18 least significant bits are non-zero, so it can never collide with a default
     /// account-target tag, which has its 18 least significant bits set to zero (see
     /// [`NoteTag::with_account_target`]). Note that this guarantee does not extend to custom
     /// account-target tags built with a length greater than 14 bits (see
     /// [`NoteTag::with_custom_account_target`]), which can set lower bits.
-    ///
-    /// This constant must be kept in sync with the `BATCH_FEE_NOTE_TAG` constant in the BATCH_FEE
-    /// note's MASM script.
-    pub const TAG: NoteTag = NoteTag::new(0xfee);
+    pub const TAG: NoteTag = NoteTag::new(Self::TAG_ID);
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -149,7 +153,7 @@ impl BatchFeeNote {
         ref_block_num: BlockNumber,
     ) -> Word {
         // Domain-separation tag for the fee note's serial number ("fee" in hex).
-        let fee_domain = Word::from([Felt::from(0xfee_u32), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+        let fee_domain = Word::from([Felt::from(Self::TAG_ID), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
         let tuple = Word::from([
             Felt::from(ref_block_num.as_u32()),
             initial_nonce,
@@ -273,7 +277,7 @@ mod tests {
     fn tag_never_collides_with_default_account_target_tags() {
         const LOW_18_BITS: u32 = (1 << 18) - 1;
         assert_ne!(BatchFeeNote::TAG.as_u32() & LOW_18_BITS, 0);
-        assert_eq!(Felt::from(BatchFeeNote::TAG), Felt::from(0xfee_u32));
+        assert_eq!(Felt::from(BatchFeeNote::TAG), Felt::from(BatchFeeNote::TAG_ID));
     }
 
     // CONSUMPTION ANALYSIS TESTS

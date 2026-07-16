@@ -8,7 +8,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::FeeConversionInfo;
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
@@ -70,7 +70,10 @@ async fn execute_fee_paying_tx(
     let initial_nonce = account.nonce();
 
     let (args, advice_value) = conversion_info_entry.unwrap_or_else(|| {
-        FeeConversionInfo::trivial(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]))
+        commit_fee_conversion_info(
+            FeeConversionInfo::trivial(fee_faucet_id),
+            Word::from([9u32, 10, 11, 12]),
+        )
     });
 
     let executed_transaction = mock_chain
@@ -171,7 +174,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
     let (executed_transaction, _) = execute_fee_paying_tx(
         AuthScheme::Falcon512Poseidon2,
         &[payment_asset],
-        Some(conversion_info.advice_map_entry(salt)),
+        Some(commit_fee_conversion_info(conversion_info, salt)),
     )
     .await?;
 
@@ -233,7 +236,7 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
     let (converted_tx, _) = execute_fee_paying_tx(
         AuthScheme::Falcon512Poseidon2,
         &[payment_asset],
-        Some(conversion_info.advice_map_entry(salt)),
+        Some(commit_fee_conversion_info(conversion_info, salt)),
     )
     .await?;
 
@@ -292,7 +295,7 @@ async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
     let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
-    let (key, mut value) = conversion_info.advice_map_entry(salt);
+    let (key, mut value) = commit_fee_conversion_info(conversion_info, salt);
     // tamper with the conversion rate in the preimage
     value[6] += Felt::from(1u32);
 
@@ -368,7 +371,7 @@ async fn converted_amount_overflow_aborts() -> anyhow::Result<()> {
     })?;
     let mock_chain = builder.build()?;
 
-    let (key, value) = conversion_info.advice_map_entry(salt);
+    let (key, value) = commit_fee_conversion_info(conversion_info, salt);
     let result = mock_chain
         .build_tx_context(account.id(), &[], &[])?
         .auth_args(key)
@@ -412,8 +415,10 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     })?;
     let mock_chain = builder.build()?;
 
-    let (args, advice_value) =
-        FeeConversionInfo::trivial(fee_faucet_id).advice_map_entry(Word::from([9u32, 10, 11, 12]));
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::trivial(fee_faucet_id),
+        Word::from([9u32, 10, 11, 12]),
+    );
 
     let result = mock_chain
         .build_tx_context(account.id(), &[], &[])?
@@ -528,8 +533,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     let tx_script_src = format!("@transaction_script\npub proc main\n{body}\nend");
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
 
-    let (args, advice_value) = FeeConversionInfo::trivial(ACCOUNT_ID_FEE_FAUCET.try_into()?)
-        .advice_map_entry(Word::from([9u32, 10, 11, 12]));
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::trivial(ACCOUNT_ID_FEE_FAUCET.try_into()?),
+        Word::from([9u32, 10, 11, 12]),
+    );
 
     let executed_transaction = mock_chain
         .build_tx_context(account.id(), &[], &[])?
