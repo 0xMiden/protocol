@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.16.0-alpha.3 (2026-07-15)
+
+### Fixes
+
+- Fixed `SendNotesTransactionScript` generating a script that returned at an invalid stack depth when a note carried no assets, causing the VM to reject the transaction with `InvalidStackDepthOnReturn` ([#3302](https://github.com/0xMiden/protocol/pull/3302)).
+
 ## v0.16.0-alpha.2 (2026-07-12)
 
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
