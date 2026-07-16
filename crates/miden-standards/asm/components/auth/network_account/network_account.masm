@@ -7,6 +7,7 @@ use miden::protocol::native_account
 use miden::core::word
 use miden::standards::auth::note_script_allowlist
 use miden::standards::auth::tx_script_allowlist
+use miden::standards::fee
 
 # CONSTANTS
 # =================================================================================================
@@ -19,6 +20,10 @@ const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account:
 # any non-empty value marks a root as allowed.
 const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_tx_scripts")
 
+# Estimated upper bound on the number of cycles this auth procedure spends after pay_fee
+# returns: the account commitment comparison and the nonce increment.
+const NETWORK_POST_FEE_CYCLES = 1024
+
 # AUTH PROCEDURE
 # =================================================================================================
 
@@ -30,8 +35,14 @@ const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::a
 #! 2. Every consumed input note must have a script root present in the allowlist stored at
 #!    `ALLOWED_NOTE_SCRIPTS_SLOT`.
 #!
-#! If both checks pass, the nonce is incremented when the account state changed or the account is
-#! new, matching the behavior of the NoAuth and SingleSig components.
+#! If both checks pass, the transaction fee is paid by creating a public TX_FEE note funded
+#! from the account's vault in the native fee asset at rate 1/1 (see fee::pay_fee and
+#! fee::native_conversion_info). On chains with a zero verification base fee no note is created.
+#!
+#! Finally, the nonce is incremented when the account state changed or the account is new,
+#! matching the behavior of the NoAuth and SingleSig components. Note that on fee-charging
+#! chains the fee payment itself withdraws from the vault, so the account state always changes
+#! and the nonce always increments.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -54,6 +65,16 @@ pub proc auth_network_transaction(auth_args: word)
     # => [slot_id_suffix, slot_id_prefix, pad(16)]
 
     exec.note_script_allowlist::assert_all_input_notes_allowed
+    # => [pad(16)]
+
+    # ---- Pay the transaction fee in the native fee asset ----
+    exec.fee::native_conversion_info
+    # => [CONVERSION_INFO, pad(16)]
+
+    push.NETWORK_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
+
+    exec.fee::pay_fee
     # => [pad(16)]
 
     # ---- Increment nonce iff the account state changed or the account is new ----

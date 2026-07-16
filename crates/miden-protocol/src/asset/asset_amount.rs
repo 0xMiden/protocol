@@ -10,7 +10,7 @@ use super::super::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::Felt;
+use crate::{Felt, Word};
 
 // ASSET AMOUNT
 // ================================================================================================
@@ -59,6 +59,11 @@ impl AssetAmount {
     /// non-negative `i64`.
     pub const fn as_i64(&self) -> i64 {
         self.0 as i64
+    }
+
+    /// Returns the amount encoded as a fungible asset value word `[amount, 0, 0, 0]`.
+    pub fn to_word(&self) -> Word {
+        Word::new([Felt::from(*self), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 }
 
