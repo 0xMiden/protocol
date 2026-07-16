@@ -37,11 +37,8 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network
 ///
 /// If both checks pass, the procedure pays the transaction fee by creating a public BATCH_FEE
 /// note funded from the account's vault in the native fee asset at rate 1/1 (see
-/// `miden::standards::fee::pay_fee`). No signature is involved, so the fee faucet is read from
-/// the reference block via the `tx::get_fee_faucet_id` kernel procedure rather than committed
-/// via the auth args. On chains with a zero verification base fee no note is created. The
-/// account's vault must hold enough of the native fee asset (e.g. deposited by a sponsorship
-/// note consumed earlier in the transaction) or the transaction is rejected.
+/// `miden::standards::fee::pay_fee` and `miden::standards::fee::native_conversion_info`). On
+/// chains with a zero verification base fee no note is created.
 ///
 /// Because a network account has no signature gate by default, a transaction script is an
 /// unconstrained code path that could call the account's procedures directly. The tx-script
