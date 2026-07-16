@@ -13,7 +13,7 @@ use miden_processor::LoadedMastForest;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
-use crate::assembly::{Library, Path};
+use crate::assembly::Path;
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::package::{loaded_mast_forest, package_debug_info};
@@ -372,7 +372,7 @@ impl TransactionScript {
     ///
     /// # Errors
     /// Returns an error if the package cannot be converted to an executable program.
-    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
+    pub fn from_program(package: &Package) -> Result<Self, TransactionScriptError> {
         let program =
             package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
@@ -383,19 +383,19 @@ impl TransactionScript {
         })
     }
 
-    /// Returns a new [TransactionScript] instantiated from the provided library.
+    /// Returns a new [TransactionScript] instantiated from the provided package.
     ///
-    /// The library must contain exactly one procedure with the `@transaction_script` attribute,
+    /// The package must contain exactly one procedure with the `@transaction_script` attribute,
     /// which will be used as the entrypoint.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure with the `@transaction_script` attribute.
-    /// - The library contains multiple procedures with the `@transaction_script` attribute.
-    pub fn from_library(library: &Library) -> Result<Self, TransactionScriptError> {
+    /// - The package does not contain a procedure with the `@transaction_script` attribute.
+    /// - The package contains multiple procedures with the `@transaction_script` attribute.
+    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
         let mut entrypoint = None;
 
-        for export in library.manifest.exports() {
+        for export in package.manifest.exports() {
             if let Some(proc_export) = export.as_procedure()
                 && proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE)
             {
@@ -410,36 +410,36 @@ impl TransactionScript {
         let entrypoint = entrypoint.ok_or(TransactionScriptError::NoProcedureWithAttribute)?;
 
         Ok(Self {
-            mast: library.mast_forest().clone(),
+            mast: package.mast_forest().clone(),
             entrypoint,
-            package_debug_info: package_debug_info(library),
+            package_debug_info: package_debug_info(package),
         })
     }
 
     /// Returns a new [TransactionScript] containing only a reference to a procedure in the
-    /// provided library.
+    /// provided package.
     ///
-    /// This method is useful when a library contains multiple transaction scripts and you need
+    /// This method is useful when a package contains multiple transaction scripts and you need
     /// to extract a specific one by its fully qualified path (e.g.,
     /// `::miden::standards::tx_scripts::send_notes::main`).
     ///
     /// The procedure at the specified path must have the `@transaction_script` attribute.
     ///
     /// Note: This method creates a minimal [MastForest] containing only an external node
-    /// referencing the procedure's digest, rather than copying the entire library. The actual
+    /// referencing the procedure's digest, rather than copying the entire package. The actual
     /// procedure code will be resolved at runtime via the `MastForestStore`.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure at the specified path.
+    /// - The package does not contain a procedure at the specified path.
     /// - The procedure at the specified path does not have the `@transaction_script` attribute.
-    pub fn from_library_reference(
-        library: &Library,
+    pub fn from_package_reference(
+        package: &Package,
         path: &Path,
     ) -> Result<Self, TransactionScriptError> {
         // Find the export matching the path
         let export =
-            library.manifest.exports().find(|e| e.path().as_ref() == path).ok_or_else(|| {
+            package.manifest.exports().find(|e| e.path().as_ref() == path).ok_or_else(|| {
                 TransactionScriptError::ProcedureNotFound(path.to_string().into())
             })?;
 
@@ -452,7 +452,7 @@ impl TransactionScript {
             return Err(TransactionScriptError::ProcedureMissingAttribute(path.to_string().into()));
         }
 
-        // Get the digest of the procedure from the library
+        // Get the digest of the procedure from the package
         let digest = proc_export.digest;
 
         // Create a minimal MastForest with just an external node referencing the digest
@@ -461,7 +461,7 @@ impl TransactionScript {
         Ok(Self {
             mast: Arc::new(mast),
             entrypoint,
-            package_debug_info: package_debug_info(library),
+            package_debug_info: package_debug_info(package),
         })
     }
 
@@ -553,7 +553,7 @@ mod tests {
         let assembler = Assembler::default();
         let package =
             assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
-        let script = TransactionScript::from_package(&package).unwrap();
+        let script = TransactionScript::from_program(&package).unwrap();
 
         assert!(script.loaded_mast_forest().package_debug_info().unwrap().is_some());
     }
@@ -594,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_script_from_library() {
+    fn test_transaction_script_from_package() {
         use assert_matches::assert_matches;
 
         use super::TransactionScript;
@@ -610,7 +610,7 @@ mod tests {
         ";
         let library = assemble_test_library("test-tx-script", "test::tx_script", source);
 
-        let script = TransactionScript::from_library(&library).unwrap();
+        let script = TransactionScript::from_package(&library).unwrap();
 
         // the script must round-trip through serialization unchanged
         let bytes = script.to_bytes();
@@ -624,7 +624,7 @@ mod tests {
             "pub proc main push.1 drop end",
         );
         assert_matches!(
-            TransactionScript::from_library(&no_attr),
+            TransactionScript::from_package(&no_attr),
             Err(TransactionScriptError::NoProcedureWithAttribute)
         );
 
@@ -636,13 +636,13 @@ mod tests {
              @transaction_script pub proc main_b push.2 drop end",
         );
         assert_matches!(
-            TransactionScript::from_library(&multiple),
+            TransactionScript::from_package(&multiple),
             Err(TransactionScriptError::MultipleProceduresWithAttribute)
         );
     }
 
     #[test]
-    fn test_transaction_script_from_library_reference() {
+    fn test_transaction_script_from_package_reference() {
         use alloc::string::ToString;
 
         use assert_matches::assert_matches;
@@ -682,14 +682,14 @@ mod tests {
             let digest = export.as_procedure().unwrap().digest;
 
             let script =
-                TransactionScript::from_library_reference(&library, export.path().as_ref())
+                TransactionScript::from_package_reference(&library, export.path().as_ref())
                     .unwrap();
             assert_eq!(Word::from(script.root()), digest);
         }
 
         // an unknown path is rejected
         assert_matches!(
-            TransactionScript::from_library_reference(&library, Path::new("::foo::bar::main")),
+            TransactionScript::from_package_reference(&library, Path::new("::foo::bar::main")),
             Err(TransactionScriptError::ProcedureNotFound(_))
         );
 
@@ -700,7 +700,7 @@ mod tests {
             .find(|e| e.path().as_ref().to_string().ends_with("helper"))
             .unwrap();
         assert_matches!(
-            TransactionScript::from_library_reference(&library, helper.path().as_ref()),
+            TransactionScript::from_package_reference(&library, helper.path().as_ref()),
             Err(TransactionScriptError::ProcedureMissingAttribute(_))
         );
     }

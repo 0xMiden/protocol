@@ -1,9 +1,9 @@
 use alloc::sync::Arc;
 
-use crate::assembly::{Assembler, DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
+use crate::assembly::{Assembler, DefaultSourceManager, ModuleKind, ModuleParser, Package, Path};
 
 /// Assembles a single-module test library.
-pub fn assemble_test_library(name: &str, path: &str, source: &str) -> Library {
+pub fn assemble_test_library(name: &str, path: &str, source: &str) -> Package {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let root = ModuleParser::new(Some(ModuleKind::Library))
         .parse_str(Some(Path::new(path)), source, source_manager.clone())

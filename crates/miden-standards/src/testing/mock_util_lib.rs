@@ -3,10 +3,10 @@ use alloc::sync::Arc;
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::{
     DefaultSourceManager,
-    Library,
     Linkage,
     ModuleKind,
     ModuleParser,
+    Package,
     Path,
 };
 use miden_protocol::transaction::TransactionKernel;
@@ -76,7 +76,7 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     end
 ";
 
-static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static MOCK_UTIL_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let root = ModuleParser::new(Some(ModuleKind::Library))
         .parse_str(Some(Path::new("mock::util")), MOCK_UTIL_LIBRARY_CODE, source_manager.clone())
@@ -94,9 +94,9 @@ static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         .expect("mock util library should be valid")
 });
 
-/// Returns the mock test [`Library`] under the `mock::util` namespace.
+/// Returns the mock test [`Package`] under the `mock::util` namespace.
 ///
 /// This provides convenient wrappers for testing purposes.
-pub fn mock_util_library() -> Library {
+pub fn mock_util_library() -> Package {
     MOCK_UTIL_LIBRARY.clone()
 }

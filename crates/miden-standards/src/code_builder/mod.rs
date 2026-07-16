@@ -9,11 +9,11 @@ use miden_protocol::assembly::diagnostics::Report;
 use miden_protocol::assembly::{
     Assembler,
     DefaultSourceManager,
-    Library,
     Linkage,
     Module,
     ModuleKind,
     ModuleParser,
+    Package,
     Path,
     SourceFile,
     SourceManager,
@@ -32,33 +32,33 @@ const TX_SCRIPT_MODULE_PATH: &str = "::tx_script";
 
 /// A value that can provide a compiled Miden library to the code builder.
 pub trait CodeBuilderLibrary {
-    fn as_code_builder_library(&self) -> &Library;
+    fn as_code_builder_library(&self) -> &Package;
 }
 
 impl<T> CodeBuilderLibrary for &T
 where
     T: CodeBuilderLibrary + ?Sized,
 {
-    fn as_code_builder_library(&self) -> &Library {
+    fn as_code_builder_library(&self) -> &Package {
         (*self).as_code_builder_library()
     }
 }
 
-impl CodeBuilderLibrary for Library {
-    fn as_code_builder_library(&self) -> &Library {
+impl CodeBuilderLibrary for Package {
+    fn as_code_builder_library(&self) -> &Package {
         self
     }
 }
 
-impl CodeBuilderLibrary for Box<Library> {
-    fn as_code_builder_library(&self) -> &Library {
+impl CodeBuilderLibrary for Box<Package> {
+    fn as_code_builder_library(&self) -> &Package {
         self
     }
 }
 
 impl CodeBuilderLibrary for AccountComponentCode {
-    fn as_code_builder_library(&self) -> &Library {
-        self.as_library()
+    fn as_code_builder_library(&self) -> &Package {
+        self.as_package()
     }
 }
 
@@ -224,14 +224,14 @@ impl CodeBuilderScriptSource for std::path::PathBuf {
 /// # use anyhow::Context;
 /// # use miden_standards::code_builder::CodeBuilder;
 /// # use miden_standards::StandardsLib;
-/// # use miden_protocol::assembly::Library;
+/// # use miden_protocol::assembly::Package;
 /// # use miden_protocol::ProtocolLib;
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
 /// # let script_code = "@transaction_script pub proc main nop end";
 /// # // Create sample libraries for the example
-/// # let my_lib: Library = StandardsLib::default().into();
-/// # let fpi_lib: Library = ProtocolLib::default().into();
+/// # let my_lib: Package = StandardsLib::default().into();
+/// # let fpi_lib: Package = ProtocolLib::default().into();
 /// let script = CodeBuilder::default()
 ///     .with_linked_module("my::module", module_code).context("failed to link module")?
 ///     .with_statically_linked_library(&my_lib).context("failed to link static library")?
@@ -337,7 +337,7 @@ impl CodeBuilder {
     /// # Errors
     /// Returns an error if:
     /// - adding the library to the assembler failed
-    pub fn link_static_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
+    pub fn link_static_library(&mut self, library: &Package) -> Result<(), CodeBuilderError> {
         self.assembler
             .link_package(Arc::new(library.clone()), Linkage::Static)
             .map_err(|err| {
@@ -347,7 +347,7 @@ impl CodeBuilder {
 
     /// Dynamically links a library.
     ///
-    /// This is useful to dynamically link the [`Library`] of a foreign account
+    /// This is useful to dynamically link the [`Package`] of a foreign account
     /// that is invoked using foreign procedure invocation (FPI). Its code is available
     /// on-chain and so it does not have to be copied into the script code.
     ///
@@ -358,7 +358,7 @@ impl CodeBuilder {
     ///
     /// # Errors
     /// Returns an error if the library cannot be added to the assembler
-    pub fn link_dynamic_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
+    pub fn link_dynamic_library(&mut self, library: &Package) -> Result<(), CodeBuilderError> {
         self.assembler
             .link_package(Arc::new(library.clone()), Linkage::Dynamic)
             .map_err(|err| {
@@ -377,7 +377,7 @@ impl CodeBuilder {
     /// Returns an error if the library cannot be added to the assembler
     pub fn with_statically_linked_library(
         mut self,
-        library: &Library,
+        library: &Package,
     ) -> Result<Self, CodeBuilderError> {
         self.link_static_library(library)?;
         Ok(self)
@@ -467,7 +467,7 @@ impl CodeBuilder {
     /// Applies the advice map to a library if it's non-empty.
     ///
     /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map_to_library(advice_map: AdviceMap, library: Library) -> Library {
+    fn apply_advice_map_to_library(advice_map: AdviceMap, library: Package) -> Package {
         if advice_map.is_empty() {
             library
         } else {
@@ -552,7 +552,7 @@ impl CodeBuilder {
                 )
             })?;
 
-        let tx_script = TransactionScript::from_library(&tx_script_lib).map_err(|err| {
+        let tx_script = TransactionScript::from_package(&tx_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create transaction script from library",
                 err,
@@ -601,7 +601,7 @@ impl CodeBuilder {
                 )
             })?;
 
-        let note_script = NoteScript::from_library(&note_script_lib).map_err(|err| {
+        let note_script = NoteScript::from_package(&note_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create note script from library",
                 err,
@@ -655,7 +655,7 @@ impl CodeBuilder {
 
     /// Returns the mock account and faucet libraries used in testing.
     #[cfg(any(feature = "testing", test))]
-    pub fn mock_libraries() -> impl Iterator<Item = Library> {
+    pub fn mock_libraries() -> impl Iterator<Item = Package> {
         use miden_protocol::account::AccountCode;
 
         use crate::testing::mock_account_code::MockAccountCodeExt;

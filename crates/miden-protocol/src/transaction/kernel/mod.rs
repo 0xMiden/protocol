@@ -4,8 +4,6 @@ use alloc::vec::Vec;
 use miden_core_lib::CoreLibrary;
 
 use crate::account::{AccountHeader, AccountId};
-#[cfg(any(feature = "testing", test))]
-use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
@@ -493,7 +491,7 @@ impl TransactionKernel {
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
     /// Returns the kernel library.
-    pub fn library() -> Library {
+    pub fn library() -> Package {
         // These bytes are produced by this crate's build script and embedded in the binary.
         Package::read_from_bytes_trusted(Self::KERNEL_TESTING_PACKAGE_BYTES)
             .expect("failed to deserialize transaction kernel library package")

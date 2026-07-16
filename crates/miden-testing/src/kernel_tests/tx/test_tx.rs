@@ -20,7 +20,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::{DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
+use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, Package, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
@@ -639,7 +639,7 @@ fn compile_test_library(
     name: &str,
     path: &str,
     source: &str,
-) -> Library {
+) -> Package {
     let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
     let source = ModuleParser::new(Some(ModuleKind::Library))
         .parse_str(Some(Path::new(path)), source, source_manager)

@@ -1,6 +1,6 @@
 use miden_protocol::account::AccountComponent;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Package;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::code_builder::CodeBuilder;
@@ -14,7 +14,7 @@ const INCR_NONCE_AUTH_CODE: &str = "
     end
 ";
 
-static INCR_NONCE_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static INCR_NONCE_AUTH_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("incr_nonce", INCR_NONCE_AUTH_CODE)
         .expect("incr nonce code should be valid")

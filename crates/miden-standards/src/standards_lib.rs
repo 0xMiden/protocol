@@ -1,9 +1,8 @@
 use alloc::sync::Arc;
 
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Package;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
@@ -32,8 +31,8 @@ impl StandardsLib {
     }
 }
 
-impl AsRef<Library> for StandardsLib {
-    fn as_ref(&self) -> &Library {
+impl AsRef<Package> for StandardsLib {
+    fn as_ref(&self) -> &Package {
         self.0.as_ref()
     }
 }

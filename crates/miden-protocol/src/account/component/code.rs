@@ -1,4 +1,4 @@
-use miden_mast_package::{Package as Library, ProcedureExport};
+use miden_mast_package::{Package, ProcedureExport};
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
@@ -8,13 +8,13 @@ use crate::vm::AdviceMap;
 // ACCOUNT COMPONENT CODE
 // ================================================================================================
 
-/// A [`Library`] that has been assembled for use as component code.
+/// A [`Package`] that has been assembled for use as component code.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccountComponentCode(Library);
+pub struct AccountComponentCode(Package);
 
 impl AccountComponentCode {
-    /// Returns a reference to the underlying [`Library`]
-    pub fn as_library(&self) -> &Library {
+    /// Returns a reference to the underlying [`Package`]
+    pub fn as_package(&self) -> &Package {
         &self.0
     }
 
@@ -23,8 +23,8 @@ impl AccountComponentCode {
         self.0.mast_forest().as_ref()
     }
 
-    /// Consumes `self` and returns the underlying [`Library`]
-    pub fn into_library(self) -> Library {
+    /// Consumes `self` and returns the underlying [`Package`]
+    pub fn into_package(self) -> Package {
         self.0
     }
 
@@ -77,7 +77,7 @@ impl AccountComponentCode {
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the
-    /// underlying [Library]'s [MastForest].
+    /// underlying [Package]'s [MastForest].
     ///
     /// This allows adding advice map entries to an already-compiled account component,
     /// which is useful when the entries are determined after compilation.
@@ -90,24 +90,24 @@ impl AccountComponentCode {
     }
 }
 
-impl AsRef<Library> for AccountComponentCode {
-    fn as_ref(&self) -> &Library {
-        self.as_library()
+impl AsRef<Package> for AccountComponentCode {
+    fn as_ref(&self) -> &Package {
+        self.as_package()
     }
 }
 
 // CONVERSIONS
 // ================================================================================================
 
-impl From<Library> for AccountComponentCode {
-    fn from(value: Library) -> Self {
+impl From<Package> for AccountComponentCode {
+    fn from(value: Package) -> Self {
         Self(value)
     }
 }
 
-impl From<AccountComponentCode> for Library {
+impl From<AccountComponentCode> for Package {
     fn from(value: AccountComponentCode) -> Self {
-        value.into_library()
+        value.into_package()
     }
 }
 
@@ -136,9 +136,9 @@ mod tests {
 
         // Empty advice map should be a no-op (digest stays the same)
         let cloned = component_code.clone();
-        let original_digest = cloned.as_library().digest();
+        let original_digest = cloned.as_package().digest();
         let component_code = component_code.with_advice_map(AdviceMap::default());
-        assert_eq!(original_digest, component_code.as_library().digest());
+        assert_eq!(original_digest, component_code.as_package().digest());
 
         // Non-empty advice map should add entries
         let key = Word::from([10u32, 20, 30, 40]);
@@ -167,7 +167,7 @@ mod tests {
         let expected = component_code.procedure_roots().next().expect("one procedure exported");
 
         let library_namespace = component_code
-            .as_library()
+            .as_package()
             .module_infos()
             .next()
             .expect("library should have one module")

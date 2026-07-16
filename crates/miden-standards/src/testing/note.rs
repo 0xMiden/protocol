@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::debuginfo::{SourceLanguage, SourceManagerSync, Uri};
-use miden_protocol::assembly::{DefaultSourceManager, Library};
+use miden_protocol::assembly::{DefaultSourceManager, Package};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -20,7 +20,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
-use miden_protocol::vm::{AdviceMap, Package};
+use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Word};
 use rand::{Rng, RngExt};
 
@@ -32,7 +32,7 @@ use crate::code_builder::CodeBuilder;
 #[derive(Debug, Clone)]
 enum SourceCodeOrigin {
     Masm {
-        dyn_libraries: Vec<Library>,
+        dyn_libraries: Vec<Package>,
         source_manager: Arc<dyn SourceManagerSync>,
     },
     Package(Arc<Package>),
@@ -137,7 +137,7 @@ impl NoteBuilder {
     /// build-time.
     pub fn dynamically_linked_libraries(
         mut self,
-        dyn_libs: impl IntoIterator<Item = Library>,
+        dyn_libs: impl IntoIterator<Item = Package>,
     ) -> Self {
         match &mut self.source_code {
             SourceCodeOrigin::Masm { dyn_libraries, .. } => {
