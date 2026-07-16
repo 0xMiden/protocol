@@ -26,7 +26,7 @@ use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
     ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
 };
-use miden_standards::note::BatchFeeNote;
+use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
@@ -113,7 +113,7 @@ async fn execute_fee_paying_tx(
 // TESTS
 // ================================================================================================
 
-/// The singlesig auth procedure pays the transaction fee by creating a BATCH_FEE note funded with
+/// The singlesig auth procedure pays the transaction fee by creating a TX_FEE note funded with
 /// the native fee asset, and the paid amount covers the fee required for the actual number of
 /// cycles the transaction took. This is the regression guard for the cycle-estimate constants.
 #[rstest]
@@ -127,7 +127,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
     let output_note = executed_transaction.output_notes().get_note(0);
 
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     // the note carries exactly one asset: the native fee asset
@@ -159,7 +159,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 }
 
 /// The fee note created by the auth procedure has the serial number derived by
-/// [`BatchFeeNote::derive_serial_number`], so clients can predict the note ID before execution.
+/// [`TxFeeNote::derive_serial_number`], so clients can predict the note ID before execution.
 #[tokio::test]
 async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     let (executed_transaction, initial_nonce) =
@@ -172,9 +172,9 @@ async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     let account_id = executed_transaction.account_id();
     let ref_block_num = executed_transaction.tx_inputs().block_header().block_num();
 
-    let expected_note: Note = BatchFeeNote::builder()
+    let expected_note: Note = TxFeeNote::builder()
         .sender(account_id)
-        .serial_number(BatchFeeNote::derive_serial_number(account_id, initial_nonce, ref_block_num))
+        .serial_number(TxFeeNote::derive_serial_number(account_id, initial_nonce, ref_block_num))
         .asset(*asset)
         .build()?
         .into();
@@ -203,7 +203,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
     let output_note = executed_transaction.output_notes().get_note(0);
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
 
     let assets = output_note.assets();
     let asset = assets.iter().next().expect("fee note should carry an asset");
@@ -588,7 +588,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
 // PER-COMPONENT FEE PAYMENT TESTS
 // ================================================================================================
 
-/// Asserts the executed transaction produced exactly one output note: a public BATCH_FEE note
+/// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee
 /// asset for further assertions.
 fn assert_single_fee_note(
@@ -597,7 +597,7 @@ fn assert_single_fee_note(
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
     let output_note = executed_transaction.output_notes().get_note(0);
 
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     let assets = output_note.assets();
@@ -690,7 +690,7 @@ async fn execute_fee_paying_multisig_tx(
     Ok(signed_builder.build()?.execute().await?)
 }
 
-/// The multisig auth procedure pays the transaction fee by creating a BATCH_FEE note funded with
+/// The multisig auth procedure pays the transaction fee by creating a TX_FEE note funded with
 /// the native fee asset, and the measured auth cycles stay within the multisig cycle estimate.
 /// This is the regression guard for `signature::estimate_multisig_authentication_cycles`. The
 /// ECDSA case additionally exercises the (large) overshoot of the Falcon-based per-signer bound

@@ -4,7 +4,7 @@ sidebar_position: 5.1
 
 # Fees
 
-Miden transactions pay a fee by creating a public BATCH_FEE note (see the [note documentation](note.md#batch_fee)) that whoever builds the batch collects as compensation. The note is created by the account's authentication procedure as part of authorizing the transaction.
+Miden transactions pay a fee by creating a public TX_FEE note (see the [note documentation](note.md#tx_fee)) that whoever builds the batch collects as compensation. The note is created by the account's authentication procedure as part of authorizing the transaction.
 
 ## How fees are computed
 
@@ -17,12 +17,12 @@ Miden transactions pay a fee by creating a public BATCH_FEE note (see the [note 
 There are two distinct quantities involved in paying a fee:
 
 - **The computed fee**: what the `compute_fee` kernel procedure returns. It is always denominated in the chain’s native fee asset, defined by the current reference block’s fee parameters. The native asset is chosen once as part of the genesis block and then copied to every newly created block, which means it stays consistent for a given network.
-- **The paid amount**: what actually ends up in the BATCH_FEE note. The transaction can pay in any asset the batch builder accepts - the payment asset and its conversion rate to the native fee asset are user-supplied, committed to via the transaction’s auth args (the auth args are the hash of the conversion info - a fungible faucet ID and a rate - together with a salt, with the preimage in the advice map). The paid amount is the computed fee converted at that rate; paying in the native asset itself means committing to the native fee faucet at rate 1/1.
+- **The paid amount**: what actually ends up in the TX_FEE note. The transaction can pay in any asset the batch builder accepts - the payment asset and its conversion rate to the native fee asset are user-supplied, committed to via the transaction’s auth args (the auth args are the hash of the conversion info - a fungible faucet ID and a rate - together with a salt, with the preimage in the advice map). The paid amount is the computed fee converted at that rate; paying in the native asset itself means committing to the native fee faucet at rate 1/1.
 
 The client software is responsible for choosing an asset and rate the intended batch builder accepts. Nothing at the protocol level validates the conversion: enforcement happens at the batch builder, which rejects transactions whose fee note underpays it.
 
 ## How fees are paid
 
-- The account’s authentication procedure computes the fee via `compute_fee` and creates a BATCH_FEE note funded from the account’s vault with the committed payment asset, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. Standard auth components do this automatically via the pay_fee procedures in the `miden::standards::fee` module.
+- The account’s authentication procedure computes the fee via `compute_fee` and creates a TX_FEE note funded from the account’s vault with the committed payment asset, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. Standard auth components do this automatically via the pay_fee procedures in the `miden::standards::fee` module.
 - Users should ensure their account’s vault holds sufficient balance of the payment asset to cover the fee. If it does not, or if no conversion info is committed for a non-zero fee, the transaction fails during the authentication procedure.
 - On chains with a zero `verification_base_fee`, no fee note is created and no conversion info is required.

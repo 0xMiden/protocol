@@ -83,8 +83,8 @@ impl AuthSingleSigAclConfig {
 /// ## Fees
 ///
 /// `auth_tx_acl` pays the transaction fee on both branches via
-/// `miden::standards::fee::pay_fee`: it creates a public BATCH_FEE note (see
-/// [`BatchFeeNote`](crate::note::BatchFeeNote)) funded from the account's vault, so on
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the payment asset. On
 /// chains with a zero verification base fee no note is created.
 ///

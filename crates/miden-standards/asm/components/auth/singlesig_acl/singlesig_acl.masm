@@ -46,7 +46,7 @@ const ACL_EXEMPT_POST_FEE_CYCLES = 1024
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
 #!
-#! Both branches pay the transaction fee by creating and funding a public BATCH_FEE note (see
+#! Both branches pay the transaction fee by creating and funding a public TX_FEE note (see
 #! miden::standards::fee::pay_fee); on chains with a zero verification base fee no note is
 #! created.
 #!
@@ -157,7 +157,7 @@ pub proc auth_tx_acl(auth_args: word)
         movdn.3 drop drop drop
         # => [scheme_id, CONVERSION_INFO, pad(16)]
 
-        # Pay the transaction fee before the summary is created so that the BATCH_FEE note and
+        # Pay the transaction fee before the summary is created so that the TX_FEE note and
         # the vault withdrawal funding it are covered by the signed transaction summary.
         # -----------------------------------------------------------------------------------------
 

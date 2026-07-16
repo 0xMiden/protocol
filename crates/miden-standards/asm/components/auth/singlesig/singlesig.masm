@@ -24,7 +24,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
-#! funding a public BATCH_FEE note (see miden::standards::fee::pay_fee). The
+#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The
 #! payment asset and conversion rate are committed to via the AUTH_ARGS (native fee asset at rate
 #! 1/1 for plain native payment). On chains with a zero verification base fee no note is created.
 #! Because the fee is paid before the transaction summary is created, the fee note and the vault
@@ -60,7 +60,7 @@ pub proc auth_tx(auth_args: word)
     movdn.3 drop drop drop
     # => [scheme_id, CONVERSION_INFO, pad(12)]
 
-    # Pay the transaction fee before the summary is created so that the BATCH_FEE note and the
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the
     # vault withdrawal funding it are covered by the signed transaction summary.
     # ---------------------------------------------------------------------------------------------
 

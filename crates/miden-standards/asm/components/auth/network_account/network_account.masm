@@ -35,7 +35,7 @@ const NETWORK_POST_FEE_CYCLES = 1024
 #! 2. Every consumed input note must have a script root present in the allowlist stored at
 #!    `ALLOWED_NOTE_SCRIPTS_SLOT`.
 #!
-#! If both checks pass, the transaction fee is paid by creating a public BATCH_FEE note funded
+#! If both checks pass, the transaction fee is paid by creating a public TX_FEE note funded
 #! from the account's vault in the native fee asset at rate 1/1 (see fee::pay_fee and
 #! fee::native_conversion_info). On chains with a zero verification base fee no note is created.
 #!

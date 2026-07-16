@@ -38,7 +38,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{BatchFeeNote, BurnNote};
+use miden_standards::note::{BurnNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::faucet::user_faucet_single_sig_acl;
 use miden_standards::testing::note::NoteBuilder;
@@ -112,10 +112,10 @@ async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    // exactly one output note is created: a public BATCH_FEE note carrying the native fee asset
+    // exactly one output note is created: a public TX_FEE note carrying the native fee asset
     assert_eq!(executed.output_notes().num_notes(), 1);
     let output_note = executed.output_notes().get_note(0);
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     let assets = output_note.assets();

@@ -17,7 +17,7 @@ pub use {is_signer} from miden::standards::auth::multisig
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
-#! funding a public BATCH_FEE note (see miden::standards::fee::pay_fee). The payment asset and
+#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The payment asset and
 #! conversion rate are committed to via the AUTH_ARGS (native fee asset at rate 1/1 for plain
 #! native payment). On chains with a zero verification base fee no note is created. Because the
 #! fee is paid before the transaction summary is created, the fee note and the vault withdrawal
@@ -36,7 +36,7 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig(auth_args: word)
-    # Pay the transaction fee before the summary is created so that the BATCH_FEE note and the
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the
     # vault withdrawal funding it are covered by the approver signatures. load_conversion_info
     # consumes the AUTH_ARGS, so keep a copy around to serve as the summary salt afterwards.
     # ---------------------------------------------------------------------------------------------

@@ -42,8 +42,8 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// `miden::standards::auth::signature::authenticate_transaction`.
 ///
 /// Before authenticating, `auth_tx` pays the transaction fee via
-/// `miden::standards::fee::pay_fee`: it creates a public BATCH_FEE note (see
-/// [`BatchFeeNote`](crate::note::BatchFeeNote)) funded from the account's vault, so on
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the payment asset. The
 /// payment asset and conversion rate are committed to via the transaction's auth args (see
 /// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo); native fee asset at rate 1/1 for
