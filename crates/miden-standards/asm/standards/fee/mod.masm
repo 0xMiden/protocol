@@ -1,0 +1,395 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::core::math::u64
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::protocol::tx
+use {Asset} from miden::protocol::types
+use miden::standards::assets::fungible_asset
+use miden::standards::notes::batch_fee
+
+# TYPE ALIASES
+# =================================================================================================
+
+#! A fee conversion rate, applied to an amount as ceil(amount * num / den).
+pub type ConversionRate = struct { num: u32, den: u32 }
+
+#! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
+#! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
+#! The empty word indicates that no conversion info was committed.
+pub type ConversionInfo = word
+
+# CONSTANTS
+# =================================================================================================
+
+# Estimated upper bound on the number of cycles a pay_fee flow spends after the kernel's
+# compute_fee call returns: rate conversion, fee-asset construction, serial-number derivation,
+# recipient computation, note creation and funding. Guarded by the fee-payment regression tests.
+const PAY_FEE_CYCLES = 8192
+
+# Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
+# returns: output vault build, output notes commitment, account patch and final account
+# commitments. The cost scales with the number of output notes (measured ~330 cycles per
+# asset-less note; ~1k-2k base for note-less transactions), so the estimate is computed as
+# BASE + PER_NOTE * (num_output_notes + 1), counting the fee note itself. Note that the per-note
+# figure is measured on asset-less notes; notes carrying many assets cost more, so asset-heavy
+# transactions may slightly under-estimate the fee (which fails closed: the batch builder may
+# reject the underpaying note). Guarded by the fee-payment regression tests.
+const POST_AUTH_EPILOGUE_BASE_CYCLES = 4096
+const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
+
+# Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
+# by 2^31 bounds the recombined amount by 2^63, so it can be recombined into a felt without
+# field overflow before fungible_asset::create validates it against the maximum asset amount.
+const MAX_CONVERTED_AMOUNT_HI_LIMB = 0x80000000
+
+# Multiplier recombining the u64 limbs of the converted amount into a felt (2^32).
+const U32_LIMB_MULTIPLIER = 0x0000000100000000
+
+# Domain-separation tag for the fee note's serial number ("fee" in hex): the serial number is
+# derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce, account_id_suffix,
+# account_id_prefix]) with FEE_DOMAIN = [FEE_DOMAIN_TAG, 0, 0, 0], so a fee note's serial number
+# cannot collide with serial numbers derived from similar tuples in other contexts.
+const FEE_DOMAIN_TAG = 0xFEE
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH = "conversion info loaded from the advice map does not match the commitment provided via the auth args"
+
+const ERR_FEE_CONVERSION_INFO_MISSING = "paying a non-zero fee requires conversion info committed via the auth args"
+
+const ERR_FEE_CONVERSION_RATE_NOT_U32 = "fee conversion rate numerator and denominator must be u32 values"
+
+const ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO = "fee conversion rate denominator must be non-zero"
+
+const ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO = "fee conversion rate numerator must be non-zero"
+
+const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit into a fungible asset amount"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Loads and verifies the fee conversion info committed to by the auth args.
+#!
+#! If the advice map contains an entry for the auth args, the entry must be the preimage
+#! [SALT, CONVERSION_INFO] of the commitment AUTH_ARGS = hash(CONVERSION_INFO || SALT); the
+#! verified conversion info is returned. If no entry exists, the empty word is returned to
+#! indicate that no conversion info was committed.
+#!
+#! For now this procedure only decodes the auth args; in the future it could also make an FPI
+#! call to an oracle to obtain the conversion rate.
+#!
+#! Inputs:
+#!   Operand stack: [AUTH_ARGS]
+#!   Advice map: { AUTH_ARGS: [SALT, CONVERSION_INFO] }
+#! Outputs:
+#!   Operand stack: [CONVERSION_INFO]
+#!
+#! Where:
+#! - AUTH_ARGS is the commitment hash(CONVERSION_INFO || SALT) to the conversion info.
+#! - SALT is an arbitrary word (e.g. used for replay protection by the caller).
+#! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
+#!   word if no conversion info was committed.
+#!
+#! Panics if:
+#! - the loaded conversion info does not match the AUTH_ARGS commitment.
+#!
+#! Invocation: exec
+pub proc load_conversion_info(auth_args: word) -> ConversionInfo
+    # empty auth args carry no commitment; return the empty word
+    exec.word::testz not
+    # => [has_commitment, AUTH_ARGS]
+
+    if.true
+        # check whether conversion info was provided for the auth args commitment
+        adv.has_mapkey adv_push
+        # => [has_conversion_info, AUTH_ARGS]
+
+        if.true
+            adv.push_mapval
+            # OS => [AUTH_ARGS]
+            # AS => [SALT, CONVERSION_INFO]
+
+            padw adv_loadw
+            # => [SALT, AUTH_ARGS]
+
+            padw adv_loadw
+            # => [CONVERSION_INFO, SALT, AUTH_ARGS]
+
+            # keep a copy of the conversion info around for after the commitment check
+            dupw movdnw.3
+            # => [CONVERSION_INFO, SALT, AUTH_ARGS, CONVERSION_INFO]
+
+            exec.poseidon2::merge
+            # => [COMMITMENT, AUTH_ARGS, CONVERSION_INFO]
+
+            assert_eqw.err=ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH
+            # => [CONVERSION_INFO]
+        else
+            # no conversion info was committed; return the empty word
+            dropw padw
+            # => [EMPTY_WORD]
+        end
+    end
+end
+
+#! Returns conversion info paying the fee in the native fee asset at rate 1/1.
+#!
+#! The faucet ID is read from the transaction's reference block.
+#!
+#! Inputs:  []
+#! Outputs: [CONVERSION_INFO]
+#!
+#! Where:
+#! - CONVERSION_INFO is [fee_faucet_id_suffix, fee_faucet_id_prefix, 1, 1].
+#!
+#! Invocation: exec
+pub proc native_conversion_info() -> ConversionInfo
+    push.1.1
+    # => [rate_num, rate_den]
+
+    exec.tx::get_fee_faucet_id
+    # => [CONVERSION_INFO]
+end
+
+#! Converts an amount at the given conversion rate, rounding up.
+#!
+#! The converted amount is ceil(amount * rate_num / rate_den).
+#!
+#! Inputs:  [amount, rate_num, rate_den]
+#! Outputs: [converted_amount]
+#!
+#! Where:
+#! - amount is the amount to convert.
+#! - rate_num and rate_den are the numerator and denominator of the conversion rate.
+#! - converted_amount is the converted amount.
+#!
+#! Panics if:
+#! - rate_num or rate_den is not a u32, or either of them is zero.
+#! - the converted amount overflows a fungible asset amount.
+#!
+#! Invocation: exec
+pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
+    # validate the conversion rate
+    movdn.2
+    # => [rate_num, rate_den, amount]
+
+    u32assert2.err=ERR_FEE_CONVERSION_RATE_NOT_U32
+    dup neq.0 assert.err=ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO
+    dup.1 neq.0 assert.err=ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO
+    # => [rate_num, rate_den, amount]
+
+    # compute amount * rate_num as a u64 product
+    movup.2 u32split
+    # => [amount_lo, amount_hi, rate_num, rate_den]
+
+    movup.2 push.0 swap
+    # => [rate_num, 0, amount_lo, amount_hi, rate_den]
+
+    exec.u64::overflowing_mul
+    # => [overflow, prod_lo, prod_hi, rate_den]
+
+    assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+    # => [prod_lo, prod_hi, rate_den]
+
+    # divide by rate_den, rounding up
+    movup.2 push.0 swap
+    # => [rate_den, 0, prod_lo, prod_hi]
+
+    exec.u64::divmod
+    # => [rem_lo, rem_hi, quot_lo, quot_hi]
+
+    u32or neq.0
+    # => [round_up, quot_lo, quot_hi]
+
+    push.0 swap
+    # => [round_up, 0, quot_lo, quot_hi]
+
+    exec.u64::overflowing_add
+    # => [overflow, converted_lo, converted_hi]
+
+    assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+    # => [converted_lo, converted_hi]
+
+    # bound the high limb so the recombined amount stays below 2^63
+    dup.1 push.MAX_CONVERTED_AMOUNT_HI_LIMB u32lt
+    assert.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+    # => [converted_lo, converted_hi]
+
+    # recombine the limbs into a felt amount
+    swap mul.U32_LIMB_MULTIPLIER add
+    # => [converted_amount]
+end
+
+#! Adds the internal cycle margins of a pay_fee flow to the caller's estimate of remaining
+#! authentication cycles.
+#!
+#! The margins cover the pay_fee tail (everything after the compute_fee call) and the post-auth
+#! kernel epilogue, whose cost scales with the number of output notes. All output notes except
+#! the fee note itself exist by the time a pay_fee flow runs, so the estimate is scaled by their
+#! count plus one.
+#!
+#! Inputs:  [num_extra_cycles]
+#! Outputs: [num_estimated_extra_cycles]
+#!
+#! Where:
+#! - num_extra_cycles is the estimated number of cycles the authentication procedure spends after
+#!   the pay_fee flow returns.
+#! - num_estimated_extra_cycles is the total estimate to pass to compute_fee.
+#!
+#! Invocation: exec
+pub proc apply_cycle_margins(num_extra_cycles: felt) -> felt
+    add.PAY_FEE_CYCLES add.POST_AUTH_EPILOGUE_BASE_CYCLES
+    # => [num_partial_extra_cycles]
+
+    exec.tx::get_num_output_notes add.1 mul.POST_AUTH_EPILOGUE_PER_NOTE_CYCLES add
+    # => [num_estimated_extra_cycles]
+end
+
+#! Creates a new BATCH_FEE output note and funds it with the provided asset from the
+#! account's vault.
+#!
+#! The note's serial number is derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
+#! account_id_suffix, account_id_prefix]).
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fee payment asset.
+#! - ASSET_VALUE is the value of the fee payment asset.
+#!
+#! Panics if:
+#! - the account vault holds less of the payment asset than the amount to be paid.
+#! - the maximum number of output notes is exceeded.
+#!
+#! Invocation: exec
+pub proc create_and_fund_fee_note(asset: Asset)
+    # derive the note's serial number
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+
+    exec.active_account::get_nonce
+    # => [initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+
+    exec.tx::get_block_number
+    # => [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+
+    # domain-separate the serial number by hashing the tuple with the FEE domain tag
+    push.0.0.0 push.FEE_DOMAIN_TAG
+    # => [FEE_DOMAIN, [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix],
+    #     ASSET_ID, ASSET_VALUE]
+
+    exec.poseidon2::merge
+    # => [SERIAL_NUM, ASSET_ID, ASSET_VALUE]
+
+    exec.batch_fee::prepare_note
+    # => [tag, note_type, RECIPIENT, ASSET_ID, ASSET_VALUE]
+
+    exec.output_note::create
+    # => [note_idx, ASSET_ID, ASSET_VALUE]
+
+    movdn.8
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+    # move the fee asset from the vault into the note
+    # (see basic_wallet::move_asset_to_note for the same sequence in call form)
+    dupw.1 dupw.1
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx]
+
+    exec.native_account::remove_asset dropw
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end
+
+#! Computes the transaction fee and pays it by creating and funding a public BATCH_FEE note.
+#!
+#! This is the fee payment flow for all account types: the caller supplies the decoded
+#! conversion info and invokes this procedure from the authentication procedure BEFORE any
+#! transaction summary is created, so that the BATCH_FEE note and the vault withdrawal funding
+#! it are covered by a signature where one exists. Signature-based components (e.g. singlesig,
+#! multisig) obtain the conversion info from the auth args via load_conversion_info, so the
+#! signer authorizes the payment asset and rate; network accounts pay in the native fee asset
+#! and obtain the conversion info via native_conversion_info, which needs no commitment since
+#! it is read from the reference block.
+#!
+#! The fee amount is computed via the compute_fee kernel procedure. num_extra_cycles only needs
+#! to cover the number of cycles the authentication procedure spends after this procedure
+#! returns (e.g. transaction summary creation, hashing and signature verification, see
+#! signature::estimate_authentication_cycles); this procedure adds its own tail cycles and the
+#! post-authentication kernel epilogue cycles internally.
+#!
+#! The paid amount is ceil(fee_amount * rate_num / rate_den) of the asset issued by the faucet
+#! in the conversion info.
+#!
+#! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
+#! note is created, no conversion info is required (the empty word is accepted) and the account
+#! vault is left untouched.
+#!
+#! Inputs:  [num_extra_cycles, CONVERSION_INFO]
+#! Outputs: []
+#!
+#! Where:
+#! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
+#!   the end of the authentication procedure.
+#! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
+#!   word if no conversion info was committed (only accepted when the computed fee is zero).
+#!
+#! Panics if:
+#! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
+#!   maximum cycle count.
+#! - the computed fee is non-zero and CONVERSION_INFO is the empty word.
+#! - the conversion rate is malformed or the converted amount overflows.
+#! - the account vault holds less of the payment asset than the amount to be paid.
+#! - the maximum number of output notes is exceeded.
+#!
+#! Invocation: exec
+pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
+    exec.apply_cycle_margins
+    # => [num_estimated_extra_cycles, CONVERSION_INFO]
+
+    # no output notes are excluded from the fee computation
+    padw movup.4
+    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO]
+
+    exec.tx::compute_fee
+    # => [fee_amount, CONVERSION_INFO]
+
+    dup eq.0
+    if.true
+        # a zero fee requires no fee note
+        drop dropw
+        # => []
+    else
+        movdn.4
+        # => [CONVERSION_INFO, fee_amount]
+
+        # a non-zero fee requires committed conversion info
+        exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
+        # => [CONVERSION_INFO, fee_amount]
+
+        # convert the fee amount into the payment asset's amount
+        # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
+        movup.2 movup.3 movup.4
+        # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix]
+
+        movup.2 swap
+        # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix]
+
+        exec.convert_amount
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix]
+
+        movdn.2
+        # => [faucet_id_suffix, faucet_id_prefix, payment_amount]
+
+        exec.fungible_asset::create
+        # => [ASSET_ID, ASSET_VALUE]
+
+        exec.create_and_fund_fee_note
+        # => []
+    end
+end
