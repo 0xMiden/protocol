@@ -210,7 +210,7 @@ end
 #! Inputs:  [a, b]
 #! Outputs: [min(a, b)]
 proc min
-    dup.1 dup.1 swap lt
+    dup dup.2 lt
     # => [a_lt_b, a, b]
     cdrop
     # => [min(a, b)]
