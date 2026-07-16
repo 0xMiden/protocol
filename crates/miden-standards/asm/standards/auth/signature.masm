@@ -172,12 +172,20 @@ end
 #! replay-protection recording). Signature verification runs at most once per signer and every
 #! supported scheme's verification cost is bounded by the Falcon estimate (the most expensive
 #! scheme), so the bound is num_of_signers * FALCON_512_POSEIDON2_AUTH_CYCLES plus a base margin
-#! covering the rest of the flow. This is a per-signer worst case: a multisig with many approvers
-#! but a low threshold, or one using the cheaper ECDSA scheme, only verifies a few (cheaper)
-#! signatures, so the estimate can overshoot the real cost by roughly the approver-to-verified
-#! ratio. Overestimation only ever raises the fee, and because the fee grows with ilog2 of the
-#! cycle count each doubling of the overshoot costs at most one extra verification_base_fee unit,
-#! so even a 10x overshoot costs only a few fee units.
+#! covering the rest of the flow.
+#!
+#! Approvers within one account may use different schemes (hybrid multisig): each approver's
+#! scheme id lives in a per-signer storage map that verify_signatures reads inside its loop, so
+#! there is no single per-account scheme to parameterize the estimate with (unlike
+#! estimate_authentication_cycles for singlesig). Summing per-signer estimates upfront would
+#! duplicate those map reads at a cost that itself grows with the approver count, so the bound
+#! conservatively assumes the most expensive scheme for every signer instead. This is a
+#! per-signer worst case: a multisig with many approvers but a low threshold, or one using the
+#! cheaper ECDSA scheme, only verifies a few (cheaper) signatures, so the estimate can overshoot
+#! the real cost by roughly the approver-to-verified ratio. Overestimation only ever raises the
+#! fee, and because the fee grows with ilog2 of the cycle count each doubling of the overshoot
+#! costs at most one extra verification_base_fee unit, so even a 10x overshoot costs only a few
+#! fee units.
 #!
 #! Inputs:  [num_of_signers]
 #! Outputs: [num_cycles]
