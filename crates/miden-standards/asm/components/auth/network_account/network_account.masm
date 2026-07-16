@@ -105,8 +105,7 @@ end
 
 #! Adds a note script root to the account's note-script allowlist.
 #!
-#! Gated by the account-wide `Authority` component: for a network account this must be configured
-#! in `OwnerControlled` or `RbacControlled` mode. The auth procedure reads the allowlist from the
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so an added root only takes effect from the next transaction.
 #!
 #! Inputs:  [SCRIPT_ROOT, pad(12)]
@@ -133,8 +132,7 @@ end
 
 #! Removes a note script root from the account's note-script allowlist.
 #!
-#! Gated by the account-wide `Authority` component: for a network account this must be configured
-#! in `OwnerControlled` or `RbacControlled` mode. The auth procedure reads the allowlist from the
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so a removed root only takes effect from the next transaction.
 #! Removing every root leaves the account unable to consume any note.
 #!
@@ -162,8 +160,7 @@ end
 
 #! Adds a tx script root to the account's tx-script allowlist.
 #!
-#! Gated by the account-wide `Authority` component: for a network account this must be configured
-#! in `OwnerControlled` or `RbacControlled` mode. The auth procedure reads the allowlist from the
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so an added root only takes effect from the next transaction.
 #!
 #! Inputs:  [SCRIPT_ROOT, pad(12)]
@@ -190,8 +187,7 @@ end
 
 #! Removes a tx script root from the account's tx-script allowlist.
 #!
-#! Gated by the account-wide `Authority` component: for a network account this must be configured
-#! in `OwnerControlled` or `RbacControlled` mode. The auth procedure reads the allowlist from the
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so a removed root only takes effect from the next transaction.
 #!
 #! Inputs:  [SCRIPT_ROOT, pad(12)]

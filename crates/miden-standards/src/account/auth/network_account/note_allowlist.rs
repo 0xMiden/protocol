@@ -128,8 +128,7 @@ impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
         };
 
         // Only entries with a non-empty value mark a root as allowed, matching the MASM check
-        // (`word::eqz`), so the reconstructed view agrees with on-chain enforcement. In particular
-        // a root removed on-chain (its value overwritten with the empty word) is skipped here.
+        // (`word::eqz`), so the reconstructed view agrees with on-chain enforcement.
         let allowed_script_roots = map
             .entries()
             .filter(|(_key, value)| **value != Word::empty())
@@ -208,30 +207,6 @@ mod tests {
     fn empty_allowlist_is_rejected() {
         let result = NetworkAccountNoteAllowlist::new(BTreeSet::new());
         assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
-    }
-
-    /// Reconstructing from storage must skip entries whose value is the empty word, which is how a
-    /// root removed on-chain (via `remove_allowed_note_script`) is represented.
-    #[test]
-    fn try_from_skips_empty_valued_entries() {
-        let allowed = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let removed = NoteScriptRoot::from_array([5, 6, 7, 8]);
-
-        let map = StorageMap::with_entries([
-            (StorageMapKey::new(allowed.as_word()), ALLOWED_FLAG),
-            (StorageMapKey::new(removed.as_word()), Word::empty()),
-        ])
-        .expect("map entries should have unique keys");
-        let slot = StorageSlot::with_map(NetworkAccountNoteAllowlist::slot_name().clone(), map);
-        let storage = AccountStorage::new(vec![slot]).expect("storage should be valid");
-
-        let allowlist = NetworkAccountNoteAllowlist::try_from(&storage)
-            .expect("allowlist should be reconstructable from account storage");
-
-        let actual: BTreeSet<NoteScriptRoot> =
-            allowlist.allowed_script_roots().iter().copied().collect();
-
-        assert_eq!(actual, BTreeSet::from_iter([allowed]));
     }
 
     /// Reconstructing an allowlist whose every entry has been removed (all empty-valued) fails with

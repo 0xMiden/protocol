@@ -17,12 +17,10 @@ use miden::core::word
 # CONSTANTS
 # =================================================================================================
 
-# Map entry value marking a tx script root as allowed. Any non-empty word works; [1, 0, 0, 0]
-# mirrors the Rust `ALLOWED_FLAG` for readability when inspecting storage.
+# Map entry value marking a tx script root as allowed.
 const ALLOWED_FLAG = [1, 0, 0, 0]
 
-# Map entry value marking a tx script root as not allowed. Writing the empty word removes a root:
-# the allowlist check treats the empty word as absent.
+# Map entry value marking a tx script root as not allowed.
 const EMPTY_WORD = [0, 0, 0, 0]
 
 # ERRORS
@@ -84,7 +82,7 @@ end
 #! Adds a tx script root to the allowlist storage map at the given slot id.
 #!
 #! Marks `SCRIPT_ROOT` as an allowed transaction script root. Adding a root that is already allowed
-#! is a no-op. This procedure performs NO authorization; callers are responsible for gating it.
+#! is a no-op.
 #!
 #! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
 #! Outputs: []
@@ -96,8 +94,6 @@ end
 #!
 #! Invocation: exec
 pub proc add_tx_script
-    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT]
-
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
@@ -117,8 +113,7 @@ end
 #! Removes a tx script root from the allowlist storage map at the given slot id.
 #!
 #! Writes the empty word for `SCRIPT_ROOT`, which the allowlist check treats as not allowed.
-#! Removing a root that is not currently allowed is a no-op. This procedure performs NO
-#! authorization; callers are responsible for gating it.
+#! Removing a root that is not currently allowed is a no-op.
 #!
 #! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
 #! Outputs: []
@@ -130,8 +125,6 @@ end
 #!
 #! Invocation: exec
 pub proc remove_tx_script
-    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT]
-
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 

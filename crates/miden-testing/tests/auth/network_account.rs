@@ -7,7 +7,7 @@ use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
-use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
@@ -331,8 +331,7 @@ fn build_owner_controlled_account(
 
     Ok(AccountBuilder::new([7; 32])
         .with_auth_component(auth_component)
-        .with_component(Ownable2Step::new(owner))
-        .with_component(Authority::OwnerControlled)
+        .with_components(AccessControl::Ownable2Step { owner })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .build_existing()?)
