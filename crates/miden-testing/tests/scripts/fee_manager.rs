@@ -43,7 +43,7 @@ fn fee_manager() -> anyhow::Result<FeeManager> {
     let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
     Ok(FeeManager::builder()
-        .active_fee_policy(FeePolicy::constant(constant_fee_policy))
+        .active_fee_policy(constant_fee_policy.into())
         .allowed_fee_policy(custom_fee_policy()?)
         .build())
 }
@@ -63,6 +63,8 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
+        use {{Asset, NoteScriptRoot}} from miden::protocol::types
+
         #! Fee policy charging a fixed amount in an asset identified by the note's storage
         #! commitment.
         #!
@@ -71,7 +73,12 @@ fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
         #!
         #! Invocation: call
         @account_procedure
-        pub proc compute_note_fee
+        pub proc compute_note_fee(
+            note_script_root: NoteScriptRoot,
+            storage_commitment: word,
+            assets_commitment: word,
+            attachments_commitment: word
+        ) -> Asset
             # keep STORAGE_COMMITMENT as the fee asset ID, dropping the other note parameters
             dropw swapw dropw swapw dropw
             # => [STORAGE_COMMITMENT, pad(12)]
@@ -103,16 +110,6 @@ fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     Ok(FeePolicy::custom(root, [component])?)
 }
 
-/// Returns the asset value word `[fee_amount, 0, 0, 0]` for the given amount.
-fn fee_value_word(amount: u64) -> anyhow::Result<Word> {
-    Ok(Word::new([
-        AssetAmount::new(amount)?.into(),
-        Felt::ZERO,
-        Felt::ZERO,
-        Felt::ZERO,
-    ]))
-}
-
 /// Builds an account exposing the fee manager procedures, owned by `owner` via `Ownable2Step`
 /// with an owner-controlled `Authority` so the owner-gated `set_fee_policy` can be exercised.
 fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Result<Account> {
@@ -128,10 +125,11 @@ fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Result<Account>
 
 /// Builds a transaction script that calls `estimate_note_fee` and asserts the returned fee
 /// asset. The tx script argument supplies NOTE_SCRIPT_ROOT on top of the initial operand stack;
-/// the zeros below it serve as the remaining note parameters, forming the full 16-felt
-/// `estimate_note_fee` inputs. A wrong result aborts the transaction, so successful execution
-/// proves the returned fee asset.
+/// the given STORAGE_COMMITMENT is pushed below it, and the remaining zeros serve as the other
+/// note parameters, forming the full 16-felt `estimate_note_fee` inputs. A wrong result aborts
+/// the transaction, so successful execution proves the returned fee asset.
 fn estimate_note_fee_tx_script_code(
+    storage_commitment: Word,
     expected_fee_asset_id: Word,
     expected_fee_value: Word,
 ) -> String {
@@ -141,7 +139,12 @@ fn estimate_note_fee_tx_script_code(
 
         @transaction_script
         pub proc main
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+            # => [NOTE_SCRIPT_ROOT, pad(12)]
+
+            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT
+            push.{storage_commitment} swapw
+            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+
             call.fee_manager::estimate_note_fee
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
@@ -200,9 +203,11 @@ async fn estimate_note_fee_returns_scheduled_fee(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
+    // The constant fee policy ignores the storage commitment, so an all-zero one is passed.
     let tx_script_code = estimate_note_fee_tx_script_code(
+        Word::empty(),
         AssetId::new_fungible(fee_faucet_id()?).to_word(),
-        fee_value_word(expected_amount)?,
+        AssetAmount::new(expected_amount)?.to_word(),
     );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
@@ -249,26 +254,25 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // The custom policy identifies the fee asset by the note's storage commitment.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
 
-    // The tx script argument supplies NOTE_SCRIPT_ROOT (arbitrary here - the custom policy
-    // ignores it) on top of the initial operand stack; STORAGE_COMMITMENT is placed below it,
-    // and the remaining zeros serve as the other note parameters.
+    // The note parameters are pushed inline: STORAGE_COMMITMENT first, then an arbitrary
+    // NOTE_SCRIPT_ROOT (the custom policy ignores it) on top; the zeros below serve as the
+    // other note parameters.
     let tx_script_code = format!(
         r#"
         use miden::protocol::tx
 
         @transaction_script
         pub proc main
-            # => [NOTE_SCRIPT_ROOT, pad(12)]
+            # => [pad(16)]
 
-            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT
-            push.{storage_commitment} swapw
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+            push.{storage_commitment} push.{note_script_root}
+            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
 
             # push the estimate_note_fee procedure root and the foreign account ID
             push.{estimate_note_fee_root}
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
-            #     NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+            #     NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
 
             exec.tx::execute_foreign_procedure
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -282,11 +286,12 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
             # => [pad(16)]
         end
         "#,
+        note_script_root = NoteScriptRoot::from_array([9, 9, 9, 9]).as_word(),
         estimate_note_fee_root = FeeManager::estimate_note_fee_root().mast_root(),
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         expected_fee_asset_id = storage_commitment,
-        expected_fee_value = fee_value_word(CUSTOM_FEE_AMOUNT)?,
+        expected_fee_value = AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
@@ -297,7 +302,6 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         .build_tx_context(native_account.id(), &[], &[])?
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
-        .tx_script_args(NoteScriptRoot::from_array([9, 9, 9, 9]).as_word())
         .build()?
         .execute()
         .await?;
@@ -339,10 +343,14 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // With the custom policy active, the previously priced root is priced by the custom logic:
-    // the fee asset ID echoes STORAGE_COMMITMENT (all zeros in this script) and the amount is
-    // the fixed custom fee.
-    let tx_script_code =
-        estimate_note_fee_tx_script_code(Word::empty(), fee_value_word(CUSTOM_FEE_AMOUNT)?);
+    // the fee asset ID echoes the STORAGE_COMMITMENT supplied to the estimate script and the
+    // amount is the fixed custom fee.
+    let storage_commitment = Word::from([11u32, 12, 13, 14]);
+    let tx_script_code = estimate_note_fee_tx_script_code(
+        storage_commitment,
+        storage_commitment,
+        AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
+    );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     mock_chain

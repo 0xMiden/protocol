@@ -29,8 +29,9 @@ pub enum FeePolicyError {
 /// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct via [`Self::constant`] or [`Self::custom`]. Pass to the [`super::FeeManager`]
-/// builder via `active_fee_policy` or `allowed_fee_policy`.
+/// Construct from a concrete policy (e.g. via `From<ConstantFeePolicy>`) or via
+/// [`Self::custom`]. Pass to the [`super::FeeManager`] builder via `active_fee_policy` or
+/// `allowed_fee_policy`.
 #[derive(Debug, Clone)]
 pub struct FeePolicy {
     root: AccountProcedureRoot,
@@ -38,14 +39,6 @@ pub struct FeePolicy {
 }
 
 impl FeePolicy {
-    /// Returns a fee policy charging the constant fee scheduled for the note's script root.
-    pub fn constant(policy: ConstantFeePolicy) -> Self {
-        Self {
-            root: ConstantFeePolicy::root(),
-            components: vec![policy.into()],
-        }
-    }
-
     /// Returns a fee policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
@@ -68,6 +61,16 @@ impl FeePolicy {
     /// Returns the procedure root of the policy this descriptor resolves to.
     pub fn root(&self) -> AccountProcedureRoot {
         self.root
+    }
+}
+
+impl From<ConstantFeePolicy> for FeePolicy {
+    /// Returns a fee policy charging the constant fee scheduled for the note's script root.
+    fn from(policy: ConstantFeePolicy) -> Self {
+        Self {
+            root: ConstantFeePolicy::root(),
+            components: vec![policy.into()],
+        }
     }
 }
 

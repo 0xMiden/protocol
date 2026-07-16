@@ -11,6 +11,8 @@
 
 use miden::protocol::active_account
 
+use {Asset, NoteScriptRoot, StorageMapKey} from miden::protocol::types
+
 # CONSTANTS
 # =================================================================================================
 
@@ -44,7 +46,12 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::
 #!
 #! Invocation: call
 @account_procedure
-pub proc compute_note_fee
+pub proc compute_note_fee(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
     exec.build_note_fee_lookup_key
     # => [LOOKUP_KEY, pad(12)]
 
@@ -73,7 +80,12 @@ end
 #! Outputs: [LOOKUP_KEY]
 #!
 #! Invocation: exec
-proc build_note_fee_lookup_key
+proc build_note_fee_lookup_key(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> StorageMapKey
     swapw.3 dropw dropw dropw
     # => [LOOKUP_KEY]
 end

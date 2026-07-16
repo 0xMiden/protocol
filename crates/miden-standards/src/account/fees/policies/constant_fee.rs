@@ -20,7 +20,6 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -173,12 +172,10 @@ impl From<ConstantFeePolicy> for AccountComponent {
 
         // Each fee is stored as an asset value word so that `compute_note_fee` can return the
         // map entry as FEE_ASSET_VALUE unmodified.
-        let entries = policy.fee_schedule.into_iter().map(|(root, fee)| {
-            (
-                StorageMapKey::new(root.as_word()),
-                Word::new([fee.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-            )
-        });
+        let entries = policy
+            .fee_schedule
+            .into_iter()
+            .map(|(root, fee)| (StorageMapKey::new(root.as_word()), fee.to_word()));
         let fee_schedule_map = StorageMap::with_entries(entries)
             .expect("fee schedule entries should produce a valid storage map");
         let fee_schedule_slot = StorageSlot::with_map(
@@ -207,7 +204,7 @@ mod tests {
 
     use super::*;
     use crate::account::auth::NoAuth;
-    use crate::account::fees::{FeeManager, FeePolicy};
+    use crate::account::fees::FeeManager;
 
     fn fee_faucet_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
@@ -222,8 +219,7 @@ mod tests {
         let fee = AssetAmount::new(500)?;
 
         let policy = ConstantFeePolicy::new(fee_faucet_id()).with_fee(script_root, fee);
-        let fee_manager =
-            FeeManager::builder().active_fee_policy(FeePolicy::constant(policy)).build();
+        let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
 
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
@@ -244,7 +240,7 @@ mod tests {
         };
         assert_eq!(
             map.get(&StorageMapKey::new(script_root.as_word())),
-            Word::new([Felt::from(500u32), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            fee.to_word(),
             "the fee entry should be stored as an asset value word"
         );
 

@@ -148,7 +148,7 @@ impl FeeManager {
     pub const NAME: &'static str = "miden::standards::fees::fee_manager";
 
     /// Component description used in [`AccountComponentMetadata`].
-    pub const DESCRIPTION: &'static str =
+    const DESCRIPTION: &'static str =
         "Fee manager dispatching note fee estimation to a configurable fee policy";
 
     const ESTIMATE_NOTE_FEE_PROC_NAME: &'static str = "estimate_note_fee";
@@ -327,7 +327,7 @@ mod tests {
 
     fn fee_manager() -> FeeManager {
         FeeManager::builder()
-            .active_fee_policy(FeePolicy::constant(ConstantFeePolicy::new(fee_faucet_id())))
+            .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id()).into())
             .allowed_fee_policy(custom_fee_policy())
             .build()
     }
