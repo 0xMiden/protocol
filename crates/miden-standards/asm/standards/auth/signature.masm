@@ -13,6 +13,14 @@ use miden::standards::auth
 const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
 
+# Estimated upper bounds on the number of cycles authenticate_transaction takes per signature
+# scheme, for use as the num_extra_cycles input of fee::pay_fee. Measured values (see
+# bin/bench-transaction/bench-tx.json): ECDSA ~3.7k-4.1k, Falcon ~71.6k-72k. Overestimation is
+# cheap: the fee grows with ilog2 of the cycle count, so a <2x overshoot costs at most one
+# verification_base_fee unit. Guarded by the fee-payment regression tests.
+const ECDSA_K256_KECCAK_AUTH_CYCLES = 8000
+const FALCON_512_POSEIDON2_AUTH_CYCLES = 80000
+
 # Local Memory Addresses for multisig operations
 const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
 const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
@@ -119,6 +127,32 @@ proc verify_signature_by_scheme
             push.0 assert.err=ERR_INVALID_SCHEME_ID
         end
     end
+end
+
+#! Returns a conservative upper bound on the number of cycles authenticate_transaction takes for
+#! the given signature scheme.
+#!
+#! Intended to be passed as the num_extra_cycles input of fee::pay_fee when fee payment happens
+#! right before authenticate_transaction. Unknown scheme ids return the largest bound; the
+#! authentication itself aborts on them later.
+#!
+#! Inputs:  [scheme_id]
+#! Outputs: [num_cycles]
+#!
+#! Where:
+#! - scheme_id is the signature scheme id (1 for ecdsa_k256_keccak, 2 for falcon512_poseidon2).
+#! - num_cycles is the estimated upper bound on authenticate_transaction's cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_authentication_cycles
+    eq.ECDSA_K256_KECCAK_SCHEME_ID
+    # => [is_ecdsa]
+
+    push.FALCON_512_POSEIDON2_AUTH_CYCLES push.ECDSA_K256_KECCAK_AUTH_CYCLES
+    # => [ecdsa_cycles, falcon_cycles, is_ecdsa]
+
+    movup.2 cdrop
+    # => [num_cycles]
 end
 
 #! Returns 1 if scheme_id is supported, else 0.
