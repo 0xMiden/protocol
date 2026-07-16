@@ -1,0 +1,139 @@
+use miden::protocol::active_note
+use miden::protocol::note
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use miden::standards::wallets::basic as basic_wallet
+use miden::standards::note::note_creator
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of storage items of a BATCH_FEE note (BATCH_FEE notes carry no storage).
+const NUM_STORAGE_ITEMS = 0
+
+# Memory address passed as the note storage pointer when building the recipient. Since BATCH_FEE notes
+# carry no storage, the pointer is never dereferenced; it only needs to be word-aligned. Passing
+# address 0 is only valid while NUM_STORAGE_ITEMS is 0.
+const STORAGE_PTR = 0
+
+# The unique note tag of BATCH_FEE notes (0xFEE, "fee" in hex). Its 18 least significant bits are
+# non-zero, so the tag can never collide with a default account-target tag, which has its 18 least
+# significant bits set to zero.
+# Must be kept in sync with the Rust `BatchFeeNote::TAG` constant.
+const BATCH_FEE_NOTE_TAG = 0xFEE
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "BATCH_FEE note expects exactly 0 note storage items"
+
+# PROCEDURES
+# =================================================================================================
+
+#! BATCH_FEE note script: adds all assets from the note to the consuming account.
+#!
+#! A BATCH_FEE note is the canonical way for a transaction to pay its fee to the batch builder. Unlike
+#! P2ID, the note does not restrict who can consume it: any account can consume the note and claim
+#! its assets.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::wallets::basic::receive_asset procedure.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note carries a non-zero number of storage items.
+#! - the account does not expose miden::standards::wallets::basic::receive_asset procedure.
+#! - the same non-fungible asset already exists in the account.
+#! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
+#!   greater than 2^63.
+@note_script
+pub proc main
+    # make sure the note carries no storage items
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items]
+
+    eq.0 assert.err=ERR_BATCH_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    exec.basic_wallet::add_assets_to_account
+    # => []
+end
+
+#! Computes the BATCH_FEE recipient and returns the note-creation arguments for the given serial number.
+#!
+#! This procedure handles:
+#! - Obtaining the note script root via procref
+#! - Building the recipient (BATCH_FEE notes carry no storage)
+#!
+#! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
+#! already inside an account procedure and can create the note directly via
+#! `exec.output_note::create`. Otherwise use `batch_fee::create_output_note`, which routes creation
+#! through the account's `create_note` procedure and can therefore be used from note or transaction
+#! scripts.
+#!
+#! The returned arguments are always the public note type and the unique BATCH_FEE_NOTE_TAG note tag.
+#!
+#! Inputs:  [SERIAL_NUM]
+#! Outputs: [tag, note_type, RECIPIENT]
+#!
+#! Where:
+#! - SERIAL_NUM is the serial number of the note.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the storage type of the note.
+#! - RECIPIENT is the computed recipient digest of the note (4 elements).
+#!
+#! Invocation: exec
+pub proc prepare_note
+    procref.main
+    # => [SCRIPT_ROOT, SERIAL_NUM]
+
+    swapw
+    # => [SERIAL_NUM, SCRIPT_ROOT]
+
+    # BATCH_FEE notes carry no storage, so the storage pointer is never dereferenced
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR
+    # => [storage_ptr, num_storage_items=0, SERIAL_NUM, SCRIPT_ROOT]
+
+    exec.note::compute_and_store_recipient
+    # => [RECIPIENT]
+
+    push.NOTE_TYPE_PUBLIC push.BATCH_FEE_NOTE_TAG
+    # => [tag, note_type, RECIPIENT]
+end
+
+#! Creates a new BATCH_FEE output note from the given serial number and returns its index.
+#!
+#! Note creation must originate from the account context, so this procedure routes creation through
+#! the account's `note_creator::create_note` procedure. This lets `batch_fee::create_output_note` be used
+#! from contexts outside the account code, such as note or transaction scripts. Callers that are
+#! already inside an account procedure should instead use `batch_fee::prepare_note` together with
+#! `exec.output_note::create`.
+#!
+#! The created note is always public and carries the unique BATCH_FEE_NOTE_TAG note tag.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::note::note_creator::create_note procedure.
+#!
+#! Inputs:  [SERIAL_NUM]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - SERIAL_NUM is the serial number of the note.
+#! - note_idx is the index of the created note.
+#!
+#! Invocation: exec
+pub proc create_output_note
+    exec.prepare_note
+    # => [tag, note_type, RECIPIENT]
+
+    # pad the stack before `call`
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.note_creator::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
+end

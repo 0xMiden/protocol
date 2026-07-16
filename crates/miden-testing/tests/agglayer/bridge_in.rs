@@ -27,7 +27,6 @@ use miden_agglayer::{
     agglayer_library,
     create_existing_agglayer_faucet,
     create_existing_agglayer_faucet_with_callbacks,
-    create_existing_bridge_account,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -52,6 +51,7 @@ use super::test_utils::{
     ClaimDataSource,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    create_existing_bridge_account_with_roles,
 };
 
 // CONSTANTS
@@ -135,9 +135,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -156,9 +156,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -251,7 +251,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -440,7 +440,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -451,9 +451,9 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -542,7 +542,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
             is_native: false,
             metadata_hash: leaf_data.metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -559,7 +559,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
             is_native: false,
             metadata_hash: leaf_data.metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -632,9 +632,9 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -653,9 +653,9 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -708,7 +708,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
             miden_claim_amount,
         },
         bridge_account.id(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
@@ -724,7 +724,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -782,8 +782,8 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -799,9 +799,9 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -846,7 +846,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let claim_note_1 = ClaimNote::create(
         claim_inputs_1,
         bridge_account.id(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(claim_note_1.clone()));
@@ -861,7 +861,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let claim_note_2 = ClaimNote::create(
         claim_inputs_2,
         bridge_account.id(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(claim_note_2.clone()));
@@ -876,7 +876,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash: leaf_data.metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -943,8 +943,8 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -960,9 +960,9 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -1004,8 +1004,12 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         miden_claim_amount,
     };
 
-    let claim_note =
-        ClaimNote::create(claim_inputs, bridge_account.id(), bridge_admin.id(), builder.rng_mut())?;
+    let claim_note = ClaimNote::create(
+        claim_inputs,
+        bridge_account.id(),
+        faucet_manager.id(),
+        builder.rng_mut(),
+    )?;
     builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
@@ -1018,7 +1022,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash: leaf_data.metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -1096,8 +1100,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    // Bridge admin / GER injector / bridge account.
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // Faucet manager / GER injector / bridge account.
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -1108,9 +1112,9 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -1180,7 +1184,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
             is_native: true,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -1379,7 +1383,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -1390,9 +1394,9 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -1452,7 +1456,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
             is_native: true,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -1622,7 +1626,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -1634,9 +1638,9 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -1709,7 +1713,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -1763,7 +1767,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
@@ -1774,9 +1778,9 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -1844,7 +1848,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -1861,7 +1865,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;

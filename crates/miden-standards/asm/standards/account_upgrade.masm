@@ -1,0 +1,41 @@
+# miden::standards::account_upgrade
+#
+# Account upgrade manager. Exposes `upgrade` as an `Invocation: call` procedure gated by the
+# account-wide `Authority` component.
+#
+# Companion component required on the account:
+# - `Authority` — provides the auth dispatch the body calls into.
+
+use miden::standards::access::authority
+use miden::protocol::native_account
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Records the commitments describing an upgrade of the account's code and storage, gated by the
+#! account-wide `Authority` component.
+#!
+#! This is currently a no-op beyond storing the two commitments in kernel memory (via the protocol
+#! `native_account::upgrade` wrapper); the actual application of the upgrade is not yet implemented,
+#! and the commitment formats are not yet defined.
+#!
+#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
+#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the invocation does not originate from the native account.
+#!
+#! Invocation: call
+@account_procedure
+pub proc upgrade
+    exec.authority::assert_authorized
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.native_account::upgrade
+    # => [pad(16)]
+end

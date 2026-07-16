@@ -1,5 +1,6 @@
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
+use miden_agglayer::testing::create_existing_bridge_account_with_roles;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -11,7 +12,6 @@ use miden_agglayer::{
     MetadataHash,
     UpdateGerNote,
     create_existing_agglayer_faucet,
-    create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
@@ -191,8 +191,8 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
 pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -208,9 +208,9 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -281,7 +281,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
             is_native: false,
             metadata_hash: config_metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -409,8 +409,8 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
 
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -425,9 +425,9 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
     })?;
 
     // CREATE BRIDGE ACCOUNT
-    let mut bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin.id(),
+        faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
     );
@@ -467,7 +467,7 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
             is_native: false,
             metadata_hash,
         },
-        bridge_admin.id(),
+        faucet_manager.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
