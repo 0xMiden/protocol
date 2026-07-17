@@ -1,6 +1,4 @@
 use agglayer::common::utils
-use miden::core::crypto::hashes::keccak256
-use miden::core::word
 use miden::protocol::account_id
 
 # TYPE ALIASES

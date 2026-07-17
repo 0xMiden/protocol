@@ -1,6 +1,5 @@
 mod allowlist;
 mod authority;
-mod batch_fee;
 mod blocklist;
 mod code_inspection;
 mod expiration;
@@ -20,4 +19,5 @@ mod rbac;
 mod rbac_action;
 mod send_note;
 mod swap;
+mod tx_fee;
 mod warden;

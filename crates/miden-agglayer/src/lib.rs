@@ -6,9 +6,8 @@ use alloc::collections::BTreeSet;
 
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::assembly::Library;
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::Package;
 use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
@@ -68,33 +67,37 @@ pub use utils::Keccak256Output;
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masp"));
-    Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
+static AGGLAYER_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
+    Package::read_from_bytes_trusted(bytes).expect("shipped AggLayer package is well-formed")
 });
 
-static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masp"));
-    Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
+static BRIDGE_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped bridge component package is well-formed")
 });
 
-static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masp"));
-    Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
+static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped faucet component package is well-formed")
 });
 
 /// Returns the AggLayer Library containing all agglayer modules.
-pub fn agglayer_library() -> Library {
+pub fn agglayer_library() -> Package {
     AGGLAYER_LIBRARY.clone()
 }
 
 /// Returns the Bridge component library.
-fn agglayer_bridge_component_library() -> Library {
+fn agglayer_bridge_component_library() -> Package {
     BRIDGE_COMPONENT_LIBRARY.clone()
 }
 
 /// Returns the Faucet component library.
-fn agglayer_faucet_component_library() -> Library {
+fn agglayer_faucet_component_library() -> Package {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
 

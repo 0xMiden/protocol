@@ -1,14 +1,29 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::core::word
+use miden::standards::fee
 
-#! Increment the nonce only if the account commitment has changed
+# CONSTANTS
+# =================================================================================================
+
+# Estimated upper bound on the number of cycles this auth procedure spends after pay_fee
+# returns: the account commitment comparison and the nonce increment.
+const NO_AUTH_POST_FEE_CYCLES = 1024
+
+# AUTH PROCEDURE
+# =================================================================================================
+
+#! Pay the transaction fee and increment the nonce only if the account commitment has changed
 #!
 #! This authentication procedure provides minimal authentication by checking if the account
 #! state has actually changed during transaction execution. It compares the initial account
 #! commitment with the current commitment and only increments the nonce if they differ.
 #! This avoids unnecessary nonce increments for transactions that don't modify
 #! the account state.
+#!
+#! The transaction fee is paid by creating a public TX_FEE note funded from the account's
+#! vault in the native fee asset at rate 1/1 (see fee::pay_fee and fee::native_conversion_info).
+#! On chains with a zero verification base fee no note is created.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -17,6 +32,16 @@ use miden::core::word
 @auth_script
 pub proc auth_no_auth
     dropw
+    # => [pad(16)]
+
+    # ---- Pay the transaction fee in the native fee asset ----
+    exec.fee::native_conversion_info
+    # => [CONVERSION_INFO, pad(16)]
+
+    push.NO_AUTH_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
+
+    exec.fee::pay_fee
     # => [pad(16)]
 
     # check if the account state has changed by comparing initial and final commitments

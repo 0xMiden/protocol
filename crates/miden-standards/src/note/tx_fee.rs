@@ -25,41 +25,41 @@ use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the BATCH_FEE note script procedure in the standards library.
-const BATCH_FEE_SCRIPT_PATH: &str = "::miden::standards::notes::batch_fee::main";
+/// Path to the TX_FEE note script procedure in the standards library.
+const TX_FEE_SCRIPT_PATH: &str = "::miden::standards::notes::tx_fee::main";
 
-// Initialize the BATCH_FEE note script only once
-static BATCH_FEE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the TX_FEE note script only once
+static TX_FEE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(BATCH_FEE_SCRIPT_PATH);
+    let path = Path::new(TX_FEE_SCRIPT_PATH);
     NoteScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains BATCH_FEE note script procedure")
+        .expect("Standards library contains TX_FEE note script procedure")
 });
 
 // FEE NOTE
 // ================================================================================================
 
-/// A BATCH_FEE note: the canonical way for a transaction to pay its fee to a batch builder.
+/// A TX_FEE note: the canonical way for a transaction to pay its fee to a batch builder.
 ///
 /// Unlike a [`P2idNote`](crate::note::P2idNote), the note does not restrict who can consume it:
 /// any account (i.e. whichever account builds the batch) can consume the note and claim its
 /// assets. The note is completely unopinionated about which assets are used to pay the fee.
 ///
-/// BATCH_FEE notes are always [public](NoteType::Public), carry no storage and no attachments, and
-/// are tagged with the unique [`BatchFeeNote::TAG`].
+/// TX_FEE notes are always [public](NoteType::Public), carry no storage and no attachments, and
+/// are tagged with the unique [`TxFeeNote::TAG`].
 ///
-/// Construct one with the [builder](BatchFeeNote::builder), which requires at least one asset.
-/// Convert a `BatchFeeNote` into a protocol [`Note`] infallibly via `Note::from`.
+/// Construct one with the [builder](TxFeeNote::builder), which requires at least one asset.
+/// Convert a `TxFeeNote` into a protocol [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct BatchFeeNote {
+pub struct TxFeeNote {
     sender: AccountId,
     serial_number: Word,
     assets: NoteAssets,
 }
 
 #[bon::bon]
-impl BatchFeeNote {
-    /// Builds a new [`BatchFeeNote`].
+impl TxFeeNote {
+    /// Builds a new [`TxFeeNote`].
     ///
     /// # Errors
     ///
@@ -73,7 +73,7 @@ impl BatchFeeNote {
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
-            return Err(NoteError::other("a BATCH_FEE note must contain at least one asset"));
+            return Err(NoteError::other("a TX_FEE note must contain at least one asset"));
         }
 
         let assets = NoteAssets::new(assets)?;
@@ -82,21 +82,21 @@ impl BatchFeeNote {
     }
 }
 
-impl BatchFeeNote {
+impl TxFeeNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Expected number of storage items of the BATCH_FEE note.
+    /// Expected number of storage items of the TX_FEE note.
     pub const NUM_STORAGE_ITEMS: usize = 0;
 
     /// The raw `u32` value of [`Self::TAG`] (`0xFEE`, "fee" in hex), also used as the
     /// domain-separation tag by [`Self::derive_serial_number`].
     ///
-    /// This constant must be kept in sync with the `BATCH_FEE_NOTE_TAG` and `FEE_DOMAIN_TAG`
+    /// This constant must be kept in sync with the `TX_FEE_NOTE_TAG` and `FEE_DOMAIN_TAG`
     /// constants in the standards MASM library.
     pub const TAG_ID: u32 = 0xfee;
 
-    /// The unique note tag of BATCH_FEE notes.
+    /// The unique note tag of TX_FEE notes.
     ///
     /// The tag's 18 least significant bits are non-zero, so it can never collide with a default
     /// account-target tag, which has its 18 least significant bits set to zero (see
@@ -108,14 +108,14 @@ impl BatchFeeNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the BATCH_FEE note.
+    /// Returns the script of the TX_FEE note.
     pub fn script() -> NoteScript {
-        BATCH_FEE_SCRIPT.clone()
+        TX_FEE_SCRIPT.clone()
     }
 
-    /// Returns the BATCH_FEE note script root.
+    /// Returns the TX_FEE note script root.
     pub fn script_root() -> NoteScriptRoot {
-        BATCH_FEE_SCRIPT.root()
+        TX_FEE_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender.
@@ -137,7 +137,7 @@ impl BatchFeeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Derives the serial number that `miden::standards::fee::pay_fee` uses for
-    /// the BATCH_FEE note it creates during a transaction.
+    /// the TX_FEE note it creates during a transaction.
     ///
     /// The serial number is `hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
     /// account_id_suffix, account_id_prefix])` with the FEE domain tag `[0xFEE, 0, 0, 0]`. It is
@@ -168,7 +168,7 @@ impl BatchFeeNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: batch_fee_note_builder::State> BatchFeeNoteBuilder<S> {
+impl<S: tx_fee_note_builder::State> TxFeeNoteBuilder<S> {
     /// Adds a single asset to the note. At least one asset is required for `.build()` to succeed.
     pub fn asset(mut self, asset: impl Into<Asset>) -> Self {
         self.assets.push(asset.into());
@@ -182,15 +182,15 @@ impl<S: batch_fee_note_builder::State> BatchFeeNoteBuilder<S> {
     }
 }
 
-impl<S: batch_fee_note_builder::State> BatchFeeNoteBuilder<S>
+impl<S: tx_fee_note_builder::State> TxFeeNoteBuilder<S>
 where
-    S::SerialNumber: batch_fee_note_builder::IsUnset,
+    S::SerialNumber: tx_fee_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> BatchFeeNoteBuilder<batch_fee_note_builder::SetSerialNumber<S>> {
+    ) -> TxFeeNoteBuilder<tx_fee_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -198,14 +198,14 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<BatchFeeNote> for Note {
-    fn from(note: BatchFeeNote) -> Self {
-        // BATCH_FEE notes are always public, carry no storage, and use the unique BATCH_FEE note
+impl From<TxFeeNote> for Note {
+    fn from(note: TxFeeNote) -> Self {
+        // TX_FEE notes are always public, carry no storage, and use the unique TX_FEE note
         // tag.
         let metadata =
-            PartialNoteMetadata::new(note.sender, NoteType::Public).with_tag(BatchFeeNote::TAG);
+            PartialNoteMetadata::new(note.sender, NoteType::Public).with_tag(TxFeeNote::TAG);
         let recipient =
-            NoteRecipient::new(note.serial_number, BatchFeeNote::script(), NoteStorage::default());
+            NoteRecipient::new(note.serial_number, TxFeeNote::script(), NoteStorage::default());
 
         Note::new(note.assets, metadata, recipient)
     }
@@ -246,12 +246,12 @@ mod tests {
     // CONVERSION TESTS
     // --------------------------------------------------------------------------------------------
 
-    /// The protocol note produced from a BATCH_FEE note is public, tagged with the unique BATCH_FEE
+    /// The protocol note produced from a TX_FEE note is public, tagged with the unique TX_FEE
     /// note tag, and carries no storage and no attachments.
     #[test]
     fn conversion_produces_public_untargeted_note() {
         let serial_number = Word::from([1u32, 2, 3, 4]);
-        let note: Note = BatchFeeNote::builder()
+        let note: Note = TxFeeNote::builder()
             .sender(sender())
             .serial_number(serial_number)
             .asset(FungibleAsset::new(faucet_a(), 100).unwrap())
@@ -261,40 +261,40 @@ mod tests {
 
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().sender(), sender());
-        assert_eq!(note.metadata().tag(), BatchFeeNote::TAG);
-        assert_eq!(usize::from(note.storage().num_items()), BatchFeeNote::NUM_STORAGE_ITEMS);
+        assert_eq!(note.metadata().tag(), TxFeeNote::TAG);
+        assert_eq!(usize::from(note.storage().num_items()), TxFeeNote::NUM_STORAGE_ITEMS);
         assert_eq!(note.attachments().num_attachments(), 0);
         assert_eq!(
             *note.recipient(),
-            NoteRecipient::new(serial_number, BatchFeeNote::script(), NoteStorage::default())
+            NoteRecipient::new(serial_number, TxFeeNote::script(), NoteStorage::default())
         );
     }
 
-    /// The BATCH_FEE note tag can never collide with a default account-target tag: those have their
-    /// 18 least significant bits set to zero, while the BATCH_FEE note tag has non-zero bits
+    /// The TX_FEE note tag can never collide with a default account-target tag: those have their
+    /// 18 least significant bits set to zero, while the TX_FEE note tag has non-zero bits
     /// there.
     #[test]
     fn tag_never_collides_with_default_account_target_tags() {
         const LOW_18_BITS: u32 = (1 << 18) - 1;
-        assert_ne!(BatchFeeNote::TAG.as_u32() & LOW_18_BITS, 0);
-        assert_eq!(Felt::from(BatchFeeNote::TAG), Felt::from(BatchFeeNote::TAG_ID));
+        assert_ne!(TxFeeNote::TAG.as_u32() & LOW_18_BITS, 0);
+        assert_eq!(Felt::from(TxFeeNote::TAG), Felt::from(TxFeeNote::TAG_ID));
     }
 
     // CONSUMPTION ANALYSIS TESTS
     // --------------------------------------------------------------------------------------------
 
-    /// Static consumption analysis accepts a well-formed BATCH_FEE note for an arbitrary account
-    /// and rejects a note that shares the BATCH_FEE script root but carries unexpected storage
+    /// Static consumption analysis accepts a well-formed TX_FEE note for an arbitrary account
+    /// and rejects a note that shares the TX_FEE script root but carries unexpected storage
     /// items (such a note would panic in the note script on execution).
     #[test]
     fn is_consumable_validates_storage() {
         let block_ref = BlockNumber::from(0u32);
         let asset = FungibleAsset::new(faucet_a(), 100).unwrap();
 
-        let standard_note = StandardNote::from_script_root(BatchFeeNote::script_root())
-            .expect("BATCH_FEE script root should be recognized as a standard note");
+        let standard_note = StandardNote::from_script_root(TxFeeNote::script_root())
+            .expect("TX_FEE script root should be recognized as a standard note");
 
-        let fee_note: Note = BatchFeeNote::builder()
+        let fee_note: Note = TxFeeNote::builder()
             .sender(sender())
             .serial_number(Word::empty())
             .asset(asset)
@@ -307,12 +307,12 @@ mod tests {
             Some(NoteConsumptionStatus::ConsumableWithAuthorization)
         );
 
-        // A note with the BATCH_FEE script root but non-empty storage can never be consumed.
+        // A note with the TX_FEE script root but non-empty storage can never be consumed.
         let malformed_storage = NoteStorage::new(vec![Felt::from(1u32)]).unwrap();
         let malformed_note = Note::new(
             NoteAssets::new(vec![asset.into()]).unwrap(),
-            PartialNoteMetadata::new(sender(), NoteType::Public).with_tag(BatchFeeNote::TAG),
-            NoteRecipient::new(Word::empty(), BatchFeeNote::script(), malformed_storage),
+            PartialNoteMetadata::new(sender(), NoteType::Public).with_tag(TxFeeNote::TAG),
+            NoteRecipient::new(Word::empty(), TxFeeNote::script(), malformed_storage),
         );
 
         assert_matches!(

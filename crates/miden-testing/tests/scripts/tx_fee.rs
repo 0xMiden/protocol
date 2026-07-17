@@ -6,13 +6,13 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::BatchFeeNote;
+use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain};
 
-/// A BATCH_FEE note imposes no target restriction, so an account unrelated to the note can consume
+/// A TX_FEE note imposes no target restriction, so an account unrelated to the note can consume
 /// it and claim its assets. We use two assets to test the loop inside the script.
 #[tokio::test]
-async fn batch_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
+async fn tx_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
     // Create assets
     let fungible_asset_1: Asset = FungibleAsset::mock(123);
     let fungible_asset_2: Asset =
@@ -30,9 +30,9 @@ async fn batch_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
 
     // Create the note
     let note =
-        builder.add_batch_fee_note(sender_account.id(), &[fungible_asset_1, fungible_asset_2])?;
+        builder.add_tx_fee_note(sender_account.id(), &[fungible_asset_1, fungible_asset_2])?;
 
-    assert_eq!(note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(note.metadata().note_type(), NoteType::Public);
 
     let mock_chain = builder.build()?;
@@ -64,12 +64,12 @@ async fn batch_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests the BATCH_FEE `create_output_note` MASM constructor procedure.
-/// This test verifies that calling `batch_fee::create_output_note` from a transaction script
-/// creates an output note with the same recipient as the Rust `BatchFeeNote` implementation would
-/// create, and that the MASM note tag constant matches [`BatchFeeNote::TAG`].
+/// Tests the TX_FEE `create_output_note` MASM constructor procedure.
+/// This test verifies that calling `tx_fee::create_output_note` from a transaction script
+/// creates an output note with the same recipient as the Rust `TxFeeNote` implementation would
+/// create, and that the MASM note tag constant matches [`TxFeeNote::TAG`].
 #[tokio::test]
-async fn test_batch_fee_create_output_note_constructor() -> anyhow::Result<()> {
+async fn test_tx_fee_create_output_note_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_account = builder.add_existing_wallet_with_assets(
@@ -86,20 +86,20 @@ async fn test_batch_fee_create_output_note_constructor() -> anyhow::Result<()> {
 
     // Build the expected recipient using the Rust implementation
     let expected_recipient =
-        NoteRecipient::new(serial_num, BatchFeeNote::script(), NoteStorage::default());
+        NoteRecipient::new(serial_num, TxFeeNote::script(), NoteStorage::default());
 
-    // Build a transaction script that uses batch_fee::create_output_note to create a note
+    // Build a transaction script that uses tx_fee::create_output_note to create a note
     let tx_script_src = format!(
         r#"
-        use miden::standards::notes::batch_fee
+        use miden::standards::notes::tx_fee
 
         @transaction_script
         pub proc main
-            # Push inputs for batch_fee::create_output_note
+            # Push inputs for tx_fee::create_output_note
             push.{serial_num}
             # => [SERIAL_NUM]
 
-            exec.batch_fee::create_output_note
+            exec.tx_fee::create_output_note
             # => [note_idx]
 
             # Add an asset to the created note
@@ -119,7 +119,7 @@ async fn test_batch_fee_create_output_note_constructor() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
 
     // Build expected output note
-    let expected_output_note: Note = BatchFeeNote::builder()
+    let expected_output_note: Note = TxFeeNote::builder()
         .sender(sender_account.id())
         .asset(FungibleAsset::mock(50))
         .serial_number(serial_num)
@@ -145,13 +145,13 @@ async fn test_batch_fee_create_output_note_constructor() -> anyhow::Result<()> {
     assert_eq!(
         created_recipient.digest(),
         expected_recipient.digest(),
-        "The recipient created by batch_fee::create_output_note should match the Rust BatchFeeNote \
+        "The recipient created by tx_fee::create_output_note should match the Rust TxFeeNote \
          implementation"
     );
 
-    // Verify the MASM BATCH_FEE_NOTE_TAG constant matches the Rust BatchFeeNote::TAG and the note
+    // Verify the MASM TX_FEE_NOTE_TAG constant matches the Rust TxFeeNote::TAG and the note
     // is public
-    assert_eq!(output_note.metadata().tag(), BatchFeeNote::TAG);
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     Ok(())
