@@ -22,13 +22,16 @@ members = [
   "faucets/policies/mint/owner_controlled/owner_only",
   "faucets/policies/policy_manager",
   "faucets/policies/transfer/allow_all",
-  "faucets/policies/transfer/allowlist/owner_controlled",
+  "faucets/policies/transfer/allowlist/manager",
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
-  "faucets/policies/transfer/blocklist/owner_controlled",
+  "faucets/policies/transfer/blocklist/manager",
+  "fees/fee_manager",
+  "fees/policies/constant_fee",
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
+  "upgrade/manager",
   "wallets/basic_wallet",
 ]
 

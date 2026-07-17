@@ -2,12 +2,13 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
+
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::assembly::Library;
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::utils::serde::Deserializable;
-use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_protocol::vm::Package;
+use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -34,7 +35,7 @@ pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
-pub use bridge::{AggLayerBridge, AgglayerBridgeError, RemovedGerHashChain};
+pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoles, RemovedGerHashChain};
 pub use claim_note::{
     CgiChainHash,
     ClaimNote,
@@ -66,33 +67,37 @@ pub use utils::Keccak256Output;
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masp"));
-    Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
+static AGGLAYER_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
+    Package::read_from_bytes_trusted(bytes).expect("shipped AggLayer package is well-formed")
 });
 
-static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masp"));
-    Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
+static BRIDGE_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped bridge component package is well-formed")
 });
 
-static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masp"));
-    Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
+static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped faucet component package is well-formed")
 });
 
 /// Returns the AggLayer Library containing all agglayer modules.
-pub fn agglayer_library() -> Library {
+pub fn agglayer_library() -> Package {
     AGGLAYER_LIBRARY.clone()
 }
 
 /// Returns the Bridge component library.
-fn agglayer_bridge_component_library() -> Library {
+fn agglayer_bridge_component_library() -> Package {
     BRIDGE_COMPONENT_LIBRARY.clone()
 }
 
 /// Returns the Faucet component library.
-fn agglayer_faucet_component_library() -> Library {
+fn agglayer_faucet_component_library() -> Package {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
 
@@ -132,17 +137,25 @@ fn create_agglayer_faucet_component(
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 ///
+/// Here `admin` is seeded as the initial member of the built-in `ADMIN` role, which administers the
+/// operational roles in case they don't have their own administrators, and `roles` seeds the
+/// initial holders of the `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
+/// bridge's privileged procedures.
+///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
 fn create_bridge_account_builder(
     seed: Word,
-    bridge_admin_id: AccountId,
-    ger_injector_id: AccountId,
-    ger_remover_id: AccountId,
+    admin: AccountId,
+    roles: BridgeRoles,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_injector_id, ger_remover_id))
+        .with_component(AggLayerBridge)
+        .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
+        .with_component(Authority::RbacControlled {
+            procedure_roles: AggLayerBridge::procedure_roles(),
+        })
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
@@ -151,30 +164,12 @@ fn create_bridge_account_builder(
 
 /// Creates a new bridge account with the standard configuration.
 ///
-/// This creates a new account suitable for production use.
-pub fn create_bridge_account(
-    seed: Word,
-    bridge_admin_id: AccountId,
-    ger_injector_id: AccountId,
-    ger_remover_id: AccountId,
-) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
+/// This creates a new account suitable for production use. `admin` bootstraps the `ADMIN` role
+/// (role administration); the initial operational-role holders are seeded from `roles` (see
+/// [`BridgeRoles`]).
+pub fn create_bridge_account(seed: Word, admin: AccountId, roles: BridgeRoles) -> Account {
+    create_bridge_account_builder(seed, admin, roles)
         .build()
-        .expect("bridge account should be valid")
-}
-
-/// Creates an existing bridge account with the standard configuration.
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(
-    seed: Word,
-    bridge_admin_id: AccountId,
-    ger_injector_id: AccountId,
-    ger_remover_id: AccountId,
-) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
-        .build_existing()
         .expect("bridge account should be valid")
 }
 

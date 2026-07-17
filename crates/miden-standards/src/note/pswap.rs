@@ -43,15 +43,16 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Canonical storage representation for a PSWAP note.
 ///
-/// Maps to the 6-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 7-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
 /// | Slot | Field |
 /// |---------|-------|
 /// | `[0]` | Requested asset faucet ID suffix |
 /// | `[1]` | Requested asset faucet ID prefix |
 /// | `[2]` | Requested asset amount |
-/// | `[3]` | Payback note type (0 = private, 1 = public) |
-/// | `[4-5]` | Creator account ID (prefix, suffix) |
+/// | `[3]` | Minimum fill step (0 = no floor) |
+/// | `[4]` | Payback note type (0 = private, 1 = public) |
+/// | `[5-6]` | Creator account ID (suffix, prefix) |
 ///
 /// The payback note tag is derived at runtime from the creator account ID
 /// (via `note_tag::create_account_target` in MASM) rather than stored.
@@ -72,6 +73,21 @@ pub struct PswapNoteStorage {
     /// executed transaction's output).
     #[builder(default = NoteType::Private)]
     payback_note_type: NoteType,
+
+    /// Minimum amount of the requested asset a single fill may deliver, denominated in the
+    /// requested asset and checked against `total_fill = account_fill + note_fill`. Prevents
+    /// griefing a swap with tiny partial fills that mint dust payback notes.
+    ///
+    /// Defaults to [`AssetAmount::ZERO`], which disables the floor. The on-chain script clamps the
+    /// effective floor to `min(min_fill_step, min_requested_amount)`, so a remainder note whose
+    /// requested amount has shrunk below `min_fill_step` can still be filled in full rather than
+    /// becoming stuck. Any higher-level default (e.g. a percentage of the offered amount) is a
+    /// wallet-layer concern and is intentionally not baked in here.
+    ///
+    /// Typed as [`AssetAmount`] so the value is validated (`<= AssetAmount::MAX`) by construction,
+    /// making serialization to a [`Felt`] infallible.
+    #[builder(default = AssetAmount::ZERO)]
+    min_fill_step: AssetAmount,
 }
 
 impl PswapNoteStorage {
@@ -79,7 +95,7 @@ impl PswapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 6;
+    pub const NUM_STORAGE_ITEMS: usize = 7;
 
     /// Consumes the storage and returns a PSWAP [`NoteRecipient`] with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -118,9 +134,14 @@ impl PswapNoteStorage {
     pub fn min_requested_amount(&self) -> u64 {
         self.min_requested_asset.amount().as_u64()
     }
+
+    /// Returns the minimum fill step ([`AssetAmount::ZERO`] if no floor is enforced).
+    pub fn min_fill_step(&self) -> AssetAmount {
+        self.min_fill_step
+    }
 }
 
-/// Serializes [`PswapNoteStorage`] into a 6-element [`NoteStorage`].
+/// Serializes [`PswapNoteStorage`] into a 7-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let storage_items = vec![
@@ -128,18 +149,20 @@ impl From<PswapNoteStorage> for NoteStorage {
             storage.min_requested_asset.faucet_id().suffix(),
             storage.min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(storage.min_requested_asset.amount()),
-            // Payback note type [3]
+            // Minimum fill step [3]
+            Felt::from(storage.min_fill_step),
+            // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Creator ID [4-5]
-            storage.creator_account_id.prefix().as_felt(),
+            // Creator ID [5-6] (suffix, prefix)
             storage.creator_account_id.suffix(),
+            storage.creator_account_id.prefix().as_felt(),
         ];
         NoteStorage::new(storage_items)
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-/// Deserializes [`PswapNoteStorage`] from a slice of exactly 6 [`Felt`]s.
+/// Deserializes [`PswapNoteStorage`] from a slice of exactly 7 [`Felt`]s.
 impl TryFrom<&[Felt]> for PswapNoteStorage {
     type Error = NoteError;
 
@@ -160,21 +183,26 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         let min_requested_asset = FungibleAsset::new(faucet_id, amount)
             .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?;
 
-        // [3] = payback_note_type
+        // [3] = min_fill_step (0 = no floor)
+        let min_fill_step = AssetAmount::new(note_storage[3].as_canonical_u64())
+            .map_err(|e| NoteError::other_with_source("failed to parse min_fill_step", e))?;
+
+        // [4] = payback_note_type
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[3].as_canonical_u64())
+            u8::try_from(note_storage[4].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [4-5] = creator account ID (prefix, suffix)
-        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[4])
+        // [5-6] = creator account ID (suffix, prefix)
+        let creator_account_id = AccountId::try_from_elements(note_storage[5], note_storage[6])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
             min_requested_asset,
             creator_account_id,
             payback_note_type,
+            min_fill_step,
         })
     }
 }
@@ -459,6 +487,15 @@ impl PswapNote {
         let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
         let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
 
+        // Enforce the per-fill floor, mirroring the MASM `execute_pswap` guard. The effective floor
+        // is clamped to `min(min_fill_step, min_requested_amount)` so a remainder whose requested
+        // amount has shrunk below `min_fill_step` stays fillable in full. `min_fill_step == 0`
+        // disables the floor.
+        let effective_floor = self.storage.min_fill_step().as_u64().min(min_requested_amount);
+        if fill_amount < effective_floor {
+            return Err(NoteError::other("PSWAP fill amount is below the minimum fill step"));
+        }
+
         // `min_requested_amount` is a floor, not an exact target: each fill's share is computed
         // against `fill_reference = max(fill_amount, min_requested_amount)`. At or below the
         // minimum this is `min_requested_amount` (proportional, leaving a remainder); for an
@@ -626,6 +663,7 @@ impl PswapNote {
             .min_requested_asset(min_requested_asset)
             .creator_account_id(self.storage.creator_account_id)
             .payback_note_type(self.storage.payback_note_type)
+            .min_fill_step(self.storage.min_fill_step())
             .build();
         let recipient = new_storage.into_recipient(remainder_serial);
 
@@ -789,6 +827,7 @@ impl PswapNote {
             .min_requested_asset(remaining_min_requested_asset)
             .creator_account_id(self.storage.creator_account_id)
             .payback_note_type(self.storage.payback_note_type)
+            .min_fill_step(self.storage.min_fill_step())
             .build();
 
         // Remainder serial: increment most significant element (matching MASM movup.3 add.1
@@ -888,6 +927,7 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+    use rstest::rstest;
 
     use super::*;
 
@@ -1030,18 +1070,22 @@ mod tests {
         let creator_id = dummy_creator_id();
         let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
 
+        // 7-element layout: [suffix, prefix, amount, min_fill_step, note_type, creator_suffix,
+        // creator_prefix]. Creator is stored suffix-first to match the requested-faucet convention.
         let storage_items = vec![
             min_requested_asset.faucet_id().suffix(),
             min_requested_asset.faucet_id().prefix().as_felt(),
             Felt::from(min_requested_asset.amount()),
+            Felt::try_from(100u64).unwrap(),       // min_fill_step
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
-            creator_id.prefix().as_felt(),
             creator_id.suffix(),
+            creator_id.prefix().as_felt(),
         ];
 
         let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();
         assert_eq!(parsed.creator_account_id(), creator_id);
         assert_eq!(parsed.min_requested_amount(), 500);
+        assert_eq!(parsed.min_fill_step().as_u64(), 100);
     }
 
     #[test]
@@ -1052,13 +1096,100 @@ mod tests {
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
             .creator_account_id(creator_id)
+            .min_fill_step(AssetAmount::new(42).unwrap())
             .build();
 
         let note_storage = NoteStorage::from(storage.clone());
+        assert_eq!(note_storage.num_items(), PswapNoteStorage::NUM_STORAGE_ITEMS as u16);
+
         let parsed = PswapNoteStorage::try_from(note_storage.items()).unwrap();
 
         assert_eq!(parsed.creator_account_id(), creator_id);
         assert_eq!(parsed.min_requested_amount(), 500);
+        assert_eq!(parsed.min_fill_step().as_u64(), 42);
+    }
+
+    #[test]
+    fn pswap_note_storage_defaults_min_fill_step_to_zero() {
+        let creator_id = dummy_creator_id();
+        let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
+
+        let storage = PswapNoteStorage::builder()
+            .min_requested_asset(min_requested_asset)
+            .creator_account_id(creator_id)
+            .build();
+
+        assert_eq!(
+            storage.min_fill_step(),
+            AssetAmount::ZERO,
+            "min_fill_step must default to zero (no floor)",
+        );
+    }
+
+    /// `execute` mirrors the MASM floor: it rejects `total_fill = account_fill + note_fill` below
+    /// `min(min_fill_step, min_requested_amount)` and accepts anything at or above it, with any
+    /// remainder inheriting the floor. Cases are `(min_requested, min_fill_step, account_fill,
+    /// note_fill, expect_ok)`; offered is 200 throughout.
+    #[rstest]
+    // Binding floor (min_fill_step <= min_requested): below / equal / above.
+    #[case::below_floor(100, 30, 29, 0, false)]
+    #[case::equal_floor(100, 30, 30, 0, true)]
+    #[case::above_floor(100, 30, 50, 0, true)]
+    // Clamp (min_requested < min_fill_step): a full fill at min_requested is accepted, below it
+    // isn't.
+    #[case::clamped_full_fill(20, 50, 20, 0, true)]
+    #[case::clamped_below_both(20, 50, 10, 0, false)]
+    // total_fill = account_fill + note_fill, checked as a sum: neither leg alone reaches the floor.
+    #[case::two_legs_meet_floor(100, 30, 20, 20, true)]
+    #[case::two_legs_below_floor(100, 30, 10, 10, false)]
+    fn pswap_execute_enforces_min_fill_step(
+        #[case] min_requested: u64,
+        #[case] min_fill_step: u64,
+        #[case] account_fill: u64,
+        #[case] note_fill: u64,
+        #[case] expect_ok: bool,
+    ) {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_faucet = dummy_faucet_id(0xaa);
+        let requested_faucet = dummy_faucet_id(0xbb);
+
+        let offered_asset = FungibleAsset::new(offered_faucet, 200).unwrap();
+        let min_requested_asset = FungibleAsset::new(requested_faucet, min_requested).unwrap();
+        let storage = PswapNoteStorage::builder()
+            .min_requested_asset(min_requested_asset)
+            .creator_account_id(creator_id)
+            .min_fill_step(AssetAmount::new(min_fill_step).unwrap())
+            .build();
+        let mut rng = RandomCoin::new(Word::default());
+        let pswap = PswapNote::builder()
+            .sender(creator_id)
+            .storage(storage)
+            .serial_number(rng.draw_word())
+            .note_type(NoteType::Public)
+            .offered_asset(offered_asset)
+            .build()
+            .unwrap();
+
+        let leg = |amt: u64| (amt > 0).then(|| FungibleAsset::new(requested_faucet, amt).unwrap());
+        let result = pswap.execute(consumer_id, leg(account_fill), leg(note_fill));
+
+        assert_eq!(result.is_ok(), expect_ok, "unexpected accept/reject for this fill");
+
+        if let Ok((_, remainder)) = result {
+            // A partial fill (total below the requested minimum) leaves a remainder that must carry
+            // the same floor; a full or over fill leaves none.
+            if account_fill + note_fill < min_requested {
+                let rem = remainder.expect("partial fill should produce a remainder");
+                assert_eq!(
+                    rem.storage().min_fill_step().as_u64(),
+                    min_fill_step,
+                    "remainder must inherit min_fill_step",
+                );
+            } else {
+                assert!(remainder.is_none(), "full fill must complete the swap with no remainder");
+            }
+        }
     }
 
     /// Consumer supplies both an account fill and a note fill, and the sum is below

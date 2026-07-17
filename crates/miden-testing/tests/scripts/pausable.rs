@@ -7,9 +7,9 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
 
 use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -23,7 +23,6 @@ use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -47,16 +46,12 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
+
 pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
 pub(crate) static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
 pub(crate) static ADMIN_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(10));
 pub(crate) static NON_ADMIN_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(98));
-
-pub(crate) fn test_account_id(seed: u8) -> AccountId {
-    AccountId::builder()
-        .account_type(AccountType::Private)
-        .build_with_seed([seed; 32])
-}
 
 // FAUCET BUILDER
 // ================================================================================================
@@ -87,15 +82,6 @@ fn add_faucet_with_pause(
 
 // NOTE BUILDERS
 // ================================================================================================
-
-pub(crate) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
-    let seed: [u32; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed));
-    Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Private)
-        .code(code.into())
-        .build()?)
-}
 
 /// Builds an owner-authored note that calls `pausable::manager::pause`.
 pub(crate) fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
@@ -276,10 +262,6 @@ async fn pausable_manager_pause_while_paused_is_noop() -> anyhow::Result<()> {
 // TESTS — PAUSABLE MANAGER WITH PER-PROCEDURE RBAC ROLES
 // ================================================================================================
 
-pub(crate) fn role(name: &str) -> RoleSymbol {
-    RoleSymbol::new(name).expect("role symbol should be valid")
-}
-
 /// Maps `pause` → `PAUSER` and `unpause` → `UNPAUSER` so the two capabilities are gated by
 /// distinct roles.
 fn pause_unpause_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
@@ -290,11 +272,11 @@ fn pause_unpause_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
 }
 
 /// Builds an RBAC faucet whose pause / unpause are gated per-procedure. Any authority-gated
-/// procedure not present in `roles` falls back to the ADMIN role check.
+/// procedure not present in `procedure_roles` falls back to the ADMIN role check.
 fn add_rbac_faucet_with_pause(
     builder: &mut MockChainBuilder,
     admin: AccountId,
-    roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     seed: u8,
     mutable_max_supply: bool,
 ) -> anyhow::Result<Account> {
@@ -309,41 +291,11 @@ fn add_rbac_faucet_with_pause(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { admin, roles })
+        .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
-}
-
-/// Builds an admin-authored note that grants `role` to `account_id` via
-/// `rbac::grant_role`.
-pub(crate) fn build_grant_role_note(
-    sender: AccountId,
-    role: &RoleSymbol,
-    account_id: AccountId,
-) -> anyhow::Result<Note> {
-    build_note(
-        sender,
-        format!(
-            r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.rbac::grant_role
-            dropw dropw dropw dropw
-        end
-        "#,
-            account_prefix = account_id.prefix().as_felt(),
-            account_suffix = account_id.suffix(),
-            role = Felt::from(role),
-        ),
-    )
 }
 
 /// Builds a note that calls `set_max_supply`, an authority-gated procedure intentionally left out

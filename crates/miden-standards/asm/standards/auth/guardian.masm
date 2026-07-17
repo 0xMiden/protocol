@@ -8,6 +8,7 @@ use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth::tx_policy
 use miden::standards::auth::signature
+use {ZERO_WORD} from miden::standards::utils
 
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
@@ -43,7 +44,7 @@ const GUARDIAN_PUBLIC_KEYS_SLOT = word("miden::standards::auth::guardian::pub_ke
 const GUARDIAN_SCHEME_ID_SLOT = word("miden::standards::auth::guardian::scheme")
 
 # Single-entry storage map key where guardian signer data is stored.
-const GUARDIAN_MAP_KEY = [0, 0, 0, 0]
+const GUARDIAN_MAP_KEY = ZERO_WORD
 
 # ERRORS
 # =================================================================================================

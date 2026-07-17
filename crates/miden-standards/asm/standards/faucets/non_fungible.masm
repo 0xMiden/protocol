@@ -227,6 +227,9 @@ pub proc mint_and_send
     exec.active_account::get_id
     # => [id_suffix, id_prefix, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
+    # the asset ID is derived from the value here (composition None, asset class copied from
+    # the value's hash0/hash1), so the minted asset is well formed by construction and
+    # non_fungible_asset::validate is deliberately skipped
     exec.non_fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
@@ -271,6 +274,11 @@ pub proc receive_and_burn
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+
+    # validate the asset to burn is well-formed before processing it
+    # note that the asset's origin is validated by the kernel
+    exec.non_fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
     # run the active burn policy on a copy of the asset

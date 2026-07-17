@@ -33,14 +33,11 @@ use super::pausable::{
     ADMIN_ID,
     NON_OWNER_ID,
     OWNER_ID,
-    build_grant_role_note,
-    build_note,
     build_pause_note,
     build_set_max_supply_note,
     execute_note_on_faucet,
-    role,
-    test_account_id,
 };
+use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
 
 // FAUCET BUILDERS
 // ================================================================================================
@@ -74,7 +71,7 @@ fn add_owner_faucet(
 fn add_rbac_faucet(
     builder: &mut MockChainBuilder,
     admin: AccountId,
-    roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     seed: u8,
 ) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
@@ -87,7 +84,7 @@ fn add_rbac_faucet(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { admin, roles })
+        .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 

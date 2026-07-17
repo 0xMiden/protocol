@@ -44,6 +44,21 @@ pub proc create_id
     # => [ASSET_ID]
 end
 
+#! Pads a fungible asset amount into its asset value word.
+#!
+#! Inputs:  [amount]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - amount is the amount of the fungible asset.
+#! - ASSET_VALUE is the asset value word [amount, 0, 0, 0].
+#!
+#! Invocation: exec
+pub proc create_value
+    push.0.0.0 movup.3
+    # => [ASSET_VALUE]
+end
+
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
 #! The provided asset ID will be created with asset composition set to COMPOSITION_FUNGIBLE.
@@ -68,11 +83,14 @@ pub proc create
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    # pad amount into ASSET_VALUE
-    repeat.3 push.0 movdn.3 end
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-
     exec.create_id
+    # => [ASSET_ID, amount]
+
+    # pad the amount into ASSET_VALUE
+    movup.4 exec.create_value
+    # => [ASSET_VALUE, ASSET_ID]
+
+    swapw
     # => [ASSET_ID, ASSET_VALUE]
 end
 

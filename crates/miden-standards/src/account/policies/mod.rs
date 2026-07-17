@@ -40,11 +40,11 @@ pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicy, BurnPolicyError, MinBurn
 pub use manager::{TokenPolicyManager, TokenPolicyManagerBuilder};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicy, MintPolicyError};
 pub use transfer::{
-    AllowlistOwnerControlled,
+    AllowlistManager,
     AllowlistStorage,
     BasicAllowlist,
     BasicBlocklist,
-    BlocklistOwnerControlled,
+    BlocklistManager,
     BlocklistStorage,
     TransferAllowAll,
     TransferPolicy,

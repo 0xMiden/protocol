@@ -23,7 +23,7 @@ use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
 use miden_standards::note::P2idNote;
-use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -146,6 +146,86 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         &RawOutputNote::Partial(p2any_note.into())
     );
     assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(p2id_note));
+
+    Ok(())
+}
+
+/// Creates a private note with the default note script and an empty asset list.
+fn create_assetless_note(sender: miden_protocol::account::AccountId) -> anyhow::Result<Note> {
+    let tag = NoteTag::with_account_target(sender);
+    let metadata = PartialNoteMetadata::new(sender, NoteType::Private).with_tag(tag);
+    let assets = NoteAssets::new(vec![])?;
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
+    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    Ok(Note::new(assets, metadata, recipient))
+}
+
+/// Tests that a basic wallet can send a note that carries no assets.
+///
+/// Regression test: the script must return at stack depth 16 even when the per-asset loop never
+/// runs (zero-asset note), otherwise the VM rejects the transaction with
+/// `InvalidStackDepthOnReturn`.
+///
+/// [wallet]: miden_standards::account::interface::AccountComponentInterface::BasicWallet
+#[tokio::test]
+async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let sender_basic_wallet_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let mock_chain = builder.build()?;
+
+    let assetless_note = create_assetless_note(sender_basic_wallet_account.id())?;
+    let partial_note = PartialNote::from(assetless_note.clone());
+
+    let send_note_transaction_script = SendNotesTransactionScript::new(
+        &sender_basic_wallet_account.code_interface(),
+        slice::from_ref(&partial_note),
+    )?;
+
+    let executed_transaction = mock_chain
+        .build_tx_context(sender_basic_wallet_account.id(), &[], &[])
+        .expect("failed to build tx context")
+        .tx_script(send_note_transaction_script.tx_script().clone())
+        .tx_script_args(send_note_transaction_script.tx_script_args())
+        .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
+        .extend_expected_output_notes(vec![RawOutputNote::Full(assetless_note.clone())])
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(
+        executed_transaction.output_notes().get_note(0),
+        &RawOutputNote::Full(assetless_note)
+    );
+
+    Ok(())
+}
+
+/// Tests that the faucet path still rejects assetless notes at script-build time.
+#[tokio::test]
+async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "POL",
+        200,
+        None,
+    )?;
+    builder.build()?;
+
+    let assetless_note = create_assetless_note(sender_fungible_faucet_account.id())?;
+    let partial_note = PartialNote::from(assetless_note);
+
+    let result = SendNotesTransactionScript::new(
+        &sender_fungible_faucet_account.code_interface(),
+        slice::from_ref(&partial_note),
+    );
+
+    assert!(matches!(result, Err(SendNotesTransactionScriptError::FaucetNoteWithoutAsset)));
 
     Ok(())
 }

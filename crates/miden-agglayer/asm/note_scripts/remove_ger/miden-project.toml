@@ -1,0 +1,13 @@
+[package]
+name              = "miden-agglayer-remove_ger"
+version.workspace = true
+
+[lib]
+namespace = "agglayer::note_scripts::remove_ger"
+path      = "remove_ger.masm"
+
+[dependencies]
+miden-agglayer.workspace  = true
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

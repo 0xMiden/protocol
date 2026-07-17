@@ -103,3 +103,4 @@ pub const TX_GET_TX_SCRIPT_ROOT_OFFSET = 57
 
 # fee
 pub const TX_COMPUTE_FEE_OFFSET = 58
+pub const TX_GET_FEE_FAUCET_ID_OFFSET = 59 # accessor

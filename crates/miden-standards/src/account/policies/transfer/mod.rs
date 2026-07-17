@@ -22,10 +22,10 @@ mod basic_blocklist;
 mod blocklist;
 
 pub use allow_all::TransferAllowAll;
-pub use allowlist::{AllowlistOwnerControlled, AllowlistStorage};
+pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
-pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
+pub use blocklist::{BlocklistManager, BlocklistStorage};
 
 // TRANSFER POLICY ERROR
 // ================================================================================================

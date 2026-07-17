@@ -1,0 +1,12 @@
+# Authority-gated blocklist admin component.
+#
+# Re-exports `block_account` and `unblock_account` from
+# `miden::standards::faucets::policies::transfer::blocklist::manager`, which wraps the underlying
+# `Invocation: exec` helpers with `authority::assert_authorized`.
+#
+# Pair with the [`Authority`] component (which provides the mode-aware auth dispatch) and a
+# component that installs the `blocked_accounts` storage slot — typically the basic blocklist
+# transfer policy component.
+
+pub use {block_account} from miden::standards::faucets::policies::transfer::blocklist::manager
+pub use {unblock_account} from miden::standards::faucets::policies::transfer::blocklist::manager

@@ -7,15 +7,16 @@
 # - Storage: `blocked_accounts` map keyed by account ID; entry word `[1, 0, 0, 0]` means blocked.
 # - Helpers (`block_account` / `unblock_account` / `is_blocked` / `assert_not_blocked`) perform
 #   NO authorization — they are low-level building blocks meant to be called by
-#   `Invocation: call` wrappers in auth-checking account components (see `owner_controlled.masm`).
+#   `Invocation: call` wrappers in auth-checking account components (see `manager.masm`).
 #   Tx scripts cannot invoke them directly — they go through the wrapper component installed on
 #   the faucet.
 
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
-pub mod owner_controlled
+pub mod manager
 
 # CONSTANTS
 # ================================================================================================
@@ -24,9 +25,9 @@ pub mod owner_controlled
 # Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_blocked, 0, 0, 0]
 const BLOCKED_ACCOUNTS_SLOT = word("miden::standards::faucets::policies::transfer::blocklist::blocked_accounts")
 
-const BLOCKED_WORD = [1, 0, 0, 0]
+const BLOCKED_WORD = ONE_WORD
 
-const UNBLOCKED_WORD = [0, 0, 0, 0]
+const UNBLOCKED_WORD = ZERO_WORD
 
 # ERRORS
 # ================================================================================================

@@ -1,0 +1,240 @@
+# miden::standards::fees::fee_manager
+#
+# Fee estimation structured like the token policy managers: the manager stores the procedure root
+# of the active fee policy and dispatches fee estimation to it via `dyncall`. The actual fee
+# computation logic lives in fee policy components (e.g.
+# `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
+# allowlisted policy root through the authority-gated `set_fee_policy`.
+#
+# Fee collection (`miden::standards::fees::collect_sponsored_fees`) tallies the fees prepaid by the
+# FEE_SPONSORSHIP notes among the transaction's input notes, pricing each feature note through the
+# same active fee policy via `estimate_note_fee_internal`.
+
+use miden::core::word
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+use miden::standards::access::authority
+
+use {AccountProcedureRoot, Asset, NoteScriptRoot} from miden::protocol::types
+
+# DEPENDENCY NOTE
+# `set_fee_policy` consults the account-wide [`Authority`] component (installed separately) via
+# `exec.authority::assert_authorized`. The manager itself is authority-agnostic and stores no
+# authority discriminator.
+
+# CONSTANTS
+# =================================================================================================
+
+# Active fee policy root slot. Layout: [PROC_ROOT]
+const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::fees::fee_manager::active_fee_policy_proc_root")
+
+# Allowlist map slot for fee policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
+const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_manager::allowed_fee_policy_proc_roots")
+
+# Local memory pointer used to pass a policy root to `dyncall`.
+const POLICY_PROC_ROOT_PTR = 0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
+const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
+const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
+const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns the estimated fee for a note with the given parameters.
+#!
+#! Thin `call`-able wrapper around [`estimate_note_fee_internal`]. External callers (typically an
+#! authentication component on another account, via FPI) `call` into this procedure to learn the
+#! fee this account charges for the note.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
+#!
+#! Invocation: call
+@account_procedure
+pub proc estimate_note_fee(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
+    exec.estimate_note_fee_internal
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+#! Returns active fee policy root.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [FEE_POLICY_ROOT, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_fee_policy() -> AccountProcedureRoot
+    exec.get_fee_policy_root
+    # => [FEE_POLICY_ROOT, pad(16)]
+
+    swapw dropw
+    # => [FEE_POLICY_ROOT, pad(12)]
+end
+
+#! Sets active fee policy root.
+#!
+#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - NEW_POLICY_ROOT is zero.
+#! - NEW_POLICY_ROOT is not a procedure of this account.
+#! - NEW_POLICY_ROOT is not in the allowed roots map.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_allowed_fee_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    push.ACTIVE_FEE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Estimates the fee for a note by executing the active fee policy.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
+#!
+#! Invocation: exec
+pub proc estimate_note_fee_internal(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
+    exec.execute_fee_policy
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+#! Executes the active fee policy by dynamic invocation.
+#!
+#! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
+#! fee from them.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
+#!
+#! Invocation: exec
+@locals(4)
+proc execute_fee_policy(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
+    exec.get_fee_policy_root
+    # => [FEE_POLICY_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    exec.word::testz
+    assertz.err=ERR_ACTIVE_FEE_POLICY_NOT_SET
+    # => [FEE_POLICY_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    locaddr.POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    dyncall
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+#! Reads active fee policy root from storage.
+#!
+#! Inputs:  []
+#! Outputs: [FEE_POLICY_ROOT]
+#!
+#! Invocation: exec
+proc get_fee_policy_root() -> AccountProcedureRoot
+    push.ACTIVE_FEE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [FEE_POLICY_ROOT]
+end
+
+#! Validates a fee policy root at config time.
+#!
+#! Inputs:  [FEE_POLICY_ROOT]
+#! Outputs: [FEE_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is zero.
+#! - policy root is not present in this account's procedures.
+#! - policy root is not in the allowed fee policy roots map.
+#!
+#! Invocation: exec
+proc assert_allowed_fee_policy_root(policy_root: AccountProcedureRoot) -> AccountProcedureRoot
+    exec.word::testz
+    assertz.err=ERR_FEE_POLICY_ROOT_IS_ZERO
+    # => [FEE_POLICY_ROOT]
+
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT
+    # => [FEE_POLICY_ROOT]
+
+    dupw
+    push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [ALLOWED_FLAG, FEE_POLICY_ROOT]
+
+    exec.word::eqz
+    assertz.err=ERR_FEE_POLICY_ROOT_NOT_ALLOWED
+    # => [FEE_POLICY_ROOT]
+end

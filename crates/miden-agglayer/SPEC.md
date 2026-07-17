@@ -23,7 +23,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
-| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must use the bridge admin account. | Not an onchain entity; creates config notes |
+| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
 
 ---
 
@@ -108,10 +108,10 @@ TODO: Claims cannot be reversed once the nullifier is set
 ![GER injection flow](diagrams/ger-injection.png)
 
 Global Exit Roots represent a snapshot of exit tree roots across all AggLayer-connected
-chains. A GER injector observes L1 GER updates and creates [`UPDATE_GER`](#45-update_ger) notes
+chains. A `GER_INJECTOR` role holder observes L1 GER updates and creates [`UPDATE_GER`](#45-update_ger) notes
 on Miden. The bridge consumes these notes:
 
-1. Asserts the note sender is the designated GER injector.
+1. Asserts that the note sender holds the `GER_INJECTOR` role.
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Stores `KEY -> [1, 0, 0, 0]` in the `ger_map`, marking the GER as known.
 4. Reverts if the GER was already present in the map (duplicate insertions are rejected).
@@ -124,13 +124,14 @@ to be valid.
 > `UPDATE_GER` note causes the consuming transaction to revert. Because `UPDATE_GER` is a
 > network note (consumed by the note nullifier mechanism), a duplicate would become
 > permanently unconsumable rather than silently accepted. Rejecting duplicates makes the
-> failure explicit and prevents the GER injector from accidentally creating unconsumed notes.
+> failure explicit and prevents the `GER_INJECTOR` role holder from accidentally creating unconsumed notes.
 
-A separate GER Remover role can revoke a previously-registered GER by sending a
+A separate `GER_REMOVER` role can revoke a previously-registered GER by sending a
 [`REMOVE_GER`](#46-remove_ger) note. The bridge consumes such a note and:
 
-1. Asserts the note sender is the designated GER remover (a role distinct from the GER
-   injector so that insertion and revocation authority can be split).
+1. Asserts that the note sender holds the `GER_REMOVER`
+   role (a role distinct from the `GER_INJECTOR` role so that insertion and revocation
+   authority can be split).
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Asserts that `ger_map[KEY] == [1, 0, 0, 0]`, i.e. that the GER is currently known.
 4. Overwrites `ger_map[KEY]` with `[0, 0, 0, 0]`, the Miden equivalent of Solidity's
@@ -154,11 +155,11 @@ Claims that were already processed against the GER are not reversed - removal on
 prevents future claims against that root.
 
 Note that removal does not blocklist a GER permanently: because the map entry is reset
-to the empty word, the GER injector can re-register the same GER via a subsequent
+to the empty word, the `GER_INJECTOR` role holder can re-register the same GER via a subsequent
 `UPDATE_GER` note (re-insertion does not touch the removal chain). This is a security
-caveat worth calling out: a compromised or faulty GER injector can undo a `REMOVE_GER`
+caveat worth calling out: a compromised or faulty `GER_INJECTOR` role holder can undo a `REMOVE_GER`
 emergency patch and re-open the very claim window the removal was meant to close. The
-split between the injector and remover roles bounds this only if the offending role can be
+split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only if the offending role can be
 rotated out, which is not yet supported
 ([#2706](https://github.com/0xMiden/protocol/issues/2706)). The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
@@ -174,8 +175,8 @@ TODO: No hash chain tracks GER insertions for proof generation
 Each bridged token (wrapped or Miden-native) requires registration in the bridge's
 registries. The Bridge Operator creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes
 carrying the faucet's account ID, the origin token address, the origin network, the scale
-factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting
-the sender is the bridge admin) and runs two calls back-to-back:
+factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting that the sender holds the `FAUCET_MNGR` role) and runs
+two calls back-to-back:
 
 - `bridge_config::register_faucet` writes the registration flag plus `is_native` into
   `faucet_registry_map`, the conversion metadata into `faucet_metadata_map` (sub-keys 0 and
@@ -196,20 +197,37 @@ TODO: Faucet existence and code commitment are not validated during registration
 
 ### 2.5 Administration
 
-The bridge has three administrative roles set at account creation time:
+The bridge uses role-based access control (RBAC) for its privileged operations, built on the
+`miden-standards` access-control stack (`RoleBasedAccessControl` + `Authority`) installed on the
+bridge account alongside the bridge component.
 
-- **Bridge admin** (`admin_account_id`): authorizes faucet registration via
-  [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes.
-- **GER injector** (`ger_injector_account_id`): authorizes GER updates via [`UPDATE_GER`](#45-update_ger)
-  notes.
-- **GER remover** (`ger_remover_account_id`): authorizes GER removals via
-  [`REMOVE_GER`](#46-remove_ger) notes. Kept distinct from the GER injector so that insertion
-  and revocation authority can be split.
+- **`ADMIN` role**: the built-in administrative role. Members of `ADMIN` administer (grant and
+  revoke) the operational roles below. It is the effective admin of any role whose delegated admin
+  is unset, and it administers itself, so `ADMIN` membership can be granted, revoked, and renounced
+  through the standard RBAC API.
+- **`FAUCET_MNGR` role**: authorizes faucet registration via
+  [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes (`register_faucet`,
+  `store_faucet_metadata_hash`) and faucet deregistration via
+  [`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) notes (`deregister_faucet`).
+- **`GER_INJECTOR` role**: authorizes GER injection via [`UPDATE_GER`](#45-update_ger) notes
+  (`update_ger`).
+- **`GER_REMOVER` role**: authorizes GER removal via [`REMOVE_GER`](#46-remove_ger) notes
+  (`remove_ger`). Kept distinct from the `GER_INJECTOR` role so that insertion and revocation
+  authority can be split.
 
-All roles are verified by checking the note sender against the stored account ID.
+Each role-gated procedure calls `authority::assert_authorized`, which resolves the calling
+procedure's required role from the account's `Authority` procedure-to-role map and asserts that the
+note sender holds that role (a role may have multiple holders). Procedures with no mapped role fall
+back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
+holders are seeded at account creation, so the bridge is born fully functional.
 
-TODO: Administrative roles cannot be transferred after account creation
-([#2706](https://github.com/0xMiden/protocol/issues/2706)).
+TODO: On-chain role management — notes that call `grant_role` / `revoke_role` / `renounce_role` /
+`set_role_admin` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
+follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706). The note scripts and Rust
+builders for these `Rbac` procedures are tracked more broadly by
+[#3046](https://github.com/0xMiden/protocol/issues/3046) (note configuration for standards
+components); once they exist, the bridge only needs to add their script roots to
+[`AggLayerBridge::allowed_notes`].
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
@@ -259,10 +277,10 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender is not the bridge admin |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role |
 
-Asserts the note sender matches the bridge admin stored in
-`agglayer::bridge::admin_account_id`, then performs a two-step registration:
+Asserts that the note sender holds the `FAUCET_MNGR`
+role, then performs a two-step registration:
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
    `faucet_registry_map` map slot.
@@ -286,10 +304,9 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender is not the bridge admin; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
 
-Asserts the note sender matches the bridge admin stored in
-`agglayer::bridge::admin_account_id` and the faucet is currently registered (via
+Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
 
 1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
@@ -299,8 +316,8 @@ Asserts the note sender matches the bridge admin stored in
    matches the faucet's current registration.
 3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
-After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so the bridge admin
-should warn users with notes in flight. As defense-in-depth, `claim` and `bridge_out` also re-check
+After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so a `FAUCET_MNGR`
+role holder should warn users with notes in flight. As defense-in-depth, `claim` and `bridge_out` also re-check
 `assert_faucet_registered` after the token lookup, so a faucet can never mint or unlock through a
 `token_registry` entry once it is deregistered.
 
@@ -312,10 +329,10 @@ should warn users with notes in flight. As defense-in-depth, `claim` and `bridge
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender is not the GER injector; GER has already been registered in storage |
+| **Panics** | Note sender does not hold the `GER_INJECTOR` role; GER has already been registered in storage |
 
-Asserts the note sender matches the GER injector stored in
-`agglayer::bridge::ger_injector_account_id`, then computes
+Asserts that the note sender holds the `GER_INJECTOR`
+role, then computes
 `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
 Duplicate insertions (same GER value) are explicitly rejected: if the key already exists
@@ -373,15 +390,17 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
-| `agglayer::bridge::admin_account_id` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
-| `agglayer::bridge::ger_injector_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER injector account ID for UPDATE_GER note authorization |
-| `agglayer::bridge::ger_remover_account_id` | Value | -- | `[0, 0, rem_suffix, rem_prefix]` | GER remover account ID for REMOVE_GER note authorization |
 | `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
-`admin_account_id`, `ger_injector_account_id`, and `ger_remover_account_id` (set at account
-creation time).
+The privileged-role state is held by the access-control components installed on the bridge account
+(`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
+documented in `miden-standards`, rather than in dedicated bridge slots. See
+[Administration](#25-administration).
+
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
+the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
+access-control components at account creation time.
 
 ### 3.2 Faucet Account Component
 
@@ -536,7 +555,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 - **Bridge-out:** Consuming account is the bridge -> note validates attachment target,
   loads storage and asset, calls `bridge_out::bridge_out`.
 - **Reclaim:** Consuming account is the original sender -> assets are added back to the
-  account via `basic_wallet::add_assets_to_account`. No output notes.
+  account via `basic_wallet::move_note_assets_to_account`. No output notes.
 
 #### Permissions
 
@@ -635,7 +654,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `sender` | Bridge admin (sender authorization enforced by the bridge's `register_faucet` procedure) |
+| `sender` | Holder of the `FAUCET_MNGR` role (sender authorization enforced by the bridge's `register_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -662,14 +681,15 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | 7 | `faucet_id_prefix` | Felt (AccountId prefix) |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::register_faucet` (which asserts sender is bridge admin and performs
-two-step registration into `faucet_registry_map` and `token_registry_map`).
+`bridge_config::register_faucet` (which asserts that the
+sender holds the `FAUCET_MNGR` role and performs two-step registration into
+`faucet_registry_map` and `token_registry_map`).
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure |
+| **Issuer** | Holders of the `FAUCET_MNGR` role only -- **enforced** by `bridge_config::register_faucet` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.4 DEREGISTER_AGG_FAUCET
@@ -682,7 +702,7 @@ two-step registration into `faucet_registry_map` and `token_registry_map`).
 
 | Field | Value |
 |-------|-------|
-| `sender` | Bridge admin (sender authorization enforced by the bridge's `deregister_faucet` procedure) |
+| `sender` | Holder of the `FAUCET_MNGR` role (sender authorization enforced by the bridge's `deregister_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -710,20 +730,20 @@ The origin token address and origin network are not carried by the note; the bri
 back from its own `faucet_metadata_map` when clearing the token registry.
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::deregister_faucet` (which asserts sender is bridge admin, asserts
+`bridge_config::deregister_faucet` (which asserts the sender holds the `FAUCET_MNGR` role, asserts
 the faucet is currently registered, and clears the `faucet_registry_map`,
 `token_registry_map`, and `faucet_metadata_map` entries).
 
 After consumption, in-flight B2AGG / CLAIM notes referencing the deregistered
 faucet will fail their `assert_faucet_registered` / `lookup_faucet_by_token_address`
-checks. The bridge admin should drain or otherwise warn users about pending
+checks. A `FAUCET_MNGR` role holder should drain or otherwise warn users about pending
 notes before sending a `DEREGISTER_AGG_FAUCET`.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Bridge admin only -- **enforced** by `bridge_config::deregister_faucet` procedure |
+| **Issuer** | Holders of the `FAUCET_MNGR` role only -- **enforced** by `bridge_config::deregister_faucet` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.5 UPDATE_GER
@@ -737,7 +757,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | GER injector (sender authorization enforced by the bridge's `update_ger` procedure) |
+| `sender` | Holder of the `GER_INJECTOR` role (sender authorization enforced by the bridge's `update_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -762,14 +782,15 @@ CLAIM notes can be verified against it.
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::update_ger` (which asserts sender is GER injector), which computes
+`bridge_config::update_ger` (which asserts that the
+sender holds the `GER_INJECTOR` role), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | GER injector only -- **enforced** by `bridge_config::update_ger` procedure |
+| **Issuer** | Holders of the `GER_INJECTOR` role only -- **enforced** by `bridge_config::update_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.6 REMOVE_GER
@@ -784,7 +805,7 @@ removed-GER keccak256 hash chain.
 
 | Field | Value |
 |-------|-------|
-| `sender` | GER remover (sender authorization enforced by the bridge's `remove_ger` procedure) |
+| `sender` | Holder of the `GER_REMOVER` role (sender authorization enforced by the bridge's `remove_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -809,7 +830,8 @@ removed-GER keccak256 hash chain.
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::remove_ger` (which asserts sender is GER remover), which computes
+`bridge_config::remove_ger` (which asserts that the
+sender holds the `GER_REMOVER` role), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)`, asserts the GER map entry equals `[1, 0, 0, 0]`
 while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain as
 `keccak256(prev_chain || GER)` (see [Section 2.3](#23-ger-injection)).
@@ -818,7 +840,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | GER remover only -- **enforced** by `bridge_config::remove_ger` procedure |
+| **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 4.7 BURN (generated)
@@ -904,7 +926,7 @@ deliver minted assets to the recipient.
 
 Consuming account must match `target_account_id` from note storage (enforced by the P2ID
 script). All note assets are added to the consuming account via
-`basic_wallet::add_assets_to_account`.
+`basic_wallet::move_note_assets_to_account`.
 
 #### Permissions
 
@@ -1258,7 +1280,7 @@ token metadata — symbol, decimals, max supply, and token supply
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is
-precomputed by the bridge admin and is currently not verified onchain
+precomputed by the `FAUCET_MNGR` role holder and is currently not verified onchain
 (TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586))).
 
 Registration is performed via [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes. The bridge
@@ -1284,11 +1306,11 @@ data and calls `bridge_config::lookup_faucet_by_token_address` to find the regis
 faucet. If the `(origin_token_address, origin_network)` pair is not registered, the `CLAIM`
 note consumption will fail.
 
-The bridge admin is a trusted role, and is the sole entity that can register faucets on
+The `FAUCET_MNGR` role holder is trusted, and is the sole entity that can register faucets on
 the Miden side (enforced by the caller restriction on
 [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
-The bridge admin can also revoke a faucet's authorization via a
+A `FAUCET_MNGR` role holder can also revoke a faucet's authorization via a
 [`DEREGISTER_AGG_FAUCET`](#44-deregister_agg_faucet) note (see
 [Section 4.4](#44-deregister_agg_faucet)), which retires compromised, broken, or deprecated faucets
 without redeploying the bridge.
@@ -1311,8 +1333,8 @@ operations against them — *not* how they are registered.
   `origin_token_address` is the faucet's own `AccountId` in the [Embedded
   Format](#62-embedded-format), and `origin_network` is Miden's own network ID.
 
-In both cases the bridge admin drives registration via the same `CONFIG_AGG_BRIDGE` note;
-the bridge admin is responsible for setting `is_native` correctly for the faucet at hand.
+In both cases the `FAUCET_MNGR` role holder drives registration via the same `CONFIG_AGG_BRIDGE` note;
+the `FAUCET_MNGR` role holder is responsible for setting `is_native` correctly for the faucet at hand.
 
 ### 7.2 Bridging-out: How tokens are registered on other chains
 

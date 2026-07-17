@@ -19,13 +19,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-use super::pausable::{
-    NON_OWNER_ID,
-    OWNER_ID,
-    build_note,
-    execute_note_on_faucet,
-    test_account_id,
-};
+use super::pausable::{NON_OWNER_ID, OWNER_ID, execute_note_on_faucet};
+use super::rbac::{build_note, test_account_id};
 
 // FAUCET BUILDER
 // ================================================================================================

@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use core::slice;
 
@@ -32,7 +32,7 @@ fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { admin, roles: BTreeMap::new() })
+        .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() })
         .build_existing()?;
 
     Ok(account)
@@ -93,13 +93,22 @@ pub(super) fn is_role_member(
     Ok(word[0].as_canonical_u64() != 0)
 }
 
-fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
-    let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
+pub(super) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
+    let seed: [u32; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(code.into())
         .build()?)
+}
+
+/// Builds a note authored by `sender` that grants `role` to `account_id` via `rbac::grant_role`.
+pub(super) fn build_grant_role_note(
+    sender: AccountId,
+    role: &RoleSymbol,
+    account_id: AccountId,
+) -> anyhow::Result<Note> {
+    build_note(sender, grant_role_script(role, account_id))
 }
 
 async fn execute_note_and_apply(
@@ -898,6 +907,48 @@ async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    Ok(())
+}
+
+/// `RoleBasedAccessControl::with_role_members` seeds the `ADMIN` role plus arbitrary operator
+/// roles at construction. Each seeded operator role's delegated admin is left unset (0), and a role
+/// mapped to an empty member set is dropped.
+#[test]
+fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
+    let admin = test_account_id(201);
+    let minter = test_account_id(202);
+    let burner = test_account_id(203);
+
+    let admin_role = RoleBasedAccessControl::admin_role();
+    let minter_role = role("MINTER");
+    let burner_role = role("BURNER");
+    let empty_role = role("EMPTY");
+
+    let account = AccountBuilder::new([9; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(RoleBasedAccessControl::new(
+            BTreeSet::from([admin]),
+            BTreeMap::from([
+                (minter_role.clone(), BTreeSet::from([minter])),
+                (burner_role.clone(), BTreeSet::from([burner])),
+                (empty_role.clone(), BTreeSet::new()),
+            ]),
+        ))
+        .build_existing()?;
+
+    // ADMIN is seeded and administers itself (delegated admin unset).
+    assert!(is_role_member(&account, &admin_role, admin)?);
+    assert_eq!(get_role_config(&account, &admin_role)?, (Felt::ONE, Felt::ZERO));
+
+    // Operator roles are seeded with their delegated admin unset (0 -> administered by ADMIN).
+    assert!(is_role_member(&account, &minter_role, minter)?);
+    assert_eq!(get_role_config(&account, &minter_role)?, (Felt::ONE, Felt::ZERO));
+    assert!(is_role_member(&account, &burner_role, burner)?);
+
+    // A role mapped to an empty member set is dropped.
+    assert_eq!(get_role_config(&account, &empty_role)?.0, Felt::ZERO);
 
     Ok(())
 }

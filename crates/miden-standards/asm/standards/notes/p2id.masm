@@ -62,7 +62,7 @@ pub proc main
     exec.account_id::eq assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
     # => []
 
-    exec.basic_wallet::add_assets_to_account
+    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
