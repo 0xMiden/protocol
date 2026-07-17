@@ -29,10 +29,10 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
 use crate::scripts::fee_manager::{
-    CUSTOM_FEE_AMOUNT,
     FEE_AMOUNT,
     build_fee_account_with_switching,
     create_set_fee_policy_note_script,
+    custom_fee_amount_for,
     custom_fee_policy,
     estimate_note_fee_tx_script_code,
     fee_faucet_id,
@@ -260,12 +260,16 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
 
     // With the custom policy active, the previously priced root is priced by the custom logic:
     // the fee asset ID echoes the STORAGE_COMMITMENT supplied to the estimate script and the
-    // amount is the fixed custom fee.
+    // amount is derived from the base custom fee and the supplied timeframe and priority.
     let storage_commitment = Word::from([11u32, 12, 13, 14]);
+    let timeframe = 25u32;
+    let priority = 3u32;
     let tx_script_code = estimate_note_fee_tx_script_code(
         storage_commitment,
+        timeframe,
+        priority,
         storage_commitment,
-        AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
+        AssetAmount::new(custom_fee_amount_for(timeframe, priority))?.to_word(),
     );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
@@ -561,8 +565,6 @@ fn asset_commitment_fee_policy(
         r#"
         use miden::core::word
         use miden::standards::assets::fungible_asset
-
-        use {{Asset}} from miden::protocol::types
 
         #! Fee policy pricing a note in one of two assets, selected by its assets commitment.
         #!

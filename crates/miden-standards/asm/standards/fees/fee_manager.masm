@@ -40,6 +40,7 @@ const POLICY_PROC_ROOT_PTR = 0
 # ERRORS
 # =================================================================================================
 
+const ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 = "timeframe and priority must be u32 values"
 const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
 const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
@@ -64,15 +65,18 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is the timeframe the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
-#! - priority is the priority the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
+#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
+#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
+#! - timeframe or priority is not a u32 value.
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #!
 #! Invocation: call
 @account_procedure
@@ -83,6 +87,10 @@ pub proc estimate_note_fee(
     timeframe: u32,
     priority: u32
 ) -> Asset
+    # enforce the declared types of the caller-supplied timeframe and priority
+    movup.13 movup.13 u32assert2.err=ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 movdn.13 movdn.13
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+
     exec.estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
@@ -141,15 +149,17 @@ end
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is the timeframe the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
-#! - priority is the priority the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
+#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
+#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #!
 #! Invocation: exec
 pub proc estimate_note_fee_internal(
@@ -175,15 +185,17 @@ end
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is the timeframe the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
-#! - priority is the priority the fee is estimated for; its semantics are defined by the active
-#!   fee policy.
+#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
+#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
+#!   semantics are defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #!
 #! Invocation: exec
 @locals(4)

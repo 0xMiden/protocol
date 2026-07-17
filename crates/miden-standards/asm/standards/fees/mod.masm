@@ -234,7 +234,8 @@ end
 #!
 #! Panics if:
 #! - a network output note's target ID attachment does not consist of exactly one word.
-#! - a network output note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's fee policy requires a network output note's recipient preimage and it
+#!   is unavailable or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
 #! - the native account's vault does not hold enough of the fee asset.
 #!
@@ -513,7 +514,8 @@ end
 #!
 #! Panics if:
 #! - the note's target ID attachment does not consist of exactly one word.
-#! - the note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's fee policy requires the note's recipient preimage and it is unavailable
+#!   or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
 #! - the native account's vault does not hold enough of the fee asset.
 #!
@@ -558,7 +560,8 @@ end
 #!
 #! Panics if:
 #! - the note's target ID attachment does not consist of exactly one word.
-#! - the note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's fee policy requires the note's recipient preimage and it is unavailable
+#!   or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
 #!
 #! Invocation: exec

@@ -39,8 +39,14 @@ fn fee_manager() -> anyhow::Result<FeeManager> {
         .build())
 }
 
-/// The fee charged by the user-defined test policy in [`custom_fee_policy`].
+/// The base fee charged by the user-defined test policy in [`custom_fee_policy`].
 pub(super) const CUSTOM_FEE_AMOUNT: u64 = 777;
+
+/// The fee the user-defined test policy in [`custom_fee_policy`] charges for the given timeframe
+/// and priority. The distinct weights make a transposition of the two parameters detectable.
+pub(super) fn custom_fee_amount_for(timeframe: u32, priority: u32) -> u64 {
+    CUSTOM_FEE_AMOUNT + 2 * u64::from(timeframe) + u64::from(priority)
+}
 
 /// The namespace under which the user-defined test policy is compiled.
 const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
@@ -48,10 +54,11 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 /// Builds a user-defined fee policy component, mirroring how a contract developer would plug
 /// their own fee computation logic into the `FeeManager` via [`FeePolicy::custom`].
 ///
-/// The policy charges [`CUSTOM_FEE_AMOUNT`] in an "asset" identified by the note's
-/// STORAGE_COMMITMENT, recovered from RECIPIENT via the advice provider. Pricing on a parameter
-/// other than the note's script root proves that the manager forwards the full note parameter set
-/// to the policy implementation.
+/// The policy charges [`custom_fee_amount_for`] the note's timeframe and priority in an "asset"
+/// identified by the note's STORAGE_COMMITMENT, recovered from RECIPIENT via the advice provider.
+/// Pricing on parameters other than the note's script root - with distinct weights on timeframe
+/// and priority - proves that the manager forwards the full note parameter set, slot by slot, to
+/// the policy implementation.
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
@@ -59,8 +66,9 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
 
         use {{Asset, NoteRecipient}} from miden::protocol::types
 
-        #! Fee policy charging a fixed amount in an asset identified by the note's storage
-        #! commitment, recovered from the recipient via the advice provider.
+        #! Fee policy charging a fixed amount plus twice the timeframe plus the priority, in an
+        #! asset identified by the note's storage commitment, recovered from the recipient via the
+        #! advice provider.
         #!
         #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -78,15 +86,20 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
             #     timeframe, priority, pad(2)]
 
-            # keep STORAGE_COMMITMENT as the fee asset ID, dropping the other note parameters
-            dropw swapw dropw swapw dropw movup.4 drop movup.4 drop
-            # => [STORAGE_COMMITMENT, pad(12)]
+            # keep STORAGE_COMMITMENT as the fee asset ID and the timeframe and priority as
+            # pricing inputs, dropping the other note parameters
+            dropw swapw dropw swapw dropw
+            # => [STORAGE_COMMITMENT, timeframe, priority, pad(10)]
 
-            push.0.0.0.{CUSTOM_FEE_AMOUNT}
-            # => [FEE_ASSET_VALUE, STORAGE_COMMITMENT, pad(12)]
+            # charge the base amount plus twice the timeframe plus the priority
+            movup.4 mul.2 movup.5 add push.{CUSTOM_FEE_AMOUNT} add
+            # => [fee_amount, STORAGE_COMMITMENT, pad(11)]
+
+            push.0.0.0 movup.3
+            # => [FEE_ASSET_VALUE, STORAGE_COMMITMENT, pad(11)]
 
             swapw
-            # => [STORAGE_COMMITMENT, FEE_ASSET_VALUE, pad(12)]
+            # => [STORAGE_COMMITMENT, FEE_ASSET_VALUE, pad(11)]
 
             # drop the excess padding to restore the stack depth for the call boundary
             movupw.3 dropw
@@ -126,12 +139,14 @@ pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Resu
 /// asset. The tx script argument supplies the queried NOTE_SCRIPT_ROOT on top of the initial
 /// operand stack. The script derives the RECIPIENT of a note with that script root, the given
 /// STORAGE_COMMITMENT, and an all-zero serial number, seeding the advice map with the recipient
-/// preimages the fee policy recovers; the remaining zeros serve as the other note parameters
-/// (assets and attachments commitments, timeframe, and priority), forming the full 16-felt
-/// `estimate_note_fee` inputs. A wrong result aborts the transaction, so successful execution
-/// proves the returned fee asset.
+/// preimages the fee policy recovers, and places the given timeframe and priority in their
+/// parameter slots; the remaining zeros serve as the other note parameters (assets and
+/// attachments commitments), forming the full 16-felt `estimate_note_fee` inputs. A wrong result
+/// aborts the transaction, so successful execution proves the returned fee asset.
 pub(super) fn estimate_note_fee_tx_script_code(
     storage_commitment: Word,
+    timeframe: u32,
+    priority: u32,
     expected_fee_asset_id: Word,
     expected_fee_value: Word,
 ) -> String {
@@ -156,8 +171,12 @@ pub(super) fn estimate_note_fee_tx_script_code(
             adv.insert_hdword exec.poseidon2::merge
             # => [RECIPIENT, pad(12)]
 
-            # the zeros below the recipient serve as the assets and attachments commitments, the
-            # timeframe, the priority, and the call padding
+            # place the timeframe and priority in their parameter slots; the zeros in between
+            # serve as the assets and attachments commitments
+            push.{priority} push.{timeframe} movdn.13 movdn.13
+            # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(2)]
+
             call.fee_manager::estimate_note_fee
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
@@ -216,9 +235,12 @@ async fn estimate_note_fee_returns_scheduled_fee(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    // The constant fee policy ignores the storage commitment, so an all-zero one is passed.
+    // The constant fee policy ignores the storage commitment, timeframe, and priority, so an
+    // all-zero commitment and arbitrary non-zero timeframe and priority are passed.
     let tx_script_code = estimate_note_fee_tx_script_code(
         Word::empty(),
+        11,
+        7,
         AssetId::new_fungible(fee_faucet_id()?).to_word(),
         AssetAmount::new(expected_amount)?.to_word(),
     );
@@ -267,6 +289,11 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // The custom policy identifies the fee asset by the note's storage commitment.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
 
+    // Distinct non-zero timeframe and priority prove the parameters reach the policy slot by
+    // slot.
+    let timeframe = 40u32;
+    let priority = 9u32;
+
     // The note parameters are pushed inline: the RECIPIENT is derived from the storage
     // commitment, an arbitrary NOTE_SCRIPT_ROOT (the custom policy ignores it), and an all-zero
     // serial number, seeding the advice map with the recipient preimages the custom policy
@@ -290,12 +317,18 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
             adv.insert_hdword exec.poseidon2::merge
             # => [RECIPIENT, pad(16)]
 
-            # push the estimate_note_fee procedure root and the foreign account ID; the zeros
-            # below the recipient serve as the other note parameters and the FPI input padding
+            # place the timeframe and priority in their parameter slots; the zeros in between
+            # serve as the assets and attachments commitments
+            push.{priority} push.{timeframe} movdn.13 movdn.13
+            # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(2), pad(4)]
+
+            # push the estimate_note_fee procedure root and the foreign account ID
             push.{estimate_note_fee_root}
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
-            #     RECIPIENT, pad(16)]
+            #     RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(2), pad(4)]
 
             exec.tx::execute_foreign_procedure
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -314,7 +347,8 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         expected_fee_asset_id = storage_commitment,
-        expected_fee_value = AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
+        expected_fee_value =
+            AssetAmount::new(custom_fee_amount_for(timeframe, priority))?.to_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
