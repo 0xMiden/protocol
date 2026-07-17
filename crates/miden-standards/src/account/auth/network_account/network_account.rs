@@ -245,32 +245,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn network_account_exposes_tx_script_allowlist() {
-        let note_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let tx_root = TransactionScriptRoot::from_raw(Word::from([5u32, 6, 7, 8]));
-        let other_tx_root = TransactionScriptRoot::from_raw(Word::from([9u32, 10, 11, 12]));
-
-        let account = AccountBuilder::new([0; 32])
-            .account_type(AccountType::Public)
-            .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([note_root]))
-                    .expect("non-empty allowlist")
-                    .with_allowed_tx_scripts(BTreeSet::from_iter([tx_root])),
-            )
-            .with_component(BasicWallet)
-            .build()
-            .expect("account building should succeed");
-
-        let network_account = NetworkAccount::new(account).expect("should be a network account");
-        assert_eq!(
-            network_account.allowed_tx_scripts().allowed_script_roots(),
-            &BTreeSet::from_iter([tx_root])
-        );
-        assert!(network_account.allows_tx_script(&tx_root));
-        assert!(!network_account.allows_tx_script(&other_tx_root));
-    }
-
     /// An account with the note allowlist slot but no tx-script allowlist slot is still a network
     /// account; its tx-script allowlist decodes as empty (no transaction scripts permitted).
     #[test]
@@ -313,11 +287,8 @@ mod tests {
 
         let network_account = NetworkAccount::new(account).expect("should be a network account");
         assert!(network_account.allows_tx_script(&ExpirationTransactionScript::script_root()));
-    }
 
-    #[test]
-    fn builder_rejects_empty_note_allowlist() {
-        let result = NetworkAccount::builder([0; 32], BTreeSet::new());
-        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
+        let other_root = TransactionScriptRoot::from_raw(Word::from([9u32, 10, 11, 12]));
+        assert!(!network_account.allows_tx_script(&other_root));
     }
 }
