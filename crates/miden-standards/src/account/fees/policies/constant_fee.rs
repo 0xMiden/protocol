@@ -106,6 +106,11 @@ impl From<NoteScriptRoot> for NoteFeeLookupKey {
 /// estimate to an amount of 0. The slot defaults to the built-in `build_note_fee_lookup_key`
 /// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
 ///
+/// There is currently no setter for the lookup-key procedure root, neither in this builder nor
+/// on-chain: the slot is fixed at deployment to the built-in procedure. Installing a custom
+/// lookup-key procedure requires a future authority-gated setter that validates the new root the
+/// way the manager's `set_fee_policy` does (non-zero and a procedure of this account).
+///
 /// ## Storage layout
 ///
 /// - [`Self::fee_asset_id_slot_name`] value slot: the [`AssetId`] word of the fungible asset the

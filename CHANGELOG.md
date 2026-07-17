@@ -37,6 +37,7 @@
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
+- [BREAKING] The `ConstantFeePolicy` now stores the root of its lookup-key procedure in the new `lookup_key_proc_root` storage slot and invokes it dynamically via `dyncall` (defaulting to the built-in `build_note_fee_lookup_key`, which keys on the note's script root), and its Rust fee schedule is keyed by the new `NoteFeeLookupKey` type instead of `NoteScriptRoot` ([#3324](https://github.com/0xMiden/protocol/issues/3324)).
 
 ## v0.16.0-alpha.3 (2026-07-15)
 

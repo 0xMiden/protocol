@@ -1,14 +1,27 @@
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageMap,
+    StorageSlot,
+};
 use miden_protocol::asset::{AssetAmount, AssetId};
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_standards::errors::standards::{
+    ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT,
+    ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET,
+};
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 // HELPERS
@@ -209,6 +222,71 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// `compute_note_fee` refuses to dispatch to an invalid lookup-key procedure root: a hand-built
+/// `constant_fee` component deployment whose `lookup_key_proc_root` slot holds a zero word or a
+/// root that is not a procedure of the account aborts with the matching error instead of invoking
+/// an arbitrary MAST root.
+#[rstest]
+#[case::unset_root(Word::empty(), ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET)]
+#[case::foreign_root(Word::from([4u32, 3, 2, 1]), ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT)]
+#[tokio::test]
+async fn estimate_note_fee_rejects_invalid_lookup_key_proc_root(
+    #[case] lookup_key_proc_root: Word,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    // Build the constant fee policy component by hand so the lookup-key procedure root slot can
+    // hold an invalid word - `From<ConstantFeePolicy>` always writes the built-in root.
+    let fee_asset_id_slot = StorageSlot::with_value(
+        ConstantFeePolicy::fee_asset_id_slot_name().clone(),
+        AssetId::new_fungible(fee_faucet_id()?).to_word(),
+    );
+    let fee_schedule_slot = StorageSlot::with_map(
+        ConstantFeePolicy::fee_schedule_slot_name().clone(),
+        StorageMap::new(),
+    );
+    let lookup_key_proc_root_slot = StorageSlot::with_value(
+        ConstantFeePolicy::lookup_key_proc_root_slot_name().clone(),
+        lookup_key_proc_root,
+    );
+    let component = AccountComponent::new(
+        ConstantFeePolicy::code().clone(),
+        vec![fee_asset_id_slot, fee_schedule_slot, lookup_key_proc_root_slot],
+        ConstantFeePolicy::component_metadata(),
+    )?;
+    let policy = FeePolicy::custom(ConstantFeePolicy::root(), [component])?;
+
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(FeeManager::builder().active_fee_policy(policy).build())
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee values are irrelevant: the transaction must abort before returning.
+    let tx_script_code = estimate_note_fee_tx_script_code(
+        Word::empty(),
+        AssetId::new_fungible(fee_faucet_id()?).to_word(),
+        AssetAmount::new(0)?.to_word(),
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(priced_root().as_word())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

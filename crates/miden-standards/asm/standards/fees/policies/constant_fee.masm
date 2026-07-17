@@ -28,16 +28,21 @@ const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::
 # Map entries: LOOKUP_KEY => [fee_amount, 0, 0, 0]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
 
-# Slot holding the root of the procedure that builds the fee schedule lookup key.
+# Slot holding the root of the procedure that builds the fee schedule lookup key. The stored root
+# must be a procedure of this account with the same interface as `build_note_fee_lookup_key`: it
+# is invoked via `dyncall` on the note parameters and must leave just the lookup key. Of these
+# requirements only account membership is validated at dispatch; the interface contract cannot be
+# checked on-chain and is the deployer's responsibility.
 const LOOKUP_KEY_PROC_ROOT_SLOT = word("miden::standards::fees::policies::constant_fee::lookup_key_proc_root")
 
-# Local memory pointer used to pass the lookup-key procedure root to `dynexec`.
+# Local memory pointer used to pass the lookup-key procedure root to `dyncall`.
 const LOOKUP_KEY_PROC_ROOT_PTR = 0
 
 # ERRORS
 # =================================================================================================
 
 const ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET = "lookup key procedure root is not set"
+const ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT = "lookup key procedure root is not a procedure of this account"
 
 # POLICY PROCEDURES
 # =================================================================================================
@@ -46,7 +51,7 @@ const ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET = "lookup key procedure root is not set"
 #!
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters by
 #! the lookup-key procedure whose root is stored in the `lookup_key_proc_root` slot (invoked via
-#! `dynexec`). The built-in `build_note_fee_lookup_key` derives the key from just
+#! `dyncall`). The built-in `build_note_fee_lookup_key` derives the key from just
 #! NOTE_SCRIPT_ROOT; lookup keys without a schedule entry estimate to a fee amount of 0.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
@@ -62,6 +67,7 @@ const ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET = "lookup key procedure root is not set"
 #!
 #! Panics if:
 #! - the lookup-key procedure root is not set.
+#! - the lookup-key procedure root is not a procedure of this account.
 #!
 #! Invocation: call
 @locals(4)
@@ -81,6 +87,11 @@ pub proc compute_note_fee(
     # => [LOOKUP_KEY_PROC_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
     #     ATTACHMENTS_COMMITMENT]
 
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [LOOKUP_KEY_PROC_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
     loc_storew_le.LOOKUP_KEY_PROC_ROOT_PTR dropw
     # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 
@@ -88,7 +99,7 @@ pub proc compute_note_fee(
     # => [lookup_key_proc_root_ptr, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
     #     ATTACHMENTS_COMMITMENT]
 
-    dynexec
+    dyncall
     # => [LOOKUP_KEY, pad(12)]
 
     push.FEE_SCHEDULE_SLOT[0..2]
@@ -114,9 +125,10 @@ end
 #! parameters are ignored.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-#! Outputs: [LOOKUP_KEY]
+#! Outputs: [LOOKUP_KEY, pad(12)]
 #!
-#! Invocation: dynexec
+#! Invocation: call
+@account_procedure
 pub proc build_note_fee_lookup_key(
     note_script_root: NoteScriptRoot,
     storage_commitment: word,
@@ -124,5 +136,5 @@ pub proc build_note_fee_lookup_key(
     attachments_commitment: word
 ) -> StorageMapKey
     swapw.3 dropw dropw dropw
-    # => [LOOKUP_KEY]
+    # => [LOOKUP_KEY, pad(12)]
 end
