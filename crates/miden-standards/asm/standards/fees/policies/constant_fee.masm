@@ -1,13 +1,18 @@
 # miden::standards::fees::policies::constant_fee
 #
-# Constant fee policy: derives the fee from a fixed per-note-script fee schedule. Designed to be
-# registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches fee
-# estimation to `compute_note_fee` via `dyncall`.
+# Constant fee policy: derives the fee from a fixed fee schedule. Designed to be registered on a
+# `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches fee estimation to
+# `compute_note_fee` via `dyncall`.
 #
 # Storage layout:
 # - `fee_asset_id` word: the ID of the asset the fee is charged in.
-# - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]. The default (unset) entry is
-#   the zero word, so unpriced note scripts estimate to a fee amount of 0.
+# - `fee_schedule` map: LOOKUP_KEY => [fee_amount, 0, 0, 0]. The default (unset) entry is the
+#   zero word, so lookup keys without a schedule entry estimate to a fee amount of 0.
+# - `lookup_key_proc_root` word: the root of the procedure that builds the fee schedule lookup
+#   key from the note parameters. The built-in `build_note_fee_lookup_key` keys on
+#   NOTE_SCRIPT_ROOT.
+
+use miden::core::word
 
 use miden::protocol::active_account
 
@@ -19,32 +24,47 @@ use {Asset, NoteScriptRoot, StorageMapKey} from miden::protocol::types
 # Slot holding the ID of the asset the fee is charged in.
 const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::fee_asset_id")
 
-# Slot holding the per-note-script fee schedule.
-# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]
+# Slot holding the fee schedule.
+# Map entries: LOOKUP_KEY => [fee_amount, 0, 0, 0]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
+
+# Slot holding the root of the procedure that builds the fee schedule lookup key.
+const LOOKUP_KEY_PROC_ROOT_SLOT = word("miden::standards::fees::policies::constant_fee::lookup_key_proc_root")
+
+# Local memory pointer used to pass the lookup-key procedure root to `dynexec`.
+const LOOKUP_KEY_PROC_ROOT_PTR = 0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET = "lookup key procedure root is not set"
 
 # POLICY PROCEDURES
 # =================================================================================================
 
-#! Fee policy returning the constant fee scheduled for the note's script root.
+#! Fee policy returning the constant fee scheduled for the note.
 #!
-#! The fee amount is looked up in the fee schedule under a key built from the note parameters.
-#! This policy derives the key from just NOTE_SCRIPT_ROOT and ignores the remaining parameters;
-#! note scripts without a schedule entry estimate to a fee amount of 0.
+#! The fee amount is looked up in the fee schedule under a key built from the note parameters by
+#! the lookup-key procedure whose root is stored in the `lookup_key_proc_root` slot (invoked via
+#! `dynexec`). The built-in `build_note_fee_lookup_key` derives the key from just
+#! NOTE_SCRIPT_ROOT; lookup keys without a schedule entry estimate to a fee amount of 0.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage (ignored by this policy).
-#! - ASSETS_COMMITMENT is the commitment to the note's assets (ignored by this policy).
-#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments (ignored by this
-#!   policy).
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
+#! Panics if:
+#! - the lookup-key procedure root is not set.
+#!
 #! Invocation: call
+@locals(4)
 @account_procedure
 pub proc compute_note_fee(
     note_script_root: NoteScriptRoot,
@@ -52,7 +72,23 @@ pub proc compute_note_fee(
     assets_commitment: word,
     attachments_commitment: word
 ) -> Asset
-    exec.build_note_fee_lookup_key
+    push.LOOKUP_KEY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [LOOKUP_KEY_PROC_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    exec.word::testz
+    assertz.err=ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET
+    # => [LOOKUP_KEY_PROC_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    loc_storew_le.LOOKUP_KEY_PROC_ROOT_PTR dropw
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    locaddr.LOOKUP_KEY_PROC_ROOT_PTR
+    # => [lookup_key_proc_root_ptr, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT]
+
+    dynexec
     # => [LOOKUP_KEY, pad(12)]
 
     push.FEE_SCHEDULE_SLOT[0..2]
@@ -69,18 +105,19 @@ pub proc compute_note_fee(
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
 
-# HELPER PROCEDURES
+# LOOKUP-KEY PROCEDURES
 # =================================================================================================
 
 #! Builds the fee schedule lookup key from the note parameters.
 #!
-#! This policy's lookup key is just NOTE_SCRIPT_ROOT; the remaining parameters are ignored.
+#! This is the built-in lookup-key procedure: the key is just NOTE_SCRIPT_ROOT; the remaining
+#! parameters are ignored.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [LOOKUP_KEY]
 #!
-#! Invocation: exec
-proc build_note_fee_lookup_key(
+#! Invocation: dynexec
+pub proc build_note_fee_lookup_key(
     note_script_root: NoteScriptRoot,
     storage_commitment: word,
     assets_commitment: word,

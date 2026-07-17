@@ -1,5 +1,6 @@
 use alloc::collections::BTreeMap;
 
+use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -39,6 +40,13 @@ procedure_root!(
     ConstantFeePolicy::code()
 );
 
+procedure_root!(
+    CONSTANT_FEE_POLICY_LOOKUP_KEY_PROC_ROOT,
+    ConstantFeePolicy::NAME,
+    ConstantFeePolicy::LOOKUP_KEY_PROC_NAME,
+    ConstantFeePolicy::code()
+);
+
 static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::fees::policies::constant_fee::fee_asset_id")
         .expect("storage slot name should be valid")
@@ -49,25 +57,68 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+static LOOKUP_KEY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fees::policies::constant_fee::lookup_key_proc_root")
+        .expect("storage slot name should be valid")
+});
+
+// NOTE FEE LOOKUP KEY
+// ================================================================================================
+
+/// Key under which a fee schedule entry is stored in a [`ConstantFeePolicy`].
+///
+/// The on-chain policy computes this key from the note parameters via the lookup-key procedure
+/// stored in its [`ConstantFeePolicy::lookup_key_proc_root_slot_name`] slot; a note's fee is the
+/// schedule entry stored under the computed key. The built-in `build_note_fee_lookup_key`
+/// procedure uses the note's script root as the key, which the [`NoteScriptRoot`] conversion
+/// mirrors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NoteFeeLookupKey(Word);
+
+impl NoteFeeLookupKey {
+    /// Creates a new [`NoteFeeLookupKey`] from the given word.
+    pub fn new(word: Word) -> Self {
+        Self(word)
+    }
+
+    /// Returns the underlying [`Word`] of the lookup key.
+    pub fn as_word(&self) -> Word {
+        self.0
+    }
+}
+
+impl From<NoteScriptRoot> for NoteFeeLookupKey {
+    /// Converts a [`NoteScriptRoot`] into the lookup key the built-in `build_note_fee_lookup_key`
+    /// procedure produces for a note with that script root.
+    fn from(root: NoteScriptRoot) -> Self {
+        Self(root.as_word())
+    }
+}
+
 /// The `constant_fee` fee policy account component.
 ///
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
 /// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
-/// value words): the amount is looked up in the fee schedule under the note's script root, and
-/// note scripts without a schedule entry estimate to an amount of 0.
+/// value words): the amount is looked up in the fee schedule under a [`NoteFeeLookupKey`] built
+/// from the note parameters by the lookup-key procedure stored in the policy's
+/// [`Self::lookup_key_proc_root_slot_name`] slot, and lookup keys without a schedule entry
+/// estimate to an amount of 0. The slot defaults to the built-in `build_note_fee_lookup_key`
+/// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
 ///
 /// ## Storage layout
 ///
 /// - [`Self::fee_asset_id_slot_name`] value slot: the [`AssetId`] word of the fungible asset the
 ///   fee is charged in.
-/// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]`.
+/// - [`Self::fee_schedule_slot_name`] map slot: `LOOKUP_KEY => [fee_amount, 0, 0, 0]`.
+/// - [`Self::lookup_key_proc_root_slot_name`] value slot: the root of the procedure that builds the
+///   fee schedule lookup key.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicy {
     /// The ID of the fungible asset the fee is charged in.
     fee_asset_id: AssetId,
-    /// The fee charged per note script root.
-    fee_schedule: BTreeMap<NoteScriptRoot, AssetAmount>,
+    /// The fee charged per lookup key.
+    fee_schedule: BTreeMap<NoteFeeLookupKey, AssetAmount>,
 }
 
 impl ConstantFeePolicy {
@@ -78,6 +129,8 @@ impl ConstantFeePolicy {
     pub const NAME: &'static str = "miden::standards::components::fees::policies::constant_fee";
 
     pub(crate) const PROC_NAME: &str = "compute_note_fee";
+
+    pub(crate) const LOOKUP_KEY_PROC_NAME: &str = "build_note_fee_lookup_key";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -96,10 +149,13 @@ impl ConstantFeePolicy {
         }
     }
 
-    /// Sets the fee for notes with the given script root, replacing any previous entry.
+    /// Sets the fee for notes with the given lookup key, replacing any previous entry.
+    ///
+    /// The key must match the output of the policy's lookup-key procedure for the targeted
+    /// notes; with the built-in `build_note_fee_lookup_key`, that is the note's script root.
     #[must_use]
-    pub fn with_fee(mut self, script_root: NoteScriptRoot, fee: AssetAmount) -> Self {
-        self.fee_schedule.insert(script_root, fee);
+    pub fn with_fee(mut self, lookup_key: impl Into<NoteFeeLookupKey>, fee: AssetAmount) -> Self {
+        self.fee_schedule.insert(lookup_key.into(), fee);
         self
     }
 
@@ -116,6 +172,12 @@ impl ConstantFeePolicy {
         *CONSTANT_FEE_POLICY_ROOT
     }
 
+    /// Returns the procedure root of the built-in `build_note_fee_lookup_key` procedure, which
+    /// keys the fee schedule on the note's script root.
+    pub fn lookup_key_proc_root() -> AccountProcedureRoot {
+        *CONSTANT_FEE_POLICY_LOOKUP_KEY_PROC_ROOT
+    }
+
     /// Returns the [`StorageSlotName`] of the slot holding the fee asset ID.
     pub fn fee_asset_id_slot_name() -> &'static StorageSlotName {
         &FEE_ASSET_ID_SLOT_NAME
@@ -126,13 +188,18 @@ impl ConstantFeePolicy {
         &FEE_SCHEDULE_SLOT_NAME
     }
 
+    /// Returns the [`StorageSlotName`] of the slot holding the lookup-key procedure root.
+    pub fn lookup_key_proc_root_slot_name() -> &'static StorageSlotName {
+        &LOOKUP_KEY_PROC_ROOT_SLOT_NAME
+    }
+
     /// Returns the [`AssetId`] of the fungible asset the fee is charged in.
     pub fn fee_asset_id(&self) -> AssetId {
         self.fee_asset_id
     }
 
-    /// Returns the fee charged per note script root.
-    pub fn fee_schedule(&self) -> &BTreeMap<NoteScriptRoot, AssetAmount> {
+    /// Returns the fee charged per lookup key.
+    pub fn fee_schedule(&self) -> &BTreeMap<NoteFeeLookupKey, AssetAmount> {
         &self.fee_schedule
     }
 
@@ -149,8 +216,15 @@ impl ConstantFeePolicy {
             (
                 Self::fee_schedule_slot_name().clone(),
                 StorageSlotSchema::map(
-                    "Fee charged per note script root",
+                    "Fee charged per lookup key",
                     SchemaType::native_word(),
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                Self::lookup_key_proc_root_slot_name().clone(),
+                StorageSlotSchema::value(
+                    "Root of the procedure that builds the fee schedule lookup key",
                     SchemaType::native_word(),
                 ),
             ),
@@ -158,7 +232,7 @@ impl ConstantFeePolicy {
         .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
-            .with_description("`constant_fee` fee policy charging a constant per-note-script fee")
+            .with_description("`constant_fee` fee policy charging a constant per-lookup-key fee")
             .with_storage_schema(storage_schema)
     }
 }
@@ -175,7 +249,7 @@ impl From<ConstantFeePolicy> for AccountComponent {
         let entries = policy
             .fee_schedule
             .into_iter()
-            .map(|(root, fee)| (StorageMapKey::new(root.as_word()), fee.to_word()));
+            .map(|(lookup_key, fee)| (StorageMapKey::new(lookup_key.as_word()), fee.to_word()));
         let fee_schedule_map = StorageMap::with_entries(entries)
             .expect("fee schedule entries should produce a valid storage map");
         let fee_schedule_slot = StorageSlot::with_map(
@@ -183,9 +257,14 @@ impl From<ConstantFeePolicy> for AccountComponent {
             fee_schedule_map,
         );
 
+        let lookup_key_proc_root_slot = StorageSlot::with_value(
+            ConstantFeePolicy::lookup_key_proc_root_slot_name().clone(),
+            ConstantFeePolicy::lookup_key_proc_root().as_word(),
+        );
+
         AccountComponent::new(
             ConstantFeePolicy::code().clone(),
-            vec![fee_asset_id_slot, fee_schedule_slot],
+            vec![fee_asset_id_slot, fee_schedule_slot, lookup_key_proc_root_slot],
             ConstantFeePolicy::component_metadata(),
         )
         .expect(
@@ -211,8 +290,8 @@ mod tests {
             .expect("testing account ID should be valid")
     }
 
-    /// Check that the policy's storage slots contain the fee asset ID and the fee schedule
-    /// entries.
+    /// Check that the policy's storage slots contain the fee asset ID, the fee schedule
+    /// entries, and the lookup-key procedure root.
     #[test]
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
@@ -241,7 +320,16 @@ mod tests {
         assert_eq!(
             map.get(&StorageMapKey::new(script_root.as_word())),
             fee.to_word(),
-            "the fee entry should be stored as an asset value word"
+            "the fee entry should be stored under the note's script root as an asset value word"
+        );
+
+        let lookup_key_proc_root_word = account
+            .storage()
+            .get_item(ConstantFeePolicy::lookup_key_proc_root_slot_name())?;
+        assert_eq!(
+            lookup_key_proc_root_word,
+            ConstantFeePolicy::lookup_key_proc_root().as_word(),
+            "the lookup-key procedure root slot should default to the built-in procedure"
         );
 
         Ok(())

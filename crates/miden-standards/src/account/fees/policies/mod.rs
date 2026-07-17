@@ -7,7 +7,7 @@ use thiserror::Error;
 
 mod constant_fee;
 
-pub use constant_fee::ConstantFeePolicy;
+pub use constant_fee::{ConstantFeePolicy, NoteFeeLookupKey};
 
 // FEE POLICY ERROR
 // ================================================================================================
