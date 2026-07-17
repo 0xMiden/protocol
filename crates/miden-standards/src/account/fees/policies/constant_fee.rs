@@ -19,6 +19,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -43,18 +44,35 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+/// Set-marker element of a fee schedule entry, distinguishing scheduled entries (including
+/// explicit 0 fees) from unset keys: storage maps prune zero-word values and return the zero
+/// word for unset keys, so a scheduled entry must be a non-zero word. The MASM
+/// `compute_note_fee` counterpart asserts this element equals 1 (unset keys read as the zero
+/// word, whose marker element is 0) and strips it before returning the fee asset value.
+const FEE_SCHEDULE_ENTRY_MARKER: Felt = Felt::ONE;
+
+/// Encodes a fee as a fee schedule map entry: the asset value word with the set-marker as the
+/// last element, i.e. `[fee_amount, 0, 0, 1]`.
+fn fee_schedule_entry(fee: AssetAmount) -> Word {
+    let mut entry = fee.to_word();
+    entry[3] = FEE_SCHEDULE_ENTRY_MARKER;
+    entry
+}
+
 /// The `constant_fee` fee policy account component.
 ///
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
 /// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as an asset value word: the
 /// amount is looked up in the fee schedule under the note's script root, and note scripts
-/// without a schedule entry estimate to an amount of 0. The manager prepends the fee asset ID it
-/// stores to the returned fee value.
+/// without a schedule entry abort fee estimation. To make a note script free, schedule an
+/// explicit 0 fee for it via [`ConstantFeePolicy::with_fee`]. The manager prepends the fee asset
+/// ID it stores to the returned fee value.
 ///
 /// ## Storage layout
 ///
-/// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]`.
+/// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]`, where
+///   the last element is a set-marker distinguishing scheduled entries from unset keys.
 #[derive(Debug, Clone, Default)]
 pub struct ConstantFeePolicy {
     /// The fee charged per note script root.
@@ -84,6 +102,9 @@ impl ConstantFeePolicy {
     }
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
+    ///
+    /// Scheduling an explicit fee of 0 makes notes with this script root free; script roots
+    /// without a schedule entry abort fee estimation.
     #[must_use]
     pub fn with_fee(mut self, script_root: NoteScriptRoot, fee: AssetAmount) -> Self {
         self.fee_schedule.insert(script_root, fee);
@@ -118,7 +139,8 @@ impl ConstantFeePolicy {
         let storage_schema = StorageSchema::new([(
             Self::fee_schedule_slot_name().clone(),
             StorageSlotSchema::map(
-                "Fee charged per note script root",
+                "Fee charged per note script root, as [fee_amount, 0, 0, 1] with a set-marker \
+                 as the last element",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -133,12 +155,10 @@ impl ConstantFeePolicy {
 
 impl From<ConstantFeePolicy> for AccountComponent {
     fn from(policy: ConstantFeePolicy) -> Self {
-        // Each fee is stored as an asset value word so that `compute_note_fee` can return the
-        // map entry as FEE_ASSET_VALUE unmodified.
         let entries = policy
             .fee_schedule
             .into_iter()
-            .map(|(root, fee)| (StorageMapKey::new(root.as_word()), fee.to_word()));
+            .map(|(root, fee)| (StorageMapKey::new(root.as_word()), fee_schedule_entry(fee)));
         let fee_schedule_map = StorageMap::with_entries(entries)
             .expect("fee schedule entries should produce a valid storage map");
         let fee_schedule_slot = StorageSlot::with_map(
@@ -179,8 +199,11 @@ mod tests {
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let fee = AssetAmount::new(500)?;
+        let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
-        let policy = ConstantFeePolicy::new().with_fee(script_root, fee);
+        let policy = ConstantFeePolicy::new()
+            .with_fee(script_root, fee)
+            .with_fee(free_script_root, AssetAmount::ZERO);
         let fee_manager = FeeManager::builder()
             .fee_faucet_id(fee_faucet_id())
             .active_fee_policy(policy.into())
@@ -201,8 +224,13 @@ mod tests {
         };
         assert_eq!(
             map.get(&StorageMapKey::new(script_root.as_word())),
-            fee.to_word(),
-            "the fee entry should be stored as an asset value word"
+            Word::new([Felt::new(500)?, Felt::ZERO, Felt::ZERO, Felt::ONE]),
+            "the fee entry should be stored as an asset value word with the set-marker"
+        );
+        assert_eq!(
+            map.get(&StorageMapKey::new(free_script_root.as_word())),
+            Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
+            "an explicit 0-fee entry should survive as a non-zero word"
         );
 
         Ok(())

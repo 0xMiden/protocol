@@ -23,9 +23,8 @@ use {AccountProcedureRoot, Asset, AssetId, NoteScriptRoot} from miden::protocol:
 
 # DEPENDENCY NOTE
 # `set_fee_policy` consults the account-wide [`Authority`] component (installed separately) via
-# `exec.authority::assert_authorized`, which dispatches between `AuthControlled`,
-# `OwnerControlled`, and `RbacControlled` modes. The manager itself stores no authority
-# discriminator.
+# `exec.authority::assert_authorized`. The manager itself is authority-agnostic and stores no
+# authority discriminator.
 
 # CONSTANTS
 # =================================================================================================
@@ -72,6 +71,7 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: call
 @account_procedure
@@ -132,9 +132,6 @@ pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
     exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    exec.assert_existing_fee_policy_root
-    # => [NEW_POLICY_ROOT, pad(12)]
-
     exec.assert_allowed_fee_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
@@ -160,6 +157,7 @@ end
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 pub proc estimate_note_fee_internal(
@@ -191,10 +189,11 @@ end
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 @locals(4)
-pub proc execute_fee_policy(
+proc execute_fee_policy(
     note_script_root: NoteScriptRoot,
     storage_commitment: word,
     assets_commitment: word,
@@ -257,9 +256,10 @@ end
 #! Panics if:
 #! - policy root is zero.
 #! - policy root is not present in this account's procedures.
+#! - policy root is not in the allowed fee policy roots map.
 #!
 #! Invocation: exec
-proc assert_existing_fee_policy_root(policy_root: AccountProcedureRoot) -> AccountProcedureRoot
+proc assert_allowed_fee_policy_root(policy_root: AccountProcedureRoot) -> AccountProcedureRoot
     exec.word::testz
     assertz.err=ERR_FEE_POLICY_ROOT_IS_ZERO
     # => [FEE_POLICY_ROOT]
@@ -267,18 +267,7 @@ proc assert_existing_fee_policy_root(policy_root: AccountProcedureRoot) -> Accou
     dupw exec.active_account::has_procedure
     assert.err=ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT
     # => [FEE_POLICY_ROOT]
-end
 
-#! Validates that the fee policy root is one of the allowed fee policy roots.
-#!
-#! Inputs:  [FEE_POLICY_ROOT]
-#! Outputs: [FEE_POLICY_ROOT]
-#!
-#! Panics if:
-#! - policy root is not in the allowed fee policy roots map.
-#!
-#! Invocation: exec
-proc assert_allowed_fee_policy_root(policy_root: AccountProcedureRoot) -> AccountProcedureRoot
     dupw
     push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
     exec.active_account::get_map_item
