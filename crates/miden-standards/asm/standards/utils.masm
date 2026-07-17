@@ -1,0 +1,15 @@
+# Shared word constants reused across the standards modules.
+#
+# Many modules keep a local, semantically-named word constant that is really just [1, 0, 0, 0] or
+# [0, 0, 0, 0]. They should alias these shared definitions so the raw literals live in one place.
+
+# CONSTANTS
+# =================================================================================================
+
+# The word [1, 0, 0, 0]. Commonly aliased as a boolean "true" / "set" flag stored in a value slot or
+# map entry.
+pub const ONE_WORD = [1, 0, 0, 0]
+
+# The word [0, 0, 0, 0]. The default empty storage word, commonly aliased as a boolean "false" /
+# "unset" flag or an all-zero key.
+pub const ZERO_WORD = [0, 0, 0, 0]

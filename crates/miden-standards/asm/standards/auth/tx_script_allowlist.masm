@@ -14,15 +14,16 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
 use {StorageSlotId, TransactionScriptRoot} from miden::protocol::types
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # CONSTANTS
 # =================================================================================================
 
 # Map entry value marking a tx script root as allowed.
-const ALLOWED_FLAG = [1, 0, 0, 0]
+const ALLOWED_FLAG = ONE_WORD
 
 # Map entry value marking a tx script root as not allowed.
-const EMPTY_WORD = [0, 0, 0, 0]
+const EMPTY_WORD = ZERO_WORD
 
 # ERRORS
 # =================================================================================================

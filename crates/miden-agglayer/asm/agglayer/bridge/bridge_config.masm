@@ -5,6 +5,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
+use {ONE_WORD} from miden::standards::utils
 use agglayer::common::utils
 
 # ERRORS
@@ -35,7 +36,7 @@ const REMOVED_GER_HASH_CHAIN_LO_SLOT = word("agglayer::bridge::removed_ger_hash_
 const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_chain_hi")
 
 # Flags
-const GER_KNOWN_FLAG = [1, 0, 0, 0]
+const GER_KNOWN_FLAG = ONE_WORD
 const FAUCET_REGISTERED_FLAG = 1
 
 # Offset in the local memory of the `hash_token_address` procedure
