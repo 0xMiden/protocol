@@ -8,7 +8,8 @@ use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_standards::errors::standards::ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE;
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 // HELPERS
@@ -26,13 +27,19 @@ pub(super) fn priced_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([1, 2, 3, 4])
 }
 
+/// The note script root scheduled with an explicit 0 fee in the constant fee policy.
+fn free_root() -> NoteScriptRoot {
+    NoteScriptRoot::from_array([5, 6, 7, 8])
+}
+
 /// Builds a `FeeManager` whose active policy is a `ConstantFeePolicy` charging [`FEE_AMOUNT`]
-/// (in the test faucet's asset) for notes with the [`priced_root`] script root, and whose
-/// allowed-policies map additionally registers the user-defined [`custom_fee_policy`] for
-/// runtime switching.
+/// (in the test faucet's asset) for notes with the [`priced_root`] script root and an explicit
+/// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
+/// registers the user-defined [`custom_fee_policy`] for runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
     let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
-        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
+        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
+        .with_fee(free_root(), AssetAmount::ZERO);
     Ok(FeeManager::builder()
         .active_fee_policy(constant_fee_policy.into())
         .allowed_fee_policy(custom_fee_policy()?)
@@ -173,11 +180,11 @@ pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
 
 /// `FeeManager::estimate_note_fee`, invoked via `call` from a transaction script, dispatches to
 /// the active `ConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
-/// scheduled for the queried note script root. Roots without a schedule entry estimate to an
-/// amount of 0.
+/// scheduled for the queried note script root. Roots scheduled with an explicit 0 fee estimate
+/// to an amount of 0.
 #[rstest]
 #[case::priced_root(priced_root(), FEE_AMOUNT)]
-#[case::unknown_root(NoteScriptRoot::from_array([5, 6, 7, 8]), 0)]
+#[case::zero_fee_root(free_root(), 0)]
 #[tokio::test]
 async fn estimate_note_fee_returns_scheduled_fee(
     #[case] queried_root: NoteScriptRoot,
@@ -209,6 +216,41 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// `estimate_note_fee` aborts when the queried note script root has no entry in the active
+/// `ConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
+/// of 0.
+#[tokio::test]
+async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(fee_manager()?)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee asset words are irrelevant: execution aborts in `compute_note_fee`
+    // before the tx script's assertions are reached.
+    let tx_script_code =
+        estimate_note_fee_tx_script_code(Word::empty(), Word::empty(), Word::empty());
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(NoteScriptRoot::from_array([9, 10, 11, 12]).as_word())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE);
 
     Ok(())
 }
