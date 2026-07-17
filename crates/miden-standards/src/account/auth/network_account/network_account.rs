@@ -30,15 +30,14 @@ use crate::tx_script::ExpirationTransactionScript;
 ///   - the slot MUST be a [`StorageMap`](miden_protocol::account::StorageMap) (not a value slot),
 ///   - the map MUST be non-empty (the allowlist contains at least one allowed
 ///     [`NoteScriptRoot`](miden_protocol::note::NoteScriptRoot)).
-/// - Its storage MAY contain a [`NetworkAccountTxScriptAllowlist`] slot; if present, the slot MUST
-///   be a [`StorageMap`](miden_protocol::account::StorageMap). A missing slot is equivalent to an
-///   empty allowlist: the account permits no transaction scripts.
+/// - Its storage MUST contain a [`NetworkAccountTxScriptAllowlist`] slot, and the slot (a
+///   [`StorageMap`](miden_protocol::account::StorageMap)) MUST contain the root of the canonical
+///   [`ExpirationTransactionScript`]. The network transaction builder attaches that script to every
+///   network transaction it executes, so an account without the root could never be serviced.
 ///
 /// The allowlist slots are the shared abstraction across every network-account component: they let
-/// off-chain services identify a network account without knowing which component it uses. In
-/// particular, the network transaction builder should check [`NetworkAccount::allows_tx_script`]
-/// before attaching a transaction script, since the account's auth procedure rejects transactions
-/// carrying a non-allowlisted script.
+/// off-chain services identify a network account without knowing which component it uses.
+/// [`NetworkAccount::builder`] produces accounts satisfying this specification by construction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetworkAccount {
     account: Account,
@@ -53,8 +52,8 @@ impl NetworkAccount {
     /// - the account is not [`public`](Account::is_public), or
     /// - the account's storage does not contain a valid [`NetworkAccountNoteAllowlist`] slot (see
     ///   [`NetworkAccountNoteAllowlist::try_from`] for the exact storage-level checks), or
-    /// - the account's storage contains a [`NetworkAccountTxScriptAllowlist`] slot that is not a
-    ///   [`StorageMap`](miden_protocol::account::StorageMap).
+    /// - the account's storage does not contain a valid [`NetworkAccountTxScriptAllowlist`] slot,
+    ///   or the allowlist does not contain the canonical [`ExpirationTransactionScript`] root.
     pub fn new(account: Account) -> Result<Self, NetworkAccountError> {
         if !account.is_public() {
             return Err(NetworkAccountError::AccountNotPublic(account.id()));
@@ -62,16 +61,13 @@ impl NetworkAccount {
 
         let note_allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())?;
 
-        // The tx-script allowlist slot is optional: its absence means the account permits no
-        // transaction scripts, which the empty allowlist reproduces.
-        let tx_script_allowlist = match NetworkAccountTxScriptAllowlist::try_from(account.storage())
+        let tx_script_allowlist = NetworkAccountTxScriptAllowlist::try_from(account.storage())?;
+        if !tx_script_allowlist
+            .allowed_script_roots()
+            .contains(&ExpirationTransactionScript::script_root())
         {
-            Ok(allowlist) => allowlist,
-            Err(NetworkAccountTxScriptAllowlistError::SlotNotFound) => {
-                NetworkAccountTxScriptAllowlist::default()
-            },
-            Err(err) => return Err(err.into()),
-        };
+            return Err(NetworkAccountError::ExpirationScriptNotAllowlisted);
+        }
 
         Ok(Self {
             account,
@@ -137,10 +133,7 @@ impl NetworkAccount {
     }
 
     /// Returns the [`NetworkAccountTxScriptAllowlist`] decoded from the underlying account's
-    /// storage.
-    ///
-    /// If the account has no tx-script allowlist slot, this is the empty allowlist, meaning the
-    /// account permits no transaction scripts.
+    /// storage. It always contains at least the canonical [`ExpirationTransactionScript`] root.
     pub fn allowed_tx_scripts(&self) -> &NetworkAccountTxScriptAllowlist {
         &self.tx_script_allowlist
     }
@@ -174,6 +167,11 @@ pub enum NetworkAccountError {
     NoteAllowlist(#[from] NetworkAccountNoteAllowlistError),
     #[error("failed to decode the tx-script allowlist from account storage")]
     TxScriptAllowlist(#[from] NetworkAccountTxScriptAllowlistError),
+    #[error(
+        "network account tx-script allowlist must contain the canonical expiration transaction \
+         script root"
+    )]
+    ExpirationScriptNotAllowlisted,
 }
 
 // TESTS
@@ -182,11 +180,9 @@ pub enum NetworkAccountError {
 #[cfg(test)]
 mod tests {
     use alloc::collections::BTreeSet;
-    use alloc::vec;
 
     use miden_protocol::Word;
-    use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
-    use miden_protocol::account::{AccountBuilder, AccountComponent, AccountType};
+    use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::note::NoteScriptRoot;
 
     use super::*;
@@ -197,7 +193,11 @@ mod tests {
         AccountBuilder::new([0; 32])
             .account_type(account_type)
             .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(roots).expect("non-empty allowlist"),
+                AuthNetworkAccount::with_allowed_notes(roots)
+                    .expect("non-empty allowlist")
+                    .with_allowed_tx_scripts(
+                        [ExpirationTransactionScript::script_root()].into_iter().collect(),
+                    ),
             )
             .with_component(BasicWallet)
             .build()
@@ -245,32 +245,23 @@ mod tests {
         ));
     }
 
-    /// An account with the note allowlist slot but no tx-script allowlist slot is still a network
-    /// account; its tx-script allowlist decodes as empty (no transaction scripts permitted).
+    /// An account whose tx-script allowlist lacks the canonical expiration script root is not a
+    /// network account: the network transaction builder could never service it.
     #[test]
-    fn missing_tx_script_slot_is_treated_as_empty_allowlist() {
+    fn account_without_expiration_script_is_rejected() {
         let note_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let note_slot = NetworkAccountNoteAllowlist::new(BTreeSet::from_iter([note_root]))
-            .expect("non-empty allowlist")
-            .into_storage_slot();
-
-        let storage_schema = StorageSchema::new(vec![NetworkAccountNoteAllowlist::slot_schema()])
-            .expect("storage schema should be valid");
-        let metadata = AccountComponentMetadata::new("miden::testing::note_allowlist_only")
-            .with_storage_schema(storage_schema);
-        let component =
-            AccountComponent::new(AuthNetworkAccount::code().clone(), vec![note_slot], metadata)
-                .expect("component should be valid");
-
         let account = AccountBuilder::new([0; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(component)
+            .with_auth_component(
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([note_root]))
+                    .expect("non-empty allowlist"),
+            )
             .with_component(BasicWallet)
             .build()
             .expect("account building should succeed");
 
-        let network_account = NetworkAccount::new(account).expect("should be a network account");
-        assert!(network_account.allowed_tx_scripts().allowed_script_roots().is_empty());
+        let err = NetworkAccount::new(account).expect_err("missing expiration root");
+        assert!(matches!(err, NetworkAccountError::ExpirationScriptNotAllowlisted));
     }
 
     /// `NetworkAccount::builder` produces an account that satisfies the network account
