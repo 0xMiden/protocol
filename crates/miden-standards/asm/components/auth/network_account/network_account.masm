@@ -8,6 +8,7 @@ use miden::core::word
 use miden::standards::auth::note_script_allowlist
 use miden::standards::auth::tx_script_allowlist
 use miden::standards::fee
+use miden::standards::fees
 
 # CONSTANTS
 # =================================================================================================
@@ -35,9 +36,14 @@ const NETWORK_POST_FEE_CYCLES = 1024
 #! 2. Every consumed input note must have a script root present in the allowlist stored at
 #!    `ALLOWED_NOTE_SCRIPTS_SLOT`.
 #!
-#! If both checks pass, the transaction fee is paid by creating a public TX_FEE note funded
-#! from the account's vault in the native fee asset at rate 1/1 (see fee::pay_fee and
-#! fee::native_conversion_info). On chains with a zero verification base fee no note is created.
+#! If both checks pass, the fees prepaid by any FEE_SPONSORSHIP input notes are collected into the
+#! account's vault (see fees::collect_sponsored_fees). This requires the account to have an active
+#! fee policy and to allowlist the FEE_SPONSORSHIP script root so the sponsorship notes pass the
+#! input-note check above.
+#!
+#! The transaction fee is then paid by creating a public TX_FEE note funded from the account's
+#! vault in the native fee asset at rate 1/1 (see fee::pay_fee and fee::native_conversion_info). On
+#! chains with a zero verification base fee no note is created.
 #!
 #! Finally, the nonce is incremented when the account state changed or the account is new,
 #! matching the behavior of the NoAuth and SingleSig components. Note that on fee-charging
@@ -65,6 +71,11 @@ pub proc auth_network_transaction(auth_args: word)
     # => [slot_id_suffix, slot_id_prefix, pad(16)]
 
     exec.note_script_allowlist::assert_all_input_notes_allowed
+    # => [pad(16)]
+
+    # ---- Collect fees prepaid by sponsorship input notes into the account's vault ----
+    # done before paying the fee so the collected assets can fund the fee payment
+    exec.fees::collect_sponsored_fees drop
     # => [pad(16)]
 
     # ---- Pay the transaction fee in the native fee asset ----

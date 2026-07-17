@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::note::{Note, NoteScriptRoot};
-use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -38,6 +39,15 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     build_account_with_allowlists(allowed_script_roots, Vec::new())
 }
 
+/// A zero-fee `FeeManager` (empty `ConstantFeePolicy`) giving a network account an active fee
+/// policy for `collect_sponsored_fees`. With an empty schedule every note prices to zero, so
+/// collection is a no-op on these fee-free chains.
+fn zero_fee_manager() -> anyhow::Result<FeeManager> {
+    Ok(FeeManager::builder()
+        .active_fee_policy(ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?).into())
+        .build())
+}
+
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
 /// note-script and tx-script allowlists.
 fn build_account_with_allowlists(
@@ -52,6 +62,7 @@ fn build_account_with_allowlists(
     Ok(AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
+        .with_components(zero_fee_manager()?)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
@@ -396,6 +407,7 @@ fn build_upgradeable_network_account(
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
         .with_component(BasicWallet)
+        .with_components(zero_fee_manager()?)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
