@@ -9,6 +9,7 @@
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 
 ### Changes
+
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 - [BREAKING] Replaced the AggLayer bridge's hard-coded admin/injector/remover account-ID authorization with an RBAC access-control stack (`RoleBasedAccessControl` + `Authority`); `create_bridge_account` now takes `(seed, admin, BridgeRoles)` where `admin` seeds the built-in `ADMIN` role that administers the operational `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` roles, `AggLayerBridge` is now a stateless component, and `RoleBasedAccessControl::with_roles` seeds the initial `ADMIN` and operational-role holders at genesis ([#3130](https://github.com/0xMiden/protocol/pull/3130)).
@@ -34,23 +35,20 @@
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
-## v0.16.0-alpha.2 (2026-07-13)
-
-### Changes
-- [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
-- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
-- `warden::set_warden` and agglayer's `eth_address::to_account_id` now validate only the structure of an account ID (`account_id::validate_structure`) instead of also requiring version = 1 ([#3288](https://github.com/0xMiden/protocol/pull/3288)).
 ## v0.16.0-alpha.3 (2026-07-15)
 
 ### Fixes
 
 - Fixed `SendNotesTransactionScript` generating a script that returned at an invalid stack depth when a note carried no assets, causing the VM to reject the transaction with `InvalidStackDepthOnReturn` ([#3302](https://github.com/0xMiden/protocol/pull/3302)).
 
-## v0.16.0-alpha.2 (2026-07-12)
+## v0.16.0-alpha.2 (2026-07-13)
 
-- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+### Changes
+
+- [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
 - Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
-
+- [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
+- `warden::set_warden` and agglayer's `eth_address::to_account_id` now validate only the structure of an account ID (`account_id::validate_structure`) instead of also requiring version = 1 ([#3288](https://github.com/0xMiden/protocol/pull/3288)).
 
 ## v0.16.0-alpha.1 (2026-07-12)
 
