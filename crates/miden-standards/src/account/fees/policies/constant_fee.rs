@@ -106,10 +106,16 @@ impl From<NoteScriptRoot> for NoteFeeLookupKey {
 /// estimate to an amount of 0. The slot defaults to the built-in `build_note_fee_lookup_key`
 /// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
 ///
-/// There is currently no setter for the lookup-key procedure root, neither in this builder nor
-/// on-chain: the slot is fixed at deployment to the built-in procedure. Installing a custom
-/// lookup-key procedure requires a future authority-gated setter that validates the new root the
-/// way the manager's `set_fee_policy` does (non-zero and a procedure of this account).
+/// The `From<ConstantFeePolicy>` conversion always writes the built-in root to the slot, and no
+/// standards component exposes a setter for it, so the root is immutable after deployment as
+/// long as no other component of the account writes the slot. A custom lookup-key procedure can
+/// be installed at deployment by constructing the [`AccountComponent`] manually with the desired
+/// root in the slot. The procedure must be part of the account's code (enforced on dispatch) and
+/// must match the `build_note_fee_lookup_key` interface, which cannot be checked on-chain: a
+/// procedure leaving anything other than the intended lookup key on the stack does not abort -
+/// lookups miss the schedule and silently estimate to a fee of 0. Changing the root at runtime
+/// would require a future authority-gated setter mirroring the full `set_fee_policy` validation
+/// (authorization, non-zero, account membership, and an allowlist of permitted roots).
 ///
 /// ## Storage layout
 ///
