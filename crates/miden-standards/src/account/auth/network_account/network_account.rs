@@ -59,9 +59,11 @@ impl NetworkAccount {
             return Err(NetworkAccountError::AccountNotPublic(account.id()));
         }
 
-        let note_allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())?;
+        let note_allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
+            .map_err(NetworkAccountError::NoteAllowlist)?;
 
-        let tx_script_allowlist = NetworkAccountTxScriptAllowlist::try_from(account.storage())?;
+        let tx_script_allowlist = NetworkAccountTxScriptAllowlist::try_from(account.storage())
+            .map_err(NetworkAccountError::TxScriptAllowlist)?;
         if !tx_script_allowlist
             .allowed_script_roots()
             .contains(&ExpirationTransactionScript::script_root())
@@ -164,9 +166,9 @@ pub enum NetworkAccountError {
     #[error("network account must have public account type, but account {0} does not")]
     AccountNotPublic(AccountId),
     #[error("failed to decode the note-script allowlist from account storage")]
-    NoteAllowlist(#[from] NetworkAccountNoteAllowlistError),
+    NoteAllowlist(#[source] NetworkAccountNoteAllowlistError),
     #[error("failed to decode the tx-script allowlist from account storage")]
-    TxScriptAllowlist(#[from] NetworkAccountTxScriptAllowlistError),
+    TxScriptAllowlist(#[source] NetworkAccountTxScriptAllowlistError),
     #[error(
         "network account tx-script allowlist must contain the canonical expiration transaction \
          script root"
