@@ -10,6 +10,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicy,
@@ -132,6 +133,23 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
+/// Returns the `FeeManager` installed on the agglayer bridge and faucet accounts so their auth
+/// procedure can collect sponsored fees and answer sponsorship fee estimates. The active policy
+/// has an empty fee schedule, so it charges and collects nothing; a real fee faucet and schedule
+/// are configured when fees are enabled on these accounts.
+///
+/// Because the schedule is empty, the fee asset (and hence the placeholder faucet id below) never
+/// funds a transfer; only the policy's procedure code contributes to the account code commitment,
+/// which `build.rs` mirrors when computing the compile-time commitment constants.
+fn agglayer_fee_manager() -> FeeManager {
+    // A placeholder public faucet id; see the note above on why its value is immaterial.
+    let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
+        .expect("placeholder fee faucet id is valid");
+    FeeManager::builder()
+        .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id).into())
+        .build()
+}
+
 /// Creates a complete bridge account builder with the standard configuration.
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
@@ -156,6 +174,7 @@ fn create_bridge_account_builder(
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })
+        .with_components(agglayer_fee_manager())
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
@@ -214,6 +233,7 @@ fn create_agglayer_faucet_builder(
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
+        .with_components(agglayer_fee_manager())
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerFaucet::allowed_notes())
                 .expect("faucet note allowlist is non-empty"),
