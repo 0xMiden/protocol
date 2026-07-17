@@ -32,7 +32,7 @@ const RBAC_ACTION_SCRIPT_PATH: &str = "::miden::standards::notes::rbac_action::m
 static RBAC_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(RBAC_ACTION_SCRIPT_PATH);
-    NoteScript::from_package_reference(standards_lib.as_ref(), path)
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains RBAC_ACTION note script procedure")
 });
 

@@ -34,7 +34,7 @@ const P2IDE_SCRIPT_PATH: &str = "::miden::standards::notes::p2ide::main";
 static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(P2IDE_SCRIPT_PATH);
-    NoteScript::from_package_reference(standards_lib.as_ref(), path)
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains P2IDE note script procedure")
 });
 

@@ -552,7 +552,7 @@ impl CodeBuilder {
                 )
             })?;
 
-        let tx_script = TransactionScript::from_package(&tx_script_lib).map_err(|err| {
+        let tx_script = TransactionScript::from_library(&tx_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create transaction script from library",
                 err,
@@ -601,7 +601,7 @@ impl CodeBuilder {
                 )
             })?;
 
-        let note_script = NoteScript::from_package(&note_script_lib).map_err(|err| {
+        let note_script = NoteScript::from_library(&note_script_lib).map_err(|err| {
             CodeBuilderError::build_error_with_source(
                 "failed to create note script from library",
                 err,

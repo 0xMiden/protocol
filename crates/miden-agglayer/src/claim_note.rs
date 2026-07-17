@@ -34,7 +34,7 @@ static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-claim.masp"));
     let package = Package::read_from_bytes_trusted(bytes)
         .expect("shipped CLAIM script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped CLAIM script is well-formed")
+    NoteScript::from_library(&package).expect("shipped CLAIM script is well-formed")
 });
 
 // CLAIM NOTE

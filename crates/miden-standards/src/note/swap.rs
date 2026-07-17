@@ -34,7 +34,7 @@ const SWAP_SCRIPT_PATH: &str = "::miden::standards::notes::swap::main";
 static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(SWAP_SCRIPT_PATH);
-    NoteScript::from_package_reference(standards_lib.as_ref(), path)
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains SWAP note script procedure")
 });
 

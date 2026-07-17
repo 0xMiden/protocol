@@ -42,7 +42,7 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     ));
     let package = Package::read_from_bytes_trusted(bytes)
         .expect("shipped CONFIG_AGG_BRIDGE script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
+    NoteScript::from_library(&package).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
 });
 
 // CONVERSION METADATA

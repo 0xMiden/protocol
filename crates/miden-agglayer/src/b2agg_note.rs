@@ -36,7 +36,7 @@ static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-b2agg.masp"));
     let package = Package::read_from_bytes_trusted(bytes)
         .expect("shipped B2AGG script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped B2AGG script is well-formed")
+    NoteScript::from_library(&package).expect("shipped B2AGG script is well-formed")
 });
 
 // B2AGG NOTE

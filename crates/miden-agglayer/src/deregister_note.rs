@@ -40,7 +40,7 @@ static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     ));
     let package = Package::read_from_bytes_trusted(bytes)
         .expect("shipped DEREGISTER_AGG_FAUCET script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
+    NoteScript::from_library(&package).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
 });
 
 // DEREGISTER_AGG_FAUCET NOTE

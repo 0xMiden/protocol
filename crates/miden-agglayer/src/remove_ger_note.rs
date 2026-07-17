@@ -25,7 +25,7 @@ static REMOVE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     ));
     let package = Package::read_from_bytes_trusted(bytes)
         .expect("shipped REMOVE_GER script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped REMOVE_GER script is well-formed")
+    NoteScript::from_library(&package).expect("shipped REMOVE_GER script is well-formed")
 });
 
 // REMOVE_GER NOTE
