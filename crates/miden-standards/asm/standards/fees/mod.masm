@@ -161,8 +161,11 @@ pub proc collect_sponsored_fees
             dup.2 dup.2 exec.assert_neighbor_sponsors
             # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
 
+            padw loc_loadw_le.FEE_ASSET_ID_LOC movup.4
+            # => [neighbor_note_idx, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
+
             # move the sponsored fee into the vault and assert it covers the required amount
-            padw loc_loadw_le.FEE_ASSET_ID_LOC movup.4 exec.move_and_check_sponsored_fee
+            exec.move_and_check_sponsored_fee
             # => [fee_amount, note_idx, num_input_notes, total_fee_amount]
 
             # add the collected amount to the running total and advance past both notes of the pair.
@@ -286,12 +289,12 @@ end
 #! vault and returns the sponsored fee amount, asserting it is charged in the expected fee asset and
 #! covers the required fee.
 #!
-#! Inputs:  [neighbor_note_index, FEE_ASSET_ID, required_fee_amount]
+#! Inputs:  [neighbor_note_index, REQUIRED_ASSET_ID, required_fee_amount]
 #! Outputs: [fee_amount]
 #!
 #! Where:
 #! - neighbor_note_index is the index of the FEE_SPONSORSHIP note whose asset is collected.
-#! - FEE_ASSET_ID is the ID of the asset the fee must be charged in.
+#! - REQUIRED_ASSET_ID is the ID of the asset the fee must be charged in.
 #! - required_fee_amount is the fee the sponsored amount must cover.
 #! - fee_amount is the sponsored amount moved into the vault.
 #!
@@ -305,7 +308,7 @@ end
 proc move_and_check_sponsored_fee
     # move the sponsorship note's single asset into the vault
     exec.move_assets_to_vault
-    # => [ASSET_ID, ASSET_VALUE, FEE_ASSET_ID, required_fee_amount]
+    # => [ASSET_ID, ASSET_VALUE, REQUIRED_ASSET_ID, required_fee_amount]
 
     # the moved asset must be the fee asset the fee is charged in
     dupw.2 exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
