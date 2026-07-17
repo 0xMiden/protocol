@@ -262,8 +262,8 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     // the fee asset ID echoes the STORAGE_COMMITMENT supplied to the estimate script and the
     // amount is derived from the base custom fee and the supplied timeframe and priority.
     let storage_commitment = Word::from([11u32, 12, 13, 14]);
-    let timeframe = 25u32;
-    let priority = 3u32;
+    let timeframe = 25u64;
+    let priority = 3u64;
     let tx_script_code = estimate_note_fee_tx_script_code(
         storage_commitment,
         timeframe,

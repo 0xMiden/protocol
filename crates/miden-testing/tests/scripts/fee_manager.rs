@@ -1,3 +1,5 @@
+use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
@@ -8,7 +10,8 @@ use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_standards::errors::standards::ERR_TIMEFRAME_OR_PRIORITY_NOT_U32;
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 // HELPERS
@@ -44,8 +47,8 @@ pub(super) const CUSTOM_FEE_AMOUNT: u64 = 777;
 
 /// The fee the user-defined test policy in [`custom_fee_policy`] charges for the given timeframe
 /// and priority. The distinct weights make a transposition of the two parameters detectable.
-pub(super) fn custom_fee_amount_for(timeframe: u32, priority: u32) -> u64 {
-    CUSTOM_FEE_AMOUNT + 2 * u64::from(timeframe) + u64::from(priority)
+pub(super) fn custom_fee_amount_for(timeframe: u64, priority: u64) -> u64 {
+    CUSTOM_FEE_AMOUNT + 2 * timeframe + priority
 }
 
 /// The namespace under which the user-defined test policy is compiled.
@@ -145,8 +148,8 @@ pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Resu
 /// aborts the transaction, so successful execution proves the returned fee asset.
 pub(super) fn estimate_note_fee_tx_script_code(
     storage_commitment: Word,
-    timeframe: u32,
-    priority: u32,
+    timeframe: u64,
+    priority: u64,
     expected_fee_asset_id: Word,
     expected_fee_value: Word,
 ) -> String {
@@ -175,10 +178,10 @@ pub(super) fn estimate_note_fee_tx_script_code(
             # serve as the assets and attachments commitments
             push.{priority} push.{timeframe} movdn.13 movdn.13
             # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
-            #     priority, pad(2)]
+            #     priority, pad(4)]
 
             call.fee_manager::estimate_note_fee
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(10)]
 
             push.{expected_fee_asset_id}
             assert_eqw.err="estimate_note_fee should return the expected fee asset ID"
@@ -257,13 +260,65 @@ async fn estimate_note_fee_returns_scheduled_fee(
     Ok(())
 }
 
+/// `estimate_note_fee` rejects a timeframe or priority that is not a valid u32 value.
+#[rstest]
+#[case::timeframe(u64::from(u32::MAX) + 1, 0)]
+#[case::priority(0, u64::from(u32::MAX) + 1)]
+#[tokio::test]
+async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
+    #[case] timeframe: u64,
+    #[case] priority: u64,
+) -> anyhow::Result<()> {
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(fee_manager()?)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee asset is irrelevant since the call aborts before the assertions.
+    let tx_script_code = estimate_note_fee_tx_script_code(
+        Word::empty(),
+        timeframe,
+        priority,
+        Word::empty(),
+        Word::empty(),
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(priced_root().as_word())
+        .build()?
+        .execute()
+        .await;
+
+    // `u32assert2` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_TIMEFRAME_OR_PRIORITY_NOT_U32.code()
+    );
+
+    Ok(())
+}
+
 /// End-to-end dispatch through a user-defined fee policy: a custom policy component (registered
 /// via [`FeePolicy::custom`]) is set as the manager's active policy, and `estimate_note_fee` is
 /// invoked via FPI. The manager forwards the note parameters to the user-defined
 /// `compute_note_fee`, whose result flows back through `estimate_note_fee` to the FPI caller.
 ///
-/// The custom policy prices on STORAGE_COMMITMENT (ignoring NOTE_SCRIPT_ROOT), so the assertion
-/// on the returned fee asset proves the full parameter set reached the user-defined procedure.
+/// The custom policy prices on STORAGE_COMMITMENT, timeframe, and priority (ignoring
+/// NOTE_SCRIPT_ROOT), so the assertions on the returned fee asset prove the full parameter set
+/// reached the user-defined procedure slot by slot.
 #[tokio::test]
 async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Result<()> {
     let fee_manager = FeeManager::builder().active_fee_policy(custom_fee_policy()?).build();
@@ -291,8 +346,8 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
     // Distinct non-zero timeframe and priority prove the parameters reach the policy slot by
     // slot.
-    let timeframe = 40u32;
-    let priority = 9u32;
+    let timeframe = 40u64;
+    let priority = 9u64;
 
     // The note parameters are pushed inline: the RECIPIENT is derived from the storage
     // commitment, an arbitrary NOTE_SCRIPT_ROOT (the custom policy ignores it), and an all-zero
@@ -321,24 +376,24 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
             # serve as the assets and attachments commitments
             push.{priority} push.{timeframe} movdn.13 movdn.13
             # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
-            #     priority, pad(2), pad(4)]
+            #     priority, pad(8)]
 
             # push the estimate_note_fee procedure root and the foreign account ID
             push.{estimate_note_fee_root}
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
             #     RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
-            #     priority, pad(2), pad(4)]
+            #     priority, pad(8)]
 
             exec.tx::execute_foreign_procedure
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(14)]
 
             push.{expected_fee_asset_id}
             assert_eqw.err="custom fee policy should price in the asset identified by the storage commitment"
             # => [FEE_ASSET_VALUE, pad(12)]
 
             push.{expected_fee_value}
-            assert_eqw.err="custom fee policy should charge the fixed custom amount"
+            assert_eqw.err="custom fee policy should charge the amount derived from the timeframe and priority"
             # => [pad(16)]
         end
         "#,
