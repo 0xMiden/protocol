@@ -14,7 +14,7 @@ use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result};
 use miden_assembly::{Assembler, ProjectTargetSelector, Report};
 use miden_mast_package::Package;
-use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_package_registry::InMemoryPackageRegistry;
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -36,20 +36,6 @@ pub const BUILD_PROFILE: &str = "dev";
 /// Returns a new [`Assembler`] using the provided source manager, with warnings treated as errors.
 pub fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
     Assembler::new(source_manager).with_warnings_as_errors(true)
-}
-
-/// Creates an in-memory package registry seeded with `packages`.
-///
-/// The seed packages are the dependencies that projects assembled against this registry are
-/// allowed to resolve (e.g. the core, kernel, and protocol libraries).
-pub fn registry_with(
-    packages: impl IntoIterator<Item = Arc<Package>>,
-) -> Result<InMemoryPackageRegistry> {
-    let mut registry = InMemoryPackageRegistry::default();
-    for package in packages {
-        registry.cache_package(package).into_diagnostic()?;
-    }
-    Ok(registry)
 }
 
 /// Assembles `selector` from the Miden project manifest at `manifest_path`, resolving

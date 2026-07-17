@@ -16,7 +16,6 @@ use miden_build_utils::{
     build_assembler,
     extract_all_masm_errors,
     generate_error_file,
-    registry_with,
 };
 use miden_core::Word;
 use miden_core_lib::CoreLibrary;
@@ -128,15 +127,21 @@ fn main() -> Result<()> {
 /// and `miden-core` dependencies, plus the standards library, so that the dependencies declared by
 /// the agglayer projects can be resolved during project assembly.
 fn build_registry() -> Result<InMemoryPackageRegistry> {
+    let mut registry = InMemoryPackageRegistry::default();
+
     // The protocol package declares dependencies on the kernel and core packages, and the agglayer
     // projects depend on the standards package, so all of these must be available in the registry
     // for project dependency resolution to succeed.
-    registry_with([
+    for package in [
         CoreLibrary::default().package(),
         Arc::new(Package::from(ProtocolLib::default())),
         TransactionKernel::package(),
         Arc::new(Package::from(StandardsLib::default())),
-    ])
+    ] {
+        registry.cache_package(package).into_diagnostic()?;
+    }
+
+    Ok(registry)
 }
 
 // COMPILE AGGLAYER LIB

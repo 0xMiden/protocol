@@ -17,13 +17,12 @@ use miden_build_utils::{
     extract_all_masm_errors,
     generate_error_file,
     is_masm_file,
-    registry_with,
     write_release_package,
 };
 use miden_core::events::EventId;
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageExport};
-use miden_package_registry::InMemoryPackageRegistry;
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -88,7 +87,8 @@ fn main() -> Result<()> {
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
     // The miden-core library is provided through an in-memory registry
-    let mut store = registry_with([CoreLibrary::default().package()])?;
+    let mut store = InMemoryPackageRegistry::default();
+    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
 
     // compile transaction kernel
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
