@@ -71,7 +71,7 @@ async fn execute_fee_paying_multisig_tx(
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
+        FeeConversionInfo::one_to_one(fee_faucet_id),
         Word::from([9u32, 10, 11, 12]),
     );
 
@@ -159,7 +159,7 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     let mut mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
+        FeeConversionInfo::one_to_one(fee_faucet_id),
         Word::from([13u32, 14, 15, 16]),
     );
 

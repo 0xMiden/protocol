@@ -49,7 +49,7 @@ async fn singlesig_acl_pays_fee_note_on_signature_path() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::trivial(fee_faucet_id),
+        FeeConversionInfo::one_to_one(fee_faucet_id),
         Word::from([9u32, 10, 11, 12]),
     );
 
