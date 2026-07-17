@@ -1,6 +1,6 @@
-//! Tests for the `miden::standards::fees::fee_manager` note-side helpers used by
-//! `create_sponsorship_notes`: recovering a note's script root and storage commitment from its
-//! recipient, and the FEE_SPONSORSHIP `prepare_note` recipient computation.
+//! Tests for the note-side helpers used by `create_network_note_sponsorships`: recovering a note's
+//! script root and storage commitment from its recipient (`miden::standards::note`), and the
+//! FEE_SPONSORSHIP `prepare_note` recipient computation.
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountType};
@@ -33,7 +33,7 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
         r#"
         use miden::core::sys
         use miden::protocol::note
-        use miden::standards::fees::fee_manager
+        use miden::standards::note as std_note
         use miden::tx_kernel_core::prologue
 
         begin
@@ -55,7 +55,7 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
             call.::mock::account::create_note
             # => [output_note_idx]
 
-            exec.fee_manager::output_note_get_recipient_preimage
+            exec.std_note::output_note_get_recipient_preimage
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
 
             exec.sys::truncate_stack

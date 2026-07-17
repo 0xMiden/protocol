@@ -7,6 +7,8 @@ use miden::protocol::tx
 use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
 
+use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from miden::protocol::types
+
 # CONSTANTS
 # =================================================================================================
 
@@ -201,7 +203,14 @@ end
 #!
 #! Invocation: exec
 @locals(7)
-pub proc prepare_note
+pub proc prepare_note(
+    feature_note_id: NoteId,
+    reclaimer: AccountId,
+    reclaim_block_height: BlockNumber,
+    tag: NoteTag,
+    note_type: NoteType,
+    serial_num: word
+) -> (NoteTag, NoteType, NoteRecipient)
     # store the 7 storage items into locals in the layout the note script expects
     loc_storew_le.FEATURE_NOTE_ID_ITEM dropw
     loc_store.RECLAIMER_SUFFIX_ITEM loc_store.RECLAIMER_PREFIX_ITEM loc_store.RECLAIM_HEIGHT_ITEM

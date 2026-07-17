@@ -11,22 +11,11 @@
 # same active fee policy via `estimate_note_fee_internal`.
 
 use miden::core::word
-use miden::core::crypto::hashes::poseidon2
 
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::output_note
-use miden::protocol::tx
-use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 
 use miden::standards::access::authority
-use miden::standards::assets::fungible_asset
-use miden::standards::attachments::network_account_target
-use miden::standards::note::note_id
-use miden::standards::note_tag
-use miden::standards::notes::fee_sponsorship
-use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME, NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS}
-    from miden::standards::attachments::network_account_target
 
 use {AccountProcedureRoot, Asset, NoteScriptRoot} from miden::protocol::types
 
@@ -48,15 +37,6 @@ const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_man
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR = 0
 
-# Local memory offsets used by `create_sponsorship_note_for_network_note` (in its own local frame).
-const CREATE_SPONSORSHIP_ATTACHMENT_WORD_LOC = 0
-const CREATE_SPONSORSHIP_FEE_ASSET_ID_LOC = 4
-const CREATE_SPONSORSHIP_FEE_ASSET_VALUE_LOC = 8
-const CREATE_SPONSORSHIP_FEATURE_NOTE_ID_LOC = 12
-const CREATE_SPONSORSHIP_NOTE_IDX_LOC = 16
-const CREATE_SPONSORSHIP_TARGET_ID_SUFFIX_LOC = 17
-const CREATE_SPONSORSHIP_TARGET_ID_PREFIX_LOC = 18
-
 # ERRORS
 # =================================================================================================
 
@@ -64,10 +44,6 @@ const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
 const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
 const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
-
-const ERR_FEE_MANAGER_NETWORK_TARGET_WRONG_NUM_WORDS = "network account target attachment must consist of exactly one word"
-
-const ERR_FEE_MANAGER_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the advice provider does not hash to the note recipient"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -102,61 +78,6 @@ pub proc estimate_note_fee(
 ) -> Asset
     exec.estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-end
-
-#! Creates a paired FEE_SPONSORSHIP note for every network output note in this transaction.
-#!
-#! Walks the transaction's output notes as they stood when this procedure was called. For each note
-#! that carries a `NetworkAccountTarget` attachment (i.e. is targeted at a network account), it reads
-#! the target account ID, asks that account's fee policy what the note costs via an FPI call to its
-#! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a FEE_SPONSORSHIP output note
-#! bound to the network note (as its companion) carrying exactly the estimated fee asset. The fee
-#! asset is removed from the native account's vault to fund the note.
-#!
-#! The created sponsorship note is public, tagged for the target network account, names the native
-#! account as its reclaimer, and has reclaim disabled. Its serial number is derived from the
-#! companion note ID, making it unique per network note. Exactly one sponsorship note is created per
-#! network output note; a pre-existing sponsorship for the same note is not detected.
-#!
-#! Must be invoked while the native (fee-paying) account is the active account, since it removes the
-#! fee asset from that account's vault and creates notes from it.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - a network output note's target ID attachment does not consist of exactly one word.
-#! - a network output note's recipient preimage is unavailable or does not hash to the recipient.
-#! - the target account's active fee policy is not set.
-#! - the native account's vault does not hold enough of the fee asset.
-#!
-#! Invocation: exec
-pub proc create_sponsorship_notes
-    # get the output note count before any sponsorship notes were created, since creating them
-    # increments the count
-    exec.tx::get_num_output_notes
-    # => [num_output_notes]
-
-    push.0
-    # => [note_idx = 0, num_output_notes]
-
-    dup.1 dup.1 neq
-    # => [should_loop, note_idx, num_output_notes]
-
-    while.true
-        dup exec.create_sponsorship_note_for_network_note
-        # => [note_idx, num_output_notes]
-
-        add.1
-        # => [note_idx+1, num_output_notes]
-
-        dup.1 dup.1 neq
-        # => [should_loop, note_idx, num_output_notes]
-    end
-    # => [note_idx, num_output_notes]
-
-    drop drop
-    # => []
 end
 
 #! Returns active fee policy root.
@@ -276,215 +197,6 @@ pub proc execute_fee_policy(
 
     dyncall
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-end
-
-#! Creates a FEE_SPONSORSHIP note for the output note at the given index, if it is a network note.
-#!
-#! See [`create_sponsorship_notes`] for the full behaviour; this procedure handles a single note.
-#! Output notes that do not carry a `NetworkAccountTarget` attachment, and network notes the target
-#! account prices to zero, produce no sponsorship note.
-#!
-#! Inputs:  [note_idx]
-#! Outputs: []
-#!
-#! Where:
-#! - note_idx is the index of the output note to consider.
-#!
-#! Panics if:
-#! - the note's target ID attachment does not consist of exactly one word.
-#! - the note's recipient preimage is unavailable or does not hash to the recipient.
-#! - the target account's active fee policy is not set.
-#! - the native account's vault does not hold enough of the fee asset.
-#!
-#! Invocation: exec
-@locals(19)
-proc create_sponsorship_note_for_network_note
-    # the note index is needed repeatedly below, so cache it
-    dup loc_store.CREATE_SPONSORSHIP_NOTE_IDX_LOC
-    # => [note_idx]
-
-    # only network output notes (those carrying a network account target attachment) are sponsored
-    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
-    # => [attachment_scheme, note_idx]
-
-    exec.output_note::find_attachment
-    # => [is_found, attachment_idx]
-
-    if.true
-        # copy the network account target attachment into local memory, then read the target ID
-        loc_load.CREATE_SPONSORSHIP_NOTE_IDX_LOC swap locaddr.CREATE_SPONSORSHIP_ATTACHMENT_WORD_LOC
-        # => [dest_ptr, attachment_idx, note_idx]
-
-        exec.output_note::write_attachment_to_memory
-        # => [num_words]
-
-        eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
-        assert.err=ERR_FEE_MANAGER_NETWORK_TARGET_WRONG_NUM_WORDS
-        # => []
-
-        padw loc_loadw_le.CREATE_SPONSORSHIP_ATTACHMENT_WORD_LOC
-        # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-
-        exec.network_account_target::into_target_id
-        # => [target_id_suffix, target_id_prefix]
-
-        loc_store.CREATE_SPONSORSHIP_TARGET_ID_SUFFIX_LOC
-        loc_store.CREATE_SPONSORSHIP_TARGET_ID_PREFIX_LOC
-        # => []
-
-        loc_load.CREATE_SPONSORSHIP_NOTE_IDX_LOC exec.output_note::get_attachments_commitment
-        # => [ATTACHMENTS_COMMITMENT]
-
-        loc_load.CREATE_SPONSORSHIP_NOTE_IDX_LOC exec.output_note::get_assets_info movup.4 drop
-        # => [ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-        loc_load.CREATE_SPONSORSHIP_NOTE_IDX_LOC
-        # => [output_note_idx, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-        exec.output_note_get_recipient_preimage
-        # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-        procref.estimate_note_fee
-        # => [ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-        loc_load.CREATE_SPONSORSHIP_TARGET_ID_PREFIX_LOC loc_load.CREATE_SPONSORSHIP_TARGET_ID_SUFFIX_LOC
-        # => [target_id_suffix, target_id_prefix, ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-        exec.tx::execute_foreign_procedure
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-
-        swapdw dropw dropw
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
-
-        exec.fungible_asset::to_amount eq.0
-        # => [is_zero_fee, FEE_ASSET_ID, FEE_ASSET_VALUE]
-
-        if.true
-            # a note the target prices to zero needs no sponsorship
-            dropw dropw
-            # => []
-        else
-            # cache the fee asset; it funds the sponsorship note once created
-            loc_storew_le.CREATE_SPONSORSHIP_FEE_ASSET_ID_LOC swapw
-            # => [FEE_ASSET_VALUE, FEE_ASSET_ID]
-
-            loc_storew_le.CREATE_SPONSORSHIP_FEE_ASSET_VALUE_LOC swapw
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
-
-            # remove the fee asset from the native account's vault before placing it into the note
-            exec.native_account::remove_asset
-            dropw
-            # => []
-
-            # derive a unique serial for the sponsorship note from the feature note ID
-            loc_load.CREATE_SPONSORSHIP_NOTE_IDX_LOC exec.note_id::compute_output_note_id
-            # => [FEATURE_NOTE_ID]
-
-            loc_storew_le.CREATE_SPONSORSHIP_FEATURE_NOTE_ID_LOC
-            # => [FEATURE_NOTE_ID]
-
-            exec.poseidon2::hash
-            # => [SERIAL_NUM]
-
-            push.NOTE_TYPE_PUBLIC
-            # => [note_type, SERIAL_NUM]
-
-            loc_load.CREATE_SPONSORSHIP_TARGET_ID_PREFIX_LOC exec.note_tag::create_account_target
-            # => [tag, note_type, SERIAL_NUM]
-
-            # reclaim disabled; the native account is the reclaimer
-            push.0
-            # => [reclaim_block_height, tag, note_type, SERIAL_NUM]
-
-            exec.native_account::get_id
-            # => [reclaimer_id_suffix, reclaimer_id_prefix, reclaim_block_height, tag, note_type,
-            #     SERIAL_NUM]
-
-            padw loc_loadw_le.CREATE_SPONSORSHIP_FEATURE_NOTE_ID_LOC
-            # => [FEATURE_NOTE_ID, reclaimer_id_suffix, reclaimer_id_prefix, reclaim_block_height,
-            #     tag, note_type, SERIAL_NUM]
-
-            exec.fee_sponsorship::prepare_note
-            # => [tag, note_type, RECIPIENT]
-
-            exec.output_note::create
-            # => [sponsorship_note_idx]
-
-            # fund the freshly created sponsorship note with the fee asset
-            padw loc_loadw_le.CREATE_SPONSORSHIP_FEE_ASSET_VALUE_LOC
-            padw loc_loadw_le.CREATE_SPONSORSHIP_FEE_ASSET_ID_LOC
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, sponsorship_note_idx]
-
-            exec.output_note::add_asset
-            # => []
-        end
-    else
-        # not a network output note; there is nothing to sponsor
-        drop
-        # => []
-    end
-end
-
-#! TODO: Move this to miden::protocol::output_note.
-#!
-#! Recovers a note's script root and storage commitment from its recipient via the advice provider.
-#!
-#! This works only for notes whose recipient preimage is in the advice provider. This is generally
-#! the case for public notes since their recipients are added to the advice inputs or they are
-#! created with compute_and_store_recipient. As long as the recipient preimage is available, this
-#! also works for private notes.
-#!
-#! Inputs:  [output_note_idx]
-#! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
-#!
-#! Where:
-#! - output_note_idx is the index of the output note for which to recover the commitments.
-#! - NOTE_SCRIPT_ROOT is the recovered note script root.
-#! - STORAGE_COMMITMENT is the recovered note storage commitment.
-#!
-#! Panics if:
-#! - the advice map has no preimage for the recipient (or the intermediate hash).
-#! - a preimage does not hash to the commitment it claims to open.
-#!
-#! Invocation: exec
-pub proc output_note_get_recipient_preimage
-    exec.output_note::get_recipient
-    # => [RECIPIENT]
-
-    # push the advice map entry for RECIPIENT
-    adv.push_mapval
-    # OS => [RECIPIENT]
-    # AS => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-
-    padw adv_loadw padw adv_loadw swapw
-    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
-
-    # re-hash the preimage and assert it reproduces RECIPIENT, keeping the preimage words
-    dupw.1 dupw.1 exec.poseidon2::merge
-    # => [RECOMPUTED_RECIPIENT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
-
-    movupw.3 assert_eqw.err=ERR_FEE_MANAGER_RECIPIENT_PREIMAGE_MISMATCH
-    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-
-    # push the advice map entry for SERIAL_SCRIPT_COMMITMENT
-    adv.push_mapval
-    # OS => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-    # AS => [SERIAL_COMMITMENT, SCRIPT_ROOT]
-
-    padw adv_loadw padw adv_loadw
-    # => [SCRIPT_ROOT, SERIAL_COMMITMENT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-
-    swapw
-    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-
-    dupw.1 dupw.1 exec.poseidon2::merge
-    # => [RECOMPUTED_SERIAL_SCRIPT_COMMITMENT, SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
-
-    movupw.3 assert_eqw.err=ERR_FEE_MANAGER_RECIPIENT_PREIMAGE_MISMATCH
-    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
-
-    dropw
-    # => [SCRIPT_ROOT, STORAGE_COMMITMENT]
 end
 
 #! Reads active fee policy root from storage.
