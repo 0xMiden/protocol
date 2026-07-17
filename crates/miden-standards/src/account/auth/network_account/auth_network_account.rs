@@ -7,7 +7,12 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountComponentName, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    StorageSlotName,
+};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionScriptRoot;
 
@@ -17,8 +22,38 @@ use super::{
     NetworkAccountTxScriptAllowlist,
 };
 use crate::account::account_component_code;
+use crate::note::NetworkAccountConfigNote;
+use crate::procedure_root;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
+
+procedure_root!(
+    NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::ADD_ALLOWED_TX_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME,
+    AuthNetworkAccount::code()
+);
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -59,17 +94,20 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
 ///
-/// Both allowlists are fixed at account creation: this component intentionally exports no procedure
-/// to mutate them after deployment. That is a limitation of this component rather than a safety
-/// requirement, and a user who needs a mutable allowlist can write their own component today. Note
-/// that the node would likely not yet respect updates made to the list after deployment, but there
-/// is in principle nothing preventing us from supporting mutation in the future.
+/// Both allowlists can be updated after deployment via the `add_allowed_note_script` /
+/// `remove_allowed_note_script` and `add_allowed_tx_script` / `remove_allowed_tx_script` account
+/// procedures. These are gated by the account-wide
+/// [`Authority`](crate::account::access::Authority) component, which must be composed onto the
+/// account in [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+/// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode.
+/// [`AuthControlled`](crate::account::access::Authority::AuthControlled) mode is unsafe here
+/// because this component's auth scheme is intentionally permissionless, so authorization to mutate
+/// the allowlists must come from an owner or a role rather than from the auth scheme itself.
 ///
-/// Roots are matched exactly, so the allowlist must currently enumerate every root variant the
-/// account will ever consume (including across compiler/standard versions, e.g. P2ID). Until
-/// on-chain updates are supported, a missing root means that note is permanently and silently
-/// unconsumable; the ability to update the allowlist after deployment is expected to be added in
-/// the future.
+/// An update is driven by a note the authorized party sends to the account. That admin note's own
+/// script root must already be in the note-script allowlist so the transaction passes auth. The
+/// auth procedure reads the allowlists from the transaction's initial state, so an update only
+/// takes effect from the next transaction.
 pub struct AuthNetworkAccount {
     allowed_notes: NetworkAccountNoteAllowlist,
     allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
@@ -77,16 +115,32 @@ pub struct AuthNetworkAccount {
 
 impl AuthNetworkAccount {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::auth::network_account";
+    pub const NAME: &'static str = "miden::standards::components::auth::network_account";
 
-    /// Returns the canonical [`AccountComponentName`] of this component.
-    pub const fn name() -> AccountComponentName {
-        AccountComponentName::from_static_str(Self::NAME)
-    }
+    const ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "add_allowed_note_script";
+    const REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "remove_allowed_note_script";
+    const ADD_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "add_allowed_tx_script";
+    const REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME: &'static str = "remove_allowed_tx_script";
 
-    /// Returns the [`AccountComponentCode`] of this component.
-    pub fn code() -> &'static AccountComponentCode {
-        &NETWORK_ACCOUNT_AUTH_CODE
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [`AuthNetworkAccount`] component that allows `allowed_script_roots` plus the
+    /// standardized [`NetworkAccountConfigNote`] script root, so the allowlists can be updated
+    /// after deployment by sending that note.
+    ///
+    /// To authorize those updates, the account must also install an
+    /// [`Authority`](crate::account::access::Authority) component in
+    /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+    /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode: the note sender
+    /// is checked against it.
+    pub fn with_allowlist_management(mut allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
+        allowed_script_roots.insert(NetworkAccountConfigNote::script_root());
+        Self {
+            allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)
+                .expect("allowlist contains at least the config note root"),
+            allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
+        }
     }
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
@@ -120,6 +174,43 @@ impl AuthNetworkAccount {
     ) -> Self {
         self.allowed_tx_scripts = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
         self
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NETWORK_ACCOUNT_AUTH_CODE
+    }
+
+    /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
+    /// component.
+    pub fn add_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_note_script` procedure exposed by this
+    /// component.
+    pub fn remove_allowed_note_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT
+    }
+
+    /// Returns the procedure root of the `add_allowed_tx_script` procedure exposed by this
+    /// component.
+    pub fn add_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT
+    }
+
+    /// Returns the procedure root of the `remove_allowed_tx_script` procedure exposed by this
+    /// component.
+    pub fn remove_allowed_tx_script_root() -> AccountProcedureRoot {
+        *NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
@@ -223,5 +314,33 @@ mod tests {
                 panic!("allowlist slots must be maps");
             };
         }
+    }
+
+    #[test]
+    fn with_allowlist_management_allowlists_action_note() {
+        use crate::note::NetworkAccountConfigNote;
+
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let account = AccountBuilder::new([0; 32])
+            .with_auth_component(AuthNetworkAccount::with_allowlist_management(
+                BTreeSet::from_iter([root_a]),
+            ))
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building with AuthNetworkAccount failed");
+
+        let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
+            .expect("allowlist should be reconstructable from account storage");
+
+        assert!(
+            allowlist
+                .allowed_script_roots()
+                .contains(&NetworkAccountConfigNote::script_root()),
+            "with_allowlist_management should allowlist the config note root",
+        );
+        assert!(
+            allowlist.allowed_script_roots().contains(&root_a),
+            "with_allowlist_management should preserve the existing allowlist entries",
+        );
     }
 }

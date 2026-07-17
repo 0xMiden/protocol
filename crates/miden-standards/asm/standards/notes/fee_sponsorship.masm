@@ -1,10 +1,13 @@
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::note
 use miden::protocol::tx
 
 use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
+
+use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -24,6 +27,9 @@ const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 
 #! The number of storage items of a FEE_SPONSORSHIP note.
 const NUM_STORAGE_ITEMS = 7
+
+#! The number of assets in a FEE_SPONSORSHIP note.
+pub const NUM_ASSETS = 1
 
 # ERRORS
 # =================================================================================================
@@ -73,7 +79,7 @@ proc reclaim_note
     exec.account_id::eq assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
     # => []
 
-    exec.basic_wallet::add_assets_to_account
+    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
@@ -137,7 +143,7 @@ pub proc main
     exec.active_note::get_initial_num_assets
     # => [num_assets, pad(16)]
 
-    eq.1 assert.err=ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET
+    eq.NUM_ASSETS assert.err=ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET
     # => [pad(16)]
 
     padw mem_loadw_le.FEATURE_NOTE_ID_ITEM
@@ -170,4 +176,61 @@ pub proc main
         # => [pad(16)]
     end
     # => [pad(16)]
+end
+
+# NOTE PREPARATION
+# =================================================================================================
+
+#! Computes the FEE_SPONSORSHIP recipient and returns the note-creation arguments for the given
+#! inputs.
+#!
+#! Builds the storage and recipient from the inputs. Note creation itself is intentionally left to
+#! the caller; use this procedure when the caller is already inside an account procedure and can
+#! create the note directly via `output_note::create`.
+#!
+#! Inputs:  [FEATURE_NOTE_ID, reclaimer_id_suffix, reclaimer_id_prefix, reclaim_block_height, tag, note_type, SERIAL_NUM]
+#! Outputs: [tag, note_type, RECIPIENT]
+#!
+#! Where:
+#! - FEATURE_NOTE_ID is the ID of the feature note this sponsorship pays for.
+#! - reclaimer_id_{suffix,prefix} identify the account allowed to reclaim the note.
+#! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note,
+#!   or 0 if reclaim is disabled.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the storage type of the note (1 = public, 2 = private).
+#! - SERIAL_NUM is the serial number of the note.
+#! - RECIPIENT is the computed recipient digest of the note.
+#!
+#! Invocation: exec
+@locals(7)
+pub proc prepare_note(
+    feature_note_id: NoteId,
+    reclaimer: AccountId,
+    reclaim_block_height: BlockNumber,
+    tag: NoteTag,
+    note_type: NoteType,
+    serial_num: word
+) -> (NoteTag, NoteType, NoteRecipient)
+    # store the 7 storage items into locals in the layout the note script expects
+    loc_storew_le.FEATURE_NOTE_ID_ITEM dropw
+    loc_store.RECLAIMER_SUFFIX_ITEM loc_store.RECLAIMER_PREFIX_ITEM loc_store.RECLAIM_HEIGHT_ITEM
+    # => [tag, note_type, SERIAL_NUM]
+
+    movdn.5 movdn.5
+    # => [SERIAL_NUM, tag, note_type]
+
+    procref.main
+    # => [SCRIPT_ROOT, SERIAL_NUM, tag, note_type]
+
+    swapw
+    # => [SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
+
+    push.NUM_STORAGE_ITEMS locaddr.STORAGE_PTR
+    # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
+
+    exec.note::compute_and_store_recipient
+    # => [RECIPIENT, tag, note_type]
+
+    movup.5 movup.5
+    # => [tag, note_type, RECIPIENT]
 end

@@ -6,15 +6,22 @@
 
 - Added the `UpgradeManager` account component for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
 - Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (first policy: `ConstantFeePolicy`) switchable via the authority-gated `set_fee_policy` ([#3309](https://github.com/0xMiden/protocol/pull/3309)).
+- Added the `collect_sponsored_fees` procedure to the `FeeManager`, which walks a transaction's input notes to tally the fees prepaid by their paired `FEE_SPONSORSHIP` notes and credits the aggregated fee to the account's vault ([#3320](https://github.com/0xMiden/protocol/pull/3320)).
+- Added the `create_sponsorship_notes` procedure to the `FeeManager` to create sponsorship notes for all created network notes ([#3321](https://github.com/0xMiden/protocol/pull/3321)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 - [BREAKING] Removed the `Package as Library` alias, so APIs use `Package` directly: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` now take `&Package`, and `AccountComponentCode::as_library` / `into_library` are now `as_package` / `into_package`. Also removed the `Program`-based constructors `NoteScript::new` and `TransactionScript::new`, and the redundant `NoteScript::from_package` ([#3357](https://github.com/0xMiden/protocol/pull/3357)).
+- Added post-deployment management of `AuthNetworkAccount` allowlists: authority-gated `add_allowed_note_script` / `remove_allowed_note_script` / `add_allowed_tx_script` / `remove_allowed_tx_script` procedures (composed with an `Authority` component in `OwnerControlled` or `RbacControlled` mode), a standardized `NetworkAccountConfigNote` to invoke them, and an `AuthNetworkAccount::with_allowlist_management` constructor that allowlists that note ([#3330](https://github.com/0xMiden/protocol/pull/3330)).
 
 ### Changes
+
+- `ConstantFeePolicy` now aborts fee estimation for note scripts without a fee schedule entry instead of estimating them to a fee of 0; to make a note script free, schedule an explicit 0 fee for it. Fee schedule entries are stored as `[fee_amount, 0, 0, 1]`, where the last element is a set-marker distinguishing scheduled entries from unset keys ([#3326](https://github.com/0xMiden/protocol/issues/3326)).
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
+- [BREAKING] Added an optional per-fill `min_fill_step` floor to PSWAP notes: a fill below `min(min_fill_step, min_requested_amount)` is rejected, preventing a swap from being chipped away by dust-minting partial fills. Also fixed the creator ID field order in `PswapNoteStorage` ([#3203](https://github.com/0xMiden/protocol/issues/3203)).
 - [BREAKING] Replaced the AggLayer bridge's hard-coded admin/injector/remover account-ID authorization with an RBAC access-control stack (`RoleBasedAccessControl` + `Authority`); `create_bridge_account` now takes `(seed, admin, BridgeRoles)` where `admin` seeds the built-in `ADMIN` role that administers the operational `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` roles, `AggLayerBridge` is now a stateless component, and `RoleBasedAccessControl::with_roles` seeds the initial `ADMIN` and operational-role holders at genesis ([#3130](https://github.com/0xMiden/protocol/pull/3130)).
 - [BREAKING] Unified the MINT and BURN note scripts to serve both fungible and non-fungible faucets: the single `mint` / `burn` note now detects the faucet kind by reflection (the `CodeInspection` component's `has_procedure`, which the fungible and non-fungible faucet components now expose) and calls the matching `mint_and_send` / `receive_and_burn`. Removed the `mint_nft` / `burn_nft` note scripts and the `NonFungibleMintNote` / `NonFungibleBurnNote` / `NonFungibleMintNoteStorage` types; `MintNote` / `BurnNote` and `MintNoteStorage` (with fungible and non-fungible variants) now cover both faucet kinds ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Renamed the `miden::standards::metadata` module to `miden::standards::inspection` (in MASM, the `miden-standards` account components, and the `miden_standards::account::inspection` Rust module), scoping it as the home of `CodeInspection`, the storage schema, and future inspection components ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
+- [BREAKING] Renamed `basic_wallet::add_assets_to_account` to `basic_wallet::move_note_assets_to_account`, reflecting that the assets are removed from the active note rather than merely added to the account ([#3343](https://github.com/0xMiden/protocol/pull/3343)).
 - Added `NonFungibleFaucet::asset_status` API and `AssetStatus` enum (`NotIssued` / `Issued` / `Burned`) for querying a commitment's issuance status from account storage, mirroring the on-chain `get_asset_status` procedure ([#3222](https://github.com/0xMiden/protocol/pull/3222)).
 - [BREAKING] Moved the initial-state account getters (`get_initial_*`) from `miden::protocol::active_account` to `miden::protocol::native_account`. They now always operate on the native account and panic with `ERR_ACCOUNT_IS_NOT_NATIVE` when invoked from a foreign procedure invocation (FPI) context ([#2034](https://github.com/0xMiden/protocol/issues/2034)).
 - Cleaned up `signature.masm` by removing redundant scheme-id validation and duplication, dropping the `neq.0` double-negation in `assert_supported_scheme_word`, and eliminating the unused `NUM_OF_APPROVERS_LOC` slot; also optimized `verify_signatures` to reuse the signer index and approver public key from the operand stack instead of round-tripping them through local memory ([#3230](https://github.com/0xMiden/protocol/pull/3230)).
@@ -35,10 +42,18 @@
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
+## v0.16.0-alpha.3 (2026-07-15)
+
+### Fixes
+
+- Fixed `SendNotesTransactionScript` generating a script that returned at an invalid stack depth when a note carried no assets, causing the VM to reject the transaction with `InvalidStackDepthOnReturn` ([#3302](https://github.com/0xMiden/protocol/pull/3302)).
+
 ## v0.16.0-alpha.2 (2026-07-13)
 
 ### Changes
+
 - [BREAKING] Hardened multisig auth and account code construction: rejected duplicate procedure roots (`AccountCode::from_parts` is now fallible) and duplicate approver public keys, unenforceable procedure threshold overrides, out-of-range `get_signer_at` indices, and foreign roots in `set_procedure_policy` ([#3246](https://github.com/0xMiden/protocol/pull/3246)).
+- Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
 - [BREAKING] Change proving from being `async` to `sync` ([#3281](https://github.com/0xMiden/protocol/pull/3281)).
 - `warden::set_warden` and agglayer's `eth_address::to_account_id` now validate only the structure of an account ID (`account_id::validate_structure`) instead of also requiring version = 1 ([#3288](https://github.com/0xMiden/protocol/pull/3288)).
 

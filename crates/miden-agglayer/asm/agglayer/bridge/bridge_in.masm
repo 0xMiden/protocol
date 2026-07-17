@@ -13,6 +13,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use {DoubleWord} from miden::protocol::types
 use {MemoryAddress} from miden::protocol::types
+use {ONE_WORD} from miden::standards::utils
 
 # ERRORS
 # =================================================================================================
@@ -32,7 +33,7 @@ const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH = "claim leaf destination netw
 # =================================================================================================
 
 # Claim Nullifier Flag
-const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+const IS_CLAIMED_FLAG = ONE_WORD
 
 # Storage slots
 # -------------------------------------------------------------------------------------------------
