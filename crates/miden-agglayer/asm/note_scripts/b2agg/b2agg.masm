@@ -69,7 +69,7 @@ pub proc main
 
     # B2AGG note is being reclaimed; adding note assets to account
     if.true
-        exec.basic_wallet::add_assets_to_account
+        exec.basic_wallet::move_note_assets_to_account
         # => [pad(16)]
     else
         # Ensure note attachment targets the consuming bridge account.
