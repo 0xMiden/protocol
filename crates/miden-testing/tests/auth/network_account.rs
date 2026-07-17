@@ -326,8 +326,6 @@ fn build_owner_controlled_account(
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    // `with_allowed_notes` always allowlists the standardized config note (so admin notes can be
-    // consumed) in addition to any extra note roots.
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 

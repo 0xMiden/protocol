@@ -246,8 +246,7 @@ mod tests {
         let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
             .expect("allowlist should be reconstructable from account storage");
 
-        // The map's ordering is determined by the StorageMapKey, so compare as sets. Every network
-        // account also allowlists the config note root by default.
+        // The map's ordering is determined by the StorageMapKey, so compare as sets.
         let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
         expected.insert(crate::note::NetworkAccountConfigNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
