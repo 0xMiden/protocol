@@ -9,6 +9,7 @@
 - Added the `collect_sponsored_fees` procedure to the `FeeManager`, which walks a transaction's input notes to tally the fees prepaid by their paired `FEE_SPONSORSHIP` notes and credits the aggregated fee to the account's vault ([#3320](https://github.com/0xMiden/protocol/pull/3320)).
 - Added the `create_sponsorship_notes` procedure to the `FeeManager` to create sponsorship notes for all created network notes ([#3321](https://github.com/0xMiden/protocol/pull/3321)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
+- Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and enforced fresh by CI snapshot tests ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
 
 ### Changes
 
