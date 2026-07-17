@@ -101,6 +101,15 @@ impl AuthSingleSigAclConfig {
 /// asset. Paying on the exempt branch also means exempt transactions cannot evade fees on
 /// fee-charging chains.
 ///
+/// ## Warning: Fee Griefing via Exempt Procedures
+///
+/// On fee-charging chains, exempt procedures are a fee-griefing vector: anyone can execute a
+/// transaction against this account that calls only exempt procedures - no signature is
+/// required - yet the transaction fee is paid from this account's vault. An attacker can
+/// repeatedly submit such transactions to drain the account's fee-asset balance one transaction
+/// fee at a time. Add a procedure to the exempt list only if unrestricted, account-funded
+/// invocation of it is acceptable.
+///
 /// ## Authentication Logic
 ///
 /// Authentication is required when a kernel-detected procedure not on the exempt list was

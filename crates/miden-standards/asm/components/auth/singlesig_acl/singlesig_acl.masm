@@ -64,6 +64,10 @@ const ACL_EXEMPT_POST_FEE_CYCLES = 1024
 #! from the vault, so on fee-charging chains the account state always changes and the nonce
 #! always increments.
 #!
+#! Warning: because exempt procedures require no signature while the fee is still paid from this
+#! account's vault, anyone can repeatedly invoke them to drain the account's fee balance; see
+#! the fee-griefing warning on the `AuthSingleSigAcl` Rust type.
+#!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
