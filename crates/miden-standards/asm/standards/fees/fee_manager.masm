@@ -6,16 +6,14 @@
 # `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
 # allowlisted policy root through the authority-gated `set_fee_policy`.
 #
-# The account itself `exec`s `collect_sponsored_fees` to tally the fees prepaid by the
+# Fee collection (`miden::standards::fees::collect_sponsored_fees`) tallies the fees prepaid by the
 # FEE_SPONSORSHIP notes among the transaction's input notes, pricing each feature note through the
-# same active fee policy.
+# same active fee policy via `estimate_note_fee_internal`.
 
 use miden::core::word
 use miden::core::crypto::hashes::poseidon2
 
 use miden::protocol::active_account
-use miden::protocol::active_note
-use miden::protocol::input_note
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
@@ -50,15 +48,6 @@ const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_man
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR = 0
 
-# Local memory offset at which `collect_sponsored_fees` caches the collected fee asset ID. It is
-# initialized to the empty word, which doubles as a "no fee collected yet" sentinel.
-const FEE_ASSET_ID_LOC = 0
-
-# Local memory offset at which `collect_sponsored_fees` stages a paired FEE_SPONSORSHIP note's
-# storage items to read its sponsored feature note ID. Sized for the note's storage items padded to
-# the next multiple of 8 felts, so it must not overlap FEE_ASSET_ID_LOC.
-const COLLECT_SPONSORSHIP_STORAGE_LOC = 4
-
 # Local memory offsets used by `create_sponsorship_note_for_network_note` (in its own local frame).
 const CREATE_SPONSORSHIP_ATTACHMENT_WORD_LOC = 0
 const CREATE_SPONSORSHIP_FEE_ASSET_ID_LOC = 4
@@ -76,18 +65,6 @@ const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure o
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
 const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
-const ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE = "encountered a FEE_SPONSORSHIP note that is not paired with a feature note requiring a fee"
-
-const ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP = "feature note is not paired with a FEE_SPONSORSHIP note at the following input note index"
-
-const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET = "FEE_SPONSORSHIP note asset does not match the fee asset the account accepts"
-
-const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE = "paired FEE_SPONSORSHIP note does not sponsor the neighboring feature note"
-
-const ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW = "FEE_SPONSORSHIP note fee amount does not cover the required fee"
-
-const ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET = "feature notes priced in different fee assets cannot be collected in the same transaction"
-
 const ERR_FEE_MANAGER_NETWORK_TARGET_WRONG_NUM_WORDS = "network account target attachment must consist of exactly one word"
 
 const ERR_FEE_MANAGER_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the advice provider does not hash to the note recipient"
@@ -97,7 +74,7 @@ const ERR_FEE_MANAGER_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the
 
 #! Returns the estimated fee for a note with the given parameters.
 #!
-#! Thin `call`-able wrapper around [`execute_fee_policy`]. External callers (typically an
+#! Thin `call`-able wrapper around [`estimate_note_fee_internal`]. External callers (typically an
 #! authentication component on another account, via FPI) `call` into this procedure to learn the
 #! fee this account charges for the note.
 #!
@@ -123,233 +100,8 @@ pub proc estimate_note_fee(
     assets_commitment: word,
     attachments_commitment: word
 ) -> Asset
-    exec.execute_fee_policy
+    exec.estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-end
-
-#! Collects the fees prepaid by the FEE_SPONSORSHIP notes among the transaction's input notes and
-#! credits the aggregated fee directly to the account's vault.
-#!
-#! Walks the input notes once. Every note that is not a FEE_SPONSORSHIP note is a "feature note".
-#! For a feature note whose fee (per the active fee policy) is non-zero, a FEE_SPONSORSHIP note must
-#! sit at the immediately following input-note index, forming a 1:1 feature-note -> sponsorship-note
-#! pairing. For each such pair this procedure prices the feature note through the active fee policy
-#! (the same computation as `estimate_note_fee`), asserts the sponsorship note actually sponsors that
-#! feature note (its stored feature note ID matches the feature note's ID), reads the fee the paired
-#! sponsorship note carries (the value of its single fee asset), asserts the sponsored amount covers
-#! the required amount, and adds it to the running total. A feature note whose fee is 0 requires no
-#! sponsorship and contributes nothing.
-#!
-#! All collected fees must be charged in the same asset (the fee asset ID is recorded on the first
-#! collection and every subsequent collection is asserted to match it), so the aggregated total is
-#! unambiguous. Once the walk completes the total is added to the account vault as a single asset;
-#! if no fee was collected the vault is left untouched.
-#!
-#! Because a matched pair advances the walk by two, a FEE_SPONSORSHIP note is only ever seen as a
-#! feature note's sponsor. Encountering one as the current note means it is unpaired (or pairs a
-#! zero-fee feature note), which is rejected.
-#!
-#! Prices notes through the active account's fee policy and credits the active account's vault, so
-#! it must be invoked while the fee manager account is the active account (e.g. from that account's
-#! own auth procedure).
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the active fee policy is not set.
-#! - a FEE_SPONSORSHIP note is encountered as a current note rather than as a feature note's
-#!   sponsor.
-#! - a feature note with a non-zero fee is not followed by a FEE_SPONSORSHIP note at the next
-#!   input-note index.
-#! - a paired FEE_SPONSORSHIP note does not sponsor the neighboring feature note.
-#! - a paired FEE_SPONSORSHIP note does not carry exactly one asset.
-#! - a paired FEE_SPONSORSHIP note's asset is not the fee asset the fee is charged in.
-#! - a paired FEE_SPONSORSHIP note's fee amount is less than the feature note's required fee.
-#! - the collected feature notes are not all priced in the same fee asset.
-#! - adding the aggregated fee to the vault overflows the fungible asset maximum.
-#!
-#! Invocation: exec
-@locals(12)
-pub proc collect_sponsored_fees
-    # initialize the collected fee asset ID to the empty word so it doubles as a "no fee collected
-    # yet" sentinel; it is recorded on the first collection and asserted constant thereafter
-    padw loc_storew_le.FEE_ASSET_ID_LOC dropw
-    # => []
-
-    push.0
-    # => [total_fee_amount = 0]
-
-    exec.tx::get_num_input_notes
-    # => [num_input_notes, total_fee_amount]
-
-    push.0
-    # => [note_idx = 0, num_input_notes, total_fee_amount]
-
-    # loop if note_idx != num_input_notes
-    dup.1 dup.1 neq
-    # => [should_loop, note_idx, num_input_notes, total_fee_amount]
-
-    while.true
-        # check if the input note is a sponsorship note; test_eq keeps the feature note's script
-        # root on the stack so it can be reused for the fee estimation below
-        dup exec.input_note::get_script_root
-        # => [FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
-
-        procref.fee_sponsorship::main exec.word::test_eq
-        # => [is_sponsorship, SPONSORSHIP_ROOT, FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
-
-        # reject unpaired sponsorship notes
-        assertz.err=ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE
-        # => [SPONSORSHIP_ROOT, FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
-
-        dropw
-        # => [FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
-
-        # price the feature note through the active fee policy, reusing its script root
-        exec.estimate_input_note_fee
-        # => [FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-        dup.4 eq.0
-        # => [is_required_fee_zero, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-        if.true
-            # a zero-fee feature note needs no sponsorship; drop its fee asset ID and advance past it
-            dropw drop add.1
-            # => [note_idx+1, num_input_notes, total_fee_amount]
-        else
-            # => [FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # record the fee asset ID on the first collection, or assert it matches the previously
-            # recorded one so all collected fees share the same asset; it stays cached in
-            # FEE_ASSET_ID_LOC for the sponsorship-asset check below
-            padw loc_loadw_le.FEE_ASSET_ID_LOC
-            # => [COLLECTED_FEE_ASSET_ID, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            exec.word::testz
-            # => [is_unset, COLLECTED_FEE_ASSET_ID, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            if.true
-                # first collection: drop the empty sentinel and cache this fee asset ID
-                dropw
-                # => [FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-                loc_storew_le.FEE_ASSET_ID_LOC dropw
-                # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-            else
-                # subsequent collection: all collected fees must share the same asset
-                exec.word::eq assert.err=ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET
-                # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-            end
-            # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # compute the neighbor_note_idx as the current note idx + 1
-            dup.1 add.1
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # assert note_idx+1 != num_input_notes to ensure the neighbor idx is in bounds
-            dup dup.4 neq
-            # => [has_neighbor, neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            assert.err=ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # get the neighbor note's script root
-            dup exec.input_note::get_script_root
-            # => [NEIGHBOR_SCRIPT_ROOT, neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # assert the neighbor is a FEE_SPONSORSHIP note
-            procref.fee_sponsorship::main exec.word::eq
-            # => [neighbor_is_sponsorship, neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            assert.err=ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # stage the sponsorship note's storage to read the feature note it sponsors
-            dup locaddr.COLLECT_SPONSORSHIP_STORAGE_LOC swap exec.input_note_get_storage
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # the sponsored feature note ID is the first storage word
-            padw loc_loadw_le.COLLECT_SPONSORSHIP_STORAGE_LOC
-            # => [SPONSORED_FEATURE_NOTE_ID, neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # assert the neighboring feature note is the one this sponsorship pays for
-            dup.6 exec.note_id::compute_input_note_id exec.word::eq
-            # => [sponsors_feature_note, neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # read the sponsorship note's single asset (asset index 0 at note_idx+1)
-            # the sponsorship note's script asserts it is a single asset, so we don't need to check
-            push.0 exec.input_note::get_asset
-            # => [ASSET_ID, ASSET_VALUE, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # the asset must be the fee asset the fee is charged in
-            padw loc_loadw_le.FEE_ASSET_ID_LOC exec.word::eq
-            # => [is_fee_asset, ASSET_VALUE, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
-            # => [ASSET_VALUE, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            exec.fungible_asset::value_into_amount
-            # => [fee_amount, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            dup movup.2
-            # => [required_fee_amount, fee_amount, fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # assert fee_amount >= required_fee_amount
-            gte assert.err=ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW
-            # => [fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            # add the sponsored amount to the running total
-            movup.3 add movdn.2
-            # => [note_idx, num_input_notes, total_fee_amount]
-
-            # advance the index beyond both the feature note and its sponsor note
-            # this is safe in conjunction with neq as the loop condition because we checked above
-            # that the neighbor's index is in bounds
-            add.2
-            # => [note_idx+2, num_input_notes, total_fee_amount]
-        end
-        # => [note_idx, num_input_notes, total_fee_amount]
-
-        dup.1 dup.1 neq
-        # => [should_loop, note_idx, num_input_notes, total_fee_amount]
-    end
-    # => [note_idx, num_input_notes, total_fee_amount]
-
-    drop drop
-    # => [total_fee_amount]
-
-    # load the collected fee asset ID; the empty word means no fee was collected
-    padw loc_loadw_le.FEE_ASSET_ID_LOC
-    # => [FEE_ASSET_ID, total_fee_amount]
-
-    exec.word::testz
-    # => [no_fee_collected, FEE_ASSET_ID, total_fee_amount]
-
-    if.true
-        # nothing was collected; leave the vault untouched
-        dropw drop
-        # => []
-    else
-        # => [FEE_ASSET_ID, total_fee_amount]
-
-        # pad the aggregated amount into the fee asset value, keeping the collected fee asset ID
-        movup.4 exec.fungible_asset::create_value
-        # => [FEE_ASSET_VALUE, FEE_ASSET_ID]
-
-        swapw
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
-
-        # credit the collected fee to the account vault
-        exec.native_account::add_asset
-        # => [FINAL_ASSET_VALUE]
-
-        dropw
-        # => []
-    end
 end
 
 #! Creates a paired FEE_SPONSORSHIP note for every network output note in this transaction.
@@ -452,12 +204,37 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
+#! Estimates the fee for a note by executing the active fee policy.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the active fee policy is not set.
+#!
+#! Invocation: exec
+pub proc estimate_note_fee_internal(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
+    exec.execute_fee_policy
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
 #! Executes the active fee policy by dynamic invocation.
 #!
 #! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
-#! fee from them. Exposed as an `exec` helper so account-side flows (e.g. a fee collection
-#! procedure) can estimate fees without crossing a `call` boundary; [`estimate_note_fee`] is the
-#! `call`-able wrapper for external callers.
+#! fee from them.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -499,74 +276,6 @@ pub proc execute_fee_policy(
 
     dyncall
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-end
-
-#! Prices the input note at the given index through the active fee policy.
-#!
-#! The note's script root is supplied by the caller (which already fetched it for the sponsorship
-#! check) so it is not fetched a second time here. The remaining note parameters are read from the
-#! note and forwarded to the policy. The note index is preserved across the policy call so the
-#! caller can keep walking the input notes.
-#!
-#! Inputs:  [NOTE_SCRIPT_ROOT, note_index]
-#! Outputs: [FEE_ASSET_ID, required_fee_amount, note_index]
-#!
-#! Where:
-#! - NOTE_SCRIPT_ROOT is the script root of the input note at note_index.
-#! - note_index is the index of the input note whose fee is priced.
-#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
-#! - required_fee_amount is the fee amount charged for the note, or 0 if the policy prices it to 0.
-#!
-#! Invocation: exec
-proc estimate_input_note_fee
-    # gather the note's real commitments, keeping NOTE_SCRIPT_ROOT as the top parameter word
-    dup.4 exec.input_note::get_storage_info movup.4 drop swapw
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
-
-    dup.8 exec.input_note::get_initial_assets_info movup.4 drop movdnw.2
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_index]
-
-    dup.12 exec.input_note::get_attachments_commitment movdnw.3
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, note_index]
-
-    exec.execute_fee_policy
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8), note_index]
-
-    # drop the policy's call-boundary padding
-    movupw.3 dropw movupw.2 dropw
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_index]
-
-    # reduce the fee asset value to its amount, keeping the fee asset ID on top
-    swapw exec.fungible_asset::value_into_amount movdn.4
-    # => [FEE_ASSET_ID, required_fee_amount, note_index]
-end
-
-#! TODO: Move this to miden::protocol::input_note.
-#!
-#! Loads the storage items of the input note at `note_index` into memory at `dest_ptr`.
-#!
-#! The items are read from the advice map keyed by the note's storage commitment and validated
-#! against it, so a host that supplies wrong storage aborts the transaction.
-#!
-#! Inputs:  [note_index, dest_ptr]
-#! Outputs: []
-#!
-#! Where:
-#! - note_index is the index of the input note whose storage is loaded.
-#! - dest_ptr is the memory address the storage items are written to.
-#!
-#! Panics if:
-#! - the note index is greater or equal to the total number of input notes.
-#! - the advice-provided storage does not match the note's storage commitment.
-#!
-#! Invocation: exec
-proc input_note_get_storage
-    exec.input_note::get_storage_info
-    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
-
-    # note that this call does NOT depend on the active note, it is merely a helper
-    exec.active_note::write_storage_to_memory
-    # => []
 end
 
 #! Creates a FEE_SPONSORSHIP note for the output note at the given index, if it is a network note.

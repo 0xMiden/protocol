@@ -27,7 +27,7 @@ const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 const NUM_STORAGE_ITEMS = 7
 
 #! The number of assets in a FEE_SPONSORSHIP note.
-const NUM_ASSETS = 1
+pub const NUM_ASSETS = 1
 
 # ERRORS
 # =================================================================================================

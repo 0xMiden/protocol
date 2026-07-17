@@ -1,11 +1,11 @@
 mod allowlist;
 mod authority;
-mod batch_fee;
 mod blocklist;
 mod code_inspection;
 mod expiration;
 mod faucet;
 mod faucet_policy_action;
+mod fee_collection;
 mod fee_manager;
 mod fee_sponsorship;
 mod non_fungible_faucet;
@@ -20,4 +20,5 @@ mod rbac;
 mod rbac_action;
 mod send_note;
 mod swap;
+mod tx_fee;
 mod warden;
