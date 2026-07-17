@@ -57,6 +57,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -365,6 +366,13 @@ impl MockChainBuilder {
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
+        // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
+        // answers sponsorship fee estimates; both require an active fee policy. The empty schedule
+        // keeps this a no-op on fee-free chains.
+        let fee_manager = FeeManager::builder()
+            .active_fee_policy(ConstantFeePolicy::new(self.fee_faucet_id).into())
+            .build();
+
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)
             .with_component(faucet)
@@ -374,7 +382,8 @@ impl MockChainBuilder {
             ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
-            .with_component(PausableManager);
+            .with_component(PausableManager)
+            .with_components(fee_manager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }

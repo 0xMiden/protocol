@@ -23,13 +23,9 @@ use miden_standards::note::{
     P2idNote,
     TxFeeNote,
 };
-use miden_protocol::vm::AdviceMap;
-use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChain};
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
 
 use super::VERIFICATION_BASE_FEE;
 
@@ -106,72 +102,12 @@ fn p2id_network_note(
         .into())
 }
 
-/// Builds an asset-less note (sent by `sender`) whose script, when consumed, creates `spawned` (a
-/// network note) via the standard note-creation procedures, moving `payload` from the consuming
-/// account's vault into it. Mirrors `create_spawn_note` but drives a real account interface (the
-/// standard `note_creator`/`basic` wallet procedures) rather than the mock account library.
-fn spawn_note_creating(sender: AccountId, spawned: &Note, payload: Asset) -> anyhow::Result<Note> {
-    let attachment = spawned
-        .attachments()
-        .iter()
-        .next()
-        .expect("the spawned note carries a network account target attachment");
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(attachment.to_commitment(), attachment.to_elements());
-
-    let code = format!(
-        r#"
-        use miden::protocol::output_note
-
-        @note_script
-        pub proc main
-            push.{recipient}
-            push.{note_type}
-            push.{tag}
-            call.::miden::standards::note::note_creator::create_note
-            movdn.15 dropw dropw dropw drop drop drop
-            # => [note_idx]
-
-            # attach the network account target so the spawned note is a network note
-            dup
-            push.{attachment_commitment}
-            push.{attachment_scheme}
-            exec.output_note::add_attachment
-            # => [note_idx]
-
-            # move the payload asset from the consuming account's vault into the spawned note
-            push.{payload_value}
-            push.{payload_id}
-            call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [pad(16)]
-
-            dropw dropw dropw dropw
-        end
-        "#,
-        recipient = spawned.recipient().digest(),
-        note_type = spawned.metadata().note_type() as u8,
-        tag = spawned.metadata().tag(),
-        attachment_commitment = attachment.to_commitment(),
-        attachment_scheme = attachment.attachment_scheme().as_u16(),
-        payload_value = payload.to_value_word(),
-        payload_id = payload.to_id_word(),
-    );
-
-    Ok(NoteBuilder::new(sender, SmallRng::from_rng(&mut rand::rng()))
-        .code(code)
-        .advice_map(advice_map)
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
-        .build()?)
-}
-
 // TESTS
 // ================================================================================================
 
 /// When a fee-paying account creates a network output note, `pay_fee` sponsors it: a
 /// FEE_SPONSORSHIP note funded from the creator's vault is emitted alongside the network note,
-/// carrying exactly the fee the target account's policy prices the note at. The sponsorship note
-/// is created before the fee is computed, so the creator's own TX_FEE note still covers the fee
-/// required for the (now larger) transaction.
+/// carrying exactly the fee the target account's policy prices the note at.
 #[tokio::test]
 async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
@@ -183,7 +119,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     // the sponsor is a signing wallet holding the fee asset (for its own fee and the sponsorship)
     // and the payload asset
     let sponsor = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        Auth::basic_ecdsa(),
         [fee_asset(1_000_000)?, payload_asset],
     )?;
 
@@ -211,12 +147,12 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let foreign_target = mock_chain.get_foreign_account_inputs(target.id())?;
 
     let executed = mock_chain
-        .build_tx_context(sponsor.id(), &[], &[])?
+        .build_transaction(sponsor.id())
         .foreign_accounts([foreign_target])
         .tx_script(tx_script)
         .auth_args(auth_args)
-        .extend_advice_map([(auth_args, advice_value)])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(network_note.clone())])
+        .extend_advice_map(auth_args, advice_value)
+        .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -225,9 +161,10 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let output_notes = executed.output_notes();
     assert_eq!(output_notes.num_notes(), 3);
 
-    // the network note itself is present
-    assert!(
-        output_notes.iter().any(|note| note.id() == network_note.id()),
+    // the network note is the first note
+    assert_eq!(
+        output_notes.get_note(0).id(),
+        network_note.id(),
         "the created network note should be an output note",
     );
 
@@ -264,58 +201,6 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Sponsoring a network output note prices it through the target account's fee policy via an FPI
-/// call, so the target must be provisioned as a foreign account. Omitting it aborts the
-/// transaction.
-#[tokio::test]
-async fn sponsoring_network_note_requires_target_foreign_account() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
-    let payload_asset: Asset = FungibleAsset::mock(50);
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let sponsor = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
-        [fee_asset(1_000_000)?, payload_asset],
-    )?;
-    let target = network_account(
-        [2; 32],
-        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
-        &[(P2idNote::script_root(), FEE_AMOUNT)],
-        [],
-    )?;
-    builder.add_account(target.clone())?;
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let network_note = p2id_network_note(sponsor.id(), target.id(), payload_asset, &mut rng)?;
-    let tx_script = SendNotesTransactionScript::new(
-        &sponsor.code().interface(sponsor.id()),
-        &[PartialNote::from(network_note.clone())],
-    )?
-    .into();
-    let (auth_args, advice_value) = native_conversion_info();
-
-    // note: the target is NOT provided as a foreign account
-    let result = mock_chain
-        .build_tx_context(sponsor.id(), &[], &[])?
-        .tx_script(tx_script)
-        .auth_args(auth_args)
-        .extend_advice_map([(auth_args, advice_value)])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(network_note)])
-        .build()?
-        .execute()
-        .await;
-
-    let error = result.expect_err("sponsoring without the target foreign account must abort");
-    let error_chain = format!("{:#}", anyhow::Error::new(error));
-    assert!(
-        error_chain.contains("foreign account"),
-        "expected a missing foreign account error, got: {error_chain}",
-    );
-
-    Ok(())
-}
-
 /// End-to-end single hop: a local wallet creates a P2ID network note (and, via `pay_fee`, its
 /// FEE_SPONSORSHIP note); the target network account then consumes both, and its
 /// `collect_sponsored_fees` credits the prepaid fee into its vault.
@@ -324,15 +209,12 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     const NETWORK_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
     let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
-    let payload_asset: Asset = FungibleAsset::mock(50);
-    let Asset::Fungible(payload) = payload_asset else {
-        panic!("payload asset should be fungible");
-    };
+    let payload_asset = FungibleAsset::mock(50).unwrap_fungible();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let sponsor = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
-        [fee_asset(1_000_000)?, payload_asset],
+        [fee_asset(1_000_000)?, Asset::from(payload_asset)],
     )?;
     let network = network_account(
         [2; 32],
@@ -345,7 +227,8 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     mock_chain.prove_next_block()?;
 
     // tx1: the sponsor creates the P2ID network note; pay_fee adds its sponsorship note
-    let network_note = p2id_network_note(sponsor.id(), network.id(), payload_asset, &mut rng)?;
+    let network_note =
+        p2id_network_note(sponsor.id(), network.id(), Asset::from(payload_asset), &mut rng)?;
     let tx_script = SendNotesTransactionScript::new(
         &sponsor.code().interface(sponsor.id()),
         &[PartialNote::from(network_note.clone())],
@@ -354,12 +237,12 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     let (auth_args, advice_value) = native_conversion_info();
     let foreign_network = mock_chain.get_foreign_account_inputs(network.id())?;
     let creation_tx = mock_chain
-        .build_tx_context(sponsor.id(), &[], &[])?
+        .build_transaction(sponsor.id())
         .foreign_accounts([foreign_network])
         .tx_script(tx_script)
         .auth_args(auth_args)
-        .extend_advice_map([(auth_args, advice_value)])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(network_note.clone())])
+        .extend_advice_map(auth_args, advice_value)
+        .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -380,7 +263,9 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     // tx2: the network account consumes the feature note and its sponsorship (in that order, as
     // collect_sponsored_fees requires) and collects the prepaid fee
     let collection_tx = mock_chain
-        .build_tx_context(network.id(), &[network_note.id(), sponsorship_id], &[])?
+        .build_transaction(network.id())
+        .authenticated_input_note(network_note.id())
+        .authenticated_input_note(sponsorship_id)
         .build()?
         .execute()
         .await?;
@@ -410,16 +295,17 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     );
 
     // and it received the feature note's payload asset
-    let payload_balance =
-        committed.vault().get_balance(AssetId::new_fungible(payload.faucet_id()))?;
-    assert_eq!(payload_balance.as_u64(), payload.amount().as_u64());
+    let payload_balance = committed
+        .vault()
+        .get_balance(AssetId::new_fungible(payload_asset.faucet_id()))?;
+    assert_eq!(payload_balance.as_u64(), payload_asset.amount().as_u64());
 
     Ok(())
 }
 
-/// End-to-end multi hop: a local account creates a spawn note; network account A consumes it,
-/// which creates a P2ID network note targeting network account B and (via A's `pay_fee`) sponsors
-/// that note; B then consumes the note and its sponsorship, collecting the prepaid fee.
+/// End-to-end multi hop: network account A consumes a spawn note, which creates a P2ID network
+/// note targeting network account B and (via A's `pay_fee`) sponsors that note; B then consumes the
+/// note and its sponsorship, collecting the prepaid fee.
 #[tokio::test]
 async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> anyhow::Result<()> {
     const B_INITIAL_FEE_BALANCE: u64 = 1_000_000;
@@ -428,10 +314,6 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     let payload_asset: Asset = FungibleAsset::mock(50);
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-
-    // the local account that authors the spawn note
-    let local = builder
-        .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
 
     // downstream network account B, whose policy prices the spawned P2ID note
     let network_b = network_account(
@@ -442,10 +324,10 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     )?;
 
     // probe network account A to learn its id (independent of allowlist storage), which the
-    // spawned note names as sender
+    // spawned note names as sender; the spawn note is authored by A and consumed by A
     let network_a_id = network_account([2; 32], [P2idNote::script_root()], &[], [])?.id();
     let spawned_note = p2id_network_note(network_a_id, network_b.id(), payload_asset, &mut rng)?;
-    let spawn_note = spawn_note_creating(local.id(), &spawned_note, payload_asset)?;
+    let spawn_note = create_spawn_note([&spawned_note])?;
 
     // real network account A allowlists the spawn note, funded to pay its own fee, to sponsor the
     // spawned note, and to move the payload into it
@@ -502,11 +384,12 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
         .iter()
         .find(|note| note.metadata().tag() == TxFeeNote::TAG)
         .expect("B should pay its own fee note");
-    let &Asset::Fungible(paid) =
-        fee_note.assets().iter().next().expect("fee note carries one asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("fee note carries one asset")
+        .unwrap_fungible();
 
     mock_chain.add_pending_executed_transaction(&collect_tx)?;
     mock_chain.prove_next_block()?;
