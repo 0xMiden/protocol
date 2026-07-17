@@ -244,7 +244,7 @@ end
 #! Outputs: [FEE_ASSET_ID]
 #!
 #! Invocation: exec
-proc read_fee_asset_id() -> AssetId
+pub proc read_fee_asset_id() -> AssetId
     push.FEE_ASSET_ID_SLOT[0..2] exec.active_account::get_item
     # => [FEE_ASSET_ID]
 end

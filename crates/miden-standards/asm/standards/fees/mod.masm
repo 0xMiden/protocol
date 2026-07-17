@@ -72,6 +72,8 @@ const ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW = "FEE_SPONSORSHIP note fee amount
 
 const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must carry exactly one asset"
 
+const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset does not match the fee asset configured in the fee manager"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -189,7 +191,9 @@ end
 #! the target account ID, asks that account's fee policy what the note costs via an FPI call to its
 #! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a FEE_SPONSORSHIP output note
 #! bound to the network note (as its companion) carrying exactly the estimated fee asset. The fee
-#! asset is removed from the native account's vault to fund the note.
+#! asset is removed from the native account's vault to fund the note; until fee asset conversion
+#! is supported, the target's fee must be charged in the fee asset configured in this account's
+#! fee manager.
 #!
 #! The created sponsorship note is public, tagged for the target network account, names the native
 #! account as its reclaimer, and has reclaim disabled. Its serial number is derived from the
@@ -206,6 +210,7 @@ end
 #! - a network output note's target ID attachment does not consist of exactly one word.
 #! - a network output note's recipient preimage is unavailable or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
+#! - a target account charges a non-zero fee in an asset other than the configured fee asset.
 #! - the native account's vault does not hold enough of the fee asset.
 #!
 #! Invocation: exec
@@ -463,6 +468,7 @@ end
 #! - the note's target ID attachment does not consist of exactly one word.
 #! - the note's recipient preimage is unavailable or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
+#! - the target account charges a non-zero fee in an asset other than the configured fee asset.
 #! - the native account's vault does not hold enough of the fee asset.
 #!
 #! Invocation: exec
@@ -481,6 +487,12 @@ proc create_network_note_sponsorship(note_idx: u16, attachment_idx: u8)
         dropw dropw drop drop
         # => []
     else
+        # until fee asset conversion is supported, sponsorship notes are funded only in the fee
+        # asset configured in this account's fee manager
+        dupw exec.fee_manager::read_fee_asset_id exec.word::eq
+        assert.err=ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+
         exec.create_sponsorship_note
         # => []
     end

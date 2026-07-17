@@ -18,11 +18,12 @@ use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE,
+    ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH,
     ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE,
     ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::FeeSponsorshipNote;
+use miden_standards::note::{FeeSponsorshipNote, P2idNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -544,6 +545,213 @@ async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> 
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE);
+
+    Ok(())
+}
+
+// CREATE NETWORK NOTE SPONSORSHIPS
+// ================================================================================================
+
+// `create_network_note_sponsorships` is `exec`-only and must run while the native account is the
+// active account, so this test-only component wraps it in an `@account_procedure`. The wrapper
+// first creates a storage-less output note targeted at a network account (carrying a
+// `NetworkAccountTarget` attachment) and then sponsors the transaction's network notes.
+const SPONSORSHIP_CREATOR_NAME: &str = "test::sponsorship_creator";
+
+static SPONSORSHIP_CREATOR_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let src = r#"
+        use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+        use miden::protocol::note
+        use miden::protocol::output_note
+
+        use miden::standards::attachments::network_account_target
+        use miden::standards::fees
+        use miden::standards::note_tag
+
+        #! Creates a storage-less output note targeted at the given network account, then runs
+        #! `create_network_note_sponsorships` to sponsor it.
+        #!
+        #! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, target_id_suffix, target_id_prefix, pad(6)]
+        #! Outputs: [pad(16)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc create_note_and_sponsorships
+            push.0.0
+            # => [storage_ptr = 0, num_storage_items = 0, SERIAL_NUM, SCRIPT_ROOT,
+            #     target_id_suffix, target_id_prefix, pad(6)]
+
+            exec.note::compute_and_store_recipient
+            # => [RECIPIENT, target_id_suffix, target_id_prefix, pad(6)]
+
+            push.NOTE_TYPE_PUBLIC dup.6 exec.note_tag::create_account_target
+            # => [tag, note_type, RECIPIENT, target_id_suffix, target_id_prefix, pad(6)]
+
+            exec.output_note::create
+            # => [note_idx, target_id_suffix, target_id_prefix, pad(6)]
+
+            movdn.2 push.0 movdn.2
+            # => [target_id_suffix, target_id_prefix, exec_hint_tag = 0, note_idx, pad(6)]
+
+            exec.network_account_target::new
+            # => [attachment_scheme, NOTE_ATTACHMENT, note_idx, pad(6)]
+
+            exec.output_note::add_word_attachment
+            # => [pad(16)]
+
+            exec.fees::create_network_note_sponsorships
+            # => [pad(16)]
+        end
+        "#;
+    CodeBuilder::default()
+        .compile_component_code(SPONSORSHIP_CREATOR_NAME, src)
+        .expect("sponsorship creator component should compile")
+});
+
+/// The test-only account component exposing the creator wrapper as an account procedure.
+fn sponsorship_creator_component() -> anyhow::Result<AccountComponent> {
+    Ok(AccountComponent::new(
+        SPONSORSHIP_CREATOR_CODE.clone(),
+        vec![],
+        AccountComponentMetadata::mock(SPONSORSHIP_CREATOR_NAME),
+    )?)
+}
+
+/// A sponsor account (funded with [`FEE_AMOUNT`] of the fee asset) and a target network account
+/// whose fee manager charges [`FEE_AMOUNT`] in the asset of the given faucet, plus the script
+/// creating and sponsoring a network note targeted at it.
+struct CreateTest {
+    mock_chain: MockChain,
+    sponsor: Account,
+    tx_script: TransactionScript,
+    foreign_inputs: (Account, miden_protocol::block::account_tree::AccountWitness),
+}
+
+fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest> {
+    // The created note carries a standard note script so the host can assemble the public note.
+    let script_root = P2idNote::script_root();
+    let serial_num = Word::from([21u32, 22, 23, 24]);
+
+    let sponsor_fee_manager = FeeManager::builder()
+        .fee_faucet_id(fee_faucet_id()?)
+        .active_fee_policy(ConstantFeePolicy::new().into())
+        .build();
+    let sponsor = AccountBuilder::new([8; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(sponsor_fee_manager)
+        .with_component(sponsorship_creator_component()?)
+        .with_assets([fee_asset(FEE_AMOUNT)?])
+        .build_existing()?;
+
+    let target_policy =
+        ConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
+    let target_fee_manager = FeeManager::builder()
+        .fee_faucet_id(target_fee_faucet)
+        .active_fee_policy(target_policy.into())
+        .build();
+    let target = AccountBuilder::new([9; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(target_fee_manager)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(sponsor.clone())?;
+    builder.add_account(target.clone())?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script_src = format!(
+        r#"
+        use test::sponsorship_creator
+
+        @transaction_script
+        pub proc main
+            # => [pad(16)]
+
+            push.{target_prefix} push.{target_suffix}
+            push.{script_root}
+            push.{serial_num}
+            # => [SERIAL_NUM, SCRIPT_ROOT, target_id_suffix, target_id_prefix, pad(16)]
+
+            call.sponsorship_creator::create_note_and_sponsorships
+            # => [pad(16), pad(10)]
+
+            dropw dropw drop drop
+            # => [pad(16)]
+        end
+        "#,
+        target_prefix = target.id().prefix().as_felt(),
+        target_suffix = target.id().suffix(),
+        script_root = script_root.as_word(),
+        serial_num = serial_num,
+    );
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(&*SPONSORSHIP_CREATOR_CODE)?
+        .compile_tx_script(tx_script_src)?;
+
+    let foreign_inputs = mock_chain.get_foreign_account_inputs(target.id())?;
+
+    Ok(CreateTest {
+        mock_chain,
+        sponsor,
+        tx_script,
+        foreign_inputs,
+    })
+}
+
+/// A network note whose target charges its fee in the sponsor's configured fee asset is
+/// sponsored: the sponsorship note is funded with the fee from the sponsor's vault.
+#[tokio::test]
+async fn create_sponsorships_funds_note_in_configured_fee_asset() -> anyhow::Result<()> {
+    let CreateTest {
+        mock_chain,
+        mut sponsor,
+        tx_script,
+        foreign_inputs,
+    } = build_create_test(fee_faucet_id()?)?;
+
+    let executed = mock_chain
+        .build_tx_context(sponsor.id(), &[], &[])?
+        .foreign_accounts([foreign_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    sponsor.apply_patch(executed.account_patch())?;
+    assert_eq!(
+        sponsor.vault().get_balance(AssetId::new_fungible(fee_faucet_id()?))?.as_u64(),
+        0,
+        "the sponsorship note should be funded with the fee from the sponsor's vault"
+    );
+
+    Ok(())
+}
+
+/// A network note whose target charges a non-zero fee in an asset other than the sponsor's
+/// configured fee asset is rejected: fee asset conversion is not supported yet.
+#[tokio::test]
+async fn create_sponsorships_reject_target_with_different_fee_asset() -> anyhow::Result<()> {
+    let CreateTest {
+        mock_chain,
+        sponsor,
+        tx_script,
+        foreign_inputs,
+    } = build_create_test(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?)?;
+
+    let result = mock_chain
+        .build_tx_context(sponsor.id(), &[], &[])?
+        .foreign_accounts([foreign_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH);
 
     Ok(())
 }
