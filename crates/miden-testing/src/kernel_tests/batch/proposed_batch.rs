@@ -114,9 +114,7 @@ pub async fn setup_circular_note_dependency_test()
     // The tx script creates note_y with the asset out of thin air.
     let executed_tx1 = chain
         .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
-        .tx_script(tx_script_y.tx_script().clone())
-        .tx_script_args(tx_script_y.tx_script_args())
-        .extend_advice_map(tx_script_y.advice_entries().to_vec())
+        .send_notes_script(&tx_script_y)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note_y.clone())])
         .build()?
         .execute()
@@ -134,9 +132,7 @@ pub async fn setup_circular_note_dependency_test()
     // TX 2: consume note_y -> create note_x (output via tx script).
     let executed_tx2 = chain
         .build_tx_context(updated_account, &[], slice::from_ref(&note_y))?
-        .tx_script(tx_script_x.tx_script().clone())
-        .tx_script_args(tx_script_x.tx_script_args())
-        .extend_advice_map(tx_script_x.advice_entries().to_vec())
+        .send_notes_script(&tx_script_x)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
         .build()?
         .execute()
@@ -927,9 +923,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     // TX 2: create note_x with the asset from the account vault.
     let executed_tx2 = chain
         .build_tx_context(updated_account, &[], &[])?
-        .tx_script(tx_script_x.tx_script().clone())
-        .tx_script_args(tx_script_x.tx_script_args())
-        .extend_advice_map(tx_script_x.advice_entries().to_vec())
+        .send_notes_script(&tx_script_x)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
         .build()?
         .execute()

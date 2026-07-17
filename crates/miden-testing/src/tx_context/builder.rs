@@ -21,6 +21,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionScript,
 };
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -146,6 +147,14 @@ impl TransactionContextBuilder {
     pub fn tx_script_args(mut self, tx_script_args: Word) -> Self {
         self.tx_script_args = tx_script_args;
         self
+    }
+
+    /// Set the transaction script, script arguments, and advice map entries required to execute
+    /// the provided [`SendNotesTransactionScript`].
+    pub fn send_notes_script(self, script: &SendNotesTransactionScript) -> Self {
+        self.tx_script(script.tx_script().clone())
+            .tx_script_args(script.tx_script_args())
+            .extend_advice_map(script.advice_entries().to_vec())
     }
 
     /// Set the desired auth arguments

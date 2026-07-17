@@ -23,7 +23,12 @@ use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
 use miden_standards::note::P2idNote;
-use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
+use miden_standards::tx_script::{
+    NOTE_RECORD_NUM_ASSETS_OFFSET,
+    PAYLOAD_HEADER_NUM_ELEMENTS,
+    SendNotesTransactionScript,
+    SendNotesTransactionScriptError,
+};
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -105,9 +110,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let executed_transaction = mock_chain
         .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
         .expect("failed to build tx context")
-        .tx_script(send_note_transaction_script.tx_script().clone())
-        .tx_script_args(send_note_transaction_script.tx_script_args())
-        .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
+        .send_notes_script(&send_note_transaction_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
         .build()?
         .execute()
@@ -187,9 +190,7 @@ async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<(
     let executed_transaction = mock_chain
         .build_tx_context(sender_basic_wallet_account.id(), &[], &[])
         .expect("failed to build tx context")
-        .tx_script(send_note_transaction_script.tx_script().clone())
-        .tx_script_args(send_note_transaction_script.tx_script_args())
-        .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
+        .send_notes_script(&send_note_transaction_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(assetless_note.clone())])
         .build()?
         .execute()
@@ -272,9 +273,7 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let executed_transaction = mock_chain
         .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
         .expect("failed to build tx context")
-        .tx_script(send_note_transaction_script.tx_script().clone())
-        .tx_script_args(send_note_transaction_script.tx_script_args())
-        .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
+        .send_notes_script(&send_note_transaction_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])
         .build()?
         .execute()
@@ -336,9 +335,7 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_account.id(), &[], &[])?
-        .tx_script(script.tx_script().clone())
-        .tx_script_args(script.tx_script_args())
-        .extend_advice_map(script.advice_entries().to_vec())
+        .send_notes_script(&script)
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(note_a.clone()),
             RawOutputNote::Full(note_b.clone()),
@@ -381,11 +378,11 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
 
     let script = SendNotesTransactionScript::new(&faucet_account.code_interface(), &[note.into()])?;
 
-    // Handcraft a payload whose note record claims two assets (element 6 of the first note
-    // record, i.e. element 10 of the payload) and recompute the commitment so the payload
-    // passes the advice validation and reaches the script's own assertion.
+    // Handcraft a payload whose first note record claims two assets and recompute the
+    // commitment so the payload passes the advice validation and reaches the script's own
+    // assertion.
     let (_, mut payload) = script.advice_entries()[0].clone();
-    payload[10] = Felt::from(2u32);
+    payload[PAYLOAD_HEADER_NUM_ELEMENTS + NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
     let tampered_args = Hasher::hash_elements(&payload);
 
     let result = mock_chain

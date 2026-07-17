@@ -1253,9 +1253,7 @@ async fn test_multisig_proc_threshold_overrides(
     let tx_context_builder2 = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(send_note_transaction_script.tx_script().clone())
-        .tx_script_args(send_note_transaction_script.tx_script_args())
-        .extend_advice_map(send_note_transaction_script.advice_entries().to_vec())
+        .send_notes_script(&send_note_transaction_script)
         .auth_args(salt2);
 
     // Execute transaction without signatures to get tx summary

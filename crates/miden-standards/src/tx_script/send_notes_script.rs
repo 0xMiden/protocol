@@ -27,6 +27,17 @@ const SEND_NOTES_WALLET_TX_SCRIPT_PATH: &str =
 const SEND_NOTES_FAUCET_TX_SCRIPT_PATH: &str =
     "::miden::standards::tx_scripts::send_notes_faucet::main";
 
+/// Number of elements in the payload header word: `[num_notes, expiration_delta, 0, 0]`.
+///
+/// See `encode_payload` for the full payload layout.
+pub const PAYLOAD_HEADER_NUM_ELEMENTS: usize = 4;
+
+/// Element offset of the asset count within a note record, after the RECIPIENT word and the
+/// `tag` and `note_type` elements.
+///
+/// See `encode_payload` for the full payload layout.
+pub const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
+
 // SEND NOTES TRANSACTION SCRIPT
 // ================================================================================================
 
@@ -158,7 +169,11 @@ impl SendNotesTransactionScript {
         let payload = encode_payload(output_notes, expiration_delta);
         let tx_script_args = Hasher::hash_elements(&payload);
 
-        let mut advice_entries = Vec::with_capacity(1 + output_notes.len());
+        let num_attachments: usize = output_notes
+            .iter()
+            .map(|note| note.attachments().num_attachments() as usize)
+            .sum();
+        let mut advice_entries = Vec::with_capacity(1 + num_attachments);
         advice_entries.push((tx_script_args, payload));
         for note in output_notes {
             for attachment in note.attachments().iter() {
@@ -167,12 +182,6 @@ impl SendNotesTransactionScript {
         }
 
         Ok(Self { script, tx_script_args, advice_entries })
-    }
-}
-
-impl From<SendNotesTransactionScript> for TransactionScript {
-    fn from(value: SendNotesTransactionScript) -> Self {
-        value.script
     }
 }
 
