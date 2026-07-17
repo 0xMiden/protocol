@@ -10,6 +10,7 @@
 use miden::standards::access::authority
 use miden::standards::auth::note_script_allowlist
 use miden::standards::auth::tx_script_allowlist
+use {NoteScriptRoot, TransactionScriptRoot} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -39,7 +40,7 @@ const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::a
 #! - any input note has a script root not in the note script allowlist.
 #!
 #! Invocation: exec
-pub proc assert_transaction_allowed
+pub proc assert_transaction_allowed()
     # ---- Reject any tx script whose root is not allowlisted ----
     push.ALLOWED_TX_SCRIPTS_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix]
@@ -74,7 +75,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc add_allowed_note_script(script_root: word)
+pub proc add_allowed_note_script(script_root: NoteScriptRoot)
     exec.authority::assert_authorized
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -102,7 +103,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc remove_allowed_note_script(script_root: word)
+pub proc remove_allowed_note_script(script_root: NoteScriptRoot)
     exec.authority::assert_authorized
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -129,7 +130,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc add_allowed_tx_script(script_root: word)
+pub proc add_allowed_tx_script(script_root: TransactionScriptRoot)
     exec.authority::assert_authorized
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -156,7 +157,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc remove_allowed_tx_script(script_root: word)
+pub proc remove_allowed_tx_script(script_root: TransactionScriptRoot)
     exec.authority::assert_authorized
     # => [SCRIPT_ROOT, pad(12)]
 

@@ -13,6 +13,7 @@
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
+use {StorageSlotId, TransactionScriptRoot} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -50,7 +51,7 @@ const ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED="transaction script root is 
 #!   pointing at the allowlist storage map.
 #!
 #! Invocation: exec
-pub proc assert_tx_script_allowed
+pub proc assert_tx_script_allowed(allowlist_slot_id: StorageSlotId)
     # => [slot_id_suffix, slot_id_prefix]
 
     exec.tx::get_tx_script_root
@@ -93,7 +94,7 @@ end
 #! - SCRIPT_ROOT is the tx script root to add to the allowlist.
 #!
 #! Invocation: exec
-pub proc add_tx_script
+pub proc add_tx_script(allowlist_slot_id: StorageSlotId, script_root: TransactionScriptRoot)
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
@@ -124,7 +125,7 @@ end
 #! - SCRIPT_ROOT is the tx script root to remove from the allowlist.
 #!
 #! Invocation: exec
-pub proc remove_tx_script
+pub proc remove_tx_script(allowlist_slot_id: StorageSlotId, script_root: TransactionScriptRoot)
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 

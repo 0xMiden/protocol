@@ -14,6 +14,7 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::protocol::input_note
 use miden::core::word
+use {StorageSlotId, NoteScriptRoot} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -49,7 +50,7 @@ const ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED="input note script root is not 
 #!   pointing at the allowlist storage map.
 #!
 #! Invocation: exec
-pub proc assert_all_input_notes_allowed
+pub proc assert_all_input_notes_allowed(allowlist_slot_id: StorageSlotId)
     # => [slot_id_suffix, slot_id_prefix]
 
     exec.tx::get_num_input_notes
@@ -106,7 +107,7 @@ end
 #! - SCRIPT_ROOT is the note script root to add to the allowlist.
 #!
 #! Invocation: exec
-pub proc add_note_script
+pub proc add_note_script(allowlist_slot_id: StorageSlotId, script_root: NoteScriptRoot)
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
@@ -137,7 +138,7 @@ end
 #! - SCRIPT_ROOT is the note script root to remove from the allowlist.
 #!
 #! Invocation: exec
-pub proc remove_note_script
+pub proc remove_note_script(allowlist_slot_id: StorageSlotId, script_root: NoteScriptRoot)
     movdn.5 movdn.5
     # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
