@@ -94,9 +94,8 @@ const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset do
 #! under-sponsored feature note with additional sponsorship notes is tracked in
 #! https://github.com/0xMiden/protocol/issues/3318.
 #!
-#! All fees are charged in the same asset (the fee asset ID stored by the `fee_manager` module),
-#! so the aggregated total is unambiguous. Each sponsorship asset is credited to the account vault
-#! as it is collected; if no fee was collected the vault is left untouched.
+#! All fees are charged in the manager's single configured fee asset. Each sponsorship asset is
+#! credited to the account vault as it is collected; if no fee was collected the vault is untouched.
 #!
 #! Because a matched pair advances the walk by two, a FEE_SPONSORSHIP note is only ever seen as a
 #! feature note's sponsor. Encountering one as the current note means it is unpaired (or pairs a
@@ -191,9 +190,8 @@ end
 #! the target account ID, asks that account's fee policy what the note costs via an FPI call to its
 #! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a FEE_SPONSORSHIP output note
 #! bound to the network note (as its companion) carrying exactly the estimated fee asset. The fee
-#! asset is removed from the native account's vault to fund the note; until fee asset conversion
-#! is supported, the target's fee must be charged in the fee asset configured in this account's
-#! fee manager.
+#! asset is removed from the native account's vault to fund the note. Until fee asset conversion
+#! exists, the target's fee must use the fee asset configured in this account's manager.
 #!
 #! The created sponsorship note is public, tagged for the target network account, names the native
 #! account as its reclaimer, and has reclaim disabled. Its serial number is derived from the
@@ -487,8 +485,7 @@ proc create_network_note_sponsorship(note_idx: u16, attachment_idx: u8)
         dropw dropw drop drop
         # => []
     else
-        # until fee asset conversion is supported, sponsorship notes are funded only in the fee
-        # asset configured in this account's fee manager
+        # reject a target whose fee asset differs from this manager's configured fee asset
         dupw exec.fee_manager::read_fee_asset_id exec.word::eq
         assert.err=ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
