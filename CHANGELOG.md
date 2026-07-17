@@ -6,6 +6,7 @@
 
 - Added the `UpgradeManager` account component for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
 - Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (first policy: `ConstantFeePolicy`) switchable via the authority-gated `set_fee_policy` ([#3309](https://github.com/0xMiden/protocol/pull/3309)).
+- Added the `collect_sponsored_fees` procedure to the `FeeManager`, which walks a transaction's input notes to tally the fees prepaid by their paired `FEE_SPONSORSHIP` notes and credits the aggregated fee to the account's vault ([#3320](https://github.com/0xMiden/protocol/pull/3320)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 
 ### Changes
