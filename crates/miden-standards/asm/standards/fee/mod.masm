@@ -7,6 +7,7 @@ use miden::protocol::output_note
 use miden::protocol::tx
 use {Asset} from miden::protocol::types
 use miden::standards::assets::fungible_asset
+use miden::standards::fees
 use miden::standards::notes::tx_fee
 
 # TYPE ALIASES
@@ -327,8 +328,13 @@ end
 #! in the conversion info.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
-#! note is created, no conversion info is required (the empty word is accepted) and the account
-#! vault is left untouched.
+#! fee note is created and no conversion info is required (the empty word is accepted). Note that
+#! the sponsorship step above may still have created notes and withdrawn from the vault.
+#!
+#! Before computing the fee, this creates a FEE_SPONSORSHIP note for every network output note
+#! of the transaction (see fees::create_network_note_sponsorships), so those notes are included
+#! in the cycle estimate and the fee. This prices each network note through its target account's
+#! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
 #!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO]
 #! Outputs: []
@@ -340,6 +346,9 @@ end
 #!   word if no conversion info was committed (only accepted when the computed fee is zero).
 #!
 #! Panics if:
+#! - the sponsorship step fails (propagates the panics of
+#!   fees::create_network_note_sponsorships, e.g. a target's fee policy is unset/unreachable or
+#!   the vault underfunds a sponsored amount).
 #! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
 #!   maximum cycle count.
 #! - the computed fee is non-zero and CONVERSION_INFO is the empty word.
@@ -349,6 +358,11 @@ end
 #!
 #! Invocation: exec
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
+    # sponsor any network output notes before the fee is computed, so the sponsorship notes
+    # this creates are counted by both the cycle estimate and compute_fee
+    exec.fees::create_network_note_sponsorships
+    # => [num_extra_cycles, CONVERSION_INFO]
+
     exec.apply_cycle_margins
     # => [num_estimated_extra_cycles, CONVERSION_INFO]
 

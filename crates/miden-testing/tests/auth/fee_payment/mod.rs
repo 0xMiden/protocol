@@ -1,6 +1,7 @@
 mod network;
 mod no_auth;
 mod singlesig;
+mod sponsorship;
 
 // CONSTANTS
 // ================================================================================================
