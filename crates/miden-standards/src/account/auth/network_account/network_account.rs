@@ -117,7 +117,10 @@ mod tests {
         let network_account = NetworkAccount::new(account).expect("should be a network account");
         let actual: BTreeSet<NoteScriptRoot> =
             network_account.allowed_notes().allowed_script_roots().iter().copied().collect();
-        assert_eq!(actual, roots);
+        // Every network account also allowlists the config note root by default.
+        let mut expected = roots;
+        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        assert_eq!(actual, expected);
     }
 
     #[test]

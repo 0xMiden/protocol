@@ -326,12 +326,12 @@ fn build_owner_controlled_account(
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    // Enable allowlist management (allowlists the standardized config note so admin notes can be
-    // consumed) plus any extra note roots.
+    // `with_allowed_notes` always allowlists the standardized config note (so admin notes can be
+    // consumed) in addition to any extra note roots.
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    let auth_component = AuthNetworkAccount::with_allowlist_management(note_roots)
+    let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
         .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])

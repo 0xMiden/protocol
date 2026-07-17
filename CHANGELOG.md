@@ -10,6 +10,7 @@
 - Added the `create_sponsorship_notes` procedure to the `FeeManager` to create sponsorship notes for all created network notes ([#3321](https://github.com/0xMiden/protocol/pull/3321)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 - Added post-deployment management of `AuthNetworkAccount` allowlists: authority-gated `add_allowed_note_script` / `remove_allowed_note_script` / `add_allowed_tx_script` / `remove_allowed_tx_script` procedures (composed with an `Authority` component in `OwnerControlled` or `RbacControlled` mode), a standardized `NetworkAccountConfigNote` to invoke them, and an `AuthNetworkAccount::with_allowlist_management` constructor that allowlists that note ([#3330](https://github.com/0xMiden/protocol/pull/3330)).
+- Made `AuthNetworkAccount` allowlist management enabled by default: every account now allowlists the standardized `NetworkAccountConfigNote` script root at construction (folded into `with_allowed_notes`), replacing the dedicated `with_allowlist_management` constructor ([#](https://github.com/0xMiden/protocol/pull/)).
 
 ### Changes
 
