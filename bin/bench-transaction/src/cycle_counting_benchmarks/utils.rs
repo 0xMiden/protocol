@@ -203,7 +203,7 @@ mod tests {
         ScenarioExpectation {
             name: "consume two P2ID notes with Falcon signing",
             padded_core_side: 131_072,
-            padded_chiplets: 65_536,
+            padded_chiplets: 131_072,
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
