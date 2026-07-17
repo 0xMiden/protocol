@@ -90,7 +90,7 @@ proc reclaim_note
     # => []
 
     # add note assets to account
-    exec.basic_wallet::add_assets_to_account
+    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
@@ -157,7 +157,7 @@ pub proc main
 
     if.true
         # we can safely consume the note since the active account is the target of the note
-        drop drop drop exec.basic_wallet::add_assets_to_account
+        drop drop drop exec.basic_wallet::move_note_assets_to_account
         # => []
 
     else
