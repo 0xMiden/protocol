@@ -11,6 +11,7 @@ pub type StorageSlotId = struct { suffix: felt, prefix: felt }
 
 # Word-sized domain values that wrap a `Word` in Rust.
 pub type AssetId = word
+pub type NoteId = word
 pub type AssetValue = word
 pub type AccountProcedureRoot = word
 pub type StorageMapKey = word

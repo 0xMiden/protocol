@@ -454,7 +454,13 @@ end
 #!   }
 #! Outputs:
 #!   Operand stack: []
-proc write_storage_to_memory
+#!
+#! Panics if:
+#! - the advice map does not contain the storage items for NOTE_STORAGE_COMMITMENT.
+#! - the items written to memory do not match NOTE_STORAGE_COMMITMENT.
+#!
+#! Invocation: exec
+pub proc write_storage_to_memory
     # load the inputs from the advice map to the advice stack, padded to the next multiple of 8 so
     # they can be written with `pipe_elements_preimage_to_memory`
     adv.push_mapvaln.8
