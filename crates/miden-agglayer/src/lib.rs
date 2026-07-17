@@ -6,7 +6,9 @@ use alloc::collections::BTreeSet;
 
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::assembly::Path;
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::AuthNetworkAccount;
@@ -86,9 +88,24 @@ static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
         .expect("shipped faucet component package is well-formed")
 });
 
-/// Returns the AggLayer Library containing all agglayer modules.
+/// Returns the AggLayer Library containing all agglayer modules, including the note scripts.
+///
+/// The note scripts this crate builds are external references into this library rather than
+/// self-contained copies of it, so it must be registered with the MAST store of any executor that
+/// runs AggLayer notes (e.g. via `TransactionMastStore::insert_package`). This mirrors how the
+/// standards library backs the standard note scripts, except that the standards library is
+/// preloaded by `TransactionMastStore::new` and this one is not.
 pub fn agglayer_library() -> Package {
     AGGLAYER_LIBRARY.clone()
+}
+
+/// Resolves the note script exported at `path` from the AggLayer library.
+///
+/// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
+/// e.g. `::agglayer::note_scripts::claim::main`.
+pub(crate) fn note_script(path: &str) -> NoteScript {
+    NoteScript::from_library_reference(&AGGLAYER_LIBRARY, Path::new(path))
+        .expect("agglayer library contains the note script procedure")
 }
 
 /// Returns the Bridge component library.

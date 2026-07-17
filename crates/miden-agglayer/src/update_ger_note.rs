@@ -7,25 +7,20 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
-use miden_protocol::vm::Package;
 use miden_utils_sync::LazyLock;
 
-use crate::ExitRoot;
 use crate::ger_note::create_ger_note;
+use crate::{ExitRoot, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the UPDATE_GER note script procedure in the note scripts library.
+const UPDATE_GER_SCRIPT_PATH: &str = "::agglayer::note_scripts::update_ger::main";
+
 // Initialize the UPDATE_GER note script only once
-static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/note_scripts/miden-agglayer-update_ger.masp"
-    ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped UPDATE_GER script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped UPDATE_GER script is well-formed")
-});
+static UPDATE_GER_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(UPDATE_GER_SCRIPT_PATH));
 
 // UPDATE_GER NOTE
 // ================================================================================================

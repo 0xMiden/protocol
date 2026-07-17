@@ -21,23 +21,19 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::vm::Package;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddress;
+use crate::{EthAddress, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the B2AGG note script procedure in the note scripts library.
+const B2AGG_SCRIPT_PATH: &str = "::agglayer::note_scripts::b2agg::main";
+
 // Initialize the B2AGG note script only once
-static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-b2agg.masp"));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped B2AGG script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped B2AGG script is well-formed")
-});
+static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(B2AGG_SCRIPT_PATH));
 
 // B2AGG NOTE
 // ================================================================================================
