@@ -25,6 +25,12 @@ async fn run_scenario(
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    let update_costs = match std::env::args().nth(1).as_deref() {
+        None => false,
+        Some("update-note-costs") => true,
+        Some(other) => anyhow::bail!("unknown argument `{other}`; expected `update-note-costs`"),
+    };
+
     // create a template file for benchmark results
     let path = Path::new("bin/bench-transaction/bench-tx.json");
     let mut file = File::create(path).context("failed to create file")?;
@@ -37,6 +43,10 @@ async fn main() -> Result<()> {
 
     // store benchmark results in the JSON file
     write_bench_results_to_json(path, benchmark_results)?;
+
+    if update_costs {
+        bench_transaction::note_costs::update_cost_tables().await?;
+    }
 
     Ok(())
 }

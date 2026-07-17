@@ -23,6 +23,7 @@ pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
 pub mod config_note;
+pub mod costs;
 pub mod deregister_note;
 pub mod errors;
 pub mod eth_types;

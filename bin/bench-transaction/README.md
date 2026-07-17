@@ -30,6 +30,18 @@ The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for 
 
 Note: the network-account auth procedure does not yet collect FEE_SPONSORSHIP notes or create sponsorships for emitted network notes. When that integration lands, the measured costs change and the scenarios must be regenerated.
 
+### Note Consumption Cost Tables
+
+The network-account scenarios feed two checked-in, generated cost tables: `crates/miden-standards/src/note/costs/table.rs` and `crates/miden-agglayer/src/costs/table.rs`. Each table entry is the note's consumption cost in VM cycles - the total cycle count of the canonical network-account transaction consuming it, taken as the maximum across the note's execution paths.
+
+Regenerate the tables (and `bench-tx.json`) with:
+
+```bash
+make update-note-costs
+```
+
+Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot tests in `src/note_costs.rs` re-execute every priced scenario during the regular test run and fail when a measured cost no longer matches its checked-in constant. A PR that changes cycle counts (kernel, standards, or agglayer changes) must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+
 ### Benchmark Groups
 
 Each of the above transactions is measured in two groups:
