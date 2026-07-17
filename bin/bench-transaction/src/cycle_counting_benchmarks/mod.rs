@@ -17,6 +17,30 @@ pub enum ExecutionBenchmark {
     ConsumeB2AggNote,
     ConsumeB2AggNotePopulated2p31,
     ConsumeB2AggNotePopulated2p31m1,
+    ConsumeP2idNetwork,
+    ConsumeP2ideClaimNetwork,
+    ConsumeP2ideReclaimNetwork,
+    ConsumeSwapPublicPaybackNetwork,
+    ConsumeSwapPrivatePaybackNetwork,
+    ConsumePswapFullFillNetwork,
+    ConsumePswapPartialFillNetwork,
+    ConsumeMintFungibleNetwork,
+    ConsumeMintNonFungibleNetwork,
+    ConsumeBurnNetwork,
+    ConsumeFaucetPolicyActionNetwork,
+    ConsumePauseActionNetwork,
+    ConsumeOwnerActionNetwork,
+    ConsumeRbacActionNetwork,
+    ConsumeFeeSponsorshipWithFeatureNetwork,
+    ConsumeFeeSponsorshipReclaimNetwork,
+    ConsumeClaimL1WithFee,
+    ConsumeClaimL2WithFee,
+    ConsumeB2AggWithFee,
+    ConsumeB2AggPopulatedWithFee,
+    ConsumeConfigAggBridgeWithFee,
+    ConsumeDeregisterAggFaucetWithFee,
+    ConsumeUpdateGerWithFee,
+    ConsumeRemoveGerWithFee,
 }
 
 impl ExecutionBenchmark {
@@ -34,6 +58,30 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeB2AggNote,
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            ExecutionBenchmark::ConsumeP2idNetwork,
+            ExecutionBenchmark::ConsumeP2ideClaimNetwork,
+            ExecutionBenchmark::ConsumeP2ideReclaimNetwork,
+            ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork,
+            ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork,
+            ExecutionBenchmark::ConsumePswapFullFillNetwork,
+            ExecutionBenchmark::ConsumePswapPartialFillNetwork,
+            ExecutionBenchmark::ConsumeMintFungibleNetwork,
+            ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
+            ExecutionBenchmark::ConsumeBurnNetwork,
+            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork,
+            ExecutionBenchmark::ConsumePauseActionNetwork,
+            ExecutionBenchmark::ConsumeOwnerActionNetwork,
+            ExecutionBenchmark::ConsumeRbacActionNetwork,
+            ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
+            ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork,
+            ExecutionBenchmark::ConsumeClaimL1WithFee,
+            ExecutionBenchmark::ConsumeClaimL2WithFee,
+            ExecutionBenchmark::ConsumeB2AggWithFee,
+            ExecutionBenchmark::ConsumeB2AggPopulatedWithFee,
+            ExecutionBenchmark::ConsumeConfigAggBridgeWithFee,
+            ExecutionBenchmark::ConsumeDeregisterAggFaucetWithFee,
+            ExecutionBenchmark::ConsumeUpdateGerWithFee,
+            ExecutionBenchmark::ConsumeRemoveGerWithFee,
         ]
     }
 }
@@ -73,6 +121,78 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1 => {
                 write!(f, "consume B2AGG note (bridge-out, 2^31-1 leaves)")
+            },
+            ExecutionBenchmark::ConsumeP2idNetwork => {
+                write!(f, "consume P2ID note (network account)")
+            },
+            ExecutionBenchmark::ConsumeP2ideClaimNetwork => {
+                write!(f, "consume P2IDE note (claim, network account)")
+            },
+            ExecutionBenchmark::ConsumeP2ideReclaimNetwork => {
+                write!(f, "consume P2IDE note (reclaim, network account)")
+            },
+            ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork => {
+                write!(f, "consume SWAP note (public payback, network account)")
+            },
+            ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork => {
+                write!(f, "consume SWAP note (private payback, network account)")
+            },
+            ExecutionBenchmark::ConsumePswapFullFillNetwork => {
+                write!(f, "consume PSWAP note (full fill, network account)")
+            },
+            ExecutionBenchmark::ConsumePswapPartialFillNetwork => {
+                write!(f, "consume PSWAP note (partial fill, network account)")
+            },
+            ExecutionBenchmark::ConsumeMintFungibleNetwork => {
+                write!(f, "consume MINT note (fungible faucet, network account)")
+            },
+            ExecutionBenchmark::ConsumeMintNonFungibleNetwork => {
+                write!(f, "consume MINT note (non-fungible faucet, network account)")
+            },
+            ExecutionBenchmark::ConsumeBurnNetwork => {
+                write!(f, "consume BURN note (network account)")
+            },
+            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
+                write!(f, "consume FAUCET_POLICY_ACTION note (network account)")
+            },
+            ExecutionBenchmark::ConsumePauseActionNetwork => {
+                write!(f, "consume PAUSE_ACTION note (network account)")
+            },
+            ExecutionBenchmark::ConsumeOwnerActionNetwork => {
+                write!(f, "consume OWNER_ACTION note (network account)")
+            },
+            ExecutionBenchmark::ConsumeRbacActionNetwork => {
+                write!(f, "consume RBAC_ACTION note (network account)")
+            },
+            ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
+                write!(f, "consume FEE_SPONSORSHIP note with feature note (network account)")
+            },
+            ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => {
+                write!(f, "consume FEE_SPONSORSHIP note (reclaim, network account)")
+            },
+            ExecutionBenchmark::ConsumeClaimL1WithFee => {
+                write!(f, "consume CLAIM note (L1 to Miden, with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeClaimL2WithFee => {
+                write!(f, "consume CLAIM note (L2 to Miden, with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeB2AggWithFee => {
+                write!(f, "consume B2AGG note (bridge-out, with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeB2AggPopulatedWithFee => {
+                write!(f, "consume B2AGG note (bridge-out, 2^31-1 leaves, with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeConfigAggBridgeWithFee => {
+                write!(f, "consume CONFIG_AGG_BRIDGE note (with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeDeregisterAggFaucetWithFee => {
+                write!(f, "consume DEREGISTER_AGG_FAUCET note (with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeUpdateGerWithFee => {
+                write!(f, "consume UPDATE_GER note (with fee payment)")
+            },
+            ExecutionBenchmark::ConsumeRemoveGerWithFee => {
+                write!(f, "consume REMOVE_GER note (with fee payment)")
             },
         }
     }

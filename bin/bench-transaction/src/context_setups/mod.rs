@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::testing::create_existing_bridge_account_with_roles;
@@ -8,8 +10,10 @@ use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     ConversionMetadata,
+    DeregisterAggFaucetNote,
     EthAddress,
     MetadataHash,
+    RemoveGerNote,
     UpdateGerNote,
     create_existing_agglayer_faucet,
 };
@@ -17,8 +21,8 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{NoteAssets, NoteType};
-use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -27,6 +31,49 @@ use miden_testing::{Auth, MockChain, MockChainBuilder, TransactionContext};
 use rand::RngExt;
 
 use crate::cycle_counting_benchmarks::ExecutionBenchmark;
+
+mod network_action;
+mod network_faucet;
+mod network_wallet;
+
+// SHARED NETWORK-ACCOUNT SCENARIO HELPERS
+// ================================================================================================
+
+/// Verification base fee charged by the chains of the network-account benchmark scenarios.
+///
+/// Mirrors `VERIFICATION_BASE_FEE` in `crates/miden-testing/tests/auth/fee_payment/mod.rs` so the
+/// benchmarked transactions pay fees the same way the fee-payment tests exercise them.
+pub const NETWORK_VERIFICATION_BASE_FEE: u32 = 500;
+
+/// Amount of the native fee asset the consuming account is funded with.
+///
+/// Generous compared to the actual fee (roughly `verification_base_fee * 20`), so fee payment
+/// never fails for lack of funds.
+const FEE_FUNDING_AMOUNT: u64 = 1_000_000;
+
+/// Returns the chain's native fee asset carrying [`FEE_FUNDING_AMOUNT`].
+fn fee_funding_asset() -> Result<Asset> {
+    Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, FEE_FUNDING_AMOUNT)?.into())
+}
+
+/// Returns network-account authentication allowlisting the given note script roots (and no
+/// transaction scripts).
+fn network_auth(allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>) -> Auth {
+    Auth::NetworkAccount {
+        allowed_script_roots: allowed_script_roots.into_iter().collect(),
+        allowed_tx_script_roots: BTreeSet::new(),
+    }
+}
+
+/// Returns a chain builder which charges [`NETWORK_VERIFICATION_BASE_FEE`] when `with_fee` is
+/// set and no fees otherwise.
+fn chain_builder(with_fee: bool) -> MockChainBuilder {
+    if with_fee {
+        MockChain::builder().verification_base_fee(NETWORK_VERIFICATION_BASE_FEE)
+    } else {
+        MockChain::builder()
+    }
+}
 
 // SCENARIO DISPATCH
 // ================================================================================================
@@ -41,18 +88,80 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<Transa
         ExecutionBenchmark::CreateSingleP2IDFalcon => tx_create_single_p2id_note_falcon(),
         ExecutionBenchmark::CreateSingleP2IDEcdsa => tx_create_single_p2id_note_ecdsa(),
         ExecutionBenchmark::ConsumeClaimNoteL1ToMiden => {
-            tx_consume_claim_note(ClaimDataSource::L1ToMiden).await
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden, false).await
         },
         ExecutionBenchmark::ConsumeClaimNoteL2ToMiden => {
-            tx_consume_claim_note(ClaimDataSource::L2ToMiden).await
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden, false).await
         },
-        ExecutionBenchmark::ConsumeB2AggNote => tx_consume_b2agg_note(None).await,
+        ExecutionBenchmark::ConsumeB2AggNote => tx_consume_b2agg_note(None, false).await,
         ExecutionBenchmark::ConsumeB2AggNotePopulated2p31 => {
-            tx_consume_b2agg_note(Some(1 << 31)).await
+            tx_consume_b2agg_note(Some(1 << 31), false).await
         },
         ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1 => {
-            tx_consume_b2agg_note(Some((1u32 << 31) - 1)).await
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1), false).await
         },
+        ExecutionBenchmark::ConsumeP2idNetwork => network_wallet::tx_consume_p2id_note_network(),
+        ExecutionBenchmark::ConsumeP2ideClaimNetwork => {
+            network_wallet::tx_consume_p2ide_note_network(false)
+        },
+        ExecutionBenchmark::ConsumeP2ideReclaimNetwork => {
+            network_wallet::tx_consume_p2ide_note_network(true)
+        },
+        ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork => {
+            network_wallet::tx_consume_swap_note_network(NoteType::Public)
+        },
+        ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork => {
+            network_wallet::tx_consume_swap_note_network(NoteType::Private)
+        },
+        ExecutionBenchmark::ConsumePswapFullFillNetwork => {
+            network_wallet::tx_consume_pswap_note_network(true)
+        },
+        ExecutionBenchmark::ConsumePswapPartialFillNetwork => {
+            network_wallet::tx_consume_pswap_note_network(false)
+        },
+        ExecutionBenchmark::ConsumeMintFungibleNetwork => {
+            network_faucet::tx_consume_mint_note_fungible_network()
+        },
+        ExecutionBenchmark::ConsumeMintNonFungibleNetwork => {
+            network_faucet::tx_consume_mint_note_non_fungible_network()
+        },
+        ExecutionBenchmark::ConsumeBurnNetwork => network_faucet::tx_consume_burn_note_network(),
+        ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
+            network_action::tx_consume_faucet_policy_action_note_network()
+        },
+        ExecutionBenchmark::ConsumePauseActionNetwork => {
+            network_action::tx_consume_pause_action_note_network()
+        },
+        ExecutionBenchmark::ConsumeOwnerActionNetwork => {
+            network_action::tx_consume_owner_action_note_network()
+        },
+        ExecutionBenchmark::ConsumeRbacActionNetwork => {
+            network_action::tx_consume_rbac_action_note_network()
+        },
+        ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
+            network_wallet::tx_consume_fee_sponsorship_note_network(false)
+        },
+        ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => {
+            network_wallet::tx_consume_fee_sponsorship_note_network(true)
+        },
+        ExecutionBenchmark::ConsumeClaimL1WithFee => {
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden, true).await
+        },
+        ExecutionBenchmark::ConsumeClaimL2WithFee => {
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden, true).await
+        },
+        ExecutionBenchmark::ConsumeB2AggWithFee => tx_consume_b2agg_note(None, true).await,
+        ExecutionBenchmark::ConsumeB2AggPopulatedWithFee => {
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1), true).await
+        },
+        ExecutionBenchmark::ConsumeConfigAggBridgeWithFee => {
+            tx_consume_config_agg_bridge_note().await
+        },
+        ExecutionBenchmark::ConsumeDeregisterAggFaucetWithFee => {
+            tx_consume_deregister_agg_faucet_note().await
+        },
+        ExecutionBenchmark::ConsumeUpdateGerWithFee => tx_consume_update_ger_note().await,
+        ExecutionBenchmark::ConsumeRemoveGerWithFee => tx_consume_remove_ger_note().await,
     }
 }
 
@@ -215,6 +324,7 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
 struct BridgeFixture {
     faucet_manager: Account,
     ger_injector: Account,
+    ger_remover: Account,
     bridge_account: Account,
 }
 
@@ -223,9 +333,13 @@ struct BridgeFixture {
 /// When `pre_populate_leaves` is `Some(n)`, the bridge account's LET frontier is pre-populated
 /// with dummy values for `n` leaves before the account is added to the chain (see
 /// [`populate_let_frontier`]).
+///
+/// When `with_fee` is set, the bridge account is funded with the native fee asset so its
+/// network-account auth can pay the transaction fee.
 fn setup_bridge_fixture(
     builder: &mut MockChainBuilder,
     pre_populate_leaves: Option<u32>,
+    with_fee: bool,
 ) -> Result<BridgeFixture> {
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
@@ -254,11 +368,16 @@ fn setup_bridge_fixture(
         populate_let_frontier(&mut bridge_account, num_leaves);
     }
 
+    if with_fee {
+        bridge_account.vault_mut().add_asset(fee_funding_asset()?)?;
+    }
+
     builder.add_account(bridge_account.clone())?;
 
     Ok(BridgeFixture {
         faucet_manager,
         ger_injector,
+        ger_remover,
         bridge_account,
     })
 }
@@ -273,15 +392,21 @@ fn setup_bridge_fixture(
 /// setup to prepare the bridge account state. Only the returned CLAIM transaction context is
 /// benchmarked — the prerequisite transactions are not included in cycle/time measurements.
 ///
-/// The `data_source` parameter selects between L1-to-Miden and L2-to-Miden test vectors.
-pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<TransactionContext> {
-    let mut builder = MockChain::builder();
+/// The `data_source` parameter selects between L1-to-Miden and L2-to-Miden test vectors. When
+/// `with_fee` is set, the chain charges [`NETWORK_VERIFICATION_BASE_FEE`] and the fee-funded
+/// bridge account pays the transaction fee.
+pub async fn tx_consume_claim_note(
+    data_source: ClaimDataSource,
+    with_fee: bool,
+) -> Result<TransactionContext> {
+    let mut builder = chain_builder(with_fee);
 
     let BridgeFixture {
         faucet_manager,
         ger_injector,
         bridge_account,
-    } = setup_bridge_fixture(&mut builder, None)?;
+        ..
+    } = setup_bridge_fixture(&mut builder, None, with_fee)?;
 
     // GET CLAIM DATA FROM JSON
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
@@ -471,13 +596,16 @@ fn populate_let_frontier(bridge: &mut Account, num_leaves: u32) {
 ///
 /// The setup uses the first entry from the MTF (Merkle Tree Frontier) test vectors for destination
 /// data.
-pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<TransactionContext> {
+pub async fn tx_consume_b2agg_note(
+    pre_populate_leaves: Option<u32>,
+    with_fee: bool,
+) -> Result<TransactionContext> {
     let vectors = &*miden_agglayer::testing::SOLIDITY_MTF_VECTORS;
 
-    let mut builder = MockChain::builder();
+    let mut builder = chain_builder(with_fee);
 
     let BridgeFixture { faucet_manager, bridge_account, .. } =
-        setup_bridge_fixture(&mut builder, pre_populate_leaves)?;
+        setup_bridge_fixture(&mut builder, pre_populate_leaves, with_fee)?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
@@ -551,4 +679,160 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         .build()?;
 
     Ok(b2agg_tx_context)
+}
+
+// AGGLAYER MANAGEMENT NOTE SETUPS
+// ================================================================================================
+
+/// Creates an agglayer faucet plus the CONFIG_AGG_BRIDGE note registering it in the bridge,
+/// using the deterministic L1-to-Miden test-vector metadata.
+///
+/// Returns the registered faucet account and the registration note (already added to the chain
+/// builder as an output note).
+fn setup_faucet_registration(
+    builder: &mut MockChainBuilder,
+    faucet_manager: &Account,
+    bridge_account: &Account,
+) -> Result<(Account, Note)> {
+    let (_proof_data, leaf_data, _ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        "AGG",
+        8,
+        FungibleAsset::MAX_AMOUNT.into(),
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address: leaf_data.origin_token_address,
+            scale: 10,
+            origin_network: leaf_data.origin_network,
+            is_native: false,
+            metadata_hash: leaf_data.metadata_hash,
+        },
+        faucet_manager.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    Ok((agglayer_faucet, config_note))
+}
+
+/// Returns the transaction context for the fee-funded bridge account consuming a
+/// CONFIG_AGG_BRIDGE note.
+pub async fn tx_consume_config_agg_bridge_note() -> Result<TransactionContext> {
+    let mut builder = chain_builder(true);
+
+    let BridgeFixture { faucet_manager, bridge_account, .. } =
+        setup_bridge_fixture(&mut builder, None, true)?;
+
+    let (_agglayer_faucet, config_note) =
+        setup_faucet_registration(&mut builder, &faucet_manager, &bridge_account)?;
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()
+}
+
+/// Returns the transaction context for the fee-funded bridge account consuming a
+/// DEREGISTER_AGG_FAUCET note, after a prerequisite CONFIG_AGG_BRIDGE transaction registered the
+/// faucet.
+pub async fn tx_consume_deregister_agg_faucet_note() -> Result<TransactionContext> {
+    let mut builder = chain_builder(true);
+
+    let BridgeFixture { faucet_manager, bridge_account, .. } =
+        setup_bridge_fixture(&mut builder, None, true)?;
+
+    let (agglayer_faucet, config_note) =
+        setup_faucet_registration(&mut builder, &faucet_manager, &bridge_account)?;
+
+    let deregister_note = DeregisterAggFaucetNote::create(
+        agglayer_faucet.id(),
+        faucet_manager.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER THE FAUCET IN THE BRIDGE
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: BUILD DEREGISTER_AGG_FAUCET NOTE TRANSACTION CONTEXT (ready to execute)
+    mock_chain
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build()
+}
+
+/// Returns the transaction context for the fee-funded bridge account consuming an UPDATE_GER
+/// note.
+pub async fn tx_consume_update_ger_note() -> Result<TransactionContext> {
+    let mut builder = chain_builder(true);
+
+    let BridgeFixture { ger_injector, bridge_account, .. } =
+        setup_bridge_fixture(&mut builder, None, true)?;
+
+    let (_proof_data, _leaf_data, ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()
+}
+
+/// Returns the transaction context for the fee-funded bridge account consuming a REMOVE_GER
+/// note, after a prerequisite UPDATE_GER transaction stored the GER.
+pub async fn tx_consume_remove_ger_note() -> Result<TransactionContext> {
+    let mut builder = chain_builder(true);
+
+    let BridgeFixture {
+        ger_injector,
+        ger_remover,
+        bridge_account,
+        ..
+    } = setup_bridge_fixture(&mut builder, None, true)?;
+
+    let (_proof_data, _leaf_data, ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let remove_ger_note =
+        RemoveGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(remove_ger_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // TX0: EXECUTE UPDATE_GER NOTE TO STORE THE GER IN THE BRIDGE ACCOUNT
+    let update_ger_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: BUILD REMOVE_GER NOTE TRANSACTION CONTEXT (ready to execute)
+    mock_chain
+        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+        .build()
 }
