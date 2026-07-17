@@ -1950,6 +1950,7 @@ dependencies = [
  "miden-standards",
  "rand 0.10.2",
  "regex",
+ "rstest",
  "thiserror",
  "walkdir",
 ]
