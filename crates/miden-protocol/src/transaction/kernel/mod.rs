@@ -213,7 +213,7 @@ impl TransactionKernel {
             .link_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .expect("failed to load std-lib");
         assembler
-            .link_package(Arc::new(ProtocolLib::default().into()), Linkage::Dynamic)
+            .link_package(ProtocolLib::default().package(), Linkage::Dynamic)
             .expect("failed to load miden-lib");
         assembler
     }

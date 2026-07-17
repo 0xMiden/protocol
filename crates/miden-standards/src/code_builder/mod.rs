@@ -269,7 +269,7 @@ impl CodeBuilder {
         let mut assembler =
             TransactionKernel::assembler_with_source_manager(source_manager.clone());
         assembler
-            .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
+            .link_package(StandardsLib::default().package(), Linkage::Dynamic)
             .expect("linking std lib should work");
         Self {
             assembler,

@@ -26,8 +26,8 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 // ACCOUNT COMPONENT
 // ================================================================================================
 
-/// An [`AccountComponent`] defines a [`Package`](crate::assembly::Package) of code and the initial
-/// value and types of the [`StorageSlot`]s it accesses.
+/// An [`AccountComponent`] defines a [`Package`] of code and the initial value and types of the
+/// [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
 /// [`AccountStorage`](crate::account::AccountStorage).

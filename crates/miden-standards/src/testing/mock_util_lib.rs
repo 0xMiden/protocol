@@ -83,7 +83,7 @@ static MOCK_UTIL_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
         .expect("mock util library should parse");
     let mut assembler = TransactionKernel::assembler_with_source_manager(source_manager);
     assembler
-        .link_package(Arc::new(StandardsLib::default().into()), Linkage::Dynamic)
+        .link_package(StandardsLib::default().package(), Linkage::Dynamic)
         .expect("dynamically linking standards library should work");
     // Link the mock account library so the helpers' delegating `mock::account::*` calls resolve.
     assembler
