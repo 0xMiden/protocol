@@ -360,6 +360,33 @@ fn table_path(crate_relative: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use miden_agglayer::{
+        B2AggNote,
+        ClaimNote,
+        ConfigAggBridgeNote,
+        DeregisterAggFaucetNote,
+        RemoveGerNote,
+        UpdateGerNote,
+    };
+    use miden_protocol::note::NoteScriptRoot;
+    use miden_protocol::transaction::RawOutputNote;
+    use miden_standards::note::{
+        BurnNote,
+        FaucetPolicyActionNote,
+        FeeSponsorshipNote,
+        MintNote,
+        NetworkAccountConfigNote,
+        OwnerActionNote,
+        P2idNote,
+        P2ideNote,
+        PauseActionNote,
+        PswapNote,
+        RbacActionNote,
+        SwapNote,
+        TxFeeNote,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -374,6 +401,76 @@ mod tests {
     /// pricing safety margin (one verification cycle by default, roughly a 2x cycle headroom)
     /// dwarfs the tolerated drift.
     const DRIFT_TOLERANCE_PERCENT: u64 = 5;
+
+    /// Returns the priced note's script root.
+    fn priced_note_root(note: PricedNote) -> NoteScriptRoot {
+        match note {
+            PricedNote::P2id => P2idNote::script_root(),
+            PricedNote::P2ide => P2ideNote::script_root(),
+            PricedNote::Swap => SwapNote::script_root(),
+            PricedNote::Pswap => PswapNote::script_root(),
+            PricedNote::Mint => MintNote::script_root(),
+            PricedNote::Burn => BurnNote::script_root(),
+            PricedNote::FaucetPolicyAction => FaucetPolicyActionNote::script_root(),
+            PricedNote::PauseAction => PauseActionNote::script_root(),
+            PricedNote::OwnerAction => OwnerActionNote::script_root(),
+            PricedNote::RbacAction => RbacActionNote::script_root(),
+            PricedNote::NetworkAccountConfig => NetworkAccountConfigNote::script_root(),
+            PricedNote::FeeSponsorship => FeeSponsorshipNote::script_root(),
+            PricedNote::Claim => ClaimNote::script_root(),
+            PricedNote::B2agg => B2AggNote::script_root(),
+            PricedNote::ConfigAggBridge => ConfigAggBridgeNote::script_root(),
+            PricedNote::DeregisterAggFaucet => DeregisterAggFaucetNote::script_root(),
+            PricedNote::UpdateGer => UpdateGerNote::script_root(),
+            PricedNote::RemoveGer => RemoveGerNote::script_root(),
+        }
+    }
+
+    /// Ties the hand-maintained created-notes metadata backing recursive pricing to actual
+    /// execution: every priced scenario is executed, and each full output note other than the
+    /// TX_FEE note must have its script root declared in the consumed note's
+    /// `created_network_notes`. For all notes except MINT the declared set must also be exactly
+    /// what execution produced, so over-declaration is caught too; MINT's created P2ID note is
+    /// private in its scenarios (not a full output note), so only the subset direction applies.
+    #[tokio::test]
+    async fn created_network_notes_cover_executed_output_notes() -> Result<()> {
+        for &note in PricedNote::all() {
+            let declared: BTreeSet<NoteScriptRoot> =
+                miden_agglayer::costs::note_cost(priced_note_root(note))
+                    .expect("every priced note must have a cost")
+                    .created_network_notes()
+                    .iter()
+                    .copied()
+                    .collect();
+
+            let mut observed = BTreeSet::new();
+            for &bench in note.scenarios() {
+                let executed = build_benchmark_context(bench).await?.execute().await?;
+                for output_note in executed.output_notes().iter() {
+                    let RawOutputNote::Full(created) = output_note else {
+                        continue;
+                    };
+                    let root = created.script().root();
+                    if root == TxFeeNote::script_root() {
+                        continue;
+                    }
+                    assert!(
+                        declared.contains(&root),
+                        "scenario `{bench}` created a note with undeclared script root {root}",
+                    );
+                    observed.insert(root);
+                }
+            }
+
+            if note != PricedNote::Mint {
+                assert_eq!(
+                    observed, declared,
+                    "declared created notes were not observed for {note:?}",
+                );
+            }
+        }
+        Ok(())
+    }
 
     /// Snapshot check enforcing freshness of the checked-in cost tables: re-executes each priced
     /// note's benchmark scenarios and compares the measured maximum against the compiled-in

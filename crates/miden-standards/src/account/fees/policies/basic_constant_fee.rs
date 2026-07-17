@@ -123,6 +123,20 @@ impl BasicConstantFeePolicy {
         self
     }
 
+    /// Extends the fee schedule with the given `(script_root, fee)` entries, replacing any
+    /// previous entries - e.g. with prices computed from the benchmarked note consumption
+    /// costs via [`crate::note::costs::standard_note_prices`].
+    #[must_use]
+    pub fn with_fees(
+        mut self,
+        entries: impl IntoIterator<Item = (NoteScriptRoot, AssetAmount)>,
+    ) -> Self {
+        for (script_root, fee) in entries {
+            self = self.with_fee(script_root, fee);
+        }
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -230,6 +244,23 @@ mod tests {
             Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
             "an explicit 0-fee entry should survive as a non-zero word"
         );
+
+        Ok(())
+    }
+
+    /// Check that `with_fees` inserts every entry and replaces existing ones.
+    #[test]
+    fn with_fees_extends_and_replaces_schedule_entries() -> anyhow::Result<()> {
+        let root_a = NoteScriptRoot::from_array([1, 0, 0, 0]);
+        let root_b = NoteScriptRoot::from_array([2, 0, 0, 0]);
+
+        let policy = ConstantFeePolicy::new(fee_faucet_id())
+            .with_fee(root_a, AssetAmount::new(100)?)
+            .with_fees([(root_a, AssetAmount::new(300)?), (root_b, AssetAmount::new(200)?)]);
+
+        assert_eq!(policy.fee_schedule().len(), 2);
+        assert_eq!(policy.fee_schedule().get(&root_a), Some(&AssetAmount::new(300)?));
+        assert_eq!(policy.fee_schedule().get(&root_b), Some(&AssetAmount::new(200)?));
 
         Ok(())
     }
