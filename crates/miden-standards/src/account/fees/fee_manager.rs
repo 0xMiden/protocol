@@ -2,7 +2,8 @@
 //!
 //! [`FeeManager`] mirrors the token policy managers: it owns an `active_fee_policy_proc_root`
 //! slot plus an `allowed_fee_policy_proc_roots` map slot for validating policy-switching at set
-//! time, and its `estimate_note_fee` procedure dispatches to the active fee policy via `dyncall`.
+//! time, as well as a `fee_asset_id` slot holding the ID of the asset fees are charged in, and
+//! its `estimate_note_fee` procedure dispatches to the active fee policy via `dyncall`.
 //! The actual fee computation logic lives in fee policy components (see
 //! [`super::policies`]).
 
@@ -20,12 +21,14 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
+    AccountId,
     AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::asset::AssetId;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::policies::FeePolicy;
@@ -62,6 +65,13 @@ procedure_root!(
     FeeManager::code()
 );
 
+procedure_root!(
+    FEE_MANAGER_GET_FEE_ASSET_ID,
+    FEE_MANAGER_LIBRARY_PATH,
+    FeeManager::GET_FEE_ASSET_ID_PROC_NAME,
+    FeeManager::code()
+);
+
 // STORAGE SLOT NAMES
 // ================================================================================================
 
@@ -75,24 +85,31 @@ static ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Lazy
         .expect("storage slot name should be valid")
 });
 
+static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fees::fee_manager::fee_asset_id")
+        .expect("storage slot name should be valid")
+});
+
 // FEE MANAGER
 // ================================================================================================
 
-/// An [`AccountComponent`] that owns the fee-policy storage slots and dispatches note fee
-/// estimation to the active fee policy.
+/// An [`AccountComponent`] that owns the fee-policy storage slots and the fee asset ID, and
+/// dispatches note fee estimation to the active fee policy.
 ///
 /// The component exposes:
 /// - `estimate_note_fee`: designed to be `call`ed by external callers - typically via FPI from the
 ///   authentication component of an account that creates a note targeted at this account. It
-///   dispatches to the active fee policy via `dyncall`; the policy derives the fee this account
-///   charges for a note with the given parameters and returns it as a fee asset (asset ID and value
-///   words).
+///   dispatches to the active fee policy via `dyncall`; the policy derives the fee value this
+///   account charges for a note with the given parameters, and the manager prepends the fee asset
+///   ID read from its storage.
+/// - `get_fee_asset_id`: read the ID of the asset fees are charged in.
 /// - `set_fee_policy` / `get_fee_policy`: switch and read the active fee policy root. Switching is
 ///   restricted to the roots registered in the allowed-policies map, and authorization is delegated
 ///   to the account-wide [`Authority`][crate::account::access::Authority] component, which must be
 ///   installed alongside this manager.
 ///
-/// Construct via [`Self::builder`]. The builder requires the active fee policy
+/// Construct via [`Self::builder`]. The builder requires the fee faucet
+/// ([`FeeManagerBuilder::fee_faucet_id`]) and the active fee policy
 /// ([`FeeManagerBuilder::active_fee_policy`]); additional reserved alternatives for runtime
 /// switching may be registered via [`FeeManagerBuilder::allowed_fee_policy`].
 ///
@@ -100,8 +117,10 @@ static ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Lazy
 ///
 /// - [`Self::active_fee_policy_slot`]: procedure root of the active fee policy.
 /// - [`Self::allowed_fee_policies_slot`]: map of allowed fee policy roots.
+/// - [`Self::fee_asset_id_slot`]: the [`AssetId`] of the fungible asset fees are charged in.
 #[derive(Debug, Clone)]
 pub struct FeeManager {
+    fee_asset_id: AssetId,
     active_fee_policy_root: AccountProcedureRoot,
     policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>>,
 }
@@ -110,14 +129,17 @@ pub struct FeeManager {
 impl FeeManager {
     /// Builder constructor for [`FeeManager`].
     ///
-    /// The `active_fee_policy` setter is required and registers the policy the manager
-    /// dispatches to. Each `allowed_fee_policy` setter registers an additional reserved
-    /// alternative for runtime switching via the `set_fee_policy` procedure.
+    /// The `fee_faucet_id` setter is required and sets the faucet issuing the fungible asset
+    /// fees are charged in. The `active_fee_policy` setter is required and registers the policy
+    /// the manager dispatches to. Each `allowed_fee_policy` setter registers an additional
+    /// reserved alternative for runtime switching via the `set_fee_policy` procedure.
     #[builder]
     pub fn new(
         #[builder(field)] allowed_fee_policies: BTreeMap<AccountProcedureRoot, FeePolicy>,
+        fee_faucet_id: AccountId,
         active_fee_policy: FeePolicy,
     ) -> Self {
+        let fee_asset_id = AssetId::new_fungible(fee_faucet_id);
         let active_fee_policy_root = active_fee_policy.root();
 
         let mut policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>> = BTreeMap::new();
@@ -126,7 +148,11 @@ impl FeeManager {
             policies.entry(root).or_insert_with(|| policy.into_iter().collect());
         }
 
-        Self { active_fee_policy_root, policies }
+        Self {
+            fee_asset_id,
+            active_fee_policy_root,
+            policies,
+        }
     }
 }
 
@@ -154,6 +180,7 @@ impl FeeManager {
     const ESTIMATE_NOTE_FEE_PROC_NAME: &'static str = "estimate_note_fee";
     const SET_FEE_POLICY_PROC_NAME: &'static str = "set_fee_policy";
     const GET_FEE_POLICY_PROC_NAME: &'static str = "get_fee_policy";
+    const GET_FEE_ASSET_ID_PROC_NAME: &'static str = "get_fee_asset_id";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -162,6 +189,11 @@ impl FeeManager {
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`AssetId`] of the fungible asset fees are charged in.
+    pub fn fee_asset_id(&self) -> AssetId {
+        self.fee_asset_id
+    }
 
     /// Returns the active fee policy procedure root.
     pub fn active_fee_policy(&self) -> AccountProcedureRoot {
@@ -188,6 +220,11 @@ impl FeeManager {
         *FEE_MANAGER_GET_FEE_POLICY
     }
 
+    /// Returns the procedure root of the `get_fee_asset_id` account procedure.
+    pub fn get_fee_asset_id_root() -> AccountProcedureRoot {
+        *FEE_MANAGER_GET_FEE_ASSET_ID
+    }
+
     /// Returns the [`StorageSlotName`] where the active fee policy procedure root is stored.
     pub fn active_fee_policy_slot() -> &'static StorageSlotName {
         &ACTIVE_FEE_POLICY_PROC_ROOT_SLOT_NAME
@@ -196,6 +233,11 @@ impl FeeManager {
     /// Returns the [`StorageSlotName`] where allowed fee policy roots are stored.
     pub fn allowed_fee_policies_slot() -> &'static StorageSlotName {
         &ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the fee asset ID is stored.
+    pub fn fee_asset_id_slot() -> &'static StorageSlotName {
+        &FEE_ASSET_ID_SLOT_NAME
     }
 
     /// Returns the [`AccountComponentCode`] of this component.
@@ -221,6 +263,13 @@ impl FeeManager {
                     SchemaType::native_word(),
                 ),
             ),
+            (
+                FEE_ASSET_ID_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "ID of the asset fees are charged in",
+                    SchemaType::native_word(),
+                ),
+            ),
         ])
         .expect("storage schema should be valid");
 
@@ -239,6 +288,7 @@ impl FeeManager {
                 ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
                 self.build_allowed_map(),
             ),
+            StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), self.fee_asset_id.to_word()),
         ]
     }
 
@@ -327,13 +377,14 @@ mod tests {
 
     fn fee_manager() -> FeeManager {
         FeeManager::builder()
-            .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id()).into())
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(ConstantFeePolicy::new().into())
             .allowed_fee_policy(custom_fee_policy())
             .build()
     }
 
-    /// Check that the manager component's slots hold the active policy root and register both
-    /// the active and the reserved policy roots in the allowed-policies map.
+    /// Check that the manager component's slots hold the active policy root and the fee asset ID,
+    /// and register both the active and the reserved policy roots in the allowed-policies map.
     #[test]
     fn manager_slots_hold_active_root_and_allowed_map() {
         let manager_component = fee_manager().to_manager_component();
@@ -344,6 +395,13 @@ mod tests {
             .find(|slot| slot.name() == FeeManager::active_fee_policy_slot())
             .expect("active fee policy slot must be registered");
         assert_eq!(active_slot.value(), ConstantFeePolicy::root().as_word());
+
+        let fee_asset_id_slot = manager_component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == FeeManager::fee_asset_id_slot())
+            .expect("fee asset ID slot must be registered");
+        assert_eq!(fee_asset_id_slot.value(), AssetId::new_fungible(fee_faucet_id()).to_word());
 
         let allowed_slot = manager_component
             .storage_slots()

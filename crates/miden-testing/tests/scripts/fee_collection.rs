@@ -10,12 +10,11 @@ use miden_protocol::note::{Note, NoteId, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP,
-    ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET,
     ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE,
@@ -29,7 +28,6 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
 use crate::scripts::fee_manager::{
-    CUSTOM_FEE_AMOUNT,
     FEE_AMOUNT,
     build_fee_account_with_switching,
     create_set_fee_policy_note_script,
@@ -90,11 +88,14 @@ fn fee_collector_component() -> anyhow::Result<AccountComponent> {
 /// component. When `priced_root` is provided, the fee manager schedules [`FEE_AMOUNT`] for that
 /// note script root.
 fn network_account(priced_root: Option<NoteScriptRoot>) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new(fee_faucet_id()?);
+    let mut policy = ConstantFeePolicy::new();
     if let Some(root) = priced_root {
         policy = policy.with_fee(root, AssetAmount::new(FEE_AMOUNT)?);
     }
-    let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
+    let fee_manager = FeeManager::builder()
+        .fee_faucet_id(fee_faucet_id()?)
+        .active_fee_policy(policy.into())
+        .build();
 
     Ok(AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
@@ -259,13 +260,13 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // With the custom policy active, the previously priced root is priced by the custom logic:
-    // the fee asset ID echoes the STORAGE_COMMITMENT supplied to the estimate script and the
-    // amount is the fixed custom fee.
+    // the fee value echoes the STORAGE_COMMITMENT supplied to the estimate script instead of the
+    // scheduled amount, while the fee asset ID still comes from the manager's storage.
     let storage_commitment = Word::from([11u32, 12, 13, 14]);
     let tx_script_code = estimate_note_fee_tx_script_code(
         storage_commitment,
+        AssetId::new_fungible(fee_faucet_id()?).to_word(),
         storage_commitment,
-        AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
     );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
@@ -543,129 +544,6 @@ async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> 
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE);
-
-    Ok(())
-}
-
-/// A custom fee policy charging [`FEE_AMOUNT`] in the fee faucet's asset for a note whose assets
-/// commitment matches `fee_asset_note_commitment`, and in `other_fee_asset_id` for any other note.
-/// This prices two feature notes in different fee assets within a single transaction, exercising
-/// the same-asset requirement of `collect_sponsored_fees`.
-fn asset_commitment_fee_policy(
-    fee_asset_note_commitment: Word,
-    fee_asset_id: Word,
-    other_fee_asset_id: Word,
-) -> anyhow::Result<FeePolicy> {
-    const POLICY_NAME: &str = "test::fees::asset_commitment_fee";
-    let masm_source = format!(
-        r#"
-        use miden::core::word
-        use miden::standards::assets::fungible_asset
-
-        use {{Asset, NoteScriptRoot}} from miden::protocol::types
-
-        #! Fee policy pricing a note in one of two assets, selected by its assets commitment.
-        #!
-        #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-        #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-        #!
-        #! Invocation: call
-        @account_procedure
-        pub proc compute_note_fee
-            # compare the note's assets commitment against the fee-asset note
-            dupw.2 push.{fee_asset_note_commitment} exec.word::eq
-            # => [is_fee_asset_note, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-            # price in the fee asset when the note matches, otherwise in a different asset
-            if.true
-                push.{fee_asset_id}
-            else
-                push.{other_fee_asset_id}
-            end
-            # => [FEE_ASSET_ID, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-            push.{fee_amount} exec.fungible_asset::create_value swapw
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-            # drop the note parameters
-            repeat.4 movupw.2 dropw end
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-        end
-        "#,
-        fee_amount = FEE_AMOUNT,
-    );
-
-    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
-        .expect("asset commitment fee policy should export compute_note_fee");
-    let component =
-        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
-
-    Ok(FeePolicy::custom(root, [component])?)
-}
-
-/// Two priced feature notes whose fees are charged in different assets cannot be collected in the
-/// same transaction. A custom fee policy prices the first feature note (no assets) in the fee
-/// faucet's asset and the second (which carries an asset, so its assets commitment differs) in a
-/// different faucet's asset. After the first pair is collected and its fee asset recorded, the
-/// second feature note's mismatched fee asset is rejected before its own sponsor is sought.
-#[tokio::test]
-async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::empty());
-    let mut builder = MockChain::builder();
-    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let feature_note_a = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
-    let feature_note_b =
-        builder.add_p2any_note(sponsor.id(), NoteType::Public, [other_asset(1)?])?;
-
-    let fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word();
-    let other_fee_asset_id =
-        AssetId::new_fungible(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?).to_word();
-
-    let policy = asset_commitment_fee_policy(
-        feature_note_a.assets().commitment(),
-        fee_asset_id,
-        other_fee_asset_id,
-    )?;
-    let network_account = AccountBuilder::new([7; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(FeeManager::builder().active_fee_policy(policy).build())
-        .with_component(fee_collector_component()?)
-        .build_existing()?;
-
-    builder.add_account(network_account.clone())?;
-
-    // Only the first feature note is sponsored; the second is rejected before its sponsor is
-    // sought.
-    let sponsorship_note = Note::from(
-        FeeSponsorshipNote::builder()
-            .sender(sponsor.id())
-            .target_account(network_account.id())
-            .feature_note_id(feature_note_a.id())
-            .asset(fee_asset(FEE_AMOUNT)?)
-            .generate_serial_number(&mut rng)
-            .build()?,
-    );
-    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let result = mock_chain
-        .build_transaction(network_account.id())
-        .authenticated_input_note(feature_note_a.id())
-        .authenticated_input_note(sponsorship_note.id())
-        .authenticated_input_note(feature_note_b.id())
-        .tx_script(collect_tx_script()?)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET);
 
     Ok(())
 }

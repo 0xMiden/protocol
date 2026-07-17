@@ -37,10 +37,6 @@ pub mod policies
 # CONSTANTS
 # =================================================================================================
 
-# Local memory offset at which `collect_sponsored_fees` caches the collected fee asset ID. It is
-# initialized to the empty word, which doubles as a "no fee collected yet" marker.
-const FEE_ASSET_ID_LOC = 0
-
 # Local memory offset at which `assert_neighbor_sponsors` stages a paired FEE_SPONSORSHIP note's
 # storage items to read its sponsored feature note ID. Sized for the note's storage items padded to
 # the next multiple of 8 felts.
@@ -74,8 +70,6 @@ const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE = "paired FEE_SPONSORSHIP n
 
 const ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW = "FEE_SPONSORSHIP note fee amount does not cover the required fee"
 
-const ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET = "feature notes priced in different fee assets cannot be collected in the same transaction"
-
 const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must carry exactly one asset"
 
 # PUBLIC INTERFACE
@@ -98,10 +92,9 @@ const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must 
 #! under-sponsored feature note with additional sponsorship notes is tracked in
 #! https://github.com/0xMiden/protocol/issues/3318.
 #!
-#! All collected fees must be charged in the same asset (the fee asset ID is recorded on the first
-#! collection and every subsequent collection is asserted to match it), so the aggregated total is
-#! unambiguous. Each sponsorship asset is credited to the account vault as it is collected; if no
-#! fee was collected the vault is left untouched.
+#! All fees are charged in the same asset (the fee asset ID stored by the `fee_manager` module),
+#! so the aggregated total is unambiguous. Each sponsorship asset is credited to the account vault
+#! as it is collected; if no fee was collected the vault is left untouched.
 #!
 #! Because a matched pair advances the walk by two, a FEE_SPONSORSHIP note is only ever seen as a
 #! feature note's sponsor. Encountering one as the current note means it is unpaired (or pairs a
@@ -127,17 +120,10 @@ const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must 
 #! - a paired FEE_SPONSORSHIP note does not carry exactly one asset.
 #! - a paired FEE_SPONSORSHIP note's asset is not the fee asset the fee is charged in.
 #! - a paired FEE_SPONSORSHIP note's fee amount is less than the feature note's required fee.
-#! - the collected feature notes are not all priced in the same fee asset.
 #! - adding a sponsorship asset to the vault overflows the fungible asset maximum.
 #!
 #! Invocation: exec
-@locals(4)
 pub proc collect_sponsored_fees
-    # initialize the collected fee asset ID to the empty word so it doubles as a "no fee collected
-    # yet" marker; it is recorded on the first collection and asserted constant thereafter
-    padw loc_storew_le.FEE_ASSET_ID_LOC dropw
-    # => []
-
     push.0 exec.tx::get_num_input_notes push.0
     # => [note_idx = 0, num_input_notes, total_fee_amount = 0]
 
@@ -170,28 +156,12 @@ pub proc collect_sponsored_fees
             dropw drop add.1
             # => [note_idx+1, num_input_notes, total_fee_amount]
         else
-            # record the fee asset ID on the first collection, or assert it matches the previously
-            # recorded one so all collected fees share the same asset
-            padw loc_loadw_le.FEE_ASSET_ID_LOC exec.word::testz
-            # => [is_unset, COLLECTED_FEE_ASSET_ID, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
-            if.true
-                # first collection: drop the empty marker and cache this fee asset ID
-                dropw loc_storew_le.FEE_ASSET_ID_LOC dropw
-                # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-            else
-                # subsequent collection: all collected fees must share the same asset
-                exec.word::eq assert.err=ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET
-                # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-            end
-            # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
             # find and verify the neighboring FEE_SPONSORSHIP note that sponsors this feature note
-            dup.2 dup.2 exec.assert_neighbor_sponsors
-            # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
+            dup.6 dup.6 exec.assert_neighbor_sponsors
+            # => [neighbor_note_idx, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
 
             # move the sponsored fee into the vault and assert it covers the required amount
-            padw loc_loadw_le.FEE_ASSET_ID_LOC movup.4 exec.move_and_check_sponsored_fee
+            exec.move_and_check_sponsored_fee
             # => [fee_amount, note_idx, num_input_notes, total_fee_amount]
 
             # add the collected amount to the running total and advance past both notes of the pair.
