@@ -71,8 +71,8 @@ const ACL_EXEMPT_POST_FEE_CYCLES = 1024
 @locals(4)
 @auth_script
 pub proc auth_tx_acl(auth_args: word)
-    # Stash the auth args for a potential signature-branch fee payment, then drop them so the ACL
-    # loop below runs on the same stack shape as before.
+    # Stash the auth args in local memory so the signature branch can later decode the fee
+    # conversion info they commit to; the ACL loop below does not need them on the stack.
     # ---------------------------------------------------------------------------------------------
 
     loc_storew_le.AUTH_ARGS_LOC dropw
