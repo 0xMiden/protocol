@@ -2,7 +2,6 @@ use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
-    AccountId,
     AccountStorage,
     StorageMap,
     StorageMapKey,
@@ -158,8 +157,6 @@ pub enum NetworkAccountNoteAllowlistError {
         NetworkAccountNoteAllowlist::slot_name()
     )]
     UnexpectedSlotType,
-    #[error("network account must have public account type, but account {0} does not")]
-    AccountNotPublic(AccountId),
 }
 
 // TESTS

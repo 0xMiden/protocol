@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.16.0-alpha.4 (2026-07-16)
+
+### Features
+
+- Added the canonical `ExpirationTransactionScript` to the transaction-script allowlists for AggLayer bridge and faucet accounts, allowing the network transaction builder to bound their transaction expiration.
+
 ## v0.16.0-alpha.3 (2026-07-15)
 
 ### Fixes
