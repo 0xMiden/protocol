@@ -157,6 +157,8 @@ fn compile_tx_kernel(
     let kernel_package =
         assemble_project(&manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
 
+    write_release_package(&kernel_package)?;
+
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
 
