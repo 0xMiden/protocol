@@ -169,6 +169,8 @@ fn compile_tx_kernel(
         project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
     kernel_package.write_masp_file(target_dir).into_diagnostic()?;
 
+    write_release_package(&kernel_package)?;
+
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
 
