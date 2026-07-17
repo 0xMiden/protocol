@@ -102,11 +102,10 @@ proc build_note_fee_lookup_key(
     priority: u32
 ) -> StorageMapKey
     exec.note::get_recipient_preimage
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
-    #     timeframe, priority]
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority]
 
     # keep the script root as the lookup key, dropping the recovered storage commitment and the
     # remaining note parameters
-    swapw dropw swapw dropw swapw dropw movup.4 drop movup.4 drop
+    swapw.3 dropw dropw dropw movup.4 drop movup.4 drop
     # => [LOOKUP_KEY]
 end
