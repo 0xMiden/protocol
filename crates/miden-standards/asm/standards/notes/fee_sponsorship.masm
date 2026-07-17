@@ -25,6 +25,9 @@ const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6
 #! The number of storage items of a FEE_SPONSORSHIP note.
 const NUM_STORAGE_ITEMS = 7
 
+#! The number of assets in a FEE_SPONSORSHIP note.
+pub const NUM_ASSETS = 1
+
 # ERRORS
 # =================================================================================================
 
@@ -137,7 +140,7 @@ pub proc main
     exec.active_note::get_initial_num_assets
     # => [num_assets, pad(16)]
 
-    eq.1 assert.err=ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET
+    eq.NUM_ASSETS assert.err=ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET
     # => [pad(16)]
 
     padw mem_loadw_le.FEATURE_NOTE_ID_ITEM

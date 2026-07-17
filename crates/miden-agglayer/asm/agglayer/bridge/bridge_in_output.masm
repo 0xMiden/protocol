@@ -1,6 +1,5 @@
 use {CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT} from agglayer::bridge::bridge_in
 use {CLAIM_PROOF_DATA_KEY_MEM_ADDR} from agglayer::bridge::bridge_in
-use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note

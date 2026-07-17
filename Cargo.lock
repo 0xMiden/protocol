@@ -1487,14 +1487,17 @@ dependencies = [
 
 [[package]]
 name = "miden-agglayer"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "alloy-sol-types",
  "fs-err",
  "miden-assembly",
- "miden-assembly-syntax",
  "miden-core",
+ "miden-core-lib",
  "miden-crypto",
+ "miden-mast-package",
+ "miden-package-registry",
+ "miden-project",
  "miden-protocol",
  "miden-standards",
  "miden-utils-sync",
@@ -1576,7 +1579,7 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "miden-protocol",
  "thiserror",
@@ -1860,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1932,7 +1935,7 @@ dependencies = [
 
 [[package]]
 name = "miden-standards"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1947,6 +1950,7 @@ dependencies = [
  "miden-standards",
  "rand 0.10.2",
  "regex",
+ "rstest",
  "thiserror",
  "walkdir",
 ]
@@ -1975,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2002,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -2014,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch"
-version = "0.16.0-alpha.1"
+version = "0.16.0-alpha.3"
 dependencies = [
  "miden-processor",
  "miden-protocol",
