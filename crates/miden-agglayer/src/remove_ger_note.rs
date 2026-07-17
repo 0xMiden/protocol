@@ -23,9 +23,9 @@ static REMOVE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/note_scripts/miden-agglayer-remove_ger.masp"
     ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped REMOVE_GER script package is well-formed");
-    NoteScript::from_library(&package).expect("shipped REMOVE_GER script is well-formed")
+    let library = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped REMOVE_GER script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped REMOVE_GER script is well-formed")
 });
 
 // REMOVE_GER NOTE

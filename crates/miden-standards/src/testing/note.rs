@@ -35,7 +35,7 @@ enum SourceCodeOrigin {
         dyn_libraries: Vec<Package>,
         source_manager: Arc<dyn SourceManagerSync>,
     },
-    Package(Arc<Package>),
+    Library(Arc<Package>),
     Script(NoteScript),
 }
 
@@ -143,8 +143,8 @@ impl NoteBuilder {
             SourceCodeOrigin::Masm { dyn_libraries, .. } => {
                 dyn_libraries.extend(dyn_libs);
             },
-            SourceCodeOrigin::Package(_) => {
-                panic!("dynamic libraries cannot be set on a package")
+            SourceCodeOrigin::Library(_) => {
+                panic!("dynamic libraries cannot be set on a library")
             },
             SourceCodeOrigin::Script(_) => {
                 panic!("dynamic libraries cannot be set on a precompiled script")
@@ -158,8 +158,8 @@ impl NoteBuilder {
             SourceCodeOrigin::Masm { source_manager, .. } => {
                 *source_manager = sm;
             },
-            SourceCodeOrigin::Package(_) => {
-                panic!("source manager cannot be set on a package")
+            SourceCodeOrigin::Library(_) => {
+                panic!("source manager cannot be set on a library")
             },
             SourceCodeOrigin::Script(_) => {
                 panic!("source manager cannot be set on a precompiled script")
@@ -168,9 +168,9 @@ impl NoteBuilder {
         self
     }
 
-    /// Sets the source code origin to a  package.
-    pub fn package(mut self, package: Package) -> Self {
-        self.source_code = SourceCodeOrigin::Package(Arc::new(package));
+    /// Sets the source code origin to a library.
+    pub fn library(mut self, library: Package) -> Self {
+        self.source_code = SourceCodeOrigin::Library(Arc::new(library));
         self
     }
 
@@ -208,7 +208,7 @@ impl NoteBuilder {
                     .compile_note_script(virtual_source_file)
                     .expect("note script should compile")
             },
-            SourceCodeOrigin::Package(package) => NoteScript::from_library(&package)?,
+            SourceCodeOrigin::Library(library) => NoteScript::from_library(&library)?,
             SourceCodeOrigin::Script(script) => script,
         };
 

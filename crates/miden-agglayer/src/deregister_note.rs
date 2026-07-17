@@ -38,9 +38,9 @@ static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/note_scripts/miden-agglayer-deregister_agg_faucet.masp"
     ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped DEREGISTER_AGG_FAUCET script package is well-formed");
-    NoteScript::from_library(&package).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
+    let library = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped DEREGISTER_AGG_FAUCET script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
 });
 
 // DEREGISTER_AGG_FAUCET NOTE

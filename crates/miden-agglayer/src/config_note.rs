@@ -40,9 +40,9 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/note_scripts/miden-agglayer-config_agg_bridge.masp"
     ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CONFIG_AGG_BRIDGE script package is well-formed");
-    NoteScript::from_library(&package).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
+    let library = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped CONFIG_AGG_BRIDGE script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
 });
 
 // CONVERSION METADATA

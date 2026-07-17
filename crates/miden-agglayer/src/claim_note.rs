@@ -32,9 +32,9 @@ use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-claim.masp"));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CLAIM script package is well-formed");
-    NoteScript::from_library(&package).expect("shipped CLAIM script is well-formed")
+    let library = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped CLAIM script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
 });
 
 // CLAIM NOTE

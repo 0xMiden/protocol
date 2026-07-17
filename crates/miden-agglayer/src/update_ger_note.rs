@@ -22,9 +22,9 @@ static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/note_scripts/miden-agglayer-update_ger.masp"
     ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped UPDATE_GER script package is well-formed");
-    NoteScript::from_library(&package).expect("shipped UPDATE_GER script is well-formed")
+    let library = Package::read_from_bytes_trusted(bytes)
+        .expect("shipped UPDATE_GER script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped UPDATE_GER script is well-formed")
 });
 
 // UPDATE_GER NOTE

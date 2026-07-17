@@ -90,7 +90,6 @@ impl AccountComponent {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain a library artifact
     /// - The package does not contain account component metadata
     /// - The metadata cannot be deserialized from the package
     /// - The storage initialization fails due to invalid or missing data
@@ -121,9 +120,6 @@ impl AccountComponent {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain a library artifact
-    /// - The package does not contain account component metadata
-    /// - The metadata cannot be deserialized from the package
     /// - The storage initialization fails due to invalid or missing data
     /// - The component creation fails
     pub fn from_library(
