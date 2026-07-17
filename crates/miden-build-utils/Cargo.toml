@@ -1,6 +1,5 @@
 [package]
 authors.workspace      = true
-categories             = ["development-tools::build-utils"]
 description            = "Build-time helpers for assembling Miden MASM packages"
 edition.workspace      = true
 homepage.workspace     = true

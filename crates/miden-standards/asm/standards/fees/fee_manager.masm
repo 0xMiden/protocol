@@ -5,10 +5,16 @@
 # computation logic lives in fee policy components (e.g.
 # `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
 # allowlisted policy root through the authority-gated `set_fee_policy`.
+#
+# Fee collection (`miden::standards::fees::collect_sponsored_fees`) tallies the fees prepaid by the
+# FEE_SPONSORSHIP notes among the transaction's input notes, pricing each feature note through the
+# same active fee policy via `estimate_note_fee_internal`.
 
 use miden::core::word
+
 use miden::protocol::active_account
 use miden::protocol::native_account
+
 use miden::standards::access::authority
 
 use {AccountProcedureRoot, Asset, NoteScriptRoot} from miden::protocol::types
@@ -44,7 +50,7 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
 #! Returns the estimated fee for a note with the given parameters.
 #!
-#! Thin `call`-able wrapper around [`execute_fee_policy`]. External callers (typically an
+#! Thin `call`-able wrapper around [`estimate_note_fee_internal`]. External callers (typically an
 #! authentication component on another account, via FPI) `call` into this procedure to learn the
 #! fee this account charges for the note.
 #!
@@ -70,7 +76,7 @@ pub proc estimate_note_fee(
     assets_commitment: word,
     attachments_commitment: word
 ) -> Asset
-    exec.execute_fee_policy
+    exec.estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
 
@@ -116,15 +122,40 @@ pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
     # => [pad(16)]
 end
 
-# PUBLIC HELPERS
+# HELPER PROCEDURES
 # =================================================================================================
+
+#! Estimates the fee for a note by executing the active fee policy.
+#!
+#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
+#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the active fee policy is not set.
+#!
+#! Invocation: exec
+pub proc estimate_note_fee_internal(
+    note_script_root: NoteScriptRoot,
+    storage_commitment: word,
+    assets_commitment: word,
+    attachments_commitment: word
+) -> Asset
+    exec.execute_fee_policy
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
 
 #! Executes the active fee policy by dynamic invocation.
 #!
 #! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
-#! fee from them. Exposed as an `exec` helper so account-side flows (e.g. a fee collection
-#! procedure) can estimate fees without crossing a `call` boundary; [`estimate_note_fee`] is the
-#! `call`-able wrapper for external callers.
+#! fee from them.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -167,9 +198,6 @@ pub proc execute_fee_policy(
     dyncall
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
-
-# HELPER PROCEDURES
-# =================================================================================================
 
 #! Reads active fee policy root from storage.
 #!
