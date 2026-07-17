@@ -9,7 +9,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_processor::LoadedMastForest;
+use miden_processor::{LoadedMastForest, Program};
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
@@ -343,6 +343,13 @@ pub struct TransactionScript {
 impl TransactionScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns a new [TransactionScript] instantiated with the provided code.
+    // TODO: we can remove this `Program` based constructor once the compiler integrates the
+    // `@transaction_script` attribute (https://github.com/0xMiden/compiler/issues/1190).
+    pub fn new(code: Program) -> Self {
+        Self::from_parts(code.mast_forest().clone(), code.entrypoint())
+    }
 
     /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
     ///
