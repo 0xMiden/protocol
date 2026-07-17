@@ -99,9 +99,9 @@ static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The component exposes:
 /// - `estimate_note_fee`: designed to be `call`ed by external callers - typically via FPI from the
 ///   authentication component of an account that creates a note targeted at this account. It
-///   dispatches to the active fee policy via `dyncall`; the policy derives the fee value this
-///   account charges for a note with the given parameters, and the manager prepends the fee asset
-///   ID read from its storage.
+///   dispatches to the active fee policy via `dyncall`; the policy derives the fee asset this
+///   account charges for a note with the given parameters, and the manager asserts the returned fee
+///   asset ID matches the fee asset ID read from its storage.
 /// - `get_fee_asset_id`: read the ID of the asset fees are charged in.
 /// - `set_fee_policy` / `get_fee_policy`: switch and read the active fee policy root. Switching is
 ///   restricted to the roots registered in the allowed-policies map, and authorization is delegated
@@ -378,7 +378,7 @@ mod tests {
     fn fee_manager() -> FeeManager {
         FeeManager::builder()
             .fee_faucet_id(fee_faucet_id())
-            .active_fee_policy(ConstantFeePolicy::new().into())
+            .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id()).into())
             .allowed_fee_policy(custom_fee_policy())
             .build()
     }

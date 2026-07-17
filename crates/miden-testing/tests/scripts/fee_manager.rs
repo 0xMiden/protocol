@@ -3,12 +3,18 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE;
+use miden_standards::errors::standards::{
+    ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
+    ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
+};
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -37,7 +43,7 @@ fn free_root() -> NoteScriptRoot {
 /// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
 /// registers the user-defined [`custom_fee_policy`] for runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
-    let constant_fee_policy = ConstantFeePolicy::new()
+    let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
     Ok(FeeManager::builder()
@@ -55,15 +61,19 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 ///
 /// The policy returns the note's STORAGE_COMMITMENT as the fee value word. Pricing on a
 /// parameter other than NOTE_SCRIPT_ROOT proves that the manager forwards the full note
-/// parameter set to the policy implementation.
+/// parameter set to the policy implementation. The policy stores no fee asset ID of its own and
+/// instead reads the one of the manager it assumes to be installed alongside, so the manager's
+/// fee asset consistency check always passes.
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = r#"
-        use {AssetValue, NoteScriptRoot} from miden::protocol::types
+        use miden::standards::fees::fee_manager
+
+        use {Asset, NoteScriptRoot} from miden::protocol::types
 
         #! Fee policy returning the note's storage commitment as the fee value.
         #!
         #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-        #! Outputs: [FEE_ASSET_VALUE, pad(12)]
+        #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
         #!
         #! Invocation: call
         @account_procedure
@@ -72,10 +82,18 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             storage_commitment: word,
             assets_commitment: word,
             attachments_commitment: word
-        ) -> AssetValue
+        ) -> Asset
             # keep STORAGE_COMMITMENT as the fee value, dropping the other note parameters
             dropw swapw dropw swapw dropw
             # => [STORAGE_COMMITMENT, pad(12)]
+
+            # charge the fee in the asset the manager is configured with
+            exec.fee_manager::read_fee_asset_id
+            # => [FEE_ASSET_ID, STORAGE_COMMITMENT, pad(12)]
+
+            # drop the excess padding to restore the stack depth for the call boundary
+            movupw.3 dropw
+            # => [FEE_ASSET_ID, STORAGE_COMMITMENT, pad(8)]
         end
         "#;
 
@@ -240,11 +258,55 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `estimate_note_fee` aborts when the active `ConstantFeePolicy` is configured with a different
+/// fee asset than the `FeeManager` dispatching to it: the manager asserts the fee asset returned
+/// by the policy matches its own configured fee asset, surfacing the misconfiguration at
+/// estimation time.
+#[tokio::test]
+async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Result<()> {
+    let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
+    let misconfigured_policy = ConstantFeePolicy::new(other_faucet_id)
+        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
+    let fee_manager = FeeManager::builder()
+        .fee_faucet_id(fee_faucet_id()?)
+        .active_fee_policy(misconfigured_policy.into())
+        .build();
+
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(fee_manager)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee asset words are irrelevant: execution aborts in the manager's fee asset
+    // consistency check before the tx script's assertions are reached.
+    let tx_script_code =
+        estimate_note_fee_tx_script_code(Word::empty(), Word::empty(), Word::empty());
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(priced_root().as_word())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_POLICY_FEE_ASSET_MISMATCH);
+
+    Ok(())
+}
+
 /// End-to-end dispatch through a user-defined fee policy: a custom policy component (registered
 /// via [`FeePolicy::custom`]) is set as the manager's active policy, and `estimate_note_fee` is
 /// invoked via FPI. The manager forwards the note parameters to the user-defined
-/// `compute_note_fee`, whose result flows back through `estimate_note_fee` to the FPI caller
-/// together with the manager's fee asset ID.
+/// `compute_note_fee`, whose result (including the fee asset ID the policy reads from the
+/// manager's storage) flows back through `estimate_note_fee` to the FPI caller.
 ///
 /// The custom policy prices on STORAGE_COMMITMENT (ignoring NOTE_SCRIPT_ROOT), so the assertion
 /// on the returned fee value proves the full parameter set reached the user-defined procedure.

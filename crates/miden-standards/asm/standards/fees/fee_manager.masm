@@ -4,9 +4,10 @@
 # of the active fee policy and dispatches fee estimation to it via `dyncall`. The actual fee
 # computation logic lives in fee policy components (e.g.
 # `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
-# allowlisted policy root through the authority-gated `set_fee_policy`. The policy derives only
-# the fee value; the manager stores the ID of the asset fees are charged in and prepends it to the
-# policy's result.
+# allowlisted policy root through the authority-gated `set_fee_policy`. The policy returns the
+# full fee asset; the manager stores the ID of the asset fees are charged in and asserts the
+# policy's result is denominated in it, so a policy misconfigured with a different fee asset
+# aborts fee estimation.
 #
 # Fee collection (`miden::standards::fees::collect_sponsored_fees`) tallies the fees prepaid by the
 # FEE_SPONSORSHIP notes among the transaction's input notes, pricing each feature note through the
@@ -49,6 +50,8 @@ const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure o
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
 const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
+const ERR_FEE_POLICY_FEE_ASSET_MISMATCH = "fee policy returned a fee asset that does not match the fee asset configured in the fee manager"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -72,6 +75,7 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #! Panics if:
 #! - the active fee policy is not set.
 #! - the active fee policy aborts the fee computation.
+#! - the active fee policy returns a fee asset other than the configured fee asset.
 #!
 #! Invocation: call
 @account_procedure
@@ -158,6 +162,7 @@ end
 #! Panics if:
 #! - the active fee policy is not set.
 #! - the active fee policy aborts the fee computation.
+#! - the active fee policy returns a fee asset other than the configured fee asset.
 #!
 #! Invocation: exec
 pub proc estimate_note_fee_internal(
@@ -173,8 +178,9 @@ end
 #! Executes the active fee policy by dynamic invocation.
 #!
 #! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
-#! fee value from them; the fee asset ID is read from this component's storage and returned on top
-#! of the policy's result.
+#! fee asset from them; the returned fee asset ID is asserted to match the fee asset ID stored in
+#! this component's storage, so the policy cannot charge in an asset the manager is not
+#! configured with.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -190,6 +196,7 @@ end
 #! Panics if:
 #! - the active fee policy is not set.
 #! - the active fee policy aborts the fee computation.
+#! - the active fee policy returns a fee asset other than the configured fee asset.
 #!
 #! Invocation: exec
 @locals(4)
@@ -216,13 +223,11 @@ proc execute_fee_policy(
     #     ATTACHMENTS_COMMITMENT]
 
     dyncall
-    # => [FEE_ASSET_VALUE, pad(12)]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
-    exec.read_fee_asset_id
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
-
-    # drop the excess padding to restore the stack depth for the call boundary
-    movupw.3 dropw
+    # the policy must return the fee asset this manager is configured with
+    dupw exec.read_fee_asset_id exec.word::eq
+    assert.err=ERR_FEE_POLICY_FEE_ASSET_MISMATCH
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
 

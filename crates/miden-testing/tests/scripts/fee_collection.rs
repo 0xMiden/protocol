@@ -65,9 +65,14 @@ const FEE_COLLECTOR_NAME: &str = "test::fee_collector";
 static FEE_COLLECTOR_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     let src = r#"
         use miden::standards::fees
+        use miden::standards::fees::fee_manager
 
         @account_procedure
         pub proc collect_sponsored_fees
+            # collect fees in the asset the fee manager is configured with
+            exec.fee_manager::read_fee_asset_id
+            # => [FEE_ASSET_ID, pad(16)]
+
             exec.fees::collect_sponsored_fees drop
             # => [pad(16)]
         end
@@ -90,7 +95,7 @@ fn fee_collector_component() -> anyhow::Result<AccountComponent> {
 /// component. When `fee_entry` is provided, the fee manager schedules the given fee for that
 /// note script root.
 fn network_account(fee_entry: Option<(NoteScriptRoot, AssetAmount)>) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new();
+    let mut policy = ConstantFeePolicy::new(fee_faucet_id()?);
     if let Some((root, fee)) = fee_entry {
         policy = policy.with_fee(root, fee);
     }
@@ -598,6 +603,7 @@ static SPONSORSHIP_CREATOR_CODE: LazyLock<AccountComponentCode> = LazyLock::new(
 
         use miden::standards::attachments::network_account_target
         use miden::standards::fees
+        use miden::standards::fees::fee_manager
         use miden::standards::note_tag
 
         #! Creates a storage-less output note targeted at the given network account, then runs
@@ -630,6 +636,10 @@ static SPONSORSHIP_CREATOR_CODE: LazyLock<AccountComponentCode> = LazyLock::new(
 
             exec.output_note::add_word_attachment
             # => [pad(16)]
+
+            # fund sponsorship notes with the asset the fee manager is configured with
+            exec.fee_manager::read_fee_asset_id
+            # => [FEE_ASSET_ID, pad(16)]
 
             exec.fees::create_network_note_sponsorships
             # => [pad(16)]
@@ -666,7 +676,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
 
     let sponsor_fee_manager = FeeManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(ConstantFeePolicy::new().into())
+        .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id()?).into())
         .build();
     let sponsor = AccountBuilder::new([8; 32])
         .account_type(AccountType::Public)
@@ -677,8 +687,8 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .with_assets([fee_asset(FEE_AMOUNT)?])
         .build_existing()?;
 
-    let target_policy =
-        ConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
+    let target_policy = ConstantFeePolicy::new(target_fee_faucet)
+        .with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
     let target_fee_manager = FeeManager::builder()
         .fee_faucet_id(target_fee_faucet)
         .active_fee_policy(target_policy.into())
