@@ -562,19 +562,19 @@ fn asset_commitment_fee_policy(
         use miden::core::word
         use miden::standards::assets::fungible_asset
 
-        use {{Asset, NoteScriptRoot}} from miden::protocol::types
+        use {{Asset}} from miden::protocol::types
 
         #! Fee policy pricing a note in one of two assets, selected by its assets commitment.
         #!
-        #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
         #!
         #! Invocation: call
         @account_procedure
         pub proc compute_note_fee
             # compare the note's assets commitment against the fee-asset note
-            dupw.2 push.{fee_asset_note_commitment} exec.word::eq
-            # => [is_fee_asset_note, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+            dupw.1 push.{fee_asset_note_commitment} exec.word::eq
+            # => [is_fee_asset_note, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
             # price in the fee asset when the note matches, otherwise in a different asset
             if.true
@@ -582,10 +582,10 @@ fn asset_commitment_fee_policy(
             else
                 push.{other_fee_asset_id}
             end
-            # => [FEE_ASSET_ID, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+            # => [FEE_ASSET_ID, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
             push.{fee_amount} exec.fungible_asset::create_value swapw
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
             # drop the note parameters
             repeat.4 movupw.2 dropw end

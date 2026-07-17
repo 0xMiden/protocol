@@ -54,8 +54,10 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
 /// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
-/// value words): the amount is looked up in the fee schedule under the note's script root, and
-/// note scripts without a schedule entry estimate to an amount of 0.
+/// value words): the amount is looked up in the fee schedule under the note's script root
+/// (recovered from the note's recipient via the advice provider), and note scripts without a
+/// schedule entry estimate to an amount of 0. The remaining note parameters, including the
+/// timeframe and priority, are ignored by this policy.
 ///
 /// ## Storage layout
 ///

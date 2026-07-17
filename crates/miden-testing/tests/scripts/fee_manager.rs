@@ -49,29 +49,37 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 /// their own fee computation logic into the `FeeManager` via [`FeePolicy::custom`].
 ///
 /// The policy charges [`CUSTOM_FEE_AMOUNT`] in an "asset" identified by the note's
-/// STORAGE_COMMITMENT. Pricing on a parameter other than NOTE_SCRIPT_ROOT proves that the
-/// manager forwards the full note parameter set to the policy implementation.
+/// STORAGE_COMMITMENT, recovered from RECIPIENT via the advice provider. Pricing on a parameter
+/// other than the note's script root proves that the manager forwards the full note parameter set
+/// to the policy implementation.
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
-        use {{Asset, NoteScriptRoot}} from miden::protocol::types
+        use miden::standards::note
+
+        use {{Asset, NoteRecipient}} from miden::protocol::types
 
         #! Fee policy charging a fixed amount in an asset identified by the note's storage
-        #! commitment.
+        #! commitment, recovered from the recipient via the advice provider.
         #!
-        #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
         #!
         #! Invocation: call
         @account_procedure
         pub proc compute_note_fee(
-            note_script_root: NoteScriptRoot,
-            storage_commitment: word,
+            recipient: NoteRecipient,
             assets_commitment: word,
-            attachments_commitment: word
+            attachments_commitment: word,
+            timeframe: u32,
+            priority: u32
         ) -> Asset
+            exec.note::get_recipient_preimage
+            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
+            #     timeframe, priority, pad(2)]
+
             # keep STORAGE_COMMITMENT as the fee asset ID, dropping the other note parameters
-            dropw swapw dropw swapw dropw
+            dropw swapw dropw swapw dropw movup.4 drop movup.4 drop
             # => [STORAGE_COMMITMENT, pad(12)]
 
             push.0.0.0.{CUSTOM_FEE_AMOUNT}
@@ -115,10 +123,13 @@ pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Resu
 }
 
 /// Builds a transaction script that calls `estimate_note_fee` and asserts the returned fee
-/// asset. The tx script argument supplies NOTE_SCRIPT_ROOT on top of the initial operand stack;
-/// the given STORAGE_COMMITMENT is pushed below it, and the remaining zeros serve as the other
-/// note parameters, forming the full 16-felt `estimate_note_fee` inputs. A wrong result aborts
-/// the transaction, so successful execution proves the returned fee asset.
+/// asset. The tx script argument supplies the queried NOTE_SCRIPT_ROOT on top of the initial
+/// operand stack. The script derives the RECIPIENT of a note with that script root, the given
+/// STORAGE_COMMITMENT, and an all-zero serial number, seeding the advice map with the recipient
+/// preimages the fee policy recovers; the remaining zeros serve as the other note parameters
+/// (assets and attachments commitments, timeframe, and priority), forming the full 16-felt
+/// `estimate_note_fee` inputs. A wrong result aborts the transaction, so successful execution
+/// proves the returned fee asset.
 pub(super) fn estimate_note_fee_tx_script_code(
     storage_commitment: Word,
     expected_fee_asset_id: Word,
@@ -126,16 +137,27 @@ pub(super) fn estimate_note_fee_tx_script_code(
 ) -> String {
     format!(
         r#"
+        use miden::core::crypto::hashes::poseidon2
         use miden::standards::fees::fee_manager
 
         @transaction_script
         pub proc main
             # => [NOTE_SCRIPT_ROOT, pad(12)]
 
-            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT
-            push.{storage_commitment} swapw
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT and the all-zero serial number plus
+            # the empty word above it
+            push.{storage_commitment} swapw padw padw
+            # => [SERIAL_NUM = 0, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
 
+            # compute the note's recipient, inserting the recipient preimages into the advice map
+            # so the fee policy can recover the script root and storage commitment
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            # => [RECIPIENT, pad(12)]
+
+            # the zeros below the recipient serve as the assets and attachments commitments, the
+            # timeframe, the priority, and the call padding
             call.fee_manager::estimate_note_fee
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
@@ -245,25 +267,35 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // The custom policy identifies the fee asset by the note's storage commitment.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
 
-    // The note parameters are pushed inline: STORAGE_COMMITMENT first, then an arbitrary
-    // NOTE_SCRIPT_ROOT (the custom policy ignores it) on top; the zeros below serve as the
-    // other note parameters.
+    // The note parameters are pushed inline: the RECIPIENT is derived from the storage
+    // commitment, an arbitrary NOTE_SCRIPT_ROOT (the custom policy ignores it), and an all-zero
+    // serial number, seeding the advice map with the recipient preimages the custom policy
+    // recovers; the zeros below serve as the other note parameters.
     let tx_script_code = format!(
         r#"
+        use miden::core::crypto::hashes::poseidon2
         use miden::protocol::tx
 
         @transaction_script
         pub proc main
             # => [pad(16)]
 
-            push.{storage_commitment} push.{note_script_root}
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+            push.{storage_commitment} push.{note_script_root} padw padw
+            # => [SERIAL_NUM = 0, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
 
-            # push the estimate_note_fee procedure root and the foreign account ID
+            # compute the note's recipient, inserting the recipient preimages into the advice map
+            # so the custom policy can recover the script root and storage commitment
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            # => [RECIPIENT, pad(16)]
+
+            # push the estimate_note_fee procedure root and the foreign account ID; the zeros
+            # below the recipient serve as the other note parameters and the FPI input padding
             push.{estimate_note_fee_root}
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
-            #     NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+            #     RECIPIENT, pad(16)]
 
             exec.tx::execute_foreign_procedure
             # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]

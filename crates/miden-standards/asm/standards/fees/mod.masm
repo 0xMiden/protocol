@@ -286,8 +286,11 @@ end
 #! Prices the input note at the given index through the active fee policy.
 #!
 #! The note's script root is supplied by the caller (which already fetched it for the sponsorship
-#! check) so it is not fetched a second time here. The remaining note parameters are read from the
-#! note and forwarded to the policy.
+#! check) so it is not fetched a second time here. The note's recipient is recomputed from its
+#! serial number, script root, and storage commitment, inserting the recipient preimages into the
+#! advice map so the policy can recover the script root and storage commitment from the recipient.
+#! The remaining note parameters are read from the note and forwarded to the policy along with a
+#! timeframe and priority of 0.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, note_index]
 #! Outputs: [FEE_ASSET_ID, required_fee_amount]
@@ -300,15 +303,34 @@ end
 #!
 #! Invocation: exec
 proc estimate_input_note_fee
-    # gather the note's real commitments, keeping NOTE_SCRIPT_ROOT as the top parameter word
+    # gather the storage commitment and serial number of the recipient preimage
     dup.4 exec.input_note::get_storage_info movup.4 drop swapw
     # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
 
-    dup.8 exec.input_note::get_initial_assets_info movup.4 drop movdnw.2
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_index]
+    dup.8 exec.input_note::get_serial_number padw swapw
+    # => [SERIAL_NUM, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
 
-    dup.12 exec.input_note::get_attachments_commitment movdnw.3
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, note_index]
+    # compute the note's recipient, inserting the recipient preimages into the advice map so the
+    # fee policy can recover the script root and storage commitment from the recipient
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_COMMITMENT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
+
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, note_index]
+
+    adv.insert_hdword exec.poseidon2::merge
+    # => [RECIPIENT, note_index]
+
+    # pass a timeframe and priority of 0, along with the fee policy padding
+    padw swapw
+    # => [RECIPIENT, timeframe = 0, priority = 0, pad(2), note_index]
+
+    dup.8 exec.input_note::get_attachments_commitment swapw
+    # => [RECIPIENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2), note_index]
+
+    dup.12 exec.input_note::get_initial_assets_info movup.4 drop swapw
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2),
+    #     note_index]
 
     exec.fee_manager::estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8), note_index]
@@ -518,10 +540,11 @@ end
 
 #! Computes the fee the target network account charges for the output note at the given index.
 #!
-#! Reads the note's target account ID from its network account target attachment, gathers the note's
-#! commitments, and asks the target account's active fee policy for the fee via an FPI call to its
-#! `estimate_note_fee` procedure. The target account prefix is returned alongside the fee asset so
-#! the caller can tag the sponsorship note without re-reading the attachment.
+#! Reads the note's target account ID from its network account target attachment, gathers the
+#! note's recipient and commitments, and asks the target account's active fee policy for the fee
+#! via an FPI call to its `estimate_note_fee` procedure, passing a timeframe and priority of 0.
+#! The target account prefix is returned alongside the fee asset so the caller can tag the
+#! sponsorship note without re-reading the attachment.
 #!
 #! Inputs:  [note_idx, attachment_idx]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
@@ -566,23 +589,26 @@ proc compute_sponsorship_fee(note_idx: u16, attachment_idx: u8) -> (Asset, felt)
     loc_store.COMPUTE_TARGET_ID_PREFIX_LOC
     # => []
 
+    # pass a timeframe and priority of 0, along with the FPI input padding
+    padw
+    # => [timeframe = 0, priority = 0, pad(2)]
+
     loc_load.COMPUTE_NOTE_IDX_LOC exec.output_note::get_attachments_commitment
-    # => [ATTACHMENTS_COMMITMENT]
+    # => [ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     loc_load.COMPUTE_NOTE_IDX_LOC exec.output_note::get_assets_info movup.4 drop
-    # => [ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+    # => [ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
-    loc_load.COMPUTE_NOTE_IDX_LOC
-    # => [output_note_idx, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
-
-    exec.note::output_note_get_recipient_preimage
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+    loc_load.COMPUTE_NOTE_IDX_LOC exec.output_note::get_recipient
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     procref.fee_manager::estimate_note_fee
-    # => [ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+    # => [ESTIMATE_NOTE_FEE_ROOT, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+    #     priority, pad(2)]
 
     loc_load.COMPUTE_TARGET_ID_PREFIX_LOC loc_load.COMPUTE_TARGET_ID_SUFFIX_LOC
-    # => [target_id_suffix, target_id_prefix, ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+    # => [target_id_suffix, target_id_prefix, ESTIMATE_NOTE_FEE_ROOT, RECIPIENT, ASSETS_COMMITMENT,
+    #     ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     exec.tx::execute_foreign_procedure
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
