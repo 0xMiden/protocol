@@ -17,6 +17,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
+use miden_standards::note::{NetworkAccountConfig, NetworkAccountConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -305,6 +306,269 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_arg
         executed.block_header().block_num() + u32::from(delta),
         "the caller-supplied expiration delta should be applied",
     );
+
+    Ok(())
+}
+
+// TESTS — POST-DEPLOYMENT ALLOWLIST MUTATION
+// ================================================================================================
+
+/// A dummy owner account ID used both as the Ownable2Step owner and as the sender of admin notes.
+fn owner_id() -> AccountId {
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
+}
+
+/// Builds a network account that opts into allowlist management (its note allowlist includes the
+/// standardized action-note root plus `extra_allowed_note_roots`) and whose admin procedures are
+/// gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
+fn build_owner_controlled_account(
+    extra_allowed_note_roots: Vec<Word>,
+    allowed_tx_script_roots: Vec<TransactionScriptRoot>,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    // Enable allowlist management (allowlists the standardized config note so admin notes can be
+    // consumed) plus any extra note roots.
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+
+    let auth_component = AuthNetworkAccount::with_allowlist_management(note_roots)
+        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
+
+    Ok(AccountBuilder::new([7; 32])
+        .with_auth_component(auth_component)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?)
+}
+
+/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that
+/// triggers `action`. `serial_seed` distinguishes otherwise-identical notes.
+fn build_action_note(
+    sender: AccountId,
+    account: AccountId,
+    action: NetworkAccountConfig,
+    serial_seed: u32,
+) -> anyhow::Result<Note> {
+    let note = NetworkAccountConfigNote::builder()
+        .sender(sender)
+        .account(account)
+        .action(action)
+        .serial_number(Word::from([serial_seed, 0, 0, 0]))
+        .build()?;
+
+    Ok(Note::from(note))
+}
+
+/// Consumes an authenticated note in a transaction against `account_id`, then commits the resulting
+/// transaction and proves a block so the mutation is visible to subsequent transactions.
+async fn consume_note(
+    mock_chain: &mut MockChain,
+    account_id: AccountId,
+    note: &Note,
+) -> anyhow::Result<()> {
+    let executed = mock_chain
+        .build_tx_context(account_id, &[note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+    Ok(())
+}
+
+/// The owner can add a note script root after deployment: a note whose root was not allowlisted at
+/// creation becomes consumable once the owner sends a standardized config note that adds it.
+#[tokio::test]
+async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    // The note the account cannot consume yet.
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`.
+    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let admin_note = build_action_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        1,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(new_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner adds `new_root` to the note-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // A subsequent transaction consuming `new_note` now succeeds; it would have failed against the
+    // deployed allowlist.
+    consume_note(&mut mock_chain, account.id(), &new_note).await?;
+
+    Ok(())
+}
+
+/// A note sender that is not the owner cannot mutate the allowlist: the config note is allowlisted
+/// (so auth passes) but the authority check rejects the non-owner sender.
+#[tokio::test]
+async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let stranger = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
+    let mut builder = MockChain::builder();
+
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let admin_note = build_action_note(
+        stranger,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        2,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[admin_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// The owner can remove a note script root after deployment: a previously allowlisted note becomes
+/// unconsumable once the owner sends an config note that removes its root.
+#[tokio::test]
+async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    let target_note = build_input_note()?;
+    let target_root = target_note.script().root();
+
+    // Deploy with the target note allowlisted (plus the config note via allowlist management).
+    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner)?;
+    let admin_note = build_action_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::RemoveAllowedNoteScript { script_root: target_root },
+        3,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(target_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner removes `target_root` from the note-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // Consuming `target_note` now fails.
+    let result = mock_chain
+        .build_tx_context(account.id(), &[target_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// A root added within a transaction does not take effect for a note consumed in that same
+/// transaction: auth reads the allowlist from the transaction's initial state. Consuming the action
+/// note (which adds `new_root`) together with `new_note` in one transaction is rejected.
+#[tokio::test]
+async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let admin_note = build_action_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        4,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(new_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[admin_note.id(), new_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// The owner can add a tx script root after deployment: a tx script not allowlisted at creation
+/// runs against the account once the owner sends an config note that adds its root.
+#[tokio::test]
+async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    // The tx script to allowlist post-deployment, and a plain note to consume alongside it (a
+    // transaction must consume a note or change state).
+    let tx_script = expiration_tx_script(10);
+    let tx_root = tx_script.root();
+    let plain_note = build_input_note()?;
+    let plain_root = plain_note.script().root();
+
+    // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
+    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner)?;
+    let admin_note = build_action_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
+        5,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(plain_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner adds the tx script root to the tx-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // The tx script, now allowlisted, runs in a subsequent transaction; it would have been rejected
+    // against the deployed allowlist.
+    mock_chain
+        .build_tx_context(account.id(), &[plain_note.id()], &[])?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

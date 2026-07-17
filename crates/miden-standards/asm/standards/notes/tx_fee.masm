@@ -56,7 +56,7 @@ pub proc main
     eq.0 assert.err=ERR_TX_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
-    exec.basic_wallet::add_assets_to_account
+    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
