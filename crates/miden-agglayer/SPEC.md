@@ -555,7 +555,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 - **Bridge-out:** Consuming account is the bridge -> note validates attachment target,
   loads storage and asset, calls `bridge_out::bridge_out`.
 - **Reclaim:** Consuming account is the original sender -> assets are added back to the
-  account via `basic_wallet::add_assets_to_account`. No output notes.
+  account via `basic_wallet::move_note_assets_to_account`. No output notes.
 
 #### Permissions
 
@@ -926,7 +926,7 @@ deliver minted assets to the recipient.
 
 Consuming account must match `target_account_id` from note storage (enforced by the P2ID
 script). All note assets are added to the consuming account via
-`basic_wallet::add_assets_to_account`.
+`basic_wallet::move_note_assets_to_account`.
 
 #### Permissions
 

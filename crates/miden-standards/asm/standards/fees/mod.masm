@@ -1,21 +1,35 @@
 # miden::standards::fees
 #
-# Fee collection for the fee manager account. `collect_sponsored_fees` walks the transaction's
-# input notes and credits the fees prepaid by FEE_SPONSORSHIP notes to the account vault, pricing
-# each feature note through the active fee policy owned by the `fee_manager` module.
+# Fee collection and sponsorship-note creation for the fee manager account.
+#
+# `collect_sponsored_fees` walks the transaction's input notes and credits the fees prepaid by
+# FEE_SPONSORSHIP notes to the account vault, pricing each feature note through the active fee policy
+# owned by the `fee_manager` module.
+#
+# `create_network_note_sponsorships` walks the transaction's output notes and, for every note targeted at a
+# network account, creates a paired FEE_SPONSORSHIP note funded with the fee that account charges.
 
 use miden::core::word
+use miden::core::crypto::hashes::poseidon2
 
 use miden::protocol::input_note
 use miden::protocol::native_account
+use miden::protocol::output_note
 use miden::protocol::tx
 use miden::protocol::asset
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 
 use miden::standards::assets::fungible_asset
+use miden::standards::attachments::network_account_target
 use miden::standards::note
 use miden::standards::note::note_id
+use miden::standards::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS} from miden::standards::notes::fee_sponsorship
+use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME, NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS}
+    from miden::standards::attachments::network_account_target
+
+use {Asset, Bool} from miden::protocol::types
 
 pub mod fee_manager
 pub mod policies
@@ -32,8 +46,23 @@ const FEE_ASSET_ID_LOC = 0
 # the next multiple of 8 felts.
 const SPONSORSHIP_STORAGE_LOC = 0
 
+# Local memory offsets used by `compute_sponsorship_fee` (in its own local frame).
+const COMPUTE_ATTACHMENT_WORD_LOC = 0
+const COMPUTE_NOTE_IDX_LOC = 4
+const COMPUTE_TARGET_ID_SUFFIX_LOC = 5
+const COMPUTE_TARGET_ID_PREFIX_LOC = 6
+
+# Local memory offsets used by `create_sponsorship_note` (in its own local frame).
+const CREATE_FEE_ASSET_ID_LOC = 0
+const CREATE_FEE_ASSET_VALUE_LOC = 4
+const CREATE_FEATURE_NOTE_ID_LOC = 8
+const CREATE_TARGET_ID_PREFIX_LOC = 12
+const CREATE_NOTE_IDX_LOC = 13
+
 # ERRORS
 # =================================================================================================
+
+const ERR_FEE_MANAGER_NETWORK_TARGET_WRONG_NUM_WORDS = "network account target attachment must consist of exactly one word"
 
 const ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE = "encountered a FEE_SPONSORSHIP note that is not paired with a feature note requiring a fee"
 
@@ -161,11 +190,8 @@ pub proc collect_sponsored_fees
             dup.2 dup.2 exec.assert_neighbor_sponsors
             # => [neighbor_note_idx, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
 
-            padw loc_loadw_le.FEE_ASSET_ID_LOC movup.4
-            # => [neighbor_note_idx, FEE_ASSET_ID, required_fee_amount, note_idx, num_input_notes, total_fee_amount]
-
             # move the sponsored fee into the vault and assert it covers the required amount
-            exec.move_and_check_sponsored_fee
+            padw loc_loadw_le.FEE_ASSET_ID_LOC movup.4 exec.move_and_check_sponsored_fee
             # => [fee_amount, note_idx, num_input_notes, total_fee_amount]
 
             # add the collected amount to the running total and advance past both notes of the pair.
@@ -184,6 +210,74 @@ pub proc collect_sponsored_fees
     # drop the loop variables
     drop drop
     # => [total_fee_amount]
+end
+
+#! Creates a FEE_SPONSORSHIP note for every network output note in this transaction.
+#!
+#! Walks the transaction's output notes as they stood when this procedure was called. For each note
+#! that carries a `NetworkAccountTarget` attachment (i.e. is targeted at a network account), it reads
+#! the target account ID, asks that account's fee policy what the note costs via an FPI call to its
+#! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a FEE_SPONSORSHIP output note
+#! bound to the network note (as its companion) carrying exactly the estimated fee asset. The fee
+#! asset is removed from the native account's vault to fund the note.
+#!
+#! The created sponsorship note is public, tagged for the target network account, names the native
+#! account as its reclaimer, and has reclaim disabled. Its serial number is derived from the
+#! companion note ID, making it unique per network note. Exactly one sponsorship note is created per
+#! network output note; a pre-existing sponsorship for the same note is not detected.
+#!
+#! Must be invoked while the native (fee-paying) account is the active account, since it removes the
+#! fee asset from that account's vault and creates notes from it.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a network output note's target ID attachment does not consist of exactly one word.
+#! - a network output note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's active fee policy is not set.
+#! - the native account's vault does not hold enough of the fee asset.
+#!
+#! Invocation: exec
+pub proc create_network_note_sponsorships
+    # get the output note count before any sponsorship notes were created, since creating them
+    # increments the count
+    exec.tx::get_num_output_notes
+    # => [num_output_notes]
+
+    push.0
+    # => [note_idx = 0, num_output_notes]
+
+    dup.1 dup.1 neq
+    # => [should_loop, note_idx, num_output_notes]
+
+    while.true
+        # only network output notes are sponsored
+        dup exec.is_network_note
+        # => [is_network_note, attachment_idx, note_idx, num_output_notes]
+
+        if.true
+            dup.1
+            # => [note_idx, attachment_idx, note_idx, num_output_notes]
+
+            exec.create_network_note_sponsorship
+            # => [note_idx, num_output_notes]
+        else
+            # do not sponsor non-network output notes
+            drop
+            # => [note_idx, num_output_notes]
+        end
+
+        add.1
+        # => [note_idx+1, num_output_notes]
+
+        dup.1 dup.1 neq
+        # => [should_loop, note_idx, num_output_notes]
+    end
+    # => [note_idx, num_output_notes]
+
+    drop drop
+    # => []
 end
 
 # HELPER PROCEDURES
@@ -289,12 +383,12 @@ end
 #! vault and returns the sponsored fee amount, asserting it is charged in the expected fee asset and
 #! covers the required fee.
 #!
-#! Inputs:  [neighbor_note_index, REQUIRED_ASSET_ID, required_fee_amount]
+#! Inputs:  [neighbor_note_index, FEE_ASSET_ID, required_fee_amount]
 #! Outputs: [fee_amount]
 #!
 #! Where:
 #! - neighbor_note_index is the index of the FEE_SPONSORSHIP note whose asset is collected.
-#! - REQUIRED_ASSET_ID is the ID of the asset the fee must be charged in.
+#! - FEE_ASSET_ID is the ID of the asset the fee must be charged in.
 #! - required_fee_amount is the fee the sponsored amount must cover.
 #! - fee_amount is the sponsored amount moved into the vault.
 #!
@@ -308,7 +402,7 @@ end
 proc move_and_check_sponsored_fee
     # move the sponsorship note's single asset into the vault
     exec.move_assets_to_vault
-    # => [ASSET_ID, ASSET_VALUE, REQUIRED_ASSET_ID, required_fee_amount]
+    # => [ASSET_ID, ASSET_VALUE, FEE_ASSET_ID, required_fee_amount]
 
     # the moved asset must be the fee asset the fee is charged in
     dupw.2 exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
@@ -361,4 +455,224 @@ proc move_assets_to_vault
     # add the asset to the native account vault, keeping a copy as the return value
     dupw.1 dupw.1 exec.native_account::add_asset dropw
     # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Returns whether the output note at the given index is a network note, along with the index of its
+#! network account target attachment.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [is_network_note, attachment_idx]
+#!
+#! Where:
+#! - note_idx is the index of the output note to inspect.
+#! - is_network_note is 1 if the note carries a `NetworkAccountTarget` attachment, 0 otherwise.
+#! - attachment_idx is the index of that attachment; only meaningful if is_network_note is 1.
+#!
+#! Invocation: exec
+proc is_network_note(note_idx: u16) -> (Bool, u8)
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [attachment_scheme, note_idx]
+
+    exec.output_note::find_attachment
+    # => [is_found, attachment_idx]
+end
+
+#! Creates a FEE_SPONSORSHIP note for the network output note at the given index.
+#!
+#! See [`create_network_note_sponsorships`] for the full behaviour; this procedure handles a single network
+#! note. A network note the target account prices to zero produces no sponsorship note.
+#!
+#! Inputs:  [note_idx, attachment_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_idx is the index of the network output note to sponsor.
+#! - attachment_idx is the index of the note's network account target attachment.
+#!
+#! Panics if:
+#! - the note's target ID attachment does not consist of exactly one word.
+#! - the note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's active fee policy is not set.
+#! - the native account's vault does not hold enough of the fee asset.
+#!
+#! Invocation: exec
+proc create_network_note_sponsorship(note_idx: u16, attachment_idx: u8)
+    dup movdn.2
+    # => [note_idx, attachment_idx, note_idx]
+
+    exec.compute_sponsorship_fee
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+
+    exec.fungible_asset::to_amount eq.0
+    # => [is_zero_fee, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+
+    if.true
+        # if the price of the note is zero, do not create a sponsorship note
+        dropw dropw drop drop
+        # => []
+    else
+        exec.create_sponsorship_note
+        # => []
+    end
+end
+
+#! Computes the fee the target network account charges for the output note at the given index.
+#!
+#! Reads the note's target account ID from its network account target attachment, gathers the note's
+#! commitments, and asks the target account's active fee policy for the fee via an FPI call to its
+#! `estimate_note_fee` procedure. The target account prefix is returned alongside the fee asset so
+#! the caller can tag the sponsorship note without re-reading the attachment.
+#!
+#! Inputs:  [note_idx, attachment_idx]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
+#!
+#! Where:
+#! - note_idx is the index of the network output note whose fee is computed.
+#! - attachment_idx is the index of the note's network account target attachment.
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#! - target_id_prefix is the prefix felt of the target account ID.
+#!
+#! Panics if:
+#! - the note's target ID attachment does not consist of exactly one word.
+#! - the note's recipient preimage is unavailable or does not hash to the recipient.
+#! - the target account's active fee policy is not set.
+#!
+#! Invocation: exec
+@locals(7)
+proc compute_sponsorship_fee(note_idx: u16, attachment_idx: u8) -> (Asset, felt)
+    # the note index is needed repeatedly below, so cache it
+    dup loc_store.COMPUTE_NOTE_IDX_LOC
+    # => [note_idx, attachment_idx]
+
+    # copy the network account target attachment into local memory, then read the target ID
+    swap locaddr.COMPUTE_ATTACHMENT_WORD_LOC
+    # => [dest_ptr, attachment_idx, note_idx]
+
+    exec.output_note::write_attachment_to_memory
+    # => [num_words]
+
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
+    assert.err=ERR_FEE_MANAGER_NETWORK_TARGET_WRONG_NUM_WORDS
+    # => []
+
+    padw loc_loadw_le.COMPUTE_ATTACHMENT_WORD_LOC
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+
+    exec.network_account_target::into_target_id
+    # => [target_id_suffix, target_id_prefix]
+
+    loc_store.COMPUTE_TARGET_ID_SUFFIX_LOC
+    loc_store.COMPUTE_TARGET_ID_PREFIX_LOC
+    # => []
+
+    loc_load.COMPUTE_NOTE_IDX_LOC exec.output_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT]
+
+    loc_load.COMPUTE_NOTE_IDX_LOC exec.output_note::get_assets_info movup.4 drop
+    # => [ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    loc_load.COMPUTE_NOTE_IDX_LOC
+    # => [output_note_idx, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    exec.note::output_note_get_recipient_preimage
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    procref.fee_manager::estimate_note_fee
+    # => [ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    loc_load.COMPUTE_TARGET_ID_PREFIX_LOC loc_load.COMPUTE_TARGET_ID_SUFFIX_LOC
+    # => [target_id_suffix, target_id_prefix, ESTIMATE_NOTE_FEE_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+
+    exec.tx::execute_foreign_procedure
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+
+    swapdw dropw dropw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
+    # return the target prefix below the fee asset so the caller can build the note tag
+    loc_load.COMPUTE_TARGET_ID_PREFIX_LOC movdn.8
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
+end
+
+#! Creates and funds the FEE_SPONSORSHIP note for a network output note priced to a non-zero fee.
+#!
+#! Removes the fee asset from the native account's vault, derives a serial number unique to the
+#! sponsored note, builds the sponsorship note tagged for the target account with the native account
+#! as reclaimer (reclaim disabled), creates it, and funds it with the fee asset.
+#!
+#! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#! - target_id_prefix is the prefix felt of the target account ID, used to tag the note.
+#! - note_idx is the index of the sponsored network output note, used to derive the serial number.
+#!
+#! Panics if:
+#! - the native account's vault does not hold enough of the fee asset.
+#!
+#! Invocation: exec
+@locals(14)
+proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx: u16)
+    # cache the fee asset; it funds the sponsorship note once created
+    loc_storew_le.CREATE_FEE_ASSET_ID_LOC swapw
+    # => [FEE_ASSET_VALUE, FEE_ASSET_ID, target_id_prefix, note_idx]
+
+    loc_storew_le.CREATE_FEE_ASSET_VALUE_LOC swapw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+
+    # cache the target prefix (for the note tag) and note index (for the serial number)
+    movup.8 loc_store.CREATE_TARGET_ID_PREFIX_LOC
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    movup.8 loc_store.CREATE_NOTE_IDX_LOC
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
+    # remove the fee asset from the native account's vault before placing it into the note
+    exec.native_account::remove_asset
+    dropw
+    # => []
+
+    # derive a unique serial for the sponsorship note from the feature note ID
+    loc_load.CREATE_NOTE_IDX_LOC exec.note_id::compute_output_note_id
+    # => [FEATURE_NOTE_ID]
+
+    loc_storew_le.CREATE_FEATURE_NOTE_ID_LOC
+    # => [FEATURE_NOTE_ID]
+
+    exec.poseidon2::hash
+    # => [SERIAL_NUM]
+
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, SERIAL_NUM]
+
+    loc_load.CREATE_TARGET_ID_PREFIX_LOC exec.note_tag::create_account_target
+    # => [tag, note_type, SERIAL_NUM]
+
+    # reclaim disabled; the native account is the reclaimer
+    push.0
+    # => [reclaim_block_height, tag, note_type, SERIAL_NUM]
+
+    exec.native_account::get_id
+    # => [reclaimer_id_suffix, reclaimer_id_prefix, reclaim_block_height, tag, note_type, SERIAL_NUM]
+
+    padw loc_loadw_le.CREATE_FEATURE_NOTE_ID_LOC
+    # => [FEATURE_NOTE_ID, reclaimer_id_suffix, reclaimer_id_prefix, reclaim_block_height, tag,
+    #     note_type, SERIAL_NUM]
+
+    exec.fee_sponsorship::prepare_note
+    # => [tag, note_type, RECIPIENT]
+
+    exec.output_note::create
+    # => [sponsorship_note_idx]
+
+    # fund the freshly created sponsorship note with the fee asset
+    padw loc_loadw_le.CREATE_FEE_ASSET_VALUE_LOC
+    padw loc_loadw_le.CREATE_FEE_ASSET_ID_LOC
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, sponsorship_note_idx]
+
+    exec.output_note::add_asset
+    # => []
 end

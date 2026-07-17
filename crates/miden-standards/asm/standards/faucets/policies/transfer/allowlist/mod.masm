@@ -16,6 +16,7 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 pub mod manager
 
@@ -26,9 +27,9 @@ pub mod manager
 # Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_allowed, 0, 0, 0]
 const ALLOWED_ACCOUNTS_SLOT = word("miden::standards::faucets::policies::transfer::allowlist::allowed_accounts")
 
-const ALLOWED_WORD = [1, 0, 0, 0]
+const ALLOWED_WORD = ONE_WORD
 
-const DISALLOWED_WORD = [0, 0, 0, 0]
+const DISALLOWED_WORD = ZERO_WORD
 
 # ERRORS
 # ================================================================================================
