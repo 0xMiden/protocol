@@ -1,26 +1,16 @@
 use alloc::collections::BTreeMap;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    AccountComponentName,
-    AccountId,
-    AccountProcedureRoot,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, AccountComponentName, AccountId, AccountProcedureRoot, StorageMap,
+    StorageMapKey, StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -95,6 +85,21 @@ impl From<NoteScriptRoot> for NoteFeeLookupKey {
     }
 }
 
+/// Set-marker element of a fee schedule entry, distinguishing scheduled entries (including
+/// explicit 0 fees) from unset keys: storage maps prune zero-word values and return the zero
+/// word for unset keys, so a scheduled entry must be a non-zero word. The MASM
+/// `compute_note_fee` counterpart asserts this element equals 1 (unset keys read as the zero
+/// word, whose marker element is 0) and strips it before returning the fee asset value.
+const FEE_SCHEDULE_ENTRY_MARKER: Felt = Felt::ONE;
+
+/// Encodes a fee as a fee schedule map entry: the asset value word with the set-marker as the
+/// last element, i.e. `[fee_amount, 0, 0, 1]`.
+fn fee_schedule_entry(fee: AssetAmount) -> Word {
+    let mut entry = fee.to_word();
+    entry[3] = FEE_SCHEDULE_ENTRY_MARKER;
+    entry
+}
+
 /// The `constant_fee` fee policy account component.
 ///
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
@@ -102,20 +107,22 @@ impl From<NoteScriptRoot> for NoteFeeLookupKey {
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
 /// value words): the amount is looked up in the fee schedule under a [`NoteFeeLookupKey`] built
 /// from the note parameters by the lookup-key procedure stored in the policy's
-/// [`Self::lookup_key_proc_root_slot_name`] slot, and lookup keys without a schedule entry
-/// estimate to an amount of 0. The slot defaults to the built-in `build_note_fee_lookup_key`
+/// [`Self::lookup_key_proc_root_slot_name`] slot, and lookup keys without a schedule entry abort
+/// fee estimation. To make a lookup key free, schedule an explicit 0 fee via
+/// [`ConstantFeePolicy::with_fee`]. The slot defaults to the built-in `build_note_fee_lookup_key`
 /// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
 ///
 /// The `From<ConstantFeePolicy>` conversion always writes the built-in root; a custom lookup-key
 /// procedure requires building the [`AccountComponent`] manually. The stored root must be an
 /// account procedure (enforced on dispatch) matching the `build_note_fee_lookup_key` interface
-/// (unchecked on-chain; a non-conforming one yields schedule-miss keys, fee 0).
+/// (unchecked on-chain; a non-conforming one yields schedule-miss keys that abort fee estimation).
 ///
 /// ## Storage layout
 ///
 /// - [`Self::fee_asset_id_slot_name`] value slot: the [`AssetId`] word of the fungible asset the
 ///   fee is charged in.
-/// - [`Self::fee_schedule_slot_name`] map slot: `LOOKUP_KEY => [fee_amount, 0, 0, 0]`.
+/// - [`Self::fee_schedule_slot_name`] map slot: `LOOKUP_KEY => [fee_amount, 0, 0, 1]`, where the
+///   last element is a set-marker distinguishing scheduled entries from unset keys.
 /// - [`Self::lookup_key_proc_root_slot_name`] value slot: the root of the procedure that builds the
 ///   fee schedule lookup key.
 #[derive(Debug, Clone)]
@@ -158,6 +165,8 @@ impl ConstantFeePolicy {
     ///
     /// The key must match the output of the policy's lookup-key procedure for the targeted
     /// notes; with the built-in `build_note_fee_lookup_key`, that is the note's script root.
+    /// Scheduling an explicit fee of 0 makes matching notes free; lookup keys without a schedule
+    /// entry abort fee estimation.
     #[must_use]
     pub fn with_fee(mut self, lookup_key: impl Into<NoteFeeLookupKey>, fee: AssetAmount) -> Self {
         self.fee_schedule.insert(lookup_key.into(), fee);
@@ -221,7 +230,8 @@ impl ConstantFeePolicy {
             (
                 Self::fee_schedule_slot_name().clone(),
                 StorageSlotSchema::map(
-                    "Fee charged per lookup key",
+                    "Fee charged per lookup key, as [fee_amount, 0, 0, 1] with a set-marker \
+                     as the last element",
                     SchemaType::native_word(),
                     SchemaType::native_word(),
                 ),
@@ -249,12 +259,9 @@ impl From<ConstantFeePolicy> for AccountComponent {
             policy.fee_asset_id.to_word(),
         );
 
-        // Each fee is stored as an asset value word so that `compute_note_fee` can return the
-        // map entry as FEE_ASSET_VALUE unmodified.
-        let entries = policy
-            .fee_schedule
-            .into_iter()
-            .map(|(lookup_key, fee)| (StorageMapKey::new(lookup_key.as_word()), fee.to_word()));
+        let entries = policy.fee_schedule.into_iter().map(|(lookup_key, fee)| {
+            (StorageMapKey::new(lookup_key.as_word()), fee_schedule_entry(fee))
+        });
         let fee_schedule_map = StorageMap::with_entries(entries)
             .expect("fee schedule entries should produce a valid storage map");
         let fee_schedule_slot = StorageSlot::with_map(
@@ -301,8 +308,11 @@ mod tests {
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let fee = AssetAmount::new(500)?;
+        let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
-        let policy = ConstantFeePolicy::new(fee_faucet_id()).with_fee(script_root, fee);
+        let policy = ConstantFeePolicy::new(fee_faucet_id())
+            .with_fee(script_root, fee)
+            .with_fee(free_script_root, AssetAmount::ZERO);
         let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
 
         let account = AccountBuilder::new([1; 32])
@@ -324,8 +334,13 @@ mod tests {
         };
         assert_eq!(
             map.get(&StorageMapKey::new(script_root.as_word())),
-            fee.to_word(),
-            "the fee entry should be stored under the note's script root as an asset value word"
+            Word::new([Felt::new(500)?, Felt::ZERO, Felt::ZERO, Felt::ONE]),
+            "the fee entry should be stored under the note's script root with the set-marker"
+        );
+        assert_eq!(
+            map.get(&StorageMapKey::new(free_script_root.as_word())),
+            Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
+            "an explicit 0-fee entry should survive as a non-zero word"
         );
 
         let lookup_key_proc_root_word = account

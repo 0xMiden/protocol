@@ -10,24 +10,13 @@ use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    BlockSignatures,
-    Blockchain,
-    ProposedBlock,
-    ProvenBlock,
+    BlockHeader, BlockInputs, BlockNumber, BlockSignatures, Blockchain, ProposedBlock, ProvenBlock,
     ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    OutputNote,
-    PartialBlockchain,
-    ProvenTransaction,
+    ExecutedTransaction, InputNote, InputNotes, OutputNote, PartialBlockchain, ProvenTransaction,
     TransactionInputs,
 };
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
@@ -1321,9 +1310,7 @@ mod tests {
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_SENDER,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER,
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_standards::account::wallets::BasicWallet;

@@ -13,6 +13,7 @@
 
 ### Changes
 
+- `ConstantFeePolicy` now aborts fee estimation for note scripts without a fee schedule entry instead of estimating them to a fee of 0; to make a note script free, schedule an explicit 0 fee for it. Fee schedule entries are stored as `[fee_amount, 0, 0, 1]`, where the last element is a set-marker distinguishing scheduled entries from unset keys ([#3326](https://github.com/0xMiden/protocol/issues/3326)).
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 - [BREAKING] Added an optional per-fill `min_fill_step` floor to PSWAP notes: a fill below `min(min_fill_step, min_requested_amount)` is rejected, preventing a swap from being chipped away by dust-minting partial fills. Also fixed the creator ID field order in `PswapNoteStorage` ([#3203](https://github.com/0xMiden/protocol/issues/3203)).
@@ -39,7 +40,7 @@
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
-- [BREAKING] The `ConstantFeePolicy` now computes its fee schedule lookup key dynamically via a procedure stored in the new `lookup_key_proc_root` slot (defaulting to `build_note_fee_lookup_key`, which keys on the note's script root); its Rust fee schedule is now keyed by `NoteFeeLookupKey` instead of `NoteScriptRoot` ([#3352](https://github.com/0xMiden/protocol/pull/3352)).
+- [BREAKING] `ConstantFeePolicy` now derives its fee schedule lookup key via a procedure in the new `lookup_key_proc_root` slot (default: the note's script root), keyed in Rust by `NoteFeeLookupKey` ([#3352](https://github.com/0xMiden/protocol/pull/3352)).
 
 ## v0.16.0-alpha.3 (2026-07-15)
 

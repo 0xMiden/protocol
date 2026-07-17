@@ -3,20 +3,16 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_FEE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
-    ERR_FEE_CONVERSION_INFO_MISSING,
-    ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
-    ERR_FEE_CONVERSION_RATE_NOT_U32,
-    ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
-    ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
+    ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH, ERR_FEE_CONVERSION_INFO_MISSING,
+    ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO, ERR_FEE_CONVERSION_RATE_NOT_U32,
+    ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO, ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};

@@ -6,8 +6,9 @@
 #
 # Storage layout:
 # - `fee_asset_id` word: the ID of the asset the fee is charged in.
-# - `fee_schedule` map: LOOKUP_KEY => [fee_amount, 0, 0, 0]. The default (unset) entry is the
-#   zero word, so lookup keys without a schedule entry estimate to a fee amount of 0.
+# - `fee_schedule` map: LOOKUP_KEY => [fee_amount, 0, 0, 1]. The last element is a set-marker
+#   distinguishing scheduled entries (including explicit 0 fees) from the zero word returned for
+#   unset keys; lookup keys without a schedule entry abort fee computation.
 # - `lookup_key_proc_root` word: the root of the procedure that builds the fee schedule lookup
 #   key from the note parameters. The built-in `build_note_fee_lookup_key` keys on
 #   NOTE_SCRIPT_ROOT.
@@ -25,7 +26,7 @@ use {Asset, NoteScriptRoot, StorageMapKey} from miden::protocol::types
 const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::fee_asset_id")
 
 # Slot holding the fee schedule.
-# Map entries: LOOKUP_KEY => [fee_amount, 0, 0, 0]
+# Map entries: LOOKUP_KEY => [fee_amount, 0, 0, 1]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
 
 # Slot holding the root of the procedure that builds the fee schedule lookup key. Must be a
@@ -41,6 +42,7 @@ const LOOKUP_KEY_PROC_ROOT_PTR = 0
 
 const ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET = "lookup key procedure root is not set"
 const ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT = "lookup key procedure root is not a procedure of this account"
+const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule entry"
 
 # POLICY PROCEDURES
 # =================================================================================================
@@ -49,8 +51,8 @@ const ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT = "lookup key procedure root is no
 #!
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters by
 #! the lookup-key procedure whose root is stored in the `lookup_key_proc_root` slot (invoked via
-#! `dyncall`). The built-in `build_note_fee_lookup_key` derives the key from just
-#! NOTE_SCRIPT_ROOT; lookup keys without a schedule entry estimate to a fee amount of 0.
+#! `dyncall`). The built-in `build_note_fee_lookup_key` derives the key from just NOTE_SCRIPT_ROOT.
+#! Lookup keys without a schedule entry abort; to make one free, schedule an explicit 0 fee.
 #!
 #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -66,6 +68,7 @@ const ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT = "lookup key procedure root is no
 #! Panics if:
 #! - the lookup-key procedure root is not set.
 #! - the lookup-key procedure root is not a procedure of this account.
+#! - the note's script root has no fee schedule entry.
 #!
 #! Invocation: call
 @locals(4)
@@ -98,6 +101,14 @@ pub proc compute_note_fee(
     # => [slot_id_suffix, slot_id_prefix, LOOKUP_KEY, pad(12)]
 
     exec.active_account::get_map_item
+    # => [FEE_SCHEDULE_ENTRY, pad(12)]
+
+    # replace the set-marker (word element 3) with 0, recovering the plain asset value word
+    push.0 swap.4
+    # => [marker, FEE_ASSET_VALUE, pad(12)]
+
+    # unset keys read as the zero word, whose marker element is 0
+    assert.err=ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE
     # => [FEE_ASSET_VALUE, pad(12)]
 
     push.FEE_ASSET_ID_SLOT[0..2] exec.active_account::get_item

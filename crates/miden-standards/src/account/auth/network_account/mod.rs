@@ -10,6 +10,5 @@ pub use note_allowlist::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlis
 
 mod tx_script_allowlist;
 pub use tx_script_allowlist::{
-    NetworkAccountTxScriptAllowlist,
-    NetworkAccountTxScriptAllowlistError,
+    NetworkAccountTxScriptAllowlist, NetworkAccountTxScriptAllowlistError,
 };

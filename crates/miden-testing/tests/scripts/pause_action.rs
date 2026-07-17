@@ -11,8 +11,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
-    ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_PAUSE_ACTION_UNKNOWN_SELECTOR,
+    ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS, ERR_PAUSE_ACTION_UNKNOWN_SELECTOR,
 };
 use miden_standards::note::{PauseAction, PauseActionNote};
 use miden_standards::testing::note::NoteBuilder;

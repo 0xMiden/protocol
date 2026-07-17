@@ -11,12 +11,7 @@ use alloc::collections::BTreeMap;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountType,
-    AssetCallbackFlag,
+    Account, AccountBuilder, AccountId, AccountProcedureRoot, AccountType, AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
@@ -27,23 +22,14 @@ use miden_standards::account::access::pausable::{Pausable, PausableManager, Paus
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::errors::standards::{
-    ERR_PAUSABLE_IS_PAUSED,
-    ERR_SENDER_LACKS_ROLE,
-    ERR_SENDER_NOT_OWNER,
+    ERR_PAUSABLE_IS_PAUSED, ERR_SENDER_LACKS_ROLE, ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_transaction_executor_error,
+    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
 };
 
 use super::rbac::{build_grant_role_note, build_note, role, test_account_id};

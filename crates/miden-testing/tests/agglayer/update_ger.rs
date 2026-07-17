@@ -21,8 +21,7 @@ use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
 use super::test_utils::{
-    create_existing_bridge_account_with_roles,
-    execute_program_with_default_host,
+    create_existing_bridge_account_with_roles, execute_program_with_default_host,
 };
 
 // EXIT ROOT TEST VECTORS

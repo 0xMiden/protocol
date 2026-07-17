@@ -11,25 +11,15 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BlocklistManager,
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BlocklistManager, BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_ACCOUNT_IS_BLOCKED,
-    ERR_NFT_ALREADY_ISSUED,
-    ERR_SENDER_NOT_OWNER,
+    ERR_ACCOUNT_IS_BLOCKED, ERR_NFT_ALREADY_ISSUED, ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
 use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_transaction_executor_error,
+    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
 };
 use rand::RngExt;
 

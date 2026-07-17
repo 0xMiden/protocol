@@ -6,16 +6,8 @@ use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountProcedureRoot,
-    AccountStorage,
-    AccountType,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountProcedureRoot, AccountStorage,
+    AccountType, StorageMap, StorageMapKey, StorageSlot,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
@@ -27,10 +19,7 @@ use miden_standards::account::access::{Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::account::faucets::{Description, FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
+    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::BurnNote;

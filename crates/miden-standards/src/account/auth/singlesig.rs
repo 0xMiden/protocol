@@ -1,17 +1,10 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    AccountComponentName,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, AccountComponentName, StorageSlot, StorageSlotName,
 };
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;

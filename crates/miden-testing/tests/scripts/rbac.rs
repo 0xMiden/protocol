@@ -6,20 +6,13 @@ use core::slice;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountType,
-    RoleSymbol,
-    StorageMapKey,
+    Account, AccountBuilder, AccountId, AccountType, RoleSymbol, StorageMapKey,
 };
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, RoleBasedAccessControl};
 use miden_standards::errors::standards::{
-    ERR_ACCOUNT_NOT_IN_ROLE,
-    ERR_ROLE_SYMBOL_ZERO,
-    ERR_SENDER_NOT_ROLE_ADMIN,
+    ERR_ACCOUNT_NOT_IN_ROLE, ERR_ROLE_SYMBOL_ZERO, ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};

@@ -16,10 +16,7 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
-    RawOutputNote,
-    TransactionArgs,
-    TransactionInputs,
-    TransactionScript,
+    RawOutputNote, TransactionArgs, TransactionInputs, TransactionScript,
 };
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;

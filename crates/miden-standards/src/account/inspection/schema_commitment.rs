@@ -10,19 +10,11 @@ use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
     WordSchema,
 };
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountComponent, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::sync::LazyLock;

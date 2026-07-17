@@ -5,27 +5,13 @@ use alloc::string::String;
 
 use anyhow::Context;
 use miden_agglayer::errors::{
-    ERR_CLAIM_ALREADY_SPENT,
-    ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH,
-    ERR_GER_NOT_FOUND,
+    ERR_CLAIM_ALREADY_SPENT, ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH, ERR_GER_NOT_FOUND,
     ERR_TOKEN_NOT_REGISTERED,
 };
 use miden_agglayer::{
-    AggLayerBridge,
-    B2AggNote,
-    ClaimNote,
-    ClaimNoteStorage,
-    ConfigAggBridgeNote,
-    ConversionMetadata,
-    EthAddress,
-    EthEmbeddedAccountId,
-    ExitRoot,
-    LeafValue,
-    RemoveGerNote,
-    SmtNode,
-    UpdateGerNote,
-    agglayer_library,
-    create_existing_agglayer_faucet,
+    AggLayerBridge, B2AggNote, ClaimNote, ClaimNoteStorage, ConfigAggBridgeNote,
+    ConversionMetadata, EthAddress, EthEmbeddedAccountId, ExitRoot, LeafValue, RemoveGerNote,
+    SmtNode, UpdateGerNote, agglayer_library, create_existing_agglayer_faucet,
     create_existing_agglayer_faucet_with_callbacks,
 };
 use miden_protocol::Felt;
@@ -48,9 +34,7 @@ use miden_tx::utils::hex_to_bytes;
 use rand::RngExt;
 
 use super::test_utils::{
-    ClaimDataSource,
-    MerkleProofVerificationFile,
-    SOLIDITY_MERKLE_PROOF_VECTORS,
+    ClaimDataSource, MerkleProofVerificationFile, SOLIDITY_MERKLE_PROOF_VECTORS,
     create_existing_bridge_account_with_roles,
 };
 

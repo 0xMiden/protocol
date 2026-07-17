@@ -2,11 +2,7 @@ use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountProcedureRoot,
-    AccountType,
-    StorageMapKey,
+    Account, AccountBuilder, AccountProcedureRoot, AccountType, StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{Note, NoteType};

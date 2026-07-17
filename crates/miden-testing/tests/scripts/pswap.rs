@@ -12,9 +12,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
-    ERR_PSWAP_FILL_BELOW_MINIMUM,
-    ERR_PSWAP_FILL_SUM_OVERFLOW,
-    ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
+    ERR_PSWAP_FILL_BELOW_MINIMUM, ERR_PSWAP_FILL_SUM_OVERFLOW, ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
 };
 use miden_standards::note::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;

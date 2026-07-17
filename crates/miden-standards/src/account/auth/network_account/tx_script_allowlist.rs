@@ -2,12 +2,7 @@ use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
-    AccountStorage,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotContent,
-    StorageSlotName,
+    AccountStorage, StorageMap, StorageMapKey, StorageSlot, StorageSlotContent, StorageSlotName,
 };
 use miden_protocol::transaction::TransactionScriptRoot;
 use miden_protocol::utils::sync::LazyLock;

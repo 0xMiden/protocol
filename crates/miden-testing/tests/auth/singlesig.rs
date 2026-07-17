@@ -5,11 +5,7 @@ use miden_processor::ExecutionError;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountStorage,
-    AccountType,
+    Account, AccountBuilder, AccountComponent, AccountStorage, AccountType,
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;

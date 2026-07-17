@@ -1,9 +1,7 @@
 use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
+    AccountComponentCode, AccountComponentMetadata, StorageSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 

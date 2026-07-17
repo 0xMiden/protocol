@@ -3,12 +3,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    AccountBuilder,
-    AccountComponent,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    AccountBuilder, AccountComponent, StorageMap, StorageMapKey, StorageSlot, StorageSlotName,
 };
 use miden_standards::code_builder::CodeBuilder;
 
