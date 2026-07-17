@@ -566,10 +566,12 @@ mod tests {
         use crate::assembly::Assembler;
 
         let assembler = Assembler::default();
-        let package =
-            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
-        let script = TransactionScript::from_package(&package).unwrap();
-
+        let program = assembler
+            .assemble_program("test-transaction-script", "begin nop end")
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        let script = TransactionScript::new(program);
         assert!(script.mast().advice_map().is_empty());
 
         // Empty advice map should be a no-op

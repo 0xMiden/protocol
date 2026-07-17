@@ -8,7 +8,7 @@ use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_processor::LoadedMastForest;
+use miden_processor::{LoadedMastForest, Program};
 
 use super::Felt;
 use crate::assembly::mast::{MastForest, MastNodeId};
