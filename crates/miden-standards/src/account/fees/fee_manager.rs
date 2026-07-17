@@ -85,11 +85,10 @@ static ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Lazy
 /// - `estimate_note_fee`: designed to be `call`ed by external callers - typically via FPI from the
 ///   authentication component of an account that creates a note targeted at this account. It
 ///   dispatches to the active fee policy via `dyncall`; the policy derives the fee this account
-///   charges from the note parameters (the note's recipient, assets commitment, attachments
-///   commitment, and a timeframe and priority whose semantics are policy-defined) and returns it as
-///   a fee asset (asset ID and value words). Policies that price on the note's script root or
-///   storage commitment recover them from the recipient via the advice provider, so the recipient
-///   preimage must be present in the advice map.
+///   charges from the note parameters (recipient, assets/attachments commitments, and a
+///   policy-defined timeframe and priority) and returns it as a fee asset (asset ID and value
+///   words). Policies pricing on the script root or storage commitment recover them from the
+///   recipient via the advice provider, so its preimage must be in the advice map.
 /// - `set_fee_policy` / `get_fee_policy`: switch and read the active fee policy root. Switching is
 ///   restricted to the roots registered in the allowed-policies map, and authorization is delegated
 ///   to the account-wide [`Authority`][crate::account::access::Authority] component, which must be

@@ -12,7 +12,7 @@
 
 ### Changes
 
-- [BREAKING] Added `timeframe` and `priority` pricing inputs to `estimate_note_fee` and the fee policies; the note's script root and storage commitment are now passed collapsed into its recipient ([#3349](https://github.com/0xMiden/protocol/pull/3349)).
+- [BREAKING] Added `timeframe` and `priority` pricing inputs to `estimate_note_fee`; the note's script root and storage commitment are now collapsed into its recipient ([#3349](https://github.com/0xMiden/protocol/pull/3349)).
 - [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
 - [BREAKING] Added an optional per-fill `min_fill_step` floor to PSWAP notes: a fill below `min(min_fill_step, min_requested_amount)` is rejected, preventing a swap from being chipped away by dust-minting partial fills. Also fixed the creator ID field order in `PswapNoteStorage` ([#3203](https://github.com/0xMiden/protocol/issues/3203)).

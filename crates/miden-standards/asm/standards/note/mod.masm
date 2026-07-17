@@ -84,10 +84,9 @@ end
 #! Recovers a note's script root and storage commitment from the given recipient via the advice
 #! provider.
 #!
-#! This works only when the recipient preimage is in the advice provider. This is generally the
-#! case for public notes since their recipients are added to the advice inputs or they are created
-#! with compute_and_store_recipient. As long as the recipient preimage is available, this also
-#! works for private notes.
+#! Requires the recipient preimage in the advice provider. Generally present for public notes
+#! (recipients added to advice inputs, or created via compute_and_store_recipient) and for private
+#! notes whose preimage is available.
 #!
 #! Inputs:  [RECIPIENT]
 #! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]

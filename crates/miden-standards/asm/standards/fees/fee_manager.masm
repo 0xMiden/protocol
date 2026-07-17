@@ -65,10 +65,8 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
-#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
@@ -152,10 +150,8 @@ end
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
-#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
@@ -188,10 +184,8 @@ end
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
-#! - timeframe is an opaque pricing input carrying the timeframe the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
-#! - priority is an opaque pricing input carrying the priority the fee is estimated for; its
-#!   semantics are defined by the active fee policy.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
