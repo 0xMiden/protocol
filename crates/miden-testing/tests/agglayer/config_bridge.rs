@@ -5,12 +5,22 @@ use alloc::vec::Vec;
 
 use miden_agglayer::errors::ERR_FAUCET_NOT_REGISTERED;
 use miden_agglayer::{
-    AggLayerBridge, AgglayerBridgeError, BridgeRoles, ConfigAggBridgeNote, ConversionMetadata,
-    DeregisterAggFaucetNote, EthAddress, MetadataHash,
+    AggLayerBridge,
+    AgglayerBridgeError,
+    BridgeRoles,
+    ConfigAggBridgeNote,
+    ConversionMetadata,
+    DeregisterAggFaucetNote,
+    EthAddress,
+    MetadataHash,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    AccountId, AccountIdVersion, AccountType, AssetCallbackFlag, StorageMapKey,
+    AccountId,
+    AccountIdVersion,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMapKey,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;

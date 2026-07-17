@@ -4,21 +4,30 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    AssetClass, AssetComposition, AssetId, FungibleAsset, NonFungibleAsset,
+    AssetClass,
+    AssetComposition,
+    AssetId,
+    FungibleAsset,
+    NonFungibleAsset,
 };
 use miden_protocol::errors::tx_kernel::{
-    ERR_FAUCET_IS_NOT_ASSET_ORIGIN, ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
+    ERR_FAUCET_IS_NOT_ASSET_ORIGIN,
+    ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{
-    CONSUMED_ASSET_1_AMOUNT, FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA,
+    CONSUMED_ASSET_1_AMOUNT,
+    FUNGIBLE_ASSET_AMOUNT,
+    NON_FUNGIBLE_ASSET_DATA,
     NON_FUNGIBLE_ASSET_DATA_2,
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;

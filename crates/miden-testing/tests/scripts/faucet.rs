@@ -7,13 +7,28 @@ use std::collections::BTreeSet;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountProcedureRoot, AccountType, AssetCallbackFlag,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    AssetCallbackFlag,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachments, NoteDetailsCommitment, NoteId, NoteMetadata, NoteRecipient,
-    NoteScript, NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachments,
+    NoteDetailsCommitment,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
@@ -21,21 +36,32 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnAllowAll, BurnOwnerOnly, BurnPolicy, MinBurnAmount, MintPolicy, TokenPolicyManager,
+    BurnAllowAll,
+    BurnOwnerOnly,
+    BurnPolicy,
+    MinBurnAmount,
+    MintPolicy,
+    TokenPolicyManager,
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT, ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
+    ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT,
+    ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
-    ERR_MINT_POLICY_ROOT_NOT_ALLOWED, ERR_SENDER_NOT_OWNER,
+    ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
-    AccountState, Auth, MockChain, MockChainBuilder, assert_note_created,
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_note_created,
     assert_transaction_executor_error,
 };
 use rand::RngExt;

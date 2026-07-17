@@ -24,7 +24,10 @@ pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, Guard
 
 mod network_account;
 pub use network_account::{
-    AuthNetworkAccount, NetworkAccount, NetworkAccountNoteAllowlist,
-    NetworkAccountNoteAllowlistError, NetworkAccountTxScriptAllowlist,
+    AuthNetworkAccount,
+    NetworkAccount,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+    NetworkAccountTxScriptAllowlist,
     NetworkAccountTxScriptAllowlistError,
 };

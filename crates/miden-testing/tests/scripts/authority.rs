@@ -3,7 +3,12 @@
 use std::collections::BTreeMap;
 
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountProcedureRoot, AccountType, RoleSymbol,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
@@ -12,14 +17,24 @@ use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::{
-    ERR_AUTHORITY_FROZEN, ERR_SENDER_LACKS_ROLE, ERR_SENDER_NOT_OWNER,
+    ERR_AUTHORITY_FROZEN,
+    ERR_SENDER_LACKS_ROLE,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_testing::{
-    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
 };
 
 use super::pausable::{
-    ADMIN_ID, NON_OWNER_ID, OWNER_ID, build_pause_note, build_set_max_supply_note,
+    ADMIN_ID,
+    NON_OWNER_ID,
+    OWNER_ID,
+    build_pause_note,
+    build_set_max_supply_note,
     execute_note_on_faucet,
 };
 use super::rbac::{build_grant_role_note, build_note, role, test_account_id};

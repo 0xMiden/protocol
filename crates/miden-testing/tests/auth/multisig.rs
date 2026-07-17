@@ -2,12 +2,18 @@ use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountProcedureRoot, AccountType, StorageMapKey,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    StorageMapKey,
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
@@ -16,7 +22,8 @@ use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_DUPLICATE_APPROVER_PUBLIC_KEY, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
+    ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
     ERR_TX_ALREADY_EXECUTED,
 };
 use miden_standards::note::P2idNote;

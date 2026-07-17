@@ -2,16 +2,24 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, StorageSchema, StorageSlotSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountComponentName, AccountProcedureRoot, StorageSlotName,
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    StorageSlotName,
 };
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionScriptRoot;
 
 use super::{
-    NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError, NetworkAccountTxScriptAllowlist,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+    NetworkAccountTxScriptAllowlist,
 };
 use crate::account::account_component_code;
 use crate::note::NetworkAccountConfigNote;

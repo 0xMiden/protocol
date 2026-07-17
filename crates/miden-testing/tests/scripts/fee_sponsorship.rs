@@ -10,7 +10,8 @@ use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET,
-    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
+    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
+    ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
     ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
 };
 use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};

@@ -1,7 +1,8 @@
 use miden_protocol::account::{Account, AccountId, AccountStorage};
 
 use crate::account::auth::network_account::{
-    NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
 };
 
 // NETWORK ACCOUNT

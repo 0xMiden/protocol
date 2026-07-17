@@ -3,7 +3,9 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use miden_agglayer::errors::{
-    ERR_BRIDGE_NOT_MAINNET, ERR_BRIDGE_NOT_ROLLUP, ERR_LEADING_BITS_NON_ZERO,
+    ERR_BRIDGE_NOT_MAINNET,
+    ERR_BRIDGE_NOT_ROLLUP,
+    ERR_LEADING_BITS_NON_ZERO,
     ERR_ROLLUP_INDEX_NON_ZERO,
 };
 use miden_agglayer::{GlobalIndex, agglayer_library};

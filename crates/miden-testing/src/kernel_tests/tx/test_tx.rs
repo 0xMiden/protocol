@@ -8,31 +8,62 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountCode, AccountComponent, AccountDelta, AccountStorage,
-    AccountStoragePatch, AccountType, AccountVaultDelta, StorageSlot, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountCode,
+    AccountComponent,
+    AccountDelta,
+    AccountStorage,
+    AccountStoragePatch,
+    AccountType,
+    AccountVaultDelta,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::assembly::{DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteDetailsCommitment,
-    NoteId, NoteRecipient, NoteStorage, NoteTag, NoteType, PartialNote, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteDetailsCommitment,
+    NoteId,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNote,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PRIVATE_SENDER,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{
-    InputNote, InputNotes, RawOutputNote, RawOutputNotes, TransactionArgs, TransactionKernel,
-    TransactionScript, TransactionSummary,
+    InputNote,
+    InputNotes,
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionArgs,
+    TransactionKernel,
+    TransactionScript,
+    TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::account::interface::{
-    AccountComponentInterface, AccountInterface, AccountInterfaceExt,
+    AccountComponentInterface,
+    AccountInterface,
+    AccountInterfaceExt,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -42,7 +73,10 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    LocalTransactionProver, TransactionExecutor, TransactionExecutorError, TransactionProverError,
+    LocalTransactionProver,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionProverError,
 };
 use rstest::rstest;
 

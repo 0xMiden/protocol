@@ -7,10 +7,26 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountCode, AccountComponent, AccountComponentCode,
-    AccountComponentMetadata, AccountDelta, AccountId, AccountPatch, AccountStorage,
-    AccountStoragePatch, AccountType, AccountVaultDelta, AccountVaultPatch, StorageMap,
-    StorageMapKey, StorageMapPatch, StorageSlot, StorageSlotName, StorageSlotPatch,
+    Account,
+    AccountBuilder,
+    AccountCode,
+    AccountComponent,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    AccountDelta,
+    AccountId,
+    AccountPatch,
+    AccountStorage,
+    AccountStoragePatch,
+    AccountType,
+    AccountVaultDelta,
+    AccountVaultPatch,
+    StorageMap,
+    StorageMapKey,
+    StorageMapPatch,
+    StorageSlot,
+    StorageSlotName,
+    StorageSlotPatch,
     StorageValuePatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};

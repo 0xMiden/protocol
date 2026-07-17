@@ -8,16 +8,21 @@ use miden_protocol::transaction::TransactionScript;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::multisig_smart::{
-    ProcedurePolicy, ProcedurePolicyNoteRestriction,
+    ProcedurePolicy,
+    ProcedurePolicyNoteRestriction,
 };
 use miden_standards::account::auth::{
-    Approver, ApproverSet, AuthMultisigSmart, AuthMultisigSmartConfig,
+    Approver,
+    ApproverSet,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
-    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES, ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_PROC_ROOT_NOT_IN_ACCOUNT,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
@@ -25,7 +30,8 @@ use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
 use super::multisig::{
-    build_update_signers_config_vector, setup_keys_and_authenticators_with_scheme,
+    build_update_signers_config_vector,
+    setup_keys_and_authenticators_with_scheme,
 };
 
 // ================================================================================================

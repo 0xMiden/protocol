@@ -8,7 +8,8 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteId, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, AccountIdBuilder,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    AccountIdBuilder,
 };
 use miden_standards::note::FeeSponsorshipNote;
 use miden_standards::testing::mock_account::MockAccountExt;

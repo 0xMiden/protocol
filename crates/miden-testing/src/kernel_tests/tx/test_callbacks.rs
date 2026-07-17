@@ -6,12 +6,26 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountComponentCode, AccountId,
-    AccountProcedureRoot, AccountType, AssetCallbackFlag, StorageMap, StorageMapKey, StorageSlot,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountComponentCode,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::{
-    Asset, AssetAmount, AssetCallbacks, AssetComposition, FungibleAsset, NonFungibleAsset,
+    Asset,
+    AssetAmount,
+    AssetCallbacks,
+    AssetComposition,
+    FungibleAsset,
+    NonFungibleAsset,
     NonFungibleAssetDetails,
 };
 use miden_protocol::block::account_tree::AccountIdKey;

@@ -5,8 +5,13 @@ use miden_protocol::account::AccountProcedureRoot;
 
 use crate::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
-    AuthGuardedMultisig, AuthMultisig, AuthMultisigSmart, AuthNetworkAccount, AuthSingleSig,
-    AuthSingleSigAcl, NoAuth,
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthMultisigSmart,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    NoAuth,
 };
 use crate::account::faucets::FungibleFaucet;
 use crate::account::inspection::CodeInspection;

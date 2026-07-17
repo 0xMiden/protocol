@@ -13,12 +13,23 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachments, NoteTag, NoteType, PartialNote, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+    PartialNote,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{
-    InputNote, InputNoteCommitment, OutputNote, PartialBlockchain, ProvenTransaction,
-    RawOutputNote, TransactionScript,
+    InputNote,
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    ProvenTransaction,
+    RawOutputNote,
+    TransactionScript,
 };
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;

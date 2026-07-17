@@ -2,7 +2,12 @@ use alloc::sync::Arc;
 
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::{
-    DefaultSourceManager, Library, Linkage, ModuleKind, ModuleParser, Path,
+    DefaultSourceManager,
+    Library,
+    Linkage,
+    ModuleKind,
+    ModuleParser,
+    Path,
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;

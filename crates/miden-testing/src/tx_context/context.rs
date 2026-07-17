@@ -5,7 +5,12 @@ use alloc::vec::Vec;
 
 use miden_processor::{ExecutionOutput, FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
-    Account, AccountId, PartialAccount, StorageMapKey, StorageMapWitness, StorageSlotContent,
+    Account,
+    AccountId,
+    PartialAccount,
+    StorageMapKey,
+    StorageMapWitness,
+    StorageSlotContent,
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
@@ -14,14 +19,26 @@ use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
-    AccountInputs, ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, TransactionArgs,
-    TransactionInputs, TransactionKernel,
+    AccountInputs,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    TransactionArgs,
+    TransactionInputs,
+    TransactionKernel,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::auth::{BasicAuthenticator, UnreachableAuth};
 use miden_tx::{
-    AccountProcedureIndexMap, DataStore, DataStoreError, ScriptMastForestStore,
-    TransactionExecutor, TransactionExecutorError, TransactionExecutorHost, TransactionMastStore,
+    AccountProcedureIndexMap,
+    DataStore,
+    DataStoreError,
+    ScriptMastForestStore,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionExecutorHost,
+    TransactionMastStore,
 };
 
 use crate::executor::CodeExecutor;

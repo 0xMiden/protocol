@@ -7,8 +7,17 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountComponentCode;
 use miden_protocol::assembly::diagnostics::Report;
 use miden_protocol::assembly::{
-    Assembler, DefaultSourceManager, Library, Linkage, Module, ModuleKind, ModuleParser, Path,
-    SourceFile, SourceManager, SourceManagerSync,
+    Assembler,
+    DefaultSourceManager,
+    Library,
+    Linkage,
+    Module,
+    ModuleKind,
+    ModuleParser,
+    Path,
+    SourceFile,
+    SourceManager,
+    SourceManagerSync,
 };
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{TransactionKernel, TransactionScript};

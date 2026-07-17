@@ -1,7 +1,10 @@
 extern crate alloc;
 
 use miden_agglayer::errors::{
-    ERR_REMAINDER_TOO_LARGE, ERR_SCALE_AMOUNT_EXCEEDED_LIMIT, ERR_UNDERFLOW, ERR_X_TOO_LARGE,
+    ERR_REMAINDER_TOO_LARGE,
+    ERR_SCALE_AMOUNT_EXCEEDED_LIMIT,
+    ERR_UNDERFLOW,
+    ERR_X_TOO_LARGE,
 };
 use miden_agglayer::eth_types::amount::EthAmount;
 use miden_processor::utils::packed_u32_elements_to_bytes;

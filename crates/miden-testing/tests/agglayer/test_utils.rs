@@ -4,15 +4,25 @@ use alloc::sync::Arc;
 
 use miden_agglayer::agglayer_library;
 pub use miden_agglayer::testing::{
-    ClaimDataSource, LEAF_VALUE_VECTORS_JSON, LeafValueVector, MerkleProofVerificationFile,
-    MtfVectorsFile, SOLIDITY_CANONICAL_ZEROS, SOLIDITY_MERKLE_PROOF_VECTORS,
+    ClaimDataSource,
+    LEAF_VALUE_VECTORS_JSON,
+    LeafValueVector,
+    MerkleProofVerificationFile,
+    MtfVectorsFile,
+    SOLIDITY_CANONICAL_ZEROS,
+    SOLIDITY_MERKLE_PROOF_VECTORS,
     create_existing_bridge_account_with_roles,
 };
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
-    DefaultHost, ExecutionError, ExecutionOutput, FastProcessor, Program, StackInputs,
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
 };
 use miden_protocol::ProtocolLib;
 use miden_protocol::errors::MasmError;

@@ -1,8 +1,16 @@
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountComponentName, AccountProcedureRoot, StorageSlot, StorageSlotName,
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::sync::LazyLock;

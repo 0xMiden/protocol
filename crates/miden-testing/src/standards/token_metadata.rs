@@ -8,7 +8,12 @@ use alloc::vec::Vec;
 use miden_crypto::hash::poseidon2::Poseidon2;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountType, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
@@ -18,12 +23,20 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
-    Description, ExternalLink, FungibleFaucet, LogoURI, TokenMetadata, TokenName,
+    Description,
+    ExternalLink,
+    FungibleFaucet,
+    LogoURI,
+    TokenMetadata,
+    TokenName,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_DESCRIPTION_NOT_MUTABLE, ERR_EXTERNAL_LINK_NOT_MUTABLE, ERR_LOGO_URI_NOT_MUTABLE,
-    ERR_MAX_SUPPLY_NOT_MUTABLE, ERR_SENDER_NOT_OWNER,
+    ERR_DESCRIPTION_NOT_MUTABLE,
+    ERR_EXTERNAL_LINK_NOT_MUTABLE,
+    ERR_LOGO_URI_NOT_MUTABLE,
+    ERR_MAX_SUPPLY_NOT_MUTABLE,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
 

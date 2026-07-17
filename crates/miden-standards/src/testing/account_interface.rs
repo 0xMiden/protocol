@@ -4,7 +4,11 @@ use miden_protocol::Word;
 use miden_protocol::account::Account;
 
 use crate::account::auth::{
-    AuthGuardedMultisig, AuthMultisig, AuthMultisigSmart, AuthSingleSig, AuthSingleSigAcl,
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthMultisigSmart,
+    AuthSingleSig,
+    AuthSingleSigAcl,
 };
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 

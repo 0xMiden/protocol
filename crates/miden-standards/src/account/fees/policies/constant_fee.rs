@@ -1,11 +1,21 @@
 use alloc::collections::BTreeMap;
 
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountComponentName, AccountId, AccountProcedureRoot, StorageMap,
-    StorageMapKey, StorageSlot, StorageSlotName,
+    AccountComponent,
+    AccountComponentName,
+    AccountId,
+    AccountProcedureRoot,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;

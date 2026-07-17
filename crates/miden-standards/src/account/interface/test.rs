@@ -9,7 +9,12 @@ use miden_protocol::note::{NoteAttachments, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
 use crate::account::auth::{
-    Approver, ApproverSet, AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth,
+    Approver,
+    ApproverSet,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    NoAuth,
 };
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;

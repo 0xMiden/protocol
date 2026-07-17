@@ -2,7 +2,12 @@ use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
-    AccountId, AccountStorage, StorageMap, StorageMapKey, StorageSlot, StorageSlotContent,
+    AccountId,
+    AccountStorage,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotContent,
     StorageSlotName,
 };
 use miden_protocol::note::NoteScriptRoot;

@@ -4,7 +4,8 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::memory::{
-    CODE_UPGRADE_COMMITMENT_PTR, STORAGE_UPGRADE_COMMITMENT_PTR,
+    CODE_UPGRADE_COMMITMENT_PTR,
+    STORAGE_UPGRADE_COMMITMENT_PTR,
 };
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;

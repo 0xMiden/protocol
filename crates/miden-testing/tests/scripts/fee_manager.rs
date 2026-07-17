@@ -1,6 +1,12 @@
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountType, StorageMap, StorageMapKey,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
     StorageSlot,
 };
 use miden_protocol::asset::{AssetAmount, AssetId};
@@ -13,7 +19,8 @@ use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT, ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET,
+    ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT,
+    ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
 };
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};

@@ -3,11 +3,21 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountComponentName, AccountId, RoleSymbol, StorageMap, StorageMapKey,
-    StorageSlot, StorageSlotName,
+    AccountComponent,
+    AccountComponentName,
+    AccountId,
+    RoleSymbol,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};

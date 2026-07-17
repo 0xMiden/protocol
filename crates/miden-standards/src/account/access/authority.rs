@@ -2,12 +2,23 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, FeltSchema, SchemaType, StorageSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaType,
+    StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountProcedureRoot, AccountStorage, RoleSymbol, StorageMap, StorageMapKey,
-    StorageSlot, StorageSlotContent, StorageSlotName,
+    AccountComponent,
+    AccountProcedureRoot,
+    AccountStorage,
+    RoleSymbol,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
 };
 use miden_protocol::errors::{AccountError, RoleSymbolError};
 use miden_protocol::utils::sync::LazyLock;

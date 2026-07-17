@@ -11,11 +11,21 @@ use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachmentHeader, NoteAttachmentScheme, NoteAttachments, NoteMetadata,
-    NoteRecipient, NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachmentHeader,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
@@ -30,7 +40,12 @@ use rand_chacha::ChaCha20Rng;
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::{ExecutionOutputExt, input_note_data_ptr};
 use crate::{
-    AccountState, Auth, MockChain, TestTransactionBuilder, TransactionContext, TxContextInput,
+    AccountState,
+    Auth,
+    MockChain,
+    TestTransactionBuilder,
+    TransactionContext,
+    TxContextInput,
     assert_transaction_executor_error,
 };
 

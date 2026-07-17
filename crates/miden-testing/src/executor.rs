@@ -4,7 +4,13 @@ use alloc::boxed::Box;
 use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
-    ExecutionError, ExecutionOptions, ExecutionOutput, FastProcessor, Host, Program, StackInputs,
+    ExecutionError,
+    ExecutionOptions,
+    ExecutionOutput,
+    FastProcessor,
+    Host,
+    Program,
+    StackInputs,
 };
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;

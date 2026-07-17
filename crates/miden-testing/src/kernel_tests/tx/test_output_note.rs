@@ -7,35 +7,62 @@ use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
-    ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS, ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
+    ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
-    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO, ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
-    ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
-    ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED, ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
+    ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
+    ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
+    ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
-    Note, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteMetadata, NoteRecipient,
-    NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::NON_FUNGIBLE_ASSET_DATA_2;
 use miden_protocol::transaction::memory::{
-    ASSET_SIZE, ASSET_VALUE_OFFSET, NOTE_MEM_SIZE, NUM_OUTPUT_NOTES_PTR, OUTPUT_NOTE_ASSETS_OFFSET,
-    OUTPUT_NOTE_ATTACHMENT_0_OFFSET, OUTPUT_NOTE_METADATA_OFFSET, OUTPUT_NOTE_NUM_ASSETS_OFFSET,
-    OUTPUT_NOTE_RECIPIENT_OFFSET, OUTPUT_NOTE_SECTION_OFFSET,
+    ASSET_SIZE,
+    ASSET_VALUE_OFFSET,
+    NOTE_MEM_SIZE,
+    NUM_OUTPUT_NOTES_PTR,
+    OUTPUT_NOTE_ASSETS_OFFSET,
+    OUTPUT_NOTE_ATTACHMENT_0_OFFSET,
+    OUTPUT_NOTE_METADATA_OFFSET,
+    OUTPUT_NOTE_NUM_ASSETS_OFFSET,
+    OUTPUT_NOTE_RECIPIENT_OFFSET,
+    OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
 use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
-    AccountTargetNetworkNote, NetworkAccountTarget, NetworkNoteExt, NoteExecutionHint, P2idNote,
+    AccountTargetNetworkNote,
+    NetworkAccountTarget,
+    NetworkNoteExt,
+    NoteExecutionHint,
+    P2idNote,
 };
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
@@ -45,7 +72,10 @@ use super::{TestSetup, setup_test};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_public_p2any_note, create_spawn_note};
 use crate::{
-    Auth, MockChain, TestTransactionBuilder, assert_execution_error,
+    Auth,
+    MockChain,
+    TestTransactionBuilder,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 

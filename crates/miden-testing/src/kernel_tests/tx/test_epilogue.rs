@@ -7,17 +7,22 @@ use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, Accoun
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
-    ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY, ERR_EPILOGUE_NONCE_CANNOT_BE_0,
-    ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME, ERR_TX_INVALID_EXPIRATION_DELTA,
+    ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
+    ERR_EPILOGUE_NONCE_CANNOT_BE_0,
+    ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
+    ERR_TX_INVALID_EXPIRATION_DELTA,
 };
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::memory::{
-    NOTE_MEM_SIZE, OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET, OUTPUT_NOTE_SECTION_OFFSET,
+    NOTE_MEM_SIZE,
+    OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
+    OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
 use miden_protocol::{Hasher, Word};
@@ -28,7 +33,11 @@ use miden_standards::testing::note::NoteBuilder;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
-    Auth, MockChain, TestTransactionBuilder, TxContextInput, assert_execution_error,
+    Auth,
+    MockChain,
+    TestTransactionBuilder,
+    TxContextInput,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 

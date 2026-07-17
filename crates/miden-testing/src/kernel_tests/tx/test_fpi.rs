@@ -6,27 +6,49 @@ use miden_processor::advice::AdviceInputs;
 use miden_processor::{EMPTY_WORD, ExecutionOutput, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountHeader, AccountId, AccountProcedureRoot,
-    AccountStorage, AccountType, StorageSlot,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountHeader,
+    AccountId,
+    AccountProcedureRoot,
+    AccountStorage,
+    AccountType,
+    StorageSlot,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    Asset, AssetId, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails,
+    Asset,
+    AssetId,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
 };
 use miden_protocol::errors::tx_kernel::{
-    ERR_ACCOUNT_IS_NOT_NATIVE, ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
-    ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT, ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
+    ERR_ACCOUNT_IS_NOT_NATIVE,
+    ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
+    ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
+    ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
 };
 use miden_protocol::testing::storage::STORAGE_LEAVES_2;
 use miden_protocol::transaction::memory::{
-    ACCOUNT_DATA_LENGTH, ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET, ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_ID_AND_NONCE_OFFSET, ACCT_NUM_PROCEDURES_OFFSET, ACCT_NUM_STORAGE_SLOTS_OFFSET,
-    ACCT_PROCEDURES_SECTION_OFFSET, ACCT_STORAGE_COMMITMENT_OFFSET, ACCT_VAULT_ROOT_OFFSET,
-    NATIVE_ACCOUNT_DATA_PTR, UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR,
-    UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR,
+    ACCOUNT_DATA_LENGTH,
+    ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET,
+    ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_AND_NONCE_OFFSET,
+    ACCT_NUM_PROCEDURES_OFFSET,
+    ACCT_NUM_STORAGE_SLOTS_OFFSET,
+    ACCT_PROCEDURES_SECTION_OFFSET,
+    ACCT_STORAGE_COMMITMENT_OFFSET,
+    ACCT_VAULT_ROOT_OFFSET,
+    NATIVE_ACCOUNT_DATA_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
 };
 use miden_protocol::{Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;

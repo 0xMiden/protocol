@@ -11,12 +11,23 @@ use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::TransactionScriptRoot;
 use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
-    Approver, ApproverSet, AuthGuardedMultisig, AuthGuardedMultisigConfig, AuthMultisig,
-    AuthMultisigConfig, AuthMultisigSmart, AuthMultisigSmartConfig, AuthNetworkAccount,
-    AuthSingleSig, AuthSingleSigAcl, AuthSingleSigAclConfig, GuardianConfig,
+    Approver,
+    ApproverSet,
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    AuthSingleSigAclConfig,
+    GuardianConfig,
 };
 use miden_standards::testing::account_component::{
-    ConditionalAuthComponent, IncrNonceAuthComponent,
+    ConditionalAuthComponent,
+    IncrNonceAuthComponent,
 };
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;

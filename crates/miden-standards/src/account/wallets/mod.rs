@@ -2,15 +2,25 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountComponentName, AccountProcedureRoot,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
     AccountType,
 };
 use miden_protocol::errors::AccountError;
 
 use crate::account::account_component_code;
 use crate::account::auth::{
-    Approver, ApproverSet, AuthGuardedMultisig, AuthGuardedMultisigConfig, AuthMultisig,
-    AuthMultisigConfig, AuthSingleSig, GuardianConfig,
+    Approver,
+    ApproverSet,
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    GuardianConfig,
 };
 use crate::procedure_root;
 
@@ -226,8 +236,15 @@ mod tests {
     use miden_protocol::{ONE, Word};
 
     use super::{
-        Account, AccountType, Approver, ApproverSet, AuthMultisig, GuardianConfig,
-        create_basic_wallet, create_guarded_wallet, create_multisig_wallet,
+        Account,
+        AccountType,
+        Approver,
+        ApproverSet,
+        AuthMultisig,
+        GuardianConfig,
+        create_basic_wallet,
+        create_guarded_wallet,
+        create_multisig_wallet,
     };
     use crate::account::wallets::BasicWallet;
 

@@ -12,7 +12,9 @@ use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::errors::standards::{
-    ERR_NO_NOMINATED_OWNER, ERR_SENDER_NOT_NOMINATED_OWNER, ERR_SENDER_NOT_OWNER,
+    ERR_NO_NOMINATED_OWNER,
+    ERR_SENDER_NOT_NOMINATED_OWNER,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};

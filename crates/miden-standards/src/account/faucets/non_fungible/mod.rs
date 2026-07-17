@@ -1,12 +1,25 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
-    AccountComponentCode, AccountComponentMetadata, FeltSchema, SchemaType, StorageSchema,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaType,
+    StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountCodeInterface, AccountComponent, AccountComponentName,
-    AccountProcedureRoot, AccountStorage, AccountType, StorageMap, StorageMapKey, StorageSlot,
+    Account,
+    AccountBuilder,
+    AccountCodeInterface,
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    AccountStorage,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
@@ -14,7 +27,12 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
 use super::{
-    Description, ExternalLink, LogoURI, NonFungibleFaucetError, TokenMetadata, TokenMetadataError,
+    Description,
+    ExternalLink,
+    LogoURI,
+    NonFungibleFaucetError,
+    TokenMetadata,
+    TokenMetadataError,
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};

@@ -7,7 +7,14 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
+    NoteStorage,
+    NoteTag,
+    NoteType,
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;

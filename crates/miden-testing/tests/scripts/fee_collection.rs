@@ -14,10 +14,15 @@ use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP, ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET,
-    ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW, ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
-    ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE, ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE,
-    ERR_FEE_POLICY_ROOT_NOT_ALLOWED, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE, ERR_SENDER_NOT_OWNER,
+    ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP,
+    ERR_FEE_MANAGER_INCONSISTENT_FEE_ASSET,
+    ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW,
+    ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
+    ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE,
+    ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE,
+    ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
+    ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::FeeSponsorshipNote;
 use miden_standards::testing::note::NoteBuilder;
@@ -25,9 +30,14 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
 use crate::scripts::fee_manager::{
-    CUSTOM_FEE_AMOUNT, FEE_AMOUNT, build_fee_account_with_switching,
-    create_set_fee_policy_note_script, custom_fee_policy, estimate_note_fee_tx_script_code,
-    fee_faucet_id, priced_root,
+    CUSTOM_FEE_AMOUNT,
+    FEE_AMOUNT,
+    build_fee_account_with_switching,
+    create_set_fee_policy_note_script,
+    custom_fee_policy,
+    estimate_note_fee_tx_script_code,
+    fee_faucet_id,
+    priced_root,
 };
 
 // COLLECT SPONSORED FEES

@@ -13,7 +13,9 @@ use miden_protocol::{Felt, Word};
 use miden_tx::utils::hex_to_bytes;
 
 use super::test_utils::{
-    LEAF_VALUE_VECTORS_JSON, LeafValueVector, execute_program_with_default_host,
+    LEAF_VALUE_VECTORS_JSON,
+    LeafValueVector,
+    execute_program_with_default_host,
 };
 
 // HELPER FUNCTIONS

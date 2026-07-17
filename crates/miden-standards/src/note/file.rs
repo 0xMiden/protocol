@@ -11,7 +11,11 @@ use miden_protocol::note::{Note, NoteDetails, NoteId, NoteInclusionProof, NoteTa
 #[cfg(feature = "std")]
 use miden_protocol::utils::serde::SliceReader;
 use miden_protocol::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 const MAGIC: &str = "note";
@@ -209,11 +213,20 @@ mod tests {
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::note::{
-        Note, NoteAssets, NoteDetails, NoteInclusionProof, NoteRecipient, NoteScript, NoteStorage,
-        NoteTag, NoteType, PartialNoteMetadata,
+        Note,
+        NoteAssets,
+        NoteDetails,
+        NoteInclusionProof,
+        NoteRecipient,
+        NoteScript,
+        NoteStorage,
+        NoteTag,
+        NoteType,
+        PartialNoteMetadata,
     };
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     };
     use miden_protocol::utils::serde::{Deserializable, Serializable};
 

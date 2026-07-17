@@ -12,7 +12,11 @@ use miden_standards::account::access::{AccessControl, Warden};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::ERR_SENDER_NOT_OWNER;
 use miden_testing::{
-    AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error,
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
 };
 
 use super::pausable::{NON_OWNER_ID, OWNER_ID, execute_note_on_faucet};
