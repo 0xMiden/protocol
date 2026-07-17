@@ -130,8 +130,8 @@ end
 #! Writes the empty word for `SCRIPT_ROOT`, which the allowlist check treats as not allowed.
 #! Removing a root that is not currently allowed is a no-op.
 #!
-#! Note: this leaves a `SCRIPT_ROOT -> EMPTY_WORD` entry in the map rather than deleting the key, so a
-#! root that was allowed and then removed is not the same map state as a root that was never added
+#! Note: this leaves a `SCRIPT_ROOT -> EMPTY_WORD` entry in the map rather than deleting the key, so
+#! a root that was allowed and then removed is not the same map state as a root that was never added
 #! (whose key is absent). Both read as not-allowed, but any code reconstructing the allowlist from
 #! the map must treat an empty-valued entry as absent.
 #!
