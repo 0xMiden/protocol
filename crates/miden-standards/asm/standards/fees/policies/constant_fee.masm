@@ -6,8 +6,9 @@
 #
 # Storage layout:
 # - `fee_asset_id` word: the ID of the asset the fee is charged in.
-# - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]. The default (unset) entry is
-#   the zero word, so unpriced note scripts estimate to a fee amount of 0.
+# - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]. The last element is a
+#   set-marker distinguishing scheduled entries (including explicit 0 fees) from the zero word
+#   returned for unset keys; note scripts without a schedule entry abort fee computation.
 
 use miden::protocol::active_account
 
@@ -22,8 +23,13 @@ use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::fee_asset_id")
 
 # Slot holding the per-note-script fee schedule.
-# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 0]
+# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule entry"
 
 # POLICY PROCEDURES
 # =================================================================================================
@@ -33,7 +39,8 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters.
 #! This policy derives the key from just the note's script root, which it recovers from RECIPIENT
 #! via the advice provider, and ignores the remaining parameters, including timeframe and
-#! priority; note scripts without a schedule entry estimate to a fee amount of 0.
+#! priority. Note scripts without a schedule entry abort; to make one free, schedule an explicit
+#! 0 fee.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -51,6 +58,7 @@ const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::
 #! Panics if:
 #! - the advice map has no preimage for the recipient (or the intermediate hash).
 #! - a preimage does not hash to the commitment it claims to open.
+#! - the note's script root has no fee schedule entry.
 #!
 #! Invocation: call
 @account_procedure
@@ -68,6 +76,14 @@ pub proc compute_note_fee(
     # => [slot_id_suffix, slot_id_prefix, LOOKUP_KEY, pad(12)]
 
     exec.active_account::get_map_item
+    # => [FEE_SCHEDULE_ENTRY, pad(12)]
+
+    # replace the set-marker (word element 3) with 0, recovering the plain asset value word
+    push.0 swap.4
+    # => [marker, FEE_ASSET_VALUE, pad(12)]
+
+    # unset keys read as the zero word, whose marker element is 0
+    assert.err=ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE
     # => [FEE_ASSET_VALUE, pad(12)]
 
     push.FEE_ASSET_ID_SLOT[0..2] exec.active_account::get_item
