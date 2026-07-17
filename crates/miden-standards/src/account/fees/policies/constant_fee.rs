@@ -106,11 +106,10 @@ impl From<NoteScriptRoot> for NoteFeeLookupKey {
 /// estimate to an amount of 0. The slot defaults to the built-in `build_note_fee_lookup_key`
 /// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
 ///
-/// The `From<ConstantFeePolicy>` conversion always writes the built-in root; installing a custom
-/// lookup-key procedure currently requires constructing the [`AccountComponent`] manually. The
-/// stored root must be a procedure of the account (enforced on dispatch) and must match the
-/// `build_note_fee_lookup_key` interface, which is not checked on-chain - a non-conforming
-/// procedure yields keys that miss the schedule and estimate to a fee of 0.
+/// The `From<ConstantFeePolicy>` conversion always writes the built-in root; a custom lookup-key
+/// procedure requires building the [`AccountComponent`] manually. The stored root must be an
+/// account procedure (enforced on dispatch) matching the `build_note_fee_lookup_key` interface
+/// (unchecked on-chain; a non-conforming one yields schedule-miss keys, fee 0).
 ///
 /// ## Storage layout
 ///

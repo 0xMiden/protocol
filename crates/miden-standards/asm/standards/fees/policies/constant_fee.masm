@@ -28,11 +28,9 @@ const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::
 # Map entries: LOOKUP_KEY => [fee_amount, 0, 0, 0]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
 
-# Slot holding the root of the procedure that builds the fee schedule lookup key. The stored root
-# must be a procedure of this account with the same interface as `build_note_fee_lookup_key`: it
-# is invoked via `dyncall` on the note parameters and must leave just the lookup key. Of these
-# requirements only account membership is validated at dispatch; the interface contract cannot be
-# checked on-chain and is the deployer's responsibility.
+# Slot holding the root of the procedure that builds the fee schedule lookup key. Must be a
+# procedure of this account (validated at dispatch) with the `build_note_fee_lookup_key` interface
+# (not checkable on-chain; the deployer's responsibility).
 const LOOKUP_KEY_PROC_ROOT_SLOT = word("miden::standards::fees::policies::constant_fee::lookup_key_proc_root")
 
 # Local memory pointer used to pass the lookup-key procedure root to `dyncall`.
