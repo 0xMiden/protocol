@@ -300,11 +300,9 @@ async fn estimate_note_fee_rejects_invalid_lookup_key_proc_root(
     Ok(())
 }
 
-/// Dynamic dispatch through a custom lookup-key procedure: a `constant_fee` component deployed
-/// with a user-defined root in the `lookup_key_proc_root` slot invokes that procedure instead of
-/// the built-in one. The custom procedure keys the fee schedule on STORAGE_COMMITMENT, so an
-/// unpriced note script root estimates to the fee stored under the note's storage commitment -
-/// proving the stored root, not the built-in procedure, computed the key.
+/// A `constant_fee` deployment with a custom root in the `lookup_key_proc_root` slot dispatches
+/// to that procedure: it keys on STORAGE_COMMITMENT, so an unpriced note script root estimates
+/// to the fee stored under the note's storage commitment.
 #[tokio::test]
 async fn estimate_note_fee_dispatches_to_custom_lookup_key_procedure() -> anyhow::Result<()> {
     let masm_source = r#"
