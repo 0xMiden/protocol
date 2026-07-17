@@ -17,7 +17,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
-use miden_standards::note::{NetworkAccountAllowlistAction, NetworkAccountAllowlistActionNote};
+use miden_standards::note::{NetworkAccountConfig, NetworkAccountConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -326,12 +326,12 @@ fn build_owner_controlled_account(
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    // Allowlist the standardized action note (so admin notes can be consumed) plus any extra roots.
-    let mut note_roots: BTreeSet<NoteScriptRoot> =
+    // Enable allowlist management (allowlists the standardized config note so admin notes can be
+    // consumed) plus any extra note roots.
+    let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
-    note_roots.insert(NetworkAccountAllowlistActionNote::script_root());
 
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
+    let auth_component = AuthNetworkAccount::with_allowlist_management(note_roots)
         .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
@@ -342,15 +342,15 @@ fn build_owner_controlled_account(
         .build_existing()?)
 }
 
-/// Builds a standardized [`NetworkAccountAllowlistActionNote`] sent by `sender` to `account` that
+/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that
 /// triggers `action`. `serial_seed` distinguishes otherwise-identical notes.
 fn build_action_note(
     sender: AccountId,
     account: AccountId,
-    action: NetworkAccountAllowlistAction,
+    action: NetworkAccountConfig,
     serial_seed: u32,
 ) -> anyhow::Result<Note> {
-    let note = NetworkAccountAllowlistActionNote::builder()
+    let note = NetworkAccountConfigNote::builder()
         .sender(sender)
         .account(account)
         .action(action)
@@ -378,7 +378,7 @@ async fn consume_note(
 }
 
 /// The owner can add a note script root after deployment: a note whose root was not allowlisted at
-/// creation becomes consumable once the owner sends a standardized action note that adds it.
+/// creation becomes consumable once the owner sends a standardized config note that adds it.
 #[tokio::test]
 async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Result<()> {
     let owner = owner_id();
@@ -388,12 +388,12 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    // Deploy allowlisting only the action note (via allowlist management), NOT `new_note`.
+    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`.
     let account = build_owner_controlled_account(vec![], vec![], owner)?;
     let admin_note = build_action_note(
         owner,
         account.id(),
-        NetworkAccountAllowlistAction::AddNoteScript { script_root: new_root },
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
         1,
     )?;
 
@@ -414,7 +414,7 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     Ok(())
 }
 
-/// A note sender that is not the owner cannot mutate the allowlist: the action note is allowlisted
+/// A note sender that is not the owner cannot mutate the allowlist: the config note is allowlisted
 /// (so auth passes) but the authority check rejects the non-owner sender.
 #[tokio::test]
 async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
@@ -429,7 +429,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let admin_note = build_action_note(
         stranger,
         account.id(),
-        NetworkAccountAllowlistAction::AddNoteScript { script_root: new_root },
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
         2,
     )?;
 
@@ -451,7 +451,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
 }
 
 /// The owner can remove a note script root after deployment: a previously allowlisted note becomes
-/// unconsumable once the owner sends an action note that removes its root.
+/// unconsumable once the owner sends an config note that removes its root.
 #[tokio::test]
 async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Result<()> {
     let owner = owner_id();
@@ -460,12 +460,12 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
     let target_note = build_input_note()?;
     let target_root = target_note.script().root();
 
-    // Deploy with the target note allowlisted (plus the action note via allowlist management).
+    // Deploy with the target note allowlisted (plus the config note via allowlist management).
     let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner)?;
     let admin_note = build_action_note(
         owner,
         account.id(),
-        NetworkAccountAllowlistAction::RemoveNoteScript { script_root: target_root },
+        NetworkAccountConfig::RemoveAllowedNoteScript { script_root: target_root },
         3,
     )?;
 
@@ -506,7 +506,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     let admin_note = build_action_note(
         owner,
         account.id(),
-        NetworkAccountAllowlistAction::AddNoteScript { script_root: new_root },
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
         4,
     )?;
 
@@ -529,7 +529,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
 }
 
 /// The owner can add a tx script root after deployment: a tx script not allowlisted at creation
-/// runs against the account once the owner sends an action note that adds its root.
+/// runs against the account once the owner sends an config note that adds its root.
 #[tokio::test]
 async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<()> {
     let owner = owner_id();
@@ -542,12 +542,12 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
     let plain_note = build_input_note()?;
     let plain_root = plain_note.script().root();
 
-    // Deploy allowlisting the plain note (and the action note), but NOT the tx script.
+    // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
     let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner)?;
     let admin_note = build_action_note(
         owner,
         account.id(),
-        NetworkAccountAllowlistAction::AddTxScript { script_root: tx_root },
+        NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
         5,
     )?;
 

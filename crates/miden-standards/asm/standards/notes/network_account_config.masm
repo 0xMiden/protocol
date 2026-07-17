@@ -7,17 +7,17 @@ use miden::standards::auth::network_account
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the NetworkAccountAllowlistAction note storage. The script root word occupies
+# Memory addresses of the NetworkAccountConfig note storage. The script root word occupies
 # the first four items with the selector after it.
 const SCRIPT_ROOT_PTR = STORAGE_PTR
 const SELECTOR_PTR = STORAGE_PTR + 4
 
 # Action selectors, stored in the storage item after the script root. Keep in sync with
-# `NetworkAccountAllowlistAction` on the Rust side.
-const SELECTOR_ADD_NOTE_SCRIPT = 0
-const SELECTOR_REMOVE_NOTE_SCRIPT = 1
-const SELECTOR_ADD_TX_SCRIPT = 2
-const SELECTOR_REMOVE_TX_SCRIPT = 3
+# `NetworkAccountConfig` on the Rust side.
+const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT = 0
+const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT = 1
+const SELECTOR_ADD_ALLOWED_TX_SCRIPT = 2
+const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT = 3
 
 # Expected note storage item count: a selector plus the script root word. Identical for every
 # action.
@@ -26,23 +26,23 @@ const NUM_STORAGE_ITEMS = 5
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNKNOWN_SELECTOR = "network account allowlist action note selector does not match a known action"
+const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR = "network account config note selector does not match a known action"
 
-const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account allowlist action note does not match the expected number"
+const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account config note does not match the expected number"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! NetworkAccountAllowlistAction script: mutates a network account's script allowlists, dispatched
+#! NetworkAccountConfig script: mutates a network account's script allowlists, dispatched
 #! on a selector stored in the first note storage item.
 #!
 #! The selected action and its script root are read from the note storage. They are fixed at note
 #! creation, so authorization is bound to the note sender. The storage is laid out as
 #! `[SCRIPT_ROOT, selector]`:
-#! - `[SCRIPT_ROOT, 0]` AddNoteScript.
-#! - `[SCRIPT_ROOT, 1]` RemoveNoteScript.
-#! - `[SCRIPT_ROOT, 2]` AddTxScript.
-#! - `[SCRIPT_ROOT, 3]` RemoveTxScript.
+#! - `[SCRIPT_ROOT, 0]` AddAllowedNoteScript.
+#! - `[SCRIPT_ROOT, 1]` RemoveAllowedNoteScript.
+#! - `[SCRIPT_ROOT, 2]` AddAllowedTxScript.
+#! - `[SCRIPT_ROOT, 3]` RemoveAllowedTxScript.
 #!
 #! Authorization is enforced by the called `AuthNetworkAccount` procedures via the account-wide
 #! `Authority` component, which resolves the note sender against the configured owner or role.
@@ -75,38 +75,38 @@ pub proc main
     # => [selector, num_storage_items, pad(16)]
 
     # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_ADD_NOTE_SCRIPT
+    dup eq.SELECTOR_ADD_ALLOWED_NOTE_SCRIPT
     # => [is_add_note, selector, num_storage_items, pad(16)]
 
     if.true
         drop
         # => [num_storage_items, pad(16)]
 
-        exec.execute_add_note_script
+        exec.execute_add_allowed_note_script
     else
-        dup eq.SELECTOR_REMOVE_NOTE_SCRIPT
+        dup eq.SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT
         # => [is_remove_note, selector, num_storage_items, pad(16)]
 
         if.true
             drop
             # => [num_storage_items, pad(16)]
 
-            exec.execute_remove_note_script
+            exec.execute_remove_allowed_note_script
         else
-            dup eq.SELECTOR_ADD_TX_SCRIPT
+            dup eq.SELECTOR_ADD_ALLOWED_TX_SCRIPT
             # => [is_add_tx, selector, num_storage_items, pad(16)]
 
             if.true
                 drop
                 # => [num_storage_items, pad(16)]
 
-                exec.execute_add_tx_script
+                exec.execute_add_allowed_tx_script
             else
-                eq.SELECTOR_REMOVE_TX_SCRIPT
-                assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNKNOWN_SELECTOR
+                eq.SELECTOR_REMOVE_ALLOWED_TX_SCRIPT
+                assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR
                 # => [num_storage_items, pad(16)]
 
-                exec.execute_remove_tx_script
+                exec.execute_remove_allowed_tx_script
             end
         end
     end
@@ -131,7 +131,7 @@ end
 #! Invocation: exec
 proc load_script_root
     eq.NUM_STORAGE_ITEMS
-    assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
     # load the script root
@@ -139,7 +139,7 @@ proc load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 end
 
-#! Executes the AddNoteScript action: adds the stored root to the note-script allowlist.
+#! Executes the AddAllowedNoteScript action: adds the stored root to the note-script allowlist.
 #!
 #! Inputs:  [num_storage_items, pad(16)]
 #! Outputs: [pad(16)]
@@ -152,7 +152,7 @@ end
 #! - the note sender is not authorized.
 #!
 #! Invocation: exec
-proc execute_add_note_script
+proc execute_add_allowed_note_script
     exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -160,7 +160,7 @@ proc execute_add_note_script
     # => [pad(16)]
 end
 
-#! Executes the RemoveNoteScript action: removes the stored root from the note-script allowlist.
+#! Executes the RemoveAllowedNoteScript action: removes the stored root from the note-script allowlist.
 #!
 #! Inputs:  [num_storage_items, pad(16)]
 #! Outputs: [pad(16)]
@@ -173,7 +173,7 @@ end
 #! - the note sender is not authorized (per `network_account::remove_allowed_note_script`).
 #!
 #! Invocation: exec
-proc execute_remove_note_script
+proc execute_remove_allowed_note_script
     exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -181,7 +181,7 @@ proc execute_remove_note_script
     # => [pad(16)]
 end
 
-#! Executes the AddTxScript action: adds the stored root to the tx-script allowlist.
+#! Executes the AddAllowedTxScript action: adds the stored root to the tx-script allowlist.
 #!
 #! Inputs:  [num_storage_items, pad(16)]
 #! Outputs: [pad(16)]
@@ -194,7 +194,7 @@ end
 #! - the note sender is not authorized (per `network_account::add_allowed_tx_script`).
 #!
 #! Invocation: exec
-proc execute_add_tx_script
+proc execute_add_allowed_tx_script
     exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -202,7 +202,7 @@ proc execute_add_tx_script
     # => [pad(16)]
 end
 
-#! Executes the RemoveTxScript action: removes the stored root from the tx-script allowlist.
+#! Executes the RemoveAllowedTxScript action: removes the stored root from the tx-script allowlist.
 #!
 #! Inputs:  [num_storage_items, pad(16)]
 #! Outputs: [pad(16)]
@@ -215,7 +215,7 @@ end
 #! - the note sender is not authorized (per `network_account::remove_allowed_tx_script`).
 #!
 #! Invocation: exec
-proc execute_remove_tx_script
+proc execute_remove_allowed_tx_script
     exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 

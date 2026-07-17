@@ -26,24 +26,24 @@ use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the NETWORK_ACCOUNT_ALLOWLIST_ACTION note script procedure in the standards library.
-const NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT_PATH: &str =
-    "::miden::standards::notes::network_account_allowlist_action::main";
+/// Path to the NETWORK_ACCOUNT_CONFIG note script procedure in the standards library.
+const NETWORK_ACCOUNT_CONFIG_SCRIPT_PATH: &str =
+    "::miden::standards::notes::network_account_config::main";
 
-// Initialize the NETWORK_ACCOUNT_ALLOWLIST_ACTION note script only once.
-static NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the NETWORK_ACCOUNT_CONFIG note script only once.
+static NETWORK_ACCOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT_PATH);
+    let path = Path::new(NETWORK_ACCOUNT_CONFIG_SCRIPT_PATH);
     NoteScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains NETWORK_ACCOUNT_ALLOWLIST_ACTION note script procedure")
+        .expect("Standards library contains NETWORK_ACCOUNT_CONFIG note script procedure")
 });
 
-// NETWORK ACCOUNT ALLOWLIST ACTION
+// NETWORK ACCOUNT CONFIG
 // ================================================================================================
 
 /// An allowlist-mutation action of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component that a
-/// [`NetworkAccountAllowlistActionNote`] triggers on the network account that consumes it.
+/// [`NetworkAccountConfigNote`] triggers on the network account that consumes it.
 ///
 /// Each variant adds or removes one script root from the note script or tx script allowlist.
 /// Because the allowlist check reads the transaction's initial state, an update only takes effect
@@ -54,42 +54,42 @@ static NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock:
 /// is the note sender: the consuming account's `AuthNetworkAccount` procedures authorize the sender
 /// through the account-wide `Authority` component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NetworkAccountAllowlistAction {
+pub enum NetworkAccountConfig {
     /// Adds `script_root` to the note script allowlist.
-    AddNoteScript { script_root: NoteScriptRoot },
+    AddAllowedNoteScript { script_root: NoteScriptRoot },
     /// Removes `script_root` from the note script allowlist.
-    RemoveNoteScript { script_root: NoteScriptRoot },
+    RemoveAllowedNoteScript { script_root: NoteScriptRoot },
     /// Adds `script_root` to the tx script allowlist.
-    AddTxScript { script_root: TransactionScriptRoot },
+    AddAllowedTxScript { script_root: TransactionScriptRoot },
     /// Removes `script_root` from the tx script allowlist.
-    RemoveTxScript { script_root: TransactionScriptRoot },
+    RemoveAllowedTxScript { script_root: TransactionScriptRoot },
 }
 
-impl NetworkAccountAllowlistAction {
+impl NetworkAccountConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
     // Action selectors stored in the first storage item. Keep in sync with
-    // `network_account_allowlist_action.masm`.
-    const SELECTOR_ADD_NOTE_SCRIPT: u8 = 0;
-    const SELECTOR_REMOVE_NOTE_SCRIPT: u8 = 1;
-    const SELECTOR_ADD_TX_SCRIPT: u8 = 2;
-    const SELECTOR_REMOVE_TX_SCRIPT: u8 = 3;
+    // `network_account_config.masm`.
+    const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT: u8 = 0;
+    const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;
+    const SELECTOR_ADD_ALLOWED_TX_SCRIPT: u8 = 2;
+    const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT: u8 = 3;
 
     /// Returns the selector and the affected script root of this action.
     fn parts(self) -> (u8, Word) {
         match self {
-            NetworkAccountAllowlistAction::AddNoteScript { script_root } => {
-                (Self::SELECTOR_ADD_NOTE_SCRIPT, script_root.as_word())
+            NetworkAccountConfig::AddAllowedNoteScript { script_root } => {
+                (Self::SELECTOR_ADD_ALLOWED_NOTE_SCRIPT, script_root.as_word())
             },
-            NetworkAccountAllowlistAction::RemoveNoteScript { script_root } => {
-                (Self::SELECTOR_REMOVE_NOTE_SCRIPT, script_root.as_word())
+            NetworkAccountConfig::RemoveAllowedNoteScript { script_root } => {
+                (Self::SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT, script_root.as_word())
             },
-            NetworkAccountAllowlistAction::AddTxScript { script_root } => {
-                (Self::SELECTOR_ADD_TX_SCRIPT, script_root.as_word())
+            NetworkAccountConfig::AddAllowedTxScript { script_root } => {
+                (Self::SELECTOR_ADD_ALLOWED_TX_SCRIPT, script_root.as_word())
             },
-            NetworkAccountAllowlistAction::RemoveTxScript { script_root } => {
-                (Self::SELECTOR_REMOVE_TX_SCRIPT, script_root.as_word())
+            NetworkAccountConfig::RemoveAllowedTxScript { script_root } => {
+                (Self::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT, script_root.as_word())
             },
         }
     }
@@ -97,24 +97,24 @@ impl NetworkAccountAllowlistAction {
     /// Returns the note storage values encoding this action, laid out as `[SCRIPT_ROOT, selector]`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, script_root) = self.parts();
-        let mut values = Vec::with_capacity(NetworkAccountAllowlistActionNote::NUM_STORAGE_ITEMS);
+        let mut values = Vec::with_capacity(NetworkAccountConfigNote::NUM_STORAGE_ITEMS);
         values.extend_from_slice(script_root.as_elements());
         values.push(Felt::from(selector));
         values
     }
 }
 
-impl From<NetworkAccountAllowlistAction> for NoteStorage {
-    fn from(action: NetworkAccountAllowlistAction) -> Self {
+impl From<NetworkAccountConfig> for NoteStorage {
+    fn from(action: NetworkAccountConfig) -> Self {
         NoteStorage::new(action.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// NETWORK ACCOUNT ALLOWLIST ACTION NOTE
+// NETWORK ACCOUNT CONFIG NOTE
 // ================================================================================================
 
-/// A NetworkAccountAllowlistAction note: adds or removes a script root from a network account's
+/// A NetworkAccountConfig note: adds or removes a script root from a network account's
 /// note script or tx script allowlist.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the
@@ -127,20 +127,20 @@ impl From<NetworkAccountAllowlistAction> for NoteStorage {
 /// [`AuthNetworkAccount::with_allowlist_management`](crate::account::auth::AuthNetworkAccount::with_allowlist_management)
 /// constructor allowlists it automatically.
 ///
-/// Construct one with the [builder](NetworkAccountAllowlistActionNote::builder); convert it into a
+/// Construct one with the [builder](NetworkAccountConfigNote::builder); convert it into a
 /// protocol [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct NetworkAccountAllowlistActionNote {
+pub struct NetworkAccountConfigNote {
     sender: AccountId,
     account: AccountId,
-    action: NetworkAccountAllowlistAction,
+    action: NetworkAccountConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl NetworkAccountAllowlistActionNote {
-    /// Builds a new [`NetworkAccountAllowlistActionNote`] that triggers `action` on `account`.
+impl NetworkAccountConfigNote {
+    /// Builds a new [`NetworkAccountConfigNote`] that triggers `action` on `account`.
     ///
     /// # Errors
     ///
@@ -151,7 +151,7 @@ impl NetworkAccountAllowlistActionNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: NetworkAccountAllowlistAction,
+        action: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -166,25 +166,25 @@ impl NetworkAccountAllowlistActionNote {
     }
 }
 
-impl NetworkAccountAllowlistActionNote {
+impl NetworkAccountConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a NetworkAccountAllowlistAction note: a selector plus the script
+    /// Number of storage items of a NetworkAccountConfig note: a selector plus the script
     /// root word.
     pub const NUM_STORAGE_ITEMS: usize = 5;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the NetworkAccountAllowlistAction note.
+    /// Returns the script of the NetworkAccountConfig note.
     pub fn script() -> NoteScript {
-        NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT.clone()
+        NETWORK_ACCOUNT_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the NetworkAccountAllowlistAction note script root.
+    /// Returns the NetworkAccountConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        NETWORK_ACCOUNT_ALLOWLIST_ACTION_SCRIPT.root()
+        NETWORK_ACCOUNT_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -198,7 +198,7 @@ impl NetworkAccountAllowlistActionNote {
     }
 
     /// Returns the allowlist-mutation action carried by the note.
-    pub fn action(&self) -> NetworkAccountAllowlistAction {
+    pub fn action(&self) -> NetworkAccountConfig {
         self.action
     }
 
@@ -216,9 +216,7 @@ impl NetworkAccountAllowlistActionNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: network_account_allowlist_action_note_builder::State>
-    NetworkAccountAllowlistActionNoteBuilder<S>
-{
+impl<S: network_account_config_note_builder::State> NetworkAccountConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -235,18 +233,16 @@ impl<S: network_account_allowlist_action_note_builder::State>
     }
 }
 
-impl<S: network_account_allowlist_action_note_builder::State>
-    NetworkAccountAllowlistActionNoteBuilder<S>
+impl<S: network_account_config_note_builder::State> NetworkAccountConfigNoteBuilder<S>
 where
-    S::SerialNumber: network_account_allowlist_action_note_builder::IsUnset,
+    S::SerialNumber: network_account_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> NetworkAccountAllowlistActionNoteBuilder<
-        network_account_allowlist_action_note_builder::SetSerialNumber<S>,
-    > {
+    ) -> NetworkAccountConfigNoteBuilder<network_account_config_note_builder::SetSerialNumber<S>>
+    {
         self.serial_number(rng.draw_word())
     }
 }
@@ -254,15 +250,15 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<NetworkAccountAllowlistActionNote> for Note {
-    fn from(note: NetworkAccountAllowlistActionNote) -> Self {
-        // NetworkAccountAllowlistAction notes carry no assets and are always public for network
+impl From<NetworkAccountConfigNote> for Note {
+    fn from(note: NetworkAccountConfigNote) -> Self {
+        // NetworkAccountConfig notes carry no assets and are always public for network
         // execution; the action and its script root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            NetworkAccountAllowlistActionNote::script(),
+            NetworkAccountConfigNote::script(),
             NoteStorage::from(note.action),
         );
 
@@ -303,10 +299,10 @@ mod tests {
         let account = account_id(1);
         let sender = account_id(2);
 
-        let note = NetworkAccountAllowlistActionNote::builder()
+        let note = NetworkAccountConfigNote::builder()
             .sender(sender)
             .account(account)
-            .action(NetworkAccountAllowlistAction::AddNoteScript { script_root: note_root(10) })
+            .action(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -328,23 +324,23 @@ mod tests {
 
         let cases = [
             (
-                NetworkAccountAllowlistAction::AddNoteScript { script_root: note_root },
-                NetworkAccountAllowlistAction::SELECTOR_ADD_NOTE_SCRIPT,
+                NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root },
+                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_NOTE_SCRIPT,
                 note_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::RemoveNoteScript { script_root: note_root },
-                NetworkAccountAllowlistAction::SELECTOR_REMOVE_NOTE_SCRIPT,
+                NetworkAccountConfig::RemoveAllowedNoteScript { script_root: note_root },
+                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT,
                 note_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::AddTxScript { script_root: tx_root },
-                NetworkAccountAllowlistAction::SELECTOR_ADD_TX_SCRIPT,
+                NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
+                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_TX_SCRIPT,
                 tx_root.as_word(),
             ),
             (
-                NetworkAccountAllowlistAction::RemoveTxScript { script_root: tx_root },
-                NetworkAccountAllowlistAction::SELECTOR_REMOVE_TX_SCRIPT,
+                NetworkAccountConfig::RemoveAllowedTxScript { script_root: tx_root },
+                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT,
                 tx_root.as_word(),
             ),
         ];
@@ -354,7 +350,7 @@ mod tests {
             let mut expected = Vec::from(root_word.as_elements());
             expected.push(Felt::from(selector));
             assert_eq!(storage.items(), expected.as_slice());
-            assert_eq!(storage.items().len(), NetworkAccountAllowlistActionNote::NUM_STORAGE_ITEMS);
+            assert_eq!(storage.items().len(), NetworkAccountConfigNote::NUM_STORAGE_ITEMS);
         }
     }
 
@@ -364,9 +360,8 @@ mod tests {
     fn script_root_is_registered_standard_note() {
         use crate::note::StandardNote;
 
-        let standard =
-            StandardNote::from_script_root(NetworkAccountAllowlistActionNote::script_root())
-                .expect("allowlist action note script root should be a registered standard note");
-        assert_eq!(standard.name(), "NETWORK_ACCOUNT_ALLOWLIST_ACTION");
+        let standard = StandardNote::from_script_root(NetworkAccountConfigNote::script_root())
+            .expect("config note script root should be a registered standard note");
+        assert_eq!(standard.name(), "NETWORK_ACCOUNT_CONFIG");
     }
 }
