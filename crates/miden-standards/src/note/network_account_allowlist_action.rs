@@ -94,12 +94,15 @@ impl NetworkAccountAllowlistAction {
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[selector, SCRIPT_ROOT]`.
+    /// Returns the note storage values encoding this action, laid out as `[SCRIPT_ROOT, selector]`.
+    ///
+    /// The script root comes first so it is word-aligned in note storage, letting the note script
+    /// load it with a single `mem_loadw_le`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, script_root) = self.parts();
         let mut values = Vec::with_capacity(NetworkAccountAllowlistActionNote::NUM_STORAGE_ITEMS);
-        values.push(Felt::from(selector));
         values.extend_from_slice(script_root.as_elements());
+        values.push(Felt::from(selector));
         values
     }
 }
@@ -349,8 +352,8 @@ mod tests {
 
         for (action, selector, root_word) in cases {
             let storage = NoteStorage::from(action);
-            let mut expected = alloc::vec![Felt::from(selector)];
-            expected.extend_from_slice(root_word.as_elements());
+            let mut expected = alloc::vec::Vec::from(root_word.as_elements());
+            expected.push(Felt::from(selector));
             assert_eq!(storage.items(), expected.as_slice());
             assert_eq!(storage.items().len(), NetworkAccountAllowlistActionNote::NUM_STORAGE_ITEMS);
         }

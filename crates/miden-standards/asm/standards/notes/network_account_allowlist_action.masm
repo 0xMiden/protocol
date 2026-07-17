@@ -8,14 +8,12 @@ use miden::standards::auth::network_account
 const STORAGE_PTR = 0
 
 # Memory addresses of the NetworkAccountAllowlistAction note storage. The script root word occupies
-# the four items after the selector (offsets 1..5).
-const SELECTOR_PTR = STORAGE_PTR
-const SCRIPT_ROOT0_PTR = STORAGE_PTR + 1
-const SCRIPT_ROOT1_PTR = STORAGE_PTR + 2
-const SCRIPT_ROOT2_PTR = STORAGE_PTR + 3
-const SCRIPT_ROOT3_PTR = STORAGE_PTR + 4
+# the first four (word-aligned) items so it can be loaded with a single `mem_loadw_le`, and the
+# selector follows it.
+const SCRIPT_ROOT_PTR = STORAGE_PTR
+const SELECTOR_PTR = STORAGE_PTR + 4
 
-# Action selectors, stored in the first storage item. Keep in sync with
+# Action selectors, stored in the storage item after the script root. Keep in sync with
 # `NetworkAccountAllowlistAction` on the Rust side.
 const SELECTOR_ADD_NOTE_SCRIPT = 0
 const SELECTOR_REMOVE_NOTE_SCRIPT = 1
@@ -40,11 +38,12 @@ const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = 
 #! on a selector stored in the first note storage item.
 #!
 #! The selected action and its script root are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender):
-#! - `0` AddNoteScript:    `[0, SCRIPT_ROOT]`.
-#! - `1` RemoveNoteScript: `[1, SCRIPT_ROOT]`.
-#! - `2` AddTxScript:      `[2, SCRIPT_ROOT]`.
-#! - `3` RemoveTxScript:   `[3, SCRIPT_ROOT]`.
+#! so authorization is bound to the note sender). The storage is laid out as `[SCRIPT_ROOT, selector]`
+#! so the root is word-aligned:
+#! - `[SCRIPT_ROOT, 0]` AddNoteScript.
+#! - `[SCRIPT_ROOT, 1]` RemoveNoteScript.
+#! - `[SCRIPT_ROOT, 2]` AddTxScript.
+#! - `[SCRIPT_ROOT, 3]` RemoveTxScript.
 #!
 #! Authorization is enforced by the called `AuthNetworkAccount` procedures via the account-wide
 #! `Authority` component, which resolves the note sender against the configured owner or role.
@@ -137,12 +136,11 @@ proc load_script_root_window
     assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
-    # rebuild the script root word on top of a pad(12) tail, matching the stored element order
+    # load the word-aligned script root on top of a pad(12) tail in a single word read
     padw padw padw
-    mem_load.SCRIPT_ROOT3_PTR
-    mem_load.SCRIPT_ROOT2_PTR
-    mem_load.SCRIPT_ROOT1_PTR
-    mem_load.SCRIPT_ROOT0_PTR
+    # => [pad(12)]
+
+    padw mem_loadw_le.SCRIPT_ROOT_PTR
     # => [SCRIPT_ROOT, pad(12)]
 end
 
