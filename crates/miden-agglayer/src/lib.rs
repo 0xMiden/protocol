@@ -131,11 +131,6 @@ fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
-///
-/// The builder is created via [`NetworkAccount::builder`] with [`AggLayerBridge::allowed_notes()`]
-/// so the bridge only accepts its sanctioned input notes. The tx-script allowlist contains only
-/// the canonical
-/// [`ExpirationTransactionScript`](miden_standards::tx_script::ExpirationTransactionScript).
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
@@ -300,16 +295,13 @@ pub fn create_existing_agglayer_faucet_with_callbacks(
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::StorageMapKey;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-    use miden_standards::account::auth::AuthNetworkAccount;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
     use super::*;
 
-    /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`] in
-    /// their tx-script allowlist so the network transaction builder can bound how long their
-    /// transactions stay valid.
+    /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
+    /// which the network transaction builder attaches to every network transaction.
     #[test]
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
@@ -325,15 +317,8 @@ mod tests {
         );
 
         for account in [bridge, faucet] {
-            // The expiration tx-script root is flagged as allowed ([1, 0, 0, 0]) in the map.
-            let stored = account
-                .storage()
-                .get_map_item(
-                    AuthNetworkAccount::allowed_tx_scripts_slot(),
-                    StorageMapKey::new(ExpirationTransactionScript::script_root().as_word()),
-                )
-                .unwrap();
-            assert_eq!(stored, [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
+            let network_account = NetworkAccount::try_from(account).unwrap();
+            assert!(network_account.allows_tx_script(&ExpirationTransactionScript::script_root()));
         }
     }
 }

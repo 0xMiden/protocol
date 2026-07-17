@@ -30,19 +30,15 @@ use crate::tx_script::ExpirationTransactionScript;
 ///   - the slot MUST be a [`StorageMap`](miden_protocol::account::StorageMap) (not a value slot),
 ///   - the map MUST be non-empty (the allowlist contains at least one allowed
 ///     [`NoteScriptRoot`](miden_protocol::note::NoteScriptRoot)).
-/// - Its storage MAY contain a [`NetworkAccountTxScriptAllowlist`] slot; if the storage slot named
-///   [`NetworkAccountTxScriptAllowlist::slot_name`] is present, it MUST be a
-///   [`StorageMap`](miden_protocol::account::StorageMap). A missing slot is equivalent to an empty
-///   allowlist: the account is assumed to permit no transaction scripts.
+/// - Its storage MAY contain a [`NetworkAccountTxScriptAllowlist`] slot; if present, the slot MUST
+///   be a [`StorageMap`](miden_protocol::account::StorageMap). A missing slot is equivalent to an
+///   empty allowlist: the account permits no transaction scripts.
 ///
-/// The allowlist slots are the shared abstraction across every network-account component, so
-/// off-chain services can identify a network account by inspecting its storage for these slots
-/// without needing to know which specific component the account uses. In particular, the network
-/// transaction builder should consult [`NetworkAccount::allows_tx_script`] before attaching a
-/// transaction script (such as the canonical
-/// [`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) to a network
-/// transaction: a transaction carrying a non-allowlisted script is rejected by the account's auth
-/// procedure.
+/// The allowlist slots are the shared abstraction across every network-account component: they let
+/// off-chain services identify a network account without knowing which component it uses. In
+/// particular, the network transaction builder should check [`NetworkAccount::allows_tx_script`]
+/// before attaching a transaction script, since the account's auth procedure rejects transactions
+/// carrying a non-allowlisted script.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetworkAccount {
     account: Account,
