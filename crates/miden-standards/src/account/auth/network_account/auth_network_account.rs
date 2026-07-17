@@ -125,34 +125,20 @@ impl AuthNetworkAccount {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AuthNetworkAccount`] component that allows `allowed_script_roots` plus the
-    /// standardized [`NetworkAccountConfigNote`] script root, so the allowlists can be updated
-    /// after deployment by sending that note.
+    /// Creates a new [`AuthNetworkAccount`] component that allows the provided input-note script
+    /// roots.
     ///
-    /// To authorize those updates, the account must also install an
+    /// The standardized [`NetworkAccountConfigNote`] script root is always added to the allowlist,
+    /// so the account's allowlists can be updated after deployment by sending that note. To
+    /// authorize those updates, the account must also install an
     /// [`Authority`](crate::account::access::Authority) component in
     /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
     /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode: the note sender
     /// is checked against it.
-    pub fn with_allowlist_management(mut allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
-        allowed_script_roots.insert(NetworkAccountConfigNote::script_root());
-        Self {
-            allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)
-                .expect("allowlist contains at least the config note root"),
-            allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
-        }
-    }
-
-    /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
-    /// input-note script roots.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `allowed_script_roots` is empty since the account could not consume any
-    /// notes.
     pub fn with_allowed_notes(
-        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+        mut allowed_script_roots: BTreeSet<NoteScriptRoot>,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
+        allowed_script_roots.insert(NetworkAccountConfigNote::script_root());
         Ok(Self {
             allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
             allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
@@ -274,6 +260,7 @@ mod tests {
 
     use super::*;
     use crate::account::wallets::BasicWallet;
+    use crate::note::NetworkAccountConfigNote;
 
     #[test]
     fn auth_network_account_component_builds() {
@@ -291,9 +278,24 @@ mod tests {
     }
 
     #[test]
-    fn auth_network_account_with_empty_allowlist_is_rejected() {
-        let result = AuthNetworkAccount::with_allowed_notes(BTreeSet::new());
-        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
+    fn auth_network_account_with_empty_input_allowlists_only_config_note() {
+        let account = AccountBuilder::new([0; 32])
+            .with_auth_component(
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::new())
+                    .expect("config note root makes the allowlist non-empty"),
+            )
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building with AuthNetworkAccount failed");
+
+        let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
+            .expect("allowlist should be reconstructable from account storage");
+
+        assert_eq!(
+            allowlist.allowed_script_roots(),
+            &BTreeSet::from_iter([NetworkAccountConfigNote::script_root()]),
+            "an empty input should yield an allowlist containing only the config note root",
+        );
     }
 
     #[test]
@@ -317,14 +319,13 @@ mod tests {
     }
 
     #[test]
-    fn with_allowlist_management_allowlists_action_note() {
-        use crate::note::NetworkAccountConfigNote;
-
+    fn auth_network_account_always_allowlists_config_note() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::with_allowlist_management(
-                BTreeSet::from_iter([root_a]),
-            ))
+            .with_auth_component(
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a]))
+                    .expect("config note root makes the allowlist non-empty"),
+            )
             .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
@@ -336,11 +337,11 @@ mod tests {
             allowlist
                 .allowed_script_roots()
                 .contains(&NetworkAccountConfigNote::script_root()),
-            "with_allowlist_management should allowlist the config note root",
+            "with_allowed_notes should always allowlist the config note root",
         );
         assert!(
             allowlist.allowed_script_roots().contains(&root_a),
-            "with_allowlist_management should preserve the existing allowlist entries",
+            "with_allowed_notes should preserve the provided allowlist entries",
         );
     }
 }
