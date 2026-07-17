@@ -69,42 +69,42 @@ pub proc main
 
     # write the note storage to memory starting at STORAGE_PTR
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items]
+    # => [num_storage_items, pad(16)]
 
     mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    # => [selector, num_storage_items, pad(16)]
 
     # dispatch on the selector to the matching action procedure
     dup eq.SELECTOR_ADD_NOTE_SCRIPT
-    # => [is_add_note, selector, num_storage_items]
+    # => [is_add_note, selector, num_storage_items, pad(16)]
 
     if.true
         drop
-        # => [num_storage_items]
+        # => [num_storage_items, pad(16)]
 
         exec.execute_add_note_script
     else
         dup eq.SELECTOR_REMOVE_NOTE_SCRIPT
-        # => [is_remove_note, selector, num_storage_items]
+        # => [is_remove_note, selector, num_storage_items, pad(16)]
 
         if.true
             drop
-            # => [num_storage_items]
+            # => [num_storage_items, pad(16)]
 
             exec.execute_remove_note_script
         else
             dup eq.SELECTOR_ADD_TX_SCRIPT
-            # => [is_add_tx, selector, num_storage_items]
+            # => [is_add_tx, selector, num_storage_items, pad(16)]
 
             if.true
                 drop
-                # => [num_storage_items]
+                # => [num_storage_items, pad(16)]
 
                 exec.execute_add_tx_script
             else
                 eq.SELECTOR_REMOVE_TX_SCRIPT
                 assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNKNOWN_SELECTOR
-                # => [num_storage_items]
+                # => [num_storage_items, pad(16)]
 
                 exec.execute_remove_tx_script
             end
@@ -116,10 +116,9 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts the storage item count and builds the account-procedure input window from the stored
-#! script root.
+#! Asserts the storage item count and loads the stored script root into the stack.
 #!
-#! Inputs:  [num_storage_items]
+#! Inputs:  [num_storage_items, pad(16)]
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
@@ -130,21 +129,20 @@ end
 #! - num_storage_items is not equal to the expected number.
 #!
 #! Invocation: exec
-proc load_script_root_window
+proc load_script_root
     eq.NUM_STORAGE_ITEMS
     assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    # => []
+    # => [pad(16)]
 
-    # load the root on top of a pad(12) tail
-    padw padw padw padw
+    # load the script root
     mem_loadw_le.SCRIPT_ROOT_PTR
     # => [SCRIPT_ROOT, pad(12)]
 end
 
 #! Executes the AddNoteScript action: adds the stored root to the note-script allowlist.
 #!
-#! Inputs:  [num_storage_items]
-#! Outputs: []
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - num_storage_items is the actual number of storage items in the note.
@@ -155,20 +153,17 @@ end
 #!
 #! Invocation: exec
 proc execute_add_note_script
-    exec.load_script_root_window
+    exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
     call.network_account::add_allowed_note_script
     # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
 end
 
 #! Executes the RemoveNoteScript action: removes the stored root from the note-script allowlist.
 #!
-#! Inputs:  [num_storage_items]
-#! Outputs: []
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - num_storage_items is the actual number of storage items in the note.
@@ -179,20 +174,17 @@ end
 #!
 #! Invocation: exec
 proc execute_remove_note_script
-    exec.load_script_root_window
+    exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
     call.network_account::remove_allowed_note_script
     # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
 end
 
 #! Executes the AddTxScript action: adds the stored root to the tx-script allowlist.
 #!
-#! Inputs:  [num_storage_items]
-#! Outputs: []
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - num_storage_items is the actual number of storage items in the note.
@@ -203,20 +195,17 @@ end
 #!
 #! Invocation: exec
 proc execute_add_tx_script
-    exec.load_script_root_window
+    exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
     call.network_account::add_allowed_tx_script
     # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
 end
 
 #! Executes the RemoveTxScript action: removes the stored root from the tx-script allowlist.
 #!
-#! Inputs:  [num_storage_items]
-#! Outputs: []
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - num_storage_items is the actual number of storage items in the note.
@@ -227,12 +216,9 @@ end
 #!
 #! Invocation: exec
 proc execute_remove_tx_script
-    exec.load_script_root_window
+    exec.load_script_root
     # => [SCRIPT_ROOT, pad(12)]
 
     call.network_account::remove_allowed_tx_script
     # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
 end
