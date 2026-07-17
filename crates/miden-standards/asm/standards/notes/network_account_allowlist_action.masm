@@ -8,8 +8,7 @@ use miden::standards::auth::network_account
 const STORAGE_PTR = 0
 
 # Memory addresses of the NetworkAccountAllowlistAction note storage. The script root word occupies
-# the first four (word-aligned) items so it can be loaded with a single `mem_loadw_le`, and the
-# selector follows it.
+# the first four items with the selector after it.
 const SCRIPT_ROOT_PTR = STORAGE_PTR
 const SELECTOR_PTR = STORAGE_PTR + 4
 
@@ -37,9 +36,9 @@ const ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = 
 #! NetworkAccountAllowlistAction script: mutates a network account's script allowlists, dispatched
 #! on a selector stored in the first note storage item.
 #!
-#! The selected action and its script root are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender). The storage is laid out as `[SCRIPT_ROOT, selector]`
-#! so the root is word-aligned:
+#! The selected action and its script root are read from the note storage. They are fixed at note
+#! creation, so authorization is bound to the note sender. The storage is laid out as
+#! `[SCRIPT_ROOT, selector]`:
 #! - `[SCRIPT_ROOT, 0]` AddNoteScript.
 #! - `[SCRIPT_ROOT, 1]` RemoveNoteScript.
 #! - `[SCRIPT_ROOT, 2]` AddTxScript.
@@ -136,11 +135,9 @@ proc load_script_root_window
     assert.err=ERR_NETWORK_ACCOUNT_ALLOWLIST_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
-    # load the word-aligned script root on top of a pad(12) tail in a single word read
-    padw padw padw
-    # => [pad(12)]
-
-    padw mem_loadw_le.SCRIPT_ROOT_PTR
+    # load the root on top of a pad(12) tail
+    padw padw padw padw
+    mem_loadw_le.SCRIPT_ROOT_PTR
     # => [SCRIPT_ROOT, pad(12)]
 end
 
