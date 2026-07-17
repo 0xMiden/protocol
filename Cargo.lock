@@ -1498,7 +1498,6 @@ dependencies = [
  "miden-crypto",
  "miden-mast-package",
  "miden-package-registry",
- "miden-project",
  "miden-protocol",
  "miden-standards",
  "miden-utils-sync",
@@ -1593,6 +1592,7 @@ dependencies = [
  "miden-assembly",
  "miden-mast-package",
  "miden-package-registry",
+ "miden-project",
  "regex",
  "walkdir",
 ]
@@ -1958,7 +1958,6 @@ dependencies = [
  "miden-core-lib",
  "miden-mast-package",
  "miden-package-registry",
- "miden-project",
  "miden-protocol",
  "miden-standards",
  "rand 0.10.2",

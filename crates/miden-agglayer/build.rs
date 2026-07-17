@@ -5,15 +5,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-use miden_assembly::{Assembler, ProjectTargetSelector, Report};
+use miden_assembly::{ProjectTargetSelector, Report};
 use miden_build_utils::{
-    BUILD_PROFILE,
     ErrorModule,
     PROJECT_MANIFEST,
-    assemble_project_at_path,
-    build_assembler,
+    assemble_project,
+    assemble_workspace,
     extract_all_masm_errors,
     generate_error_file,
 };
@@ -22,7 +20,6 @@ use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_mast_package::Package;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
@@ -86,24 +83,19 @@ fn main() -> Result<()> {
     // compile agglayer library (includes note scripts) and seed it into the registry
     compile_agglayer_lib(&source_dir, &target_dir, &mut registry)?;
 
-    // compile account components (thin wrappers per component) and return their packages
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let assembler = build_assembler(source_manager.clone());
-    let component_packages = compile_account_components(
-        &source_dir.join(ASM_COMPONENTS_DIR),
-        &target_dir.join(ASM_COMPONENTS_DIR),
-        &assembler,
+    // compile account components (thin wrappers per component); their packages are returned so
+    // their code commitments can be computed below
+    let component_packages = assemble_workspace(
+        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
-        source_manager.clone(),
+        &target_dir.join(ASM_COMPONENTS_DIR),
     )?;
 
     // compile note scripts (each statically links the agglayer library so it is self-contained)
-    compile_note_scripts(
-        &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &assembler,
+    assemble_workspace(
+        source_dir.join(ASM_NOTE_SCRIPTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
-        source_manager,
+        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
     )?;
 
     // generate agglayer specific constants
@@ -157,81 +149,9 @@ fn compile_agglayer_lib(
     let manifest_path = source_dir.join(ASM_AGGLAYER_DIR).join(PROJECT_MANIFEST);
 
     let package =
-        assemble_project_at_path(manifest_path, ProjectTargetSelector::Library, registry)?;
-
-    package.write_masp_file(target_dir).into_diagnostic()?;
+        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
 
     registry.cache_package(package).into_diagnostic()?;
-
-    Ok(())
-}
-
-// COMPILE ACCOUNT COMPONENTS
-// ================================================================================================
-
-/// Assembles each member of the account-components workspace in `source_dir` into a package and
-/// saves it to `target_dir`. Each file is named after its package (e.g.
-/// `miden-agglayer-bridge.masp`), so the include path used by `lib.rs` is the package name.
-///
-/// Returns the assembled component packages so their code commitments can be computed.
-fn compile_account_components(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<Vec<Arc<Package>>> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    let mut packages = Vec::new();
-    for component in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(component.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-
-        packages.push(package);
-    }
-
-    Ok(packages)
-}
-
-// COMPILE NOTE SCRIPTS
-// ================================================================================================
-
-/// Assembles each member of the note-scripts workspace in `source_dir` into a self-contained
-/// package and saves it to `target_dir`.
-///
-/// Each note script statically links the agglayer library, so the agglayer procedures it uses are
-/// inlined into the resulting package. This keeps note scripts portable: the standards and protocol
-/// procedures they reference are resolved at execution time from the libraries loaded into the
-/// transaction, but the agglayer-specific code travels with the note.
-///
-/// Each file is named after its package (e.g. `miden-agglayer-claim.masp`), so the include path
-/// used by the note modules in `src/` is the package name.
-fn compile_note_scripts(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<()> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    for note_script in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(note_script.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-    }
 
     Ok(())
 }

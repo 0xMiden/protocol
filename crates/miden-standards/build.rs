@@ -2,15 +2,13 @@ use std::env;
 use std::path::Path;
 use std::sync::Arc;
 
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
+use miden_assembly::ProjectTargetSelector;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-use miden_assembly::{Assembler, ProjectTargetSelector};
 use miden_build_utils::{
-    BUILD_PROFILE,
     ErrorModule,
     PROJECT_MANIFEST,
-    assemble_project_at_path,
-    build_assembler,
+    assemble_project,
+    assemble_workspace,
     extract_all_masm_errors,
     generate_error_file,
     write_release_package,
@@ -18,7 +16,6 @@ use miden_build_utils::{
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::Package;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
 use miden_protocol::transaction::TransactionKernel;
 
@@ -61,15 +58,11 @@ fn main() -> Result<()> {
     // the registry
     compile_standards_lib(&source_dir, &target_dir, &mut registry)?;
 
-    // compile account components
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let assembler = build_assembler(source_manager.clone());
-    compile_account_components(
-        &source_dir.join(ASM_COMPONENTS_DIR),
-        &target_dir.join(ASM_COMPONENTS_DIR),
-        &assembler,
+    // compile account components (each member of the components workspace becomes its own package)
+    assemble_workspace(
+        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
-        source_manager,
+        &target_dir.join(ASM_COMPONENTS_DIR),
     )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
@@ -112,43 +105,11 @@ fn compile_standards_lib(
     let manifest_path = source_dir.join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST);
 
     let package =
-        assemble_project_at_path(manifest_path, ProjectTargetSelector::Library, registry)?;
-
-    package.write_masp_file(target_dir).into_diagnostic()?;
+        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
 
     write_release_package(&package)?;
 
     registry.cache_package(package).into_diagnostic()?;
-
-    Ok(())
-}
-
-// COMPILE ACCOUNT COMPONENTS
-// ================================================================================================
-
-/// Assembles each member of the account-components workspace in `source_dir` into a package and
-/// saves it to `target_dir`. Each file is named after its package (e.g.
-/// `miden-standards-auth-singlesig.masp`), so the include path used by `account_component_code!`
-/// is the package name.
-fn compile_account_components(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<()> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    for component in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(component.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-    }
 
     Ok(())
 }

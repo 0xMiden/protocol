@@ -1,19 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::Path;
-use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Path as MasmPath, ProjectTargetSelector};
 use miden_build_utils::{
-    BUILD_PROFILE,
     ErrorModule,
     NamedError,
     PROJECT_MANIFEST,
-    assemble_project_at_path,
-    build_assembler,
+    assemble_project,
     extract_all_masm_errors,
     generate_error_file,
     is_masm_file,
@@ -117,13 +113,14 @@ fn compile_batch_kernel(
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
-    let batch_kernel_package = assemble_project_at_path(
+    assemble_project(
         manifest_path,
         ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
         store,
+        target_dir,
     )?;
 
-    batch_kernel_package.write_masp_file(target_dir).into_diagnostic()
+    Ok(())
 }
 
 // COMPILE TRANSACTION KERNEL
@@ -154,16 +151,11 @@ fn compile_tx_kernel(
     build_dir: &str,
     store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
-    let project_dir = source_dir.join(ASM_TX_KERNEL_DIR);
-
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let mut project_assembler = build_assembler(source_manager.clone())
-        .for_project_at_path(project_dir.join(PROJECT_MANIFEST), store)?;
+    let manifest_path = source_dir.join(ASM_TX_KERNEL_DIR).join(PROJECT_MANIFEST);
 
     // assemble the kernel library and write its package to the `target_dir`
     let kernel_package =
-        project_assembler.assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-    kernel_package.write_masp_file(target_dir).into_diagnostic()?;
+        assemble_project(&manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
 
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
@@ -171,37 +163,26 @@ fn compile_tx_kernel(
     // Assemble the executable targets and write their packages to the `target_dir`.
     //
     // The kernel internals live in the `miden-tx-kernel-core` library, which both programs
-    // depend on, so the executables are assembled directly through the project manifest.
+    // depend on and which is resolved as a project dependency during assembly.
     for target_name in [TX_KERNEL_MAIN_TARGET, TX_SCRIPT_MAIN_TARGET] {
-        let package = project_assembler
-            .assemble(ProjectTargetSelector::Executable(target_name), BUILD_PROFILE)?;
-        package.write_masp_file(target_dir).into_diagnostic()?;
+        assemble_project(
+            &manifest_path,
+            ProjectTargetSelector::Executable(target_name),
+            store,
+            target_dir,
+        )?;
     }
-
-    // make sure the store is released before it is borrowed again below
-    drop(project_assembler);
 
     // Assemble the kernel internals as a plain library and write its package to the `target_dir`.
     // This is needed in test assemblers to access individual internal procedures which are not
     // part of the kernel's public syscall API (api.masm).
     #[cfg(any(feature = "testing", test))]
-    compile_kernel_testing_lib(source_dir, target_dir, store)?;
+    {
+        let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
+        assemble_project(core_manifest, ProjectTargetSelector::Library, store, target_dir)?;
+    }
 
     Ok(())
-}
-
-/// Assembles the `miden-tx-kernel-core` library and saves the resulting package to the
-/// `target_dir`.
-#[cfg(any(feature = "testing", test))]
-fn compile_kernel_testing_lib(
-    source_dir: &Path,
-    target_dir: &Path,
-    store: &mut InMemoryPackageRegistry,
-) -> Result<()> {
-    let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
-    let package = assemble_project_at_path(core_manifest, ProjectTargetSelector::Library, store)?;
-
-    package.write_masp_file(target_dir).into_diagnostic()
 }
 
 /// Generates kernel `procedures.rs` file based on the kernel library.
@@ -323,9 +304,7 @@ fn compile_protocol_lib(
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     let protocol_package =
-        assemble_project_at_path(manifest_path, ProjectTargetSelector::Library, store)?;
-
-    protocol_package.write_masp_file(target_dir).into_diagnostic()?;
+        assemble_project(manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
 
     write_release_package(&protocol_package)
 }

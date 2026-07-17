@@ -10,11 +10,12 @@ use std::sync::Arc;
 use std::{env, io};
 
 use fs_err as fs;
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager};
+use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result};
 use miden_assembly::{Assembler, ProjectTargetSelector, Report};
 use miden_mast_package::Package;
 use miden_package_registry::InMemoryPackageRegistry;
+use miden_project::Workspace;
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -33,25 +34,49 @@ pub const BUILD_PROFILE: &str = "dev";
 // PACKAGE ASSEMBLY HELPERS
 // ================================================================================================
 
-/// Returns a new [`Assembler`] using the provided source manager, with warnings treated as errors.
-pub fn build_assembler(source_manager: Arc<dyn SourceManager>) -> Assembler {
-    Assembler::new(source_manager).with_warnings_as_errors(true)
-}
-
 /// Assembles `selector` from the Miden project manifest at `manifest_path`, resolving
-/// dependencies against `registry`, and returns the assembled package.
-///
-/// Uses a fresh default source manager and the shared [`BUILD_PROFILE`], with warnings treated
-/// as errors (see [`build_assembler`]).
-pub fn assemble_project_at_path(
+/// dependencies against `registry`, writes the assembled package to `target_dir` as a `.masp`
+/// file, and returns it.
+pub fn assemble_project(
     manifest_path: impl AsRef<Path>,
     selector: ProjectTargetSelector,
     registry: &mut InMemoryPackageRegistry,
+    target_dir: &Path,
 ) -> Result<Arc<Package>> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    build_assembler(source_manager)
+    let package = Assembler::new(source_manager)
+        .with_warnings_as_errors(true)
         .for_project_at_path(manifest_path.as_ref(), registry)?
-        .assemble(selector, BUILD_PROFILE)
+        .assemble(selector, BUILD_PROFILE)?;
+    package.write_masp_file(target_dir).into_diagnostic()?;
+    Ok(package)
+}
+
+/// Assembles every member of the workspace whose manifest is at `manifest_path` into a library
+/// package, writes each package to `target_dir` as a `.masp` file, and returns the assembled
+/// packages. Dependencies are resolved against `registry`.
+pub fn assemble_workspace(
+    manifest_path: impl AsRef<Path>,
+    registry: &mut InMemoryPackageRegistry,
+    target_dir: &Path,
+) -> Result<Vec<Arc<Package>>> {
+    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+    let manifest = source_manager.load_file(manifest_path.as_ref()).into_diagnostic()?;
+    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
+
+    let assembler = Assembler::new(source_manager).with_warnings_as_errors(true);
+
+    let mut packages = Vec::with_capacity(workspace.members().len());
+    for member in workspace.members() {
+        let package = assembler
+            .clone()
+            .for_project(member.clone(), registry)?
+            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+        package.write_masp_file(target_dir).into_diagnostic()?;
+        packages.push(package);
+    }
+
+    Ok(packages)
 }
 
 /// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
@@ -110,8 +135,8 @@ pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>>
 }
 
 /// Extracts the errors from a single masm file and inserts them into the provided map.
-pub fn extract_masm_errors(
-    errors: &mut BTreeMap<ErrorName, ExtractedError>,
+fn extract_masm_errors(
+    errors: &mut BTreeMap<String, ExtractedError>,
     file_contents: &str,
 ) -> Result<()> {
     let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
@@ -153,7 +178,7 @@ pub fn extract_masm_errors(
     Ok(())
 }
 
-pub fn is_new_error_category<'a>(last_error: &mut Option<&'a str>, current_error: &'a str) -> bool {
+fn is_new_error_category<'a>(last_error: &mut Option<&'a str>, current_error: &'a str) -> bool {
     let is_new = match last_error {
         Some(last_err) => {
             let last_category =
@@ -239,16 +264,14 @@ pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Resu
     Ok(())
 }
 
-pub type ErrorName = String;
-
 #[derive(Debug, Clone)]
-pub struct ExtractedError {
-    pub message: String,
+struct ExtractedError {
+    message: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct NamedError {
-    pub name: ErrorName,
+    pub name: String,
     pub message: String,
 }
 
