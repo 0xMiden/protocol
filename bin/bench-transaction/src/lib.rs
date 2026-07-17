@@ -2,3 +2,5 @@
 
 #[cfg(feature = "concurrent")]
 pub mod context_setups;
+#[cfg(feature = "concurrent")]
+pub mod cycle_counting_benchmarks;

@@ -4,7 +4,7 @@ pub mod trace_capture;
 pub mod utils;
 
 /// Indicates the type of the transaction execution benchmark
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionBenchmark {
     ConsumeSingleP2IDFalcon,
     ConsumeSingleP2IDEcdsa,
@@ -17,6 +17,25 @@ pub enum ExecutionBenchmark {
     ConsumeB2AggNote,
     ConsumeB2AggNotePopulated2p31,
     ConsumeB2AggNotePopulated2p31m1,
+}
+
+impl ExecutionBenchmark {
+    /// All benchmark scenarios, in the order their results appear in `bench-tx.json`.
+    pub const fn all() -> &'static [ExecutionBenchmark] {
+        &[
+            ExecutionBenchmark::ConsumeSingleP2IDFalcon,
+            ExecutionBenchmark::ConsumeSingleP2IDEcdsa,
+            ExecutionBenchmark::ConsumeTwoP2IDFalcon,
+            ExecutionBenchmark::ConsumeTwoP2IDEcdsa,
+            ExecutionBenchmark::CreateSingleP2IDFalcon,
+            ExecutionBenchmark::CreateSingleP2IDEcdsa,
+            ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
+            ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
+            ExecutionBenchmark::ConsumeB2AggNote,
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+        ]
+    }
 }
 
 impl fmt::Display for ExecutionBenchmark {

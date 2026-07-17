@@ -23,8 +23,38 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
-use miden_testing::{Auth, MockChain, TransactionContext};
+use miden_testing::{Auth, MockChain, MockChainBuilder, TransactionContext};
 use rand::RngExt;
+
+use crate::cycle_counting_benchmarks::ExecutionBenchmark;
+
+// SCENARIO DISPATCH
+// ================================================================================================
+
+/// Builds the transaction context for the given benchmark scenario.
+pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<TransactionContext> {
+    match bench {
+        ExecutionBenchmark::ConsumeSingleP2IDFalcon => tx_consume_single_p2id_note_falcon(),
+        ExecutionBenchmark::ConsumeSingleP2IDEcdsa => tx_consume_single_p2id_note_ecdsa(),
+        ExecutionBenchmark::ConsumeTwoP2IDFalcon => tx_consume_two_p2id_notes_falcon(),
+        ExecutionBenchmark::ConsumeTwoP2IDEcdsa => tx_consume_two_p2id_notes_ecdsa(),
+        ExecutionBenchmark::CreateSingleP2IDFalcon => tx_create_single_p2id_note_falcon(),
+        ExecutionBenchmark::CreateSingleP2IDEcdsa => tx_create_single_p2id_note_ecdsa(),
+        ExecutionBenchmark::ConsumeClaimNoteL1ToMiden => {
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden).await
+        },
+        ExecutionBenchmark::ConsumeClaimNoteL2ToMiden => {
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden).await
+        },
+        ExecutionBenchmark::ConsumeB2AggNote => tx_consume_b2agg_note(None).await,
+        ExecutionBenchmark::ConsumeB2AggNotePopulated2p31 => {
+            tx_consume_b2agg_note(Some(1 << 31)).await
+        },
+        ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1 => {
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1)).await
+        },
+    }
+}
 
 // P2ID NOTE SETUPS
 // ================================================================================================
@@ -177,6 +207,62 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
         .build()
 }
 
+// BRIDGE FIXTURE
+// ================================================================================================
+
+/// Accounts shared by the agglayer benchmark scenarios: the bridge role wallets and the bridge
+/// account they control.
+struct BridgeFixture {
+    faucet_manager: Account,
+    ger_injector: Account,
+    bridge_account: Account,
+}
+
+/// Adds the three bridge role wallets and the bridge account to the chain builder.
+///
+/// When `pre_populate_leaves` is `Some(n)`, the bridge account's LET frontier is pre-populated
+/// with dummy values for `n` leaves before the account is added to the chain (see
+/// [`populate_let_frontier`]).
+fn setup_bridge_fixture(
+    builder: &mut MockChainBuilder,
+    pre_populate_leaves: Option<u32>,
+) -> Result<BridgeFixture> {
+    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (sends the REMOVE_GER note)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT
+    let mut bridge_account = create_existing_bridge_account_with_roles(
+        builder.rng_mut().draw_word(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+    );
+
+    if let Some(num_leaves) = pre_populate_leaves {
+        populate_let_frontier(&mut bridge_account, num_leaves);
+    }
+
+    builder.add_account(bridge_account.clone())?;
+
+    Ok(BridgeFixture {
+        faucet_manager,
+        ger_injector,
+        bridge_account,
+    })
+}
+
 // CLAIM NOTE SETUPS
 // ================================================================================================
 
@@ -191,30 +277,11 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
 pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE GER REMOVER ACCOUNT (not used in this benchmark, but distinct from admin and injector)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_roles(
-        bridge_seed,
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-    );
-    builder.add_account(bridge_account.clone())?;
+    let BridgeFixture {
+        faucet_manager,
+        ger_injector,
+        bridge_account,
+    } = setup_bridge_fixture(&mut builder, None)?;
 
     // GET CLAIM DATA FROM JSON
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
@@ -409,35 +476,8 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
 
     let mut builder = MockChain::builder();
 
-    // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE GER INJECTOR ACCOUNT (not used in bridge-out, but required for bridge creation)
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE GER REMOVER ACCOUNT (not used in bridge-out, but required for bridge creation)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    // CREATE BRIDGE ACCOUNT
-    let mut bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-    );
-
-    // Pre-populate frontier before adding the account to the mock chain
-    if let Some(num_leaves) = pre_populate_leaves {
-        populate_let_frontier(&mut bridge_account, num_leaves);
-    }
-
-    builder.add_account(bridge_account.clone())?;
+    let BridgeFixture { faucet_manager, bridge_account, .. } =
+        setup_bridge_fixture(&mut builder, pre_populate_leaves)?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
