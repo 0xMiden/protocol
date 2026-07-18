@@ -1,4 +1,4 @@
-//! Benchmark scenarios where a network-authenticated faucet consumes a MINT or BURN note.
+//! Benchmark scenarios where a network faucet account consumes a MINT or BURN note.
 //!
 //! All scenarios run on a chain charging [`super::NETWORK_VERIFICATION_BASE_FEE`], so the faucet's
 //! network auth procedure additionally creates a TX_FEE note funded from the native fee asset held

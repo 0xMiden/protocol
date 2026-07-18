@@ -1,4 +1,5 @@
-//! Benchmark scenarios where a network-authenticated account consumes a standard action note.
+//! Benchmark scenarios where a network account carrying the required management components
+//! consumes a standard action note.
 //!
 //! Each scenario mirrors the account fixture of the corresponding note test suite in
 //! `crates/miden-testing/tests/scripts/`, changing only what the canonical network-account

@@ -1,8 +1,11 @@
-//! Benchmark scenarios where a network-authenticated basic wallet consumes a standard note.
+//! Benchmark scenarios where a network account with the `BasicWallet` component consumes a
+//! standard note.
 //!
-//! Each scenario runs on a chain charging [`super::NETWORK_VERIFICATION_BASE_FEE`], so the
-//! consuming account's network auth procedure pays the transaction fee by creating a TX_FEE note
-//! funded from the account's own vault.
+//! Each consumer is the canonical network account of `miden_standards::note::costs`:
+//! authenticated by `AuthNetworkAccount` with the consumed note's script root allowlisted and
+//! holding the native fee asset, on a chain charging
+//! [`super::NETWORK_VERIFICATION_BASE_FEE`], so the auth procedure pays the transaction fee by
+//! creating a TX_FEE note funded from the account's vault.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,7 +35,7 @@ use miden_testing::{Auth, TransactionContext};
 // P2ID NOTE SETUPS
 // ================================================================================================
 
-/// Returns the transaction context for a network wallet consuming a single P2ID note.
+/// Returns the transaction context in which a network account consumes a single P2ID note.
 pub fn tx_consume_p2id_note_network() -> Result<TransactionContext> {
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
@@ -58,7 +61,7 @@ pub fn tx_consume_p2id_note_network() -> Result<TransactionContext> {
 // P2IDE NOTE SETUPS
 // ================================================================================================
 
-/// Returns the transaction context for a network wallet consuming a P2IDE note, either via the
+/// Returns the transaction context in which a network account consumes a P2IDE note, either via the
 /// target's claim path or, when `reclaim` is set, via the sender's reclaim path.
 pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext> {
     let fungible_asset: Asset = FungibleAsset::mock(123);
@@ -66,7 +69,7 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
     let mut builder = super::chain_builder(true);
 
     if reclaim {
-        // Reclaim path: the network wallet is the note's sender (and thus its default reclaimer)
+        // Reclaim path: the network account is the note's sender (and thus its default reclaimer)
         // and reclaims the note once the reclaim height has passed.
         let reclaim_height = BlockNumber::from(2u32);
 
@@ -91,7 +94,7 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
 
         mock_chain.build_tx_context(sender_account.id(), &[note.id()], &[])?.build()
     } else {
-        // Claim path: the network wallet is the note's target and consumes it directly.
+        // Claim path: the network account is the note's target and consumes it directly.
         let target_account = builder.add_existing_wallet_with_assets(
             super::network_auth([P2ideNote::script_root()]),
             [super::fee_funding_asset()?],
@@ -116,7 +119,7 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
 // SWAP NOTE SETUPS
 // ================================================================================================
 
-/// Returns the transaction context for a network wallet filling a SWAP note whose payback note
+/// Returns the transaction context in which a network account fills a SWAP note whose payback note
 /// has the given note type.
 pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<TransactionContext> {
     let offered_asset: Asset = FungibleAsset::mock(2000);
@@ -148,7 +151,7 @@ pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<Trans
 // PSWAP NOTE SETUPS
 // ================================================================================================
 
-/// Returns the transaction context for a network wallet filling a PSWAP note, either fully or,
+/// Returns the transaction context in which a network account fills a PSWAP note, either fully or,
 /// when `full_fill` is unset, partially.
 ///
 /// A partial fill delivers half of the requested amount (the note sets no `min_fill_step` floor)
@@ -251,9 +254,9 @@ fn collect_fee_tx_script(fee_asset: Asset) -> Result<TransactionScript> {
     Ok(CodeBuilder::default().compile_tx_script(src)?)
 }
 
-/// Returns the transaction context for a network wallet consuming a FEE_SPONSORSHIP note, either
-/// together with its sponsored feature note or, when `reclaim` is set, via the sponsor's reclaim
-/// path.
+/// Returns the transaction context in which a network account consumes a FEE_SPONSORSHIP note,
+/// either together with its sponsored feature note or, when `reclaim` is set, via the sponsor's
+/// reclaim path.
 ///
 /// On the sponsorship path the note script leaves the sponsored fee asset in the note, so the
 /// consuming account collects it with an allowlisted fee-collection transaction script. On the
@@ -266,7 +269,7 @@ pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<Transact
     let mut builder = super::chain_builder(true);
 
     if reclaim {
-        // Reclaim path: the network wallet is the sponsor (and thus the default reclaimer) and
+        // Reclaim path: the network account is the sponsor (and thus the default reclaimer) and
         // reclaims the sponsorship note once the reclaim height has passed.
         let reclaim_height = BlockNumber::from(1u32);
 
@@ -297,7 +300,7 @@ pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<Transact
             .build_tx_context(sponsor.id(), &[sponsorship_note.id()], &[])?
             .build()
     } else {
-        // Sponsorship path: the network wallet consumes the fee-unaware feature note together
+        // Sponsorship path: the network account consumes the fee-unaware feature note together
         // with the FEE_SPONSORSHIP note paying for it, collecting the sponsored fee via an
         // allowlisted transaction script.
         let collect_script = collect_fee_tx_script(sponsored_asset)?;

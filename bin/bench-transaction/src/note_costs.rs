@@ -206,9 +206,31 @@ impl PricedNote {
     }
 }
 
-/// Executes the note's benchmark scenarios and returns the maximum total cycle count.
-pub async fn benched_cycles(note: PricedNote) -> Result<u64> {
-    let mut max_cycles = 0u64;
+/// Short label of the execution path a scenario benchmarks, used in the generated table docs
+/// of notes with more than one benchmarked path.
+fn path_label(bench: ExecutionBenchmark) -> &'static str {
+    match bench {
+        ExecutionBenchmark::ConsumeP2ideClaimNetwork => "claim",
+        ExecutionBenchmark::ConsumeP2ideReclaimNetwork => "reclaim",
+        ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork => "public payback",
+        ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork => "private payback",
+        ExecutionBenchmark::ConsumePswapFullFillNetwork => "full fill",
+        ExecutionBenchmark::ConsumePswapPartialFillNetwork => "partial fill",
+        ExecutionBenchmark::ConsumeMintFungibleNetwork => "fungible faucet",
+        ExecutionBenchmark::ConsumeMintNonFungibleNetwork => "non-fungible faucet",
+        ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => "with feature note",
+        ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => "reclaim",
+        ExecutionBenchmark::ConsumeClaimL1WithFee => "L1 origin",
+        ExecutionBenchmark::ConsumeClaimL2WithFee => "L2 origin",
+        ExecutionBenchmark::ConsumeB2AggWithFee => "empty frontier",
+        ExecutionBenchmark::ConsumeB2AggPopulatedWithFee => "2^31-1 leaves",
+        _ => unreachable!("only scenarios of multi-path priced notes have path labels"),
+    }
+}
+
+/// Executes the note's benchmark scenarios and returns each scenario's total cycle count.
+pub async fn benched_path_cycles(note: PricedNote) -> Result<Vec<(ExecutionBenchmark, u64)>> {
+    let mut path_cycles = Vec::new();
     for &bench in note.scenarios() {
         let context = build_benchmark_context(bench)
             .await
@@ -217,8 +239,19 @@ pub async fn benched_cycles(note: PricedNote) -> Result<u64> {
             .execute()
             .await
             .with_context(|| format!("failed to execute transaction for `{bench}`"))?;
-        max_cycles = max_cycles.max(executed.measurements().total_cycles() as u64);
+        path_cycles.push((bench, executed.measurements().total_cycles() as u64));
     }
+    Ok(path_cycles)
+}
+
+/// Executes the note's benchmark scenarios and returns the maximum total cycle count.
+pub async fn benched_cycles(note: PricedNote) -> Result<u64> {
+    let max_cycles = benched_path_cycles(note)
+        .await?
+        .into_iter()
+        .map(|(_, cycles)| cycles)
+        .max()
+        .expect("every priced note has at least one scenario");
     Ok(max_cycles)
 }
 
@@ -229,17 +262,42 @@ pub async fn update_cost_tables() -> Result<()> {
     let mut agglayer_table = String::from(GENERATED_HEADER);
 
     for &note in PricedNote::all() {
-        let cycles = benched_cycles(note).await?;
+        let path_cycles = benched_path_cycles(note).await?;
+        let cycles = path_cycles
+            .iter()
+            .map(|(_, cycles)| *cycles)
+            .max()
+            .expect("every priced note has at least one scenario");
+
+        let doc = if path_cycles.len() == 1 {
+            format!(
+                "/// Cycles of consuming {} note (single benchmarked path).",
+                note.doc_subject()
+            )
+        } else {
+            let max_position = path_cycles
+                .iter()
+                .position(|(_, path)| *path == cycles)
+                .expect("the maximum comes from one of the paths");
+            let paths = path_cycles
+                .iter()
+                .enumerate()
+                .map(|(position, (bench, path))| {
+                    let marker = if position == max_position { " (maximum)" } else { "" };
+                    format!("{} {path}{marker}", path_label(*bench))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("/// Cycles of consuming {} note: {paths}.", note.doc_subject())
+        };
+
         let table = if note.is_agglayer() {
             &mut agglayer_table
         } else {
             &mut standards_table
         };
         table.push_str(&format!(
-            "\n/// Cycles of the canonical network-account transaction consuming {} note,\n\
-             /// maximum across the benchmarked execution paths.\n\
-             pub const {}: u64 = {};\n",
-            note.doc_subject(),
+            "\n{doc}\npub const {}: u64 = {};\n",
             note.table_const_name(),
             cycles,
         ));
