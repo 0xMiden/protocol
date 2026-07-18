@@ -1,8 +1,10 @@
 # Reusable tx-script allowlist primitive.
 #
-# Provides a single check used to restrict which transaction scripts an account will execute:
+# Provides the operations used to restrict which transaction scripts an account will execute:
 # - `assert_tx_script_allowed` accepts transactions that executed no tx script, and otherwise
 #   rejects transactions whose tx script root is not present in a storage map at the given slot id.
+# - `add_tx_script` / `remove_tx_script` mutate that storage map, adding or removing an allowed tx
+#   script root. These perform NO authorization; callers are responsible for gating them.
 #
 # This is designed to be composed into auth components. The caller owns the storage map and passes
 # the slot id (suffix, prefix) so the same logic can back multiple components, each with their own
@@ -11,6 +13,17 @@
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
+use {StorageSlotId, TransactionScriptRoot} from miden::protocol::types
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
+
+# CONSTANTS
+# =================================================================================================
+
+# Map entry value marking a tx script root as allowed.
+const ALLOWED_FLAG = ONE_WORD
+
+# Map entry value marking a tx script root as not allowed.
+const EMPTY_WORD = ZERO_WORD
 
 # ERRORS
 # =================================================================================================
@@ -39,7 +52,7 @@ const ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED="transaction script root is 
 #!   pointing at the allowlist storage map.
 #!
 #! Invocation: exec
-pub proc assert_tx_script_allowed
+pub proc assert_tx_script_allowed(allowlist_slot_id: StorageSlotId)
     # => [slot_id_suffix, slot_id_prefix]
 
     exec.tx::get_tx_script_root
@@ -65,5 +78,72 @@ pub proc assert_tx_script_allowed
         assert.err=ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
         # => []
     end
+    # => []
+end
+
+#! Adds a tx script root to the allowlist storage map at the given slot id.
+#!
+#! Marks `SCRIPT_ROOT` as an allowed transaction script root. Adding a root that is already allowed
+#! is a no-op.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix,prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#! - SCRIPT_ROOT is the tx script root to add to the allowlist.
+#!
+#! Invocation: exec
+pub proc add_tx_script(allowlist_slot_id: StorageSlotId, script_root: TransactionScriptRoot)
+    movdn.5 movdn.5
+    # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    push.ALLOWED_FLAG swapw
+    # => [SCRIPT_ROOT, ALLOWED_FLAG, slot_id_suffix, slot_id_prefix]
+
+    movup.9 movup.9
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, ALLOWED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
+    # => []
+end
+
+#! Removes a tx script root from the allowlist storage map at the given slot id.
+#!
+#! Writes the empty word for `SCRIPT_ROOT`, which the allowlist check treats as not allowed.
+#! Removing a root that is not currently allowed is a no-op.
+#!
+#! Note: this leaves a `SCRIPT_ROOT -> EMPTY_WORD` entry in the map rather than deleting the key, so
+#! a root that was allowed and then removed is not the same map state as a root that was never added
+#! (whose key is absent). Both read as not-allowed, but any code reconstructing the allowlist from
+#! the map must treat an empty-valued entry as absent.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix, SCRIPT_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix,prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#! - SCRIPT_ROOT is the tx script root to remove from the allowlist.
+#!
+#! Invocation: exec
+pub proc remove_tx_script(allowlist_slot_id: StorageSlotId, script_root: TransactionScriptRoot)
+    movdn.5 movdn.5
+    # => [SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    push.EMPTY_WORD swapw
+    # => [SCRIPT_ROOT, EMPTY_WORD, slot_id_suffix, slot_id_prefix]
+
+    movup.9 movup.9
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, EMPTY_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
     # => []
 end
