@@ -10,7 +10,9 @@
 //! (`verification_base_fee * (ilog2(cycles) + 1)`) depends on a block-header parameter.
 //!
 //! The table is regenerated with `make update-note-costs`; a snapshot test in
-//! `bench-transaction` fails CI when the checked-in values no longer match the measured ones.
+//! `bench-transaction` fails CI when a checked-in value drifts more than 5% from the measured
+//! one (small drift from unrelated changes is tolerated - the pricing safety margin dwarfs
+//! it).
 
 mod table;
 pub use table::*;

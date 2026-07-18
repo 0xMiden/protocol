@@ -328,10 +328,22 @@ mod tests {
 
     use super::*;
 
+    /// Relative drift (in percent) tolerated between a measured cost and its checked-in
+    /// constant before the snapshot check fails.
+    ///
+    /// Small cycle drift is continuously introduced by unrelated changes landing on the base
+    /// branch (kernel tweaks, shared MASM edits); an exact-match check would force every open
+    /// PR to regenerate the tables on each such change. Within the tolerance the tables stay
+    /// as they are - fee-wise this is safe, since the fee is logarithmic in cycles and the
+    /// pricing safety margin (one verification cycle by default, roughly a 2x cycle headroom)
+    /// dwarfs the tolerated drift.
+    const DRIFT_TOLERANCE_PERCENT: u64 = 5;
+
     /// Snapshot check enforcing freshness of the checked-in cost tables: re-executes each priced
     /// note's benchmark scenarios and compares the measured maximum against the compiled-in
-    /// constant. Fails whenever a kernel, standards, or agglayer change shifts a note's
-    /// consumption cost without the tables having been regenerated.
+    /// constant, failing when they diverge by more than [`DRIFT_TOLERANCE_PERCENT`]. Catches
+    /// kernel, standards, or agglayer changes that meaningfully shift a note's consumption cost
+    /// without the tables having been regenerated.
     #[rstest]
     #[case::p2id(PricedNote::P2id)]
     #[case::p2ide(PricedNote::P2ide)]
@@ -352,11 +364,16 @@ mod tests {
     #[case::remove_ger(PricedNote::RemoveGer)]
     #[tokio::test]
     async fn checked_in_cost_matches_benched_cycles(#[case] note: PricedNote) -> Result<()> {
-        assert_eq!(
-            benched_cycles(note).await?,
-            note.committed_cycles(),
-            "cost table stale for {note:?}: run `make update-note-costs` and commit the updated \
-             tables",
+        let measured = benched_cycles(note).await?;
+        let committed = note.committed_cycles();
+
+        let within_tolerance = measured * 100 <= committed * (100 + DRIFT_TOLERANCE_PERCENT)
+            && measured * 100 >= committed * (100 - DRIFT_TOLERANCE_PERCENT);
+        assert!(
+            within_tolerance,
+            "cost table stale for {note:?}: measured {measured} cycles vs checked-in \
+             {committed} (more than {DRIFT_TOLERANCE_PERCENT}% apart): run `make \
+             update-note-costs` and commit the updated tables",
         );
         Ok(())
     }
