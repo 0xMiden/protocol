@@ -70,9 +70,11 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
 /// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
-/// value words): the amount is looked up in the fee schedule under the note's script root, and
-/// note scripts without a schedule entry abort fee estimation. To make a note script free,
-/// schedule an explicit 0 fee for it via [`ConstantFeePolicy::with_fee`].
+/// value words): the amount is looked up in the fee schedule under the note's script root
+/// (recovered from the note's recipient via the advice provider), and note scripts without a
+/// schedule entry abort fee estimation. To make a note script free, schedule an explicit 0 fee
+/// for it via [`ConstantFeePolicy::with_fee`]. The remaining note parameters, including the
+/// timeframe and priority, are ignored by this policy.
 ///
 /// ## Storage layout
 ///

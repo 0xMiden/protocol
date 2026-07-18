@@ -17,7 +17,7 @@ use miden::protocol::native_account
 
 use miden::standards::access::authority
 
-use {AccountProcedureRoot, Asset, NoteScriptRoot} from miden::protocol::types
+use {AccountProcedureRoot, Asset, NoteRecipient} from miden::protocol::types
 
 # DEPENDENCY NOTE
 # `set_fee_policy` consults the account-wide [`Authority`] component (installed separately) via
@@ -39,6 +39,7 @@ const POLICY_PROC_ROOT_PTR = 0
 # ERRORS
 # =================================================================================================
 
+const ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 = "timeframe and priority must be u32 values"
 const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
 const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
@@ -53,29 +54,41 @@ const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 #! authentication component on another account, via FPI) `call` into this procedure to learn the
 #! fee this account charges for the note.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Policies that price on the note's script root or storage commitment recover them from RECIPIENT
+#! via the advice provider, so the recipient preimage must be present in the advice map.
+#!
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
-#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
+#! - timeframe or priority is not a u32 value.
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: call
 @account_procedure
 pub proc estimate_note_fee(
-    note_script_root: NoteScriptRoot,
-    storage_commitment: word,
+    recipient: NoteRecipient,
     assets_commitment: word,
-    attachments_commitment: word
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
 ) -> Asset
+    # enforce the declared types of the caller-supplied timeframe and priority
+    movup.13 movup.13 u32assert2.err=ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 movdn.13 movdn.13
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+
     exec.estimate_note_fee_internal
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 end
@@ -124,27 +137,34 @@ end
 
 #! Estimates the fee for a note by executing the active fee policy.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! This internal entry point trusts its caller to supply u32 timeframe and priority values; the
+#! `call`-able [`estimate_note_fee`] wrapper enforces them.
+#!
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
-#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 pub proc estimate_note_fee_internal(
-    note_script_root: NoteScriptRoot,
-    storage_commitment: word,
+    recipient: NoteRecipient,
     assets_commitment: word,
-    attachments_commitment: word
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
 ) -> Asset
     exec.execute_fee_policy
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -155,44 +175,48 @@ end
 #! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
 #! fee from them.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
-#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - timeframe is an opaque pricing input; its meaning is defined by the active fee policy.
+#! - priority is an opaque pricing input; its meaning is defined by the active fee policy.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
 #! - the active fee policy is not set.
+#! - the active fee policy requires the note's recipient preimage and it is unavailable or does
+#!   not hash to the recipient.
 #! - the active fee policy aborts the fee computation.
 #!
 #! Invocation: exec
 @locals(4)
 proc execute_fee_policy(
-    note_script_root: NoteScriptRoot,
-    storage_commitment: word,
+    recipient: NoteRecipient,
     assets_commitment: word,
-    attachments_commitment: word
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
 ) -> Asset
     exec.get_fee_policy_root
-    # => [FEE_POLICY_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
-    #     ATTACHMENTS_COMMITMENT]
+    # => [FEE_POLICY_ROOT, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+    #     priority, pad(2)]
 
     exec.word::testz
     assertz.err=ERR_ACTIVE_FEE_POLICY_NOT_SET
-    # => [FEE_POLICY_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
-    #     ATTACHMENTS_COMMITMENT]
+    # => [FEE_POLICY_ROOT, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+    #     priority, pad(2)]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
-    #     ATTACHMENTS_COMMITMENT]
+    # => [policy_root_ptr, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+    #     priority, pad(2)]
 
     dyncall
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
