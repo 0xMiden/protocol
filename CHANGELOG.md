@@ -17,6 +17,7 @@
 - Added the `NoteConsumptionCost` trait, the `NotePricer` (kernel fee formula plus safety margin, with recursive pricing covering the network notes a consumption creates), and `standard_note_prices`/`agglayer_note_prices` to convert benchmarked note consumption costs into concrete fees, plus `ConstantFeePolicy::with_fees` to populate a fee schedule from them ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and enforced fresh by CI snapshot tests ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
 - Added the `NoteConsumptionCost` trait, the `StandardNote::note_cost` lookup, and the `NetworkNotePricer` converting benchmarked note consumption costs into the fees a network account should charge: kernel fee formula plus safety margin, recursive pricing over the notes a consumption creates (with a configurable root-cost lookup, e.g. `miden_agglayer::costs::note_cost`); plus `ConstantFeePolicy::with_fees` to populate a fee schedule ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
+- Added `NetworkNotePricer` (with the `NoteConsumptionCost` trait and `StandardNote::note_cost` lookup) to turn the benchmarked note consumption costs into network account fee schedules via `ConstantFeePolicy::with_fees` ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 
 ### Changes
 
