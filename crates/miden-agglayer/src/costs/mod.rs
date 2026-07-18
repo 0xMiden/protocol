@@ -3,9 +3,10 @@
 //! Each constant is the number of VM cycles of the canonical network-account transaction
 //! consuming the note - measured by the `bench-transaction` binary. See
 //! [`miden_standards::note::costs`] for the full definition of the canonical transaction, the
-//! cycle denomination, why the values are estimates rather than guaranteed worst cases, and
-//! the [`NotePricer`](miden_standards::note::costs::NotePricer) turning cycle costs into fees;
-//! build it with this module's [`note_cost`] as the lookup to price agglayer and standard
+//! cycle denomination, why the values are estimates rather than guaranteed worst cases, and the
+//! [`NetworkNotePricer`](miden_standards::note::costs::NetworkNotePricer) turning cycle costs
+//! into fees; build it with this module's [`note_cost`] as the lookup to price agglayer and
+//! standard
 //! notes through a single pricer.
 //!
 //! The table is regenerated with `make update-note-costs`; a snapshot test in
@@ -18,7 +19,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::note::costs::{NoteConsumptionCost, NoteCost};
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, MintNote, StandardNote};
 
 use crate::{
     B2AggNote,
@@ -88,7 +89,7 @@ impl NoteConsumptionCost for RemoveGerNote {
 
 /// Returns the benchmarked consumption cost of the note with the given script root, resolving
 /// the agglayer notes first and falling back to the standard notes
-/// ([`miden_standards::note::costs::note_cost`]).
+/// ([`StandardNote::note_cost`]).
 pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
     if root == ClaimNote::script_root() {
         return Some(NoteCost::of::<ClaimNote>());
@@ -109,7 +110,7 @@ pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
         return Some(NoteCost::of::<RemoveGerNote>());
     }
 
-    miden_standards::note::costs::note_cost(root)
+    StandardNote::note_cost(root)
 }
 
 // TESTS
@@ -120,14 +121,14 @@ mod tests {
     use miden_standards::note::P2idNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
-        NotePricer,
+        NetworkNotePricer,
         P2ID_CONSUMPTION_CYCLES,
     };
 
     use super::*;
 
-    fn pricer() -> NotePricer {
-        NotePricer::builder()
+    fn pricer() -> NetworkNotePricer {
+        NetworkNotePricer::builder()
             .verification_base_fee(500)
             .safety_margin_verification_cycles(0)
             .lookup(note_cost)

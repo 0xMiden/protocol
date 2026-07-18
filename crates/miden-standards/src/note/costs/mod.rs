@@ -8,7 +8,7 @@
 //!
 //! The values are denominated in cycles rather than fee units, since the fee
 //! (`verification_base_fee * (ilog2(cycles) + 1)`) depends on a block-header parameter. Use
-//! [`NotePricer`] to turn cycle costs into concrete [`AssetAmount`] fees and populate a fee
+//! [`NetworkNotePricer`] to turn cycle costs into concrete [`AssetAmount`] fees and populate a fee
 //! schedule via
 //! [`ConstantFeePolicy::with_fees`](crate::account::fees::ConstantFeePolicy::with_fees).
 //!
@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::errors::AssetError;
-use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_protocol::note::NoteScriptRoot;
 
 use crate::note::{
     BurnNote,
@@ -36,7 +36,6 @@ use crate::note::{
     FeeSponsorshipNote,
     MintNote,
     NetworkAccountConfigNote,
-    NetworkNoteExt,
     OwnerActionNote,
     P2idNote,
     P2ideNote,
@@ -197,32 +196,37 @@ impl NoteCost {
     }
 }
 
-/// Returns the benchmarked consumption cost of the standard note with the given script root, or
-/// `None` if the root does not match a priced standard note.
-///
-/// TX_FEE is not priced: it is consumed by fee-collecting operators, not by network accounts.
-pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
-    match StandardNote::from_script_root(root)? {
-        StandardNote::P2ID => Some(NoteCost::of::<P2idNote>()),
-        StandardNote::P2IDE => Some(NoteCost::of::<P2ideNote>()),
-        StandardNote::SWAP => Some(NoteCost::of::<SwapNote>()),
-        StandardNote::PSWAP => Some(NoteCost::of::<PswapNote>()),
-        StandardNote::MINT => Some(NoteCost::of::<MintNote>()),
-        StandardNote::BURN => Some(NoteCost::of::<BurnNote>()),
-        StandardNote::FAUCET_POLICY_ACTION => Some(NoteCost::of::<FaucetPolicyActionNote>()),
-        StandardNote::PAUSE_ACTION => Some(NoteCost::of::<PauseActionNote>()),
-        StandardNote::OWNER_ACTION => Some(NoteCost::of::<OwnerActionNote>()),
-        StandardNote::RBAC_ACTION => Some(NoteCost::of::<RbacActionNote>()),
-        StandardNote::FEE_SPONSORSHIP => Some(NoteCost::of::<FeeSponsorshipNote>()),
-        StandardNote::NETWORK_ACCOUNT_CONFIG => Some(NoteCost::of::<NetworkAccountConfigNote>()),
-        StandardNote::TX_FEE => None,
+impl StandardNote {
+    /// Returns the benchmarked consumption cost of the standard note with the given script
+    /// root, or `None` if the root does not match a priced standard note.
+    ///
+    /// TX_FEE is not priced: it is consumed by fee-collecting operators, not by network
+    /// accounts.
+    pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
+        match StandardNote::from_script_root(root)? {
+            StandardNote::P2ID => Some(NoteCost::of::<P2idNote>()),
+            StandardNote::P2IDE => Some(NoteCost::of::<P2ideNote>()),
+            StandardNote::SWAP => Some(NoteCost::of::<SwapNote>()),
+            StandardNote::PSWAP => Some(NoteCost::of::<PswapNote>()),
+            StandardNote::MINT => Some(NoteCost::of::<MintNote>()),
+            StandardNote::BURN => Some(NoteCost::of::<BurnNote>()),
+            StandardNote::FAUCET_POLICY_ACTION => Some(NoteCost::of::<FaucetPolicyActionNote>()),
+            StandardNote::PAUSE_ACTION => Some(NoteCost::of::<PauseActionNote>()),
+            StandardNote::OWNER_ACTION => Some(NoteCost::of::<OwnerActionNote>()),
+            StandardNote::RBAC_ACTION => Some(NoteCost::of::<RbacActionNote>()),
+            StandardNote::NETWORK_ACCOUNT_CONFIG => {
+                Some(NoteCost::of::<NetworkAccountConfigNote>())
+            },
+            StandardNote::FEE_SPONSORSHIP => Some(NoteCost::of::<FeeSponsorshipNote>()),
+            StandardNote::TX_FEE => None,
+        }
     }
 }
 
-// NOTE PRICER
+// NETWORK NOTE PRICER
 // ================================================================================================
 
-/// Error returned by [`NotePricer`] operations.
+/// Error returned by [`NetworkNotePricer`] operations.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum NotePricingError {
@@ -241,41 +245,40 @@ pub enum NotePricingError {
     UnknownNoteScriptRoot(NoteScriptRoot),
 }
 
-/// Converts benchmarked note-consumption cycle counts into concrete fees.
+/// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
+/// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
-/// Implements the kernel fee formula `verification_base_fee * (ilog2(cycles) + 1)` (see the
-/// transaction kernel's `compute_fee`, whose `+ 1` is unconditional - the testing-crate
-/// `TransactionFee` mirror rounds differently at exact powers of two) plus a safety margin
-/// expressed in extra verification cycles. The default margin of one verification cycle prices
-/// a note as if it consumed twice its measured cycles, absorbing moderate cost growth between
-/// benchmark regenerations at the price of a small fee increase.
+/// Implements the kernel fee formula `verification_base_fee * (ilog2(cycles) + 1)` plus a
+/// safety margin expressed in extra verification cycles. The default margin of one
+/// (verification cycle) prices a note as-if it consumed at twice its measured cycles.
 ///
 /// The `verification_base_fee` should come from the chain's current
 /// [`FeeParameters`](miden_protocol::block::FeeParameters). The cost lookup resolves script
-/// roots to their benchmarked costs and defaults to the standard-note lookup ([`note_cost`]);
-/// build with `miden_agglayer::costs::note_cost` to price agglayer and standard notes through
-/// the same pricer.
+/// roots to their benchmarked costs and defaults to the standard-note lookup
+/// ([`StandardNote::note_cost`]); build the `NetworkNotePricer` with
+/// `miden_agglayer::costs::note_cost` to price agglayer and standard notes through the same
+/// pricer.
 #[derive(Debug, Clone, bon::Builder)]
-pub struct NotePricer {
+pub struct NetworkNotePricer {
     /// The chain's verification base fee.
     verification_base_fee: u32,
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
     /// The cost lookup used to resolve note script roots.
-    #[builder(default = note_cost)]
+    #[builder(default = StandardNote::note_cost)]
     lookup: fn(NoteScriptRoot) -> Option<NoteCost>,
 }
 
-impl NotePricer {
-    /// Returns the fee charged for a transaction of the given cycle count, including the
-    /// configured safety margin.
+impl NetworkNotePricer {
+    /// Returns the fee charged for a network transaction of the given cycle count, including
+    /// the configured safety margin.
     pub fn fee_for_cycles(&self, cycles: u64) -> Result<AssetAmount, NotePricingError> {
         let fee = self.fee_for_cycles_raw(cycles)?;
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
     }
 
-    /// Prices the note with the given script root.
+    /// Prices the consumption by a network account of the note with the given script root.
     ///
     /// The price of a note is the fee for its own consumption plus the prices of the notes its
     /// consumption creates:
@@ -285,33 +288,13 @@ impl NotePricer {
     /// ```
     ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
-    /// every created note is priced in, making this an upper bound suited for root-keyed fee
-    /// schedules; use [`Self::price_note`] when a concrete note is at hand. A root that is
-    /// already being priced further up the recursion contributes its own consumption fee only
-    /// (a PSWAP partial fill re-creates a PSWAP note, which would otherwise recurse forever).
+    /// EVERY created note is priced in, making this an upper bound suited for root-keyed fee
+    /// schedules. A root that is already being priced further up the recursion contributes its
+    /// own consumption fee only (a PSWAP partial fill re-creates a PSWAP note, which would
+    /// otherwise recurse forever).
     pub fn price(&self, root: NoteScriptRoot) -> Result<AssetAmount, NotePricingError> {
         let fee = self.price_recursive(root, &mut Vec::new())?;
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
-    }
-
-    /// Returns the sponsorship price for a concrete output note.
-    ///
-    /// Returns [`AssetAmount::ZERO`] unless the note is network-targeted - public and carrying
-    /// a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment, see
-    /// [`NetworkNoteExt::is_network_note`](crate::note::NetworkNoteExt::is_network_note) -
-    /// otherwise the recursive [`Self::price`] of the note's script root.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`NotePricingError::UnknownNoteScriptRoot`] when a network-targeted note's
-    /// script root is not resolved by the configured lookup. Since a network note may carry an
-    /// arbitrary script, callers processing untrusted notes must decide how to handle this
-    /// case (e.g. reject the note) rather than treating it as a zero price.
-    pub fn price_note(&self, note: &Note) -> Result<AssetAmount, NotePricingError> {
-        if !note.is_network_note() {
-            return Ok(AssetAmount::ZERO);
-        }
-        self.price(note.script().root())
     }
 
     /// Returns the fee for the given cycle count as a raw `u64`.
@@ -359,17 +342,11 @@ impl NotePricer {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Word;
-    use miden_protocol::account::{AccountId, AccountType};
-    use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::note::NoteType;
-    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-
     use super::*;
-    use crate::note::{NetworkAccountTarget, NoteExecutionHint, TxFeeNote};
+    use crate::note::TxFeeNote;
 
-    fn pricer(base_fee: u32, margin: u32) -> NotePricer {
-        NotePricer::builder()
+    fn pricer(base_fee: u32, margin: u32) -> NetworkNotePricer {
+        NetworkNotePricer::builder()
             .verification_base_fee(base_fee)
             .safety_margin_verification_cycles(margin)
             .build()
@@ -390,7 +367,7 @@ mod tests {
 
     #[test]
     fn default_safety_margin_adds_one_verification_cycle() {
-        let default_margin = NotePricer::builder().verification_base_fee(500).build();
+        let default_margin = NetworkNotePricer::builder().verification_base_fee(500).build();
         assert_eq!(default_margin.fee_for_cycles(1 << 16).unwrap().as_u64(), 500 * 18);
     }
 
@@ -421,11 +398,6 @@ mod tests {
         }
     }
 
-    /// Fabricated lookup resolving no root at all.
-    fn empty_lookup(_root: NoteScriptRoot) -> Option<NoteCost> {
-        None
-    }
-
     /// Fabricated lookup mirroring PSWAP: `[1, 0, 0, 0]` re-creates itself besides the child.
     fn self_recursive_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
         let selfish = NoteScriptRoot::from_array([1, 0, 0, 0]);
@@ -439,8 +411,8 @@ mod tests {
         }
     }
 
-    fn custom_pricer(lookup: fn(NoteScriptRoot) -> Option<NoteCost>) -> NotePricer {
-        NotePricer::builder()
+    fn custom_pricer(lookup: fn(NoteScriptRoot) -> Option<NoteCost>) -> NetworkNotePricer {
+        NetworkNotePricer::builder()
             .verification_base_fee(500)
             .safety_margin_verification_cycles(0)
             .lookup(lookup)
@@ -487,11 +459,11 @@ mod tests {
             NetworkAccountConfigNote::script_root(),
             FeeSponsorshipNote::script_root(),
         ] {
-            let cost = note_cost(root).expect("standard note should have a cost");
+            let cost = StandardNote::note_cost(root).expect("standard note should have a cost");
             assert!(cost.cycles() > 0);
         }
 
-        assert!(note_cost(TxFeeNote::script_root()).is_none());
+        assert!(StandardNote::note_cost(TxFeeNote::script_root()).is_none());
     }
 
     #[test]
@@ -500,61 +472,5 @@ mod tests {
         let p2id_fee = pricer.fee_for_cycles(P2ID_CONSUMPTION_CYCLES).unwrap().as_u64();
         let swap_fee = pricer.fee_for_cycles(SWAP_CONSUMPTION_CYCLES).unwrap().as_u64();
         assert_eq!(pricer.price(SwapNote::script_root()).unwrap().as_u64(), swap_fee + p2id_fee);
-    }
-
-    #[test]
-    fn price_note_prices_only_network_targeted_notes() -> anyhow::Result<()> {
-        let sender =
-            AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
-        let target =
-            AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32]);
-        let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-        let asset = FungibleAsset::new(faucet, 100)?;
-        let pricer = pricer(500, 0);
-
-        // A public P2ID note without a NetworkAccountTarget attachment needs no sponsorship.
-        let plain_note: Note = P2idNote::builder()
-            .sender(sender)
-            .target(target)
-            .asset(asset)
-            .note_type(NoteType::Public)
-            .serial_number(Word::empty())
-            .build()?
-            .into();
-        assert_eq!(pricer.price_note(&plain_note)?, AssetAmount::ZERO);
-
-        // A private note is not network-targeted even with the attachment.
-        let private_note: Note = P2idNote::builder()
-            .sender(sender)
-            .target(target)
-            .asset(asset)
-            .note_type(NoteType::Private)
-            .serial_number(Word::empty())
-            .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
-            .build()?
-            .into();
-        assert_eq!(pricer.price_note(&private_note)?, AssetAmount::ZERO);
-
-        // The same note as a public note carrying the attachment is priced at its script
-        // root's price.
-        let network_note: Note = P2idNote::builder()
-            .sender(sender)
-            .target(target)
-            .asset(asset)
-            .note_type(NoteType::Public)
-            .serial_number(Word::empty())
-            .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
-            .build()?
-            .into();
-        assert_eq!(pricer.price_note(&network_note)?, pricer.price(P2idNote::script_root())?);
-
-        // A network-targeted note whose script root the lookup cannot resolve is an error, not
-        // a zero price.
-        assert!(matches!(
-            custom_pricer(empty_lookup).price_note(&network_note),
-            Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == P2idNote::script_root()
-        ));
-
-        Ok(())
     }
 }
