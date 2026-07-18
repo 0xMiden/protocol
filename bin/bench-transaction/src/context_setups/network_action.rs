@@ -11,16 +11,24 @@
 //! other selectors of the same note run the identical dispatch path with different storage
 //! accesses, so their costs are expected to stay within the same fee bracket.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use miden_protocol::account::{AccountBuilder, AccountType, AssetCallbackFlag, RoleSymbol};
+use miden_protocol::Word;
+use miden_protocol::account::{
+    AccountBuilder,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+    RoleSymbol,
+};
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -28,9 +36,12 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FaucetPolicyAction,
     FaucetPolicyActionNote,
+    NetworkAccountConfig,
+    NetworkAccountConfigNote,
     OwnerAction,
     OwnerActionNote,
     PauseAction,
@@ -218,6 +229,48 @@ pub fn tx_consume_rbac_action_note_network() -> Result<TransactionContext> {
             account: member,
         })
         .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain.build_tx_context(account.id(), &[note.id()], &[])?.build()
+}
+
+// NETWORK ACCOUNT CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context in which a network account consumes a NETWORK_ACCOUNT_CONFIG
+/// note.
+///
+/// The account opts into allowlist management: `AuthNetworkAccount` (which auto-allowlists the
+/// config-note root) gated by the Ownable2Step owner via `Authority::OwnerControlled` (mirrors
+/// `build_owner_controlled_account` in the `network_account` auth test suite). The benchmarked
+/// action is `AddAllowedNoteScript`; the other selectors run the identical dispatch path.
+pub fn tx_consume_network_account_config_note_network() -> Result<TransactionContext> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner authorized to send config notes; only its ID is needed
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
+
+    let auth_component = AuthNetworkAccount::with_allowed_notes(BTreeSet::new())?;
+    let account = AccountBuilder::new([7; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(auth_component)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(BasicWallet)
+        .with_assets([super::fee_funding_asset()?])
+        .build_existing()?;
+    builder.add_account(account.clone())?;
+
+    let note: Note = NetworkAccountConfigNote::builder()
+        .sender(owner)
+        .account(account.id())
+        .action(NetworkAccountConfig::AddAllowedNoteScript {
+            script_root: NoteScriptRoot::from_array([1, 2, 3, 4]),
+        })
+        .serial_number(Word::from([1u32, 0, 0, 0]))
         .build()?
         .into();
     builder.add_output_note(RawOutputNote::Full(note.clone()));

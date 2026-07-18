@@ -138,6 +138,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<Transa
         ExecutionBenchmark::ConsumeRbacActionNetwork => {
             network_action::tx_consume_rbac_action_note_network()
         },
+        ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
+            network_action::tx_consume_network_account_config_note_network()
+        },
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)
         },
