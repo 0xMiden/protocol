@@ -14,6 +14,7 @@ use miden::core::crypto::hashes::poseidon2
 
 use miden::protocol::input_note
 use miden::protocol::native_account
+use miden::protocol::note as protocol_note
 use miden::protocol::output_note
 use miden::protocol::tx
 use miden::protocol::asset
@@ -308,18 +309,12 @@ proc estimate_input_note_fee
     dup.4 exec.input_note::get_storage_info movup.4 drop swapw
     # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
 
-    dup.8 exec.input_note::get_serial_number padw swapw
-    # => [SERIAL_NUM, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
+    dup.8 exec.input_note::get_serial_number
+    # => [SERIAL_NUM, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
 
     # compute the note's recipient, inserting the recipient preimages into the advice map so the
     # fee policy can recover the script root and storage commitment from the recipient
-    adv.insert_hdword exec.poseidon2::merge
-    # => [SERIAL_COMMITMENT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
-
-    adv.insert_hdword exec.poseidon2::merge
-    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, note_index]
-
-    adv.insert_hdword exec.poseidon2::merge
+    exec.protocol_note::compute_and_store_recipient_from_commitment
     # => [RECIPIENT, note_index]
 
     # pass a timeframe and priority of 0, along with the fee policy padding

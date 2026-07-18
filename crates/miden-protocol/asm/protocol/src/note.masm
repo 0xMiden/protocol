@@ -272,6 +272,39 @@ pub proc compute_and_store_recipient(
     movdnw.2
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
+    exec.compute_and_store_recipient_from_commitment
+    # => [RECIPIENT]
+end
+
+#! Computes the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT, storing
+#! the recipient preimage in the advice map.
+#!
+#! This is the advice-storing variant of [`compute_recipient`]: the intermediate hashes of the
+#! recipient computation are inserted into the advice map so the script root and storage
+#! commitment can later be recovered from the RECIPIENT.
+#!
+#! Inputs:
+#!   Operand stack: [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+#! Outputs:
+#!   Operand stack: [RECIPIENT]
+#!   Advice map: {
+#!      RECIPIENT: [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT],
+#!      SERIAL_SCRIPT_HASH: [SERIAL_HASH, SCRIPT_ROOT],
+#!      SERIAL_HASH: [SERIAL_NUM, EMPTY_WORD],
+#!   }
+#!
+#! Where:
+#! - SERIAL_NUM is the serial number of the recipient.
+#! - SCRIPT_ROOT is the commitment of the note script.
+#! - STORAGE_COMMITMENT is the commitment of the note storage.
+#! - RECIPIENT is the commitment to the note's script, storage, and the serial number.
+#!
+#! Invocation: exec
+pub proc compute_and_store_recipient_from_commitment(
+    serial_num: word,
+    script_root: NoteScriptRoot,
+    storage_commitment: word
+) -> NoteRecipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
