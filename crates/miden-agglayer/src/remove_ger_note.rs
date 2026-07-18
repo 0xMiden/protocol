@@ -16,8 +16,8 @@ use crate::{ExitRoot, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the REMOVE_GER note script procedure in the note scripts library.
-const REMOVE_GER_SCRIPT_PATH: &str = "::agglayer::note_scripts::remove_ger::main";
+/// Path to the REMOVE_GER note script procedure in the agglayer library.
+const REMOVE_GER_SCRIPT_PATH: &str = "::agglayer::notes::remove_ger::main";
 
 // Initialize the REMOVE_GER note script only once
 static REMOVE_GER_SCRIPT: LazyLock<NoteScript> =

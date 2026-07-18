@@ -27,8 +27,8 @@ use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the CLAIM note script procedure in the note scripts library.
-const CLAIM_SCRIPT_PATH: &str = "::agglayer::note_scripts::claim::main";
+/// Path to the CLAIM note script procedure in the agglayer library.
+const CLAIM_SCRIPT_PATH: &str = "::agglayer::notes::claim::main";
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(CLAIM_SCRIPT_PATH));

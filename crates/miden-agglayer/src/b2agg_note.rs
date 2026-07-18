@@ -29,8 +29,8 @@ use crate::{EthAddress, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the B2AGG note script procedure in the note scripts library.
-const B2AGG_SCRIPT_PATH: &str = "::agglayer::note_scripts::b2agg::main";
+/// Path to the B2AGG note script procedure in the agglayer library.
+const B2AGG_SCRIPT_PATH: &str = "::agglayer::notes::b2agg::main";
 
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(B2AGG_SCRIPT_PATH));

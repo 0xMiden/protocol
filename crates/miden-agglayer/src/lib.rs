@@ -92,9 +92,12 @@ static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
 ///
 /// The note scripts this crate builds are external references into this library rather than
 /// self-contained copies of it, so it must be registered with the MAST store of any executor that
-/// runs AggLayer notes (e.g. via `TransactionMastStore::insert_package`). This mirrors how the
-/// standards library backs the standard note scripts, except that the standards library is
-/// preloaded by `TransactionMastStore::new` and this one is not.
+/// runs AggLayer notes. This mirrors the standard note scripts, which are external references into
+/// the standards library. `TransactionMastStore::new` preloads both libraries, so the in-repo
+/// prover and test executors resolve AggLayer notes automatically; a downstream executor that
+/// supplies its own `DataStore` must register this library into it (e.g. via
+/// `TransactionMastStore::insert_package`), exactly as it must already register the standards
+/// library to run standard notes.
 pub fn agglayer_library() -> Package {
     AGGLAYER_LIBRARY.clone()
 }
@@ -102,7 +105,7 @@ pub fn agglayer_library() -> Package {
 /// Resolves the note script exported at `path` from the AggLayer library.
 ///
 /// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
-/// e.g. `::agglayer::note_scripts::claim::main`.
+/// e.g. `::agglayer::notes::claim::main`.
 pub(crate) fn note_script(path: &str) -> NoteScript {
     NoteScript::from_library_reference(&AGGLAYER_LIBRARY, Path::new(path))
         .expect("agglayer library contains the note script procedure")

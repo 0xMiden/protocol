@@ -15,8 +15,8 @@ use crate::{ExitRoot, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the UPDATE_GER note script procedure in the note scripts library.
-const UPDATE_GER_SCRIPT_PATH: &str = "::agglayer::note_scripts::update_ger::main";
+/// Path to the UPDATE_GER note script procedure in the agglayer library.
+const UPDATE_GER_SCRIPT_PATH: &str = "::agglayer::notes::update_ger::main";
 
 // Initialize the UPDATE_GER note script only once
 static UPDATE_GER_SCRIPT: LazyLock<NoteScript> =

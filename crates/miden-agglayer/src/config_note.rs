@@ -33,8 +33,8 @@ use crate::{EthAddress, MetadataHash, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the CONFIG_AGG_BRIDGE note script procedure in the note scripts library.
-const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::note_scripts::config_agg_bridge::main";
+/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer library.
+const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::notes::config_agg_bridge::main";
 
 // Initialize the CONFIG_AGG_BRIDGE note script only once
 static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> =

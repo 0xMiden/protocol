@@ -1,4 +1,4 @@
 pub mod bridge
 pub mod common
 pub mod faucet
-pub mod note_scripts
+pub mod notes
