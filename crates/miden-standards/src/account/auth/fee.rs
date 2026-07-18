@@ -12,7 +12,7 @@ use miden_protocol::{Felt, Hasher, Word};
 ///
 /// The fee amount computed by the transaction kernel is denominated in the native fee asset;
 /// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
-/// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::trivial`].
+/// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::one_to_one`].
 ///
 /// For signature-based authentication components the conversion info is typically committed to
 /// via the transaction's auth args (see [`commit_fee_conversion_info`]).
@@ -49,8 +49,8 @@ impl FeeConversionInfo {
     }
 
     /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
-    /// trivial rate 1/1, e.g. to pay in the native fee asset itself.
-    pub fn trivial(faucet_id: AccountId) -> Self {
+    /// rate 1/1, e.g. to pay in the native fee asset itself.
+    pub fn one_to_one(faucet_id: AccountId) -> Self {
         Self {
             faucet_id,
             rate_num: Felt::ONE,

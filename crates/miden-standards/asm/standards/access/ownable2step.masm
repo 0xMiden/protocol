@@ -30,12 +30,13 @@ use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::native_account
+use {ZERO_WORD} from miden::standards::utils
 
 # CONSTANTS
 # =================================================================================================
 
 # Ownership config value representing renounced ownership (all zeros).
-const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
+const RENOUNCED_OWNERSHIP_CONFIG = ZERO_WORD
 
 # The slot in this component's storage layout where the owner configuration is stored.
 # Contains both the current owner and the nominated owner in a single word.
