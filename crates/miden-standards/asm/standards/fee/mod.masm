@@ -159,7 +159,7 @@ end
 #! The converted amount is ceil(amount * rate_num / rate_den). The intermediate product is
 #! computed with 128-bit precision, so it may exceed a u64 (e.g. for rates scaling between
 #! decimal conventions, like 10^12 for an 18-decimals vs 6-decimals asset pair) as long as the
-#! converted amount fits into a fungible asset amount.
+#! final converted amount fits into a fungible asset amount.
 #!
 #! Inputs:  [amount, rate_num, rate_den]
 #! Outputs: [converted_amount]
