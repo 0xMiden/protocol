@@ -37,7 +37,6 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_COMPONENTS_DIR: &str = "components";
-const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 const ASM_AGGLAYER_CONSTANTS_MASM: &str = "agglayer/common/constants.masm";
 
@@ -94,15 +93,6 @@ fn main() -> Result<()> {
     let component_packages = compile_account_components(
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
-        &assembler,
-        &mut registry,
-        source_manager.clone(),
-    )?;
-
-    // compile note scripts (each statically links the agglayer library so it is self-contained)
-    compile_note_scripts(
-        &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
         &assembler,
         &mut registry,
         source_manager,
@@ -202,42 +192,6 @@ fn compile_account_components(
     }
 
     Ok(packages)
-}
-
-// COMPILE NOTE SCRIPTS
-// ================================================================================================
-
-/// Assembles each member of the note-scripts workspace in `source_dir` into a self-contained
-/// package and saves it to `target_dir`.
-///
-/// Each note script statically links the agglayer library, so the agglayer procedures it uses are
-/// inlined into the resulting package. This keeps note scripts portable: the standards and protocol
-/// procedures they reference are resolved at execution time from the libraries loaded into the
-/// transaction, but the agglayer-specific code travels with the note.
-///
-/// Each file is named after its package (e.g. `miden-agglayer-claim.masp`), so the include path
-/// used by the note modules in `src/` is the package name.
-fn compile_note_scripts(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<()> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    for note_script in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(note_script.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-    }
-
-    Ok(())
 }
 
 // GENERATE AGGLAYER CONSTANTS

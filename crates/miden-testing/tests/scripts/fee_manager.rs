@@ -1,3 +1,5 @@
+use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
@@ -8,7 +10,11 @@ use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_standards::errors::standards::{
+    ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
+    ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
+};
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 // HELPERS
@@ -26,21 +32,33 @@ pub(super) fn priced_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([1, 2, 3, 4])
 }
 
+/// The note script root scheduled with an explicit 0 fee in the constant fee policy.
+fn free_root() -> NoteScriptRoot {
+    NoteScriptRoot::from_array([5, 6, 7, 8])
+}
+
 /// Builds a `FeeManager` whose active policy is a `ConstantFeePolicy` charging [`FEE_AMOUNT`]
-/// (in the test faucet's asset) for notes with the [`priced_root`] script root, and whose
-/// allowed-policies map additionally registers the user-defined [`custom_fee_policy`] for
-/// runtime switching.
+/// (in the test faucet's asset) for notes with the [`priced_root`] script root and an explicit
+/// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
+/// registers the user-defined [`custom_fee_policy`] for runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
     let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
-        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
+        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
+        .with_fee(free_root(), AssetAmount::ZERO);
     Ok(FeeManager::builder()
         .active_fee_policy(constant_fee_policy.into())
         .allowed_fee_policy(custom_fee_policy()?)
         .build())
 }
 
-/// The fee charged by the user-defined test policy in [`custom_fee_policy`].
+/// The base fee charged by the user-defined test policy in [`custom_fee_policy`].
 pub(super) const CUSTOM_FEE_AMOUNT: u64 = 777;
+
+/// The fee the user-defined test policy in [`custom_fee_policy`] charges for the given timeframe
+/// and priority. The distinct weights make a transposition of the two parameters detectable.
+pub(super) fn custom_fee_amount_for(timeframe: u64, priority: u64) -> u64 {
+    CUSTOM_FEE_AMOUNT + 2 * timeframe + priority
+}
 
 /// The namespace under which the user-defined test policy is compiled.
 const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
@@ -48,37 +66,52 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 /// Builds a user-defined fee policy component, mirroring how a contract developer would plug
 /// their own fee computation logic into the `FeeManager` via [`FeePolicy::custom`].
 ///
-/// The policy charges [`CUSTOM_FEE_AMOUNT`] in an "asset" identified by the note's
-/// STORAGE_COMMITMENT. Pricing on a parameter other than NOTE_SCRIPT_ROOT proves that the
-/// manager forwards the full note parameter set to the policy implementation.
+/// The policy charges [`custom_fee_amount_for`] the note's timeframe and priority in an "asset"
+/// identified by the note's STORAGE_COMMITMENT, recovered from RECIPIENT via the advice provider.
+/// Pricing on parameters other than the note's script root - with distinct weights on timeframe
+/// and priority - proves that the manager forwards the full note parameter set, slot by slot, to
+/// the policy implementation.
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
-        use {{Asset, NoteScriptRoot}} from miden::protocol::types
+        use miden::standards::note
 
-        #! Fee policy charging a fixed amount in an asset identified by the note's storage
-        #! commitment.
+        use {{Asset, NoteRecipient}} from miden::protocol::types
+
+        #! Fee policy charging a fixed amount plus twice the timeframe plus the priority, in an
+        #! asset identified by the note's storage commitment, recovered from the recipient via the
+        #! advice provider.
         #!
-        #! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
         #!
         #! Invocation: call
         @account_procedure
         pub proc compute_note_fee(
-            note_script_root: NoteScriptRoot,
-            storage_commitment: word,
+            recipient: NoteRecipient,
             assets_commitment: word,
-            attachments_commitment: word
+            attachments_commitment: word,
+            timeframe: u32,
+            priority: u32
         ) -> Asset
-            # keep STORAGE_COMMITMENT as the fee asset ID, dropping the other note parameters
-            dropw swapw dropw swapw dropw
-            # => [STORAGE_COMMITMENT, pad(12)]
+            exec.note::get_recipient_preimage
+            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
+            #     timeframe, priority, pad(2)]
 
-            push.0.0.0.{CUSTOM_FEE_AMOUNT}
-            # => [FEE_ASSET_VALUE, STORAGE_COMMITMENT, pad(12)]
+            # keep STORAGE_COMMITMENT as the fee asset ID and the timeframe and priority as
+            # pricing inputs, dropping the other note parameters
+            dropw swapw dropw swapw dropw
+            # => [STORAGE_COMMITMENT, timeframe, priority, pad(10)]
+
+            # charge the base amount plus twice the timeframe plus the priority
+            movup.4 mul.2 movup.5 add push.{CUSTOM_FEE_AMOUNT} add
+            # => [fee_amount, STORAGE_COMMITMENT, pad(11)]
+
+            push.0.0.0 movup.3
+            # => [FEE_ASSET_VALUE, STORAGE_COMMITMENT, pad(11)]
 
             swapw
-            # => [STORAGE_COMMITMENT, FEE_ASSET_VALUE, pad(12)]
+            # => [STORAGE_COMMITMENT, FEE_ASSET_VALUE, pad(11)]
 
             # drop the excess padding to restore the stack depth for the call boundary
             movupw.3 dropw
@@ -115,29 +148,49 @@ pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Resu
 }
 
 /// Builds a transaction script that calls `estimate_note_fee` and asserts the returned fee
-/// asset. The tx script argument supplies NOTE_SCRIPT_ROOT on top of the initial operand stack;
-/// the given STORAGE_COMMITMENT is pushed below it, and the remaining zeros serve as the other
-/// note parameters, forming the full 16-felt `estimate_note_fee` inputs. A wrong result aborts
-/// the transaction, so successful execution proves the returned fee asset.
+/// asset. The tx script argument supplies the queried NOTE_SCRIPT_ROOT on top of the initial
+/// operand stack. The script derives the RECIPIENT of a note with that script root, the given
+/// STORAGE_COMMITMENT, and an all-zero serial number, seeding the advice map with the recipient
+/// preimages the fee policy recovers, and places the given timeframe and priority in their
+/// parameter slots; the remaining zeros serve as the other note parameters (assets and
+/// attachments commitments), forming the full 16-felt `estimate_note_fee` inputs. A wrong result
+/// aborts the transaction, so successful execution proves the returned fee asset.
 pub(super) fn estimate_note_fee_tx_script_code(
     storage_commitment: Word,
+    timeframe: u64,
+    priority: u64,
     expected_fee_asset_id: Word,
     expected_fee_value: Word,
 ) -> String {
     format!(
         r#"
+        use miden::core::crypto::hashes::poseidon2
         use miden::standards::fees::fee_manager
 
         @transaction_script
         pub proc main
             # => [NOTE_SCRIPT_ROOT, pad(12)]
 
-            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT
-            push.{storage_commitment} swapw
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+            # place STORAGE_COMMITMENT below NOTE_SCRIPT_ROOT and the all-zero serial number plus
+            # the empty word above it
+            push.{storage_commitment} swapw padw padw
+            # => [SERIAL_NUM = 0, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
+
+            # compute the note's recipient, inserting the recipient preimages into the advice map
+            # so the fee policy can recover the script root and storage commitment
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            # => [RECIPIENT, pad(12)]
+
+            # place the timeframe and priority in their parameter slots; the zeros in between
+            # serve as the assets and attachments commitments
+            push.{priority} push.{timeframe} movdn.13 movdn.13
+            # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(4)]
 
             call.fee_manager::estimate_note_fee
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(10)]
 
             push.{expected_fee_asset_id}
             assert_eqw.err="estimate_note_fee should return the expected fee asset ID"
@@ -173,11 +226,11 @@ pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
 
 /// `FeeManager::estimate_note_fee`, invoked via `call` from a transaction script, dispatches to
 /// the active `ConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
-/// scheduled for the queried note script root. Roots without a schedule entry estimate to an
-/// amount of 0.
+/// scheduled for the queried note script root. Roots scheduled with an explicit 0 fee estimate
+/// to an amount of 0.
 #[rstest]
 #[case::priced_root(priced_root(), FEE_AMOUNT)]
-#[case::unknown_root(NoteScriptRoot::from_array([5, 6, 7, 8]), 0)]
+#[case::zero_fee_root(free_root(), 0)]
 #[tokio::test]
 async fn estimate_note_fee_returns_scheduled_fee(
     #[case] queried_root: NoteScriptRoot,
@@ -194,9 +247,12 @@ async fn estimate_note_fee_returns_scheduled_fee(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    // The constant fee policy ignores the storage commitment, so an all-zero one is passed.
+    // The constant fee policy ignores the storage commitment, timeframe, and priority, so an
+    // all-zero commitment and arbitrary non-zero timeframe and priority are passed.
     let tx_script_code = estimate_note_fee_tx_script_code(
         Word::empty(),
+        11,
+        7,
         AssetId::new_fungible(fee_faucet_id()?).to_word(),
         AssetAmount::new(expected_amount)?.to_word(),
     );
@@ -213,13 +269,100 @@ async fn estimate_note_fee_returns_scheduled_fee(
     Ok(())
 }
 
+/// `estimate_note_fee` rejects a timeframe or priority that is not a valid u32 value.
+#[rstest]
+#[case::timeframe(u64::from(u32::MAX) + 1, 0)]
+#[case::priority(0, u64::from(u32::MAX) + 1)]
+#[tokio::test]
+async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
+    #[case] timeframe: u64,
+    #[case] priority: u64,
+) -> anyhow::Result<()> {
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(fee_manager()?)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee asset is irrelevant since the call aborts before the assertions.
+    let tx_script_code = estimate_note_fee_tx_script_code(
+        Word::empty(),
+        timeframe,
+        priority,
+        Word::empty(),
+        Word::empty(),
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(priced_root().as_word())
+        .build()?
+        .execute()
+        .await;
+
+    // `u32assert2` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_TIMEFRAME_OR_PRIORITY_NOT_U32.code()
+    );
+
+    Ok(())
+}
+
+/// `estimate_note_fee` aborts when the queried note script root has no entry in the active
+/// `ConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
+/// of 0.
+#[tokio::test]
+async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .with_components(fee_manager()?)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The expected fee asset words are irrelevant: execution aborts in `compute_note_fee`
+    // before the tx script's assertions are reached.
+    let tx_script_code =
+        estimate_note_fee_tx_script_code(Word::empty(), 0, 0, Word::empty(), Word::empty());
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(NoteScriptRoot::from_array([9, 10, 11, 12]).as_word())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE);
+
+    Ok(())
+}
+
 /// End-to-end dispatch through a user-defined fee policy: a custom policy component (registered
 /// via [`FeePolicy::custom`]) is set as the manager's active policy, and `estimate_note_fee` is
 /// invoked via FPI. The manager forwards the note parameters to the user-defined
 /// `compute_note_fee`, whose result flows back through `estimate_note_fee` to the FPI caller.
 ///
-/// The custom policy prices on STORAGE_COMMITMENT (ignoring NOTE_SCRIPT_ROOT), so the assertion
-/// on the returned fee asset proves the full parameter set reached the user-defined procedure.
+/// The custom policy prices on STORAGE_COMMITMENT, timeframe, and priority (ignoring
+/// NOTE_SCRIPT_ROOT), so the assertions on the returned fee asset prove the full parameter set
+/// reached the user-defined procedure slot by slot.
 #[tokio::test]
 async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Result<()> {
     let fee_manager = FeeManager::builder().active_fee_policy(custom_fee_policy()?).build();
@@ -245,35 +388,56 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // The custom policy identifies the fee asset by the note's storage commitment.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
 
-    // The note parameters are pushed inline: STORAGE_COMMITMENT first, then an arbitrary
-    // NOTE_SCRIPT_ROOT (the custom policy ignores it) on top; the zeros below serve as the
-    // other note parameters.
+    // Distinct non-zero timeframe and priority prove the parameters reach the policy slot by
+    // slot.
+    let timeframe = 40u64;
+    let priority = 9u64;
+
+    // The note parameters are pushed inline: the RECIPIENT is derived from the storage
+    // commitment, an arbitrary NOTE_SCRIPT_ROOT (the custom policy ignores it), and an all-zero
+    // serial number, seeding the advice map with the recipient preimages the custom policy
+    // recovers; the zeros below serve as the other note parameters.
     let tx_script_code = format!(
         r#"
+        use miden::core::crypto::hashes::poseidon2
         use miden::protocol::tx
 
         @transaction_script
         pub proc main
             # => [pad(16)]
 
-            push.{storage_commitment} push.{note_script_root}
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+            push.{storage_commitment} push.{note_script_root} padw padw
+            # => [SERIAL_NUM = 0, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+
+            # compute the note's recipient, inserting the recipient preimages into the advice map
+            # so the custom policy can recover the script root and storage commitment
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.poseidon2::merge
+            # => [RECIPIENT, pad(16)]
+
+            # place the timeframe and priority in their parameter slots; the zeros in between
+            # serve as the assets and attachments commitments
+            push.{priority} push.{timeframe} movdn.13 movdn.13
+            # => [RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(8)]
 
             # push the estimate_note_fee procedure root and the foreign account ID
             push.{estimate_note_fee_root}
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
-            #     NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+            #     RECIPIENT, ASSETS_COMMITMENT = 0, ATTACHMENTS_COMMITMENT = 0, timeframe,
+            #     priority, pad(8)]
 
             exec.tx::execute_foreign_procedure
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(14)]
 
             push.{expected_fee_asset_id}
             assert_eqw.err="custom fee policy should price in the asset identified by the storage commitment"
             # => [FEE_ASSET_VALUE, pad(12)]
 
             push.{expected_fee_value}
-            assert_eqw.err="custom fee policy should charge the fixed custom amount"
+            assert_eqw.err="custom fee policy should charge the amount derived from the timeframe and priority"
             # => [pad(16)]
         end
         "#,
@@ -282,7 +446,8 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         expected_fee_asset_id = storage_commitment,
-        expected_fee_value = AssetAmount::new(CUSTOM_FEE_AMOUNT)?.to_word(),
+        expected_fee_value =
+            AssetAmount::new(custom_fee_amount_for(timeframe, priority))?.to_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;

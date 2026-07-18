@@ -11,6 +11,7 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 pub mod manager
 
@@ -21,9 +22,9 @@ pub mod manager
 # Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
 const IS_PAUSED_SLOT = word("miden::standards::access::pausable::is_paused")
 
-const PAUSED_WORD = [1, 0, 0, 0]
+const PAUSED_WORD = ONE_WORD
 
-const UNPAUSED_WORD = [0, 0, 0, 0]
+const UNPAUSED_WORD = ZERO_WORD
 
 # ERRORS
 # =================================================================================================
