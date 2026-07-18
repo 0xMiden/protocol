@@ -429,16 +429,16 @@ mod tests {
     /// Ties the hand-maintained created-notes metadata backing recursive pricing to actual
     /// execution: every priced scenario is executed, and each full output note other than the
     /// TX_FEE note must have its script root declared in the consumed note's
-    /// `created_network_notes`. For all notes except MINT the declared set must also be exactly
+    /// `created_notes`. For all notes except MINT the declared set must also be exactly
     /// what execution produced, so over-declaration is caught too; MINT's created P2ID note is
     /// private in its scenarios (not a full output note), so only the subset direction applies.
     #[tokio::test]
-    async fn created_network_notes_cover_executed_output_notes() -> Result<()> {
+    async fn created_notes_cover_executed_output_notes() -> Result<()> {
         for &note in PricedNote::all() {
             let declared: BTreeSet<NoteScriptRoot> =
                 miden_agglayer::costs::note_cost(priced_note_root(note))
                     .expect("every priced note must have a cost")
-                    .created_network_notes()
+                    .created_notes()
                     .iter()
                     .copied()
                     .collect();

@@ -15,6 +15,8 @@
 - Made `AuthNetworkAccount` allowlist management enabled by default: every account now allowlists the standardized `NetworkAccountConfigNote` script root at construction (folded into `with_allowed_notes`), replacing the dedicated `with_allowlist_management` constructor ([#](https://github.com/0xMiden/protocol/pull/)).
 ## v0.16.0-beta.2 (TBD)
 - Added the `NoteConsumptionCost` trait, the `NotePricer` (kernel fee formula plus safety margin, with recursive pricing covering the network notes a consumption creates), and `standard_note_prices`/`agglayer_note_prices` to convert benchmarked note consumption costs into concrete fees, plus `ConstantFeePolicy::with_fees` to populate a fee schedule from them ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
+- Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and enforced fresh by CI snapshot tests ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- Added the `NoteConsumptionCost` trait and the `NotePricer` converting benchmarked note consumption costs into concrete fees: kernel fee formula plus safety margin, recursive pricing over the notes a consumption creates (with a configurable root-cost lookup, e.g. `miden_agglayer::costs::note_cost`), and `price_note` returning the sponsorship price of a concrete note based on its `NetworkAccountTarget` attachment; plus `ConstantFeePolicy::with_fees` to populate a fee schedule ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 
 ### Changes
 
