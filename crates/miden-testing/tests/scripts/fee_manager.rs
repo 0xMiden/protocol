@@ -1,5 +1,6 @@
 use miden_processor::ExecutionError;
 use miden_processor::operation::OperationError;
+use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -8,21 +9,25 @@ use miden_protocol::account::{
     AccountId,
     AccountType,
     StorageMap,
-    StorageMapKey,
     StorageSlot,
 };
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
+use miden_standards::account::fees::{
+    ConstantFeePolicy,
+    FeeManager,
+    FeePolicy,
+    NoteFeeLookupKey,
+    NoteFeeLookupKeyBuilder,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT,
-    ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET,
+    ERR_ACTIVE_LOOKUP_KEY_BUILDER_NOT_SET,
+    ERR_LOOKUP_KEY_BUILDER_ROOT_NOT_IN_ACCOUNT,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
@@ -149,11 +154,12 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
 /// The namespace under which the user-defined lookup-key procedure is compiled.
 const CUSTOM_LOOKUP_KEY_NAME: &str = "test::fees::storage_commitment_lookup";
 
-/// Builds the `constant_fee` policy component by hand with the given fee schedule and lookup-key
-/// procedure root - `From<ConstantFeePolicy>` always writes the built-in root to the slot.
+/// Builds the `constant_fee` policy component by hand with the given fee schedule and active
+/// lookup-key builder root - the `ConstantFeePolicy` API never writes an invalid root, so the
+/// invalid-root cases below require hand-built storage.
 fn constant_fee_component(
     fee_schedule: StorageMap,
-    lookup_key_proc_root: Word,
+    lookup_key_builder_root: Word,
 ) -> anyhow::Result<AccountComponent> {
     let fee_asset_id_slot = StorageSlot::with_value(
         ConstantFeePolicy::fee_asset_id_slot_name().clone(),
@@ -161,13 +167,22 @@ fn constant_fee_component(
     );
     let fee_schedule_slot =
         StorageSlot::with_map(ConstantFeePolicy::fee_schedule_slot_name().clone(), fee_schedule);
-    let lookup_key_proc_root_slot = StorageSlot::with_value(
-        ConstantFeePolicy::lookup_key_proc_root_slot_name().clone(),
-        lookup_key_proc_root,
+    let active_lookup_key_builder_slot = StorageSlot::with_value(
+        ConstantFeePolicy::active_lookup_key_builder_slot().clone(),
+        lookup_key_builder_root,
+    );
+    let allowed_lookup_key_builders_slot = StorageSlot::with_map(
+        ConstantFeePolicy::allowed_lookup_key_builders_slot().clone(),
+        StorageMap::new(),
     );
     Ok(AccountComponent::new(
         ConstantFeePolicy::code().clone(),
-        vec![fee_asset_id_slot, fee_schedule_slot, lookup_key_proc_root_slot],
+        vec![
+            fee_asset_id_slot,
+            fee_schedule_slot,
+            active_lookup_key_builder_slot,
+            allowed_lookup_key_builders_slot,
+        ],
         ConstantFeePolicy::component_metadata(),
     )?)
 }
@@ -307,19 +322,19 @@ async fn estimate_note_fee_returns_scheduled_fee(
     Ok(())
 }
 
-/// `compute_note_fee` refuses to dispatch to an invalid lookup-key procedure root: a hand-built
-/// `constant_fee` component deployment whose `lookup_key_proc_root` slot holds a zero word or a
-/// root that is not a procedure of the account aborts with the matching error instead of invoking
-/// an arbitrary MAST root.
+/// `compute_note_fee` refuses to dispatch to an invalid lookup-key builder root: a hand-built
+/// `constant_fee` component deployment whose `active_lookup_key_builder_proc_root` slot holds a
+/// zero word or a root that is not a procedure of the account aborts with the matching error
+/// instead of invoking an arbitrary MAST root.
 #[rstest]
-#[case::unset_root(Word::empty(), ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET)]
-#[case::foreign_root(Word::from([4u32, 3, 2, 1]), ERR_LOOKUP_KEY_PROC_ROOT_NOT_IN_ACCOUNT)]
+#[case::unset_root(Word::empty(), ERR_ACTIVE_LOOKUP_KEY_BUILDER_NOT_SET)]
+#[case::foreign_root(Word::from([4u32, 3, 2, 1]), ERR_LOOKUP_KEY_BUILDER_ROOT_NOT_IN_ACCOUNT)]
 #[tokio::test]
-async fn estimate_note_fee_rejects_invalid_lookup_key_proc_root(
-    #[case] lookup_key_proc_root: Word,
+async fn estimate_note_fee_rejects_invalid_lookup_key_builder_root(
+    #[case] lookup_key_builder_root: Word,
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
-    let component = constant_fee_component(StorageMap::new(), lookup_key_proc_root)?;
+    let component = constant_fee_component(StorageMap::new(), lookup_key_builder_root)?;
     let policy = FeePolicy::custom(ConstantFeePolicy::root(), [component])?;
 
     let account = AccountBuilder::new([1; 32])
@@ -442,11 +457,12 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A `constant_fee` deployment with a custom root in the `lookup_key_proc_root` slot dispatches
-/// to that procedure: it keys on STORAGE_COMMITMENT, so an unpriced note script root estimates
-/// to the fee stored under the note's storage commitment.
+/// A `ConstantFeePolicy` instantiated with a custom [`NoteFeeLookupKeyBuilder`] dispatches to
+/// that procedure: it keys on STORAGE_COMMITMENT, so an unpriced note script root estimates to
+/// the fee stored under the note's storage commitment. The custom builder's component is bundled
+/// into the policy's component set by the `ConstantFeePolicy` conversion itself.
 #[tokio::test]
-async fn estimate_note_fee_dispatches_to_custom_lookup_key_procedure() -> anyhow::Result<()> {
+async fn estimate_note_fee_dispatches_to_custom_lookup_key_builder() -> anyhow::Result<()> {
     let masm_source = r#"
         use miden::standards::note
 
@@ -490,23 +506,21 @@ async fn estimate_note_fee_dispatches_to_custom_lookup_key_procedure() -> anyhow
         AccountComponentMetadata::mock(CUSTOM_LOOKUP_KEY_NAME),
     )?;
 
-    // The custom lookup-key procedure keys on the storage commitment, so the fee is scheduled
-    // under it (as [fee_amount, 0, 0, 1] with the set-marker in the last element).
+    // The custom lookup-key builder keys on the storage commitment, so the fee is scheduled
+    // under it.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
-    let fee_schedule = StorageMap::with_entries([(
-        StorageMapKey::new(storage_commitment),
-        Word::new([Felt::new(FEE_AMOUNT)?, Felt::ZERO, Felt::ZERO, Felt::ONE]),
-    )])?;
-
-    let policy_component = constant_fee_component(fee_schedule, lookup_root.as_word())?;
-    let policy =
-        FeePolicy::custom(ConstantFeePolicy::root(), [policy_component, lookup_component])?;
+    let policy = ConstantFeePolicy::new(fee_faucet_id()?)
+        .with_fee(NoteFeeLookupKey::from_raw(storage_commitment), AssetAmount::new(FEE_AMOUNT)?)
+        .with_active_lookup_key_builder(NoteFeeLookupKeyBuilder::custom(
+            lookup_root,
+            [lookup_component],
+        )?);
 
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
-        .with_components(FeeManager::builder().active_fee_policy(policy).build())
+        .with_components(FeeManager::builder().active_fee_policy(policy.into()).build())
         .build_existing()?;
 
     let mut builder = MockChain::builder();

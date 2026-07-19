@@ -7,7 +7,12 @@ use thiserror::Error;
 
 mod constant_fee;
 
-pub use constant_fee::{ConstantFeePolicy, NoteFeeLookupKey};
+pub use constant_fee::{
+    ConstantFeePolicy,
+    NoteFeeLookupKey,
+    NoteFeeLookupKeyBuilder,
+    NoteFeeLookupKeyBuilderError,
+};
 
 // FEE POLICY ERROR
 // ================================================================================================
@@ -65,11 +70,13 @@ impl FeePolicy {
 }
 
 impl From<ConstantFeePolicy> for FeePolicy {
-    /// Returns a fee policy charging the constant fee scheduled for the note's script root.
+    /// Returns a fee policy charging the constant fee scheduled for the note's lookup key,
+    /// shipping the policy component along with the companion components of its registered
+    /// lookup-key builders.
     fn from(policy: ConstantFeePolicy) -> Self {
         Self {
             root: ConstantFeePolicy::root(),
-            components: vec![policy.into()],
+            components: policy.into_iter().collect(),
         }
     }
 }

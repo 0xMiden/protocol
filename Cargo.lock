@@ -1943,6 +1943,7 @@ dependencies = [
  "fs-err",
  "miden-assembly",
  "miden-core-lib",
+ "miden-crypto-derive",
  "miden-mast-package",
  "miden-package-registry",
  "miden-project",

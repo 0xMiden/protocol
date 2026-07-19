@@ -19,4 +19,11 @@ mod fee_manager;
 mod policies;
 
 pub use fee_manager::{FeeManager, FeeManagerBuilder};
-pub use policies::{ConstantFeePolicy, FeePolicy, FeePolicyError, NoteFeeLookupKey};
+pub use policies::{
+    ConstantFeePolicy,
+    FeePolicy,
+    FeePolicyError,
+    NoteFeeLookupKey,
+    NoteFeeLookupKeyBuilder,
+    NoteFeeLookupKeyBuilderError,
+};
