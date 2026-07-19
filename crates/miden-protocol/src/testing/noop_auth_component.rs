@@ -1,6 +1,6 @@
 use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
-use crate::assembly::Library;
+use crate::assembly::Package;
 use crate::testing::assembler::assemble_test_library;
 use crate::utils::sync::LazyLock;
 
@@ -14,7 +14,7 @@ const NOOP_AUTH_CODE: &str = "
     end
 ";
 
-static NOOP_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static NOOP_AUTH_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     assemble_test_library("miden-testing-noop-auth", "miden::testing::noop_auth", NOOP_AUTH_CODE)
 });
 

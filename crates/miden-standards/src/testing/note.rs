@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::debuginfo::{SourceLanguage, SourceManagerSync, Uri};
-use miden_protocol::assembly::{DefaultSourceManager, Library};
+use miden_protocol::assembly::{DefaultSourceManager, Package};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -20,7 +20,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
-use miden_protocol::vm::{AdviceMap, Package};
+use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Word};
 use rand::{Rng, RngExt};
 
@@ -32,10 +32,10 @@ use crate::code_builder::CodeBuilder;
 #[derive(Debug, Clone)]
 enum SourceCodeOrigin {
     Masm {
-        dyn_libraries: Vec<Library>,
+        dyn_libraries: Vec<Package>,
         source_manager: Arc<dyn SourceManagerSync>,
     },
-    Package(Arc<Package>),
+    Library(Arc<Package>),
     Script(NoteScript),
 }
 
@@ -137,14 +137,14 @@ impl NoteBuilder {
     /// build-time.
     pub fn dynamically_linked_libraries(
         mut self,
-        dyn_libs: impl IntoIterator<Item = Library>,
+        dyn_libs: impl IntoIterator<Item = Package>,
     ) -> Self {
         match &mut self.source_code {
             SourceCodeOrigin::Masm { dyn_libraries, .. } => {
                 dyn_libraries.extend(dyn_libs);
             },
-            SourceCodeOrigin::Package(_) => {
-                panic!("dynamic libraries cannot be set on a package")
+            SourceCodeOrigin::Library(_) => {
+                panic!("dynamic libraries cannot be set on a library")
             },
             SourceCodeOrigin::Script(_) => {
                 panic!("dynamic libraries cannot be set on a precompiled script")
@@ -158,8 +158,8 @@ impl NoteBuilder {
             SourceCodeOrigin::Masm { source_manager, .. } => {
                 *source_manager = sm;
             },
-            SourceCodeOrigin::Package(_) => {
-                panic!("source manager cannot be set on a package")
+            SourceCodeOrigin::Library(_) => {
+                panic!("source manager cannot be set on a library")
             },
             SourceCodeOrigin::Script(_) => {
                 panic!("source manager cannot be set on a precompiled script")
@@ -168,9 +168,9 @@ impl NoteBuilder {
         self
     }
 
-    /// Sets the source code origin to a  package.
-    pub fn package(mut self, package: Package) -> Self {
-        self.source_code = SourceCodeOrigin::Package(Arc::new(package));
+    /// Sets the source code origin to a library.
+    pub fn library(mut self, library: Package) -> Self {
+        self.source_code = SourceCodeOrigin::Library(Arc::new(library));
         self
     }
 
@@ -208,7 +208,7 @@ impl NoteBuilder {
                     .compile_note_script(virtual_source_file)
                     .expect("note script should compile")
             },
-            SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
+            SourceCodeOrigin::Library(library) => NoteScript::from_library(&library)?,
             SourceCodeOrigin::Script(script) => script,
         };
 

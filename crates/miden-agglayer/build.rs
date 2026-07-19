@@ -125,9 +125,9 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // for project dependency resolution to succeed.
     for package in [
         CoreLibrary::default().package(),
-        Arc::new(Package::from(ProtocolLib::default())),
+        ProtocolLib::default().package(),
         TransactionKernel::package(),
-        Arc::new(Package::from(StandardsLib::default())),
+        StandardsLib::default().package(),
     ] {
         registry.cache_package(package).into_diagnostic()?;
     }
