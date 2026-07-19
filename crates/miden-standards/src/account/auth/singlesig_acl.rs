@@ -80,6 +80,36 @@ impl AuthSingleSigAclConfig {
 /// This makes the safe path the default - newly added setters cannot silently become
 /// permissionless by being forgotten in the configuration.
 ///
+/// ## Fees
+///
+/// `auth_tx_acl` pays the transaction fee on both branches via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the payment asset. On
+/// chains with a zero verification base fee no note is created.
+///
+/// On the authenticated (signature) branch, the payment asset and conversion rate are committed
+/// to via the transaction's auth args (see [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
+/// 1/1 for plain native payment), and the fee is paid before the transaction summary is created,
+/// so the fee note is covered by the signature.
+///
+/// The exempt (no-signature) branch always pays in the native fee asset at rate 1/1, mirroring
+/// [`AuthNetworkAccount`](super::AuthNetworkAccount): with no signer to authorize a conversion
+/// rate, the caller-supplied auth args cannot be trusted to select the payment asset, so the
+/// branch ignores any committed conversion info and pays plainly in the kernel-attested native
+/// asset. Paying on the exempt branch also means exempt transactions cannot evade fees on
+/// fee-charging chains.
+///
+/// ## Warning: Fee Griefing via Exempt Procedures
+///
+/// On fee-charging chains, exempt procedures are a fee-griefing vector: anyone can execute a
+/// transaction against this account that calls only exempt procedures - no signature is
+/// required - yet the transaction fee is paid from this account's vault. An attacker can
+/// repeatedly submit such transactions to drain the account's fee-asset balance one transaction
+/// fee at a time. Add a procedure to the exempt list only if unrestricted, account-funded
+/// invocation of it is acceptable.
+///
 /// ## Authentication Logic
 ///
 /// Authentication is required when a kernel-detected procedure not on the exempt list was

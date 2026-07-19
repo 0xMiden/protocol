@@ -18,24 +18,20 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::vm::Package;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
 use crate::utils::Keccak256Output;
-use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the CLAIM note script procedure in the agglayer library.
+const CLAIM_SCRIPT_PATH: &str = "::agglayer::notes::claim::main";
+
 // Initialize the CLAIM note script only once
-static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-claim.masp"));
-    let library = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CLAIM script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
-});
+static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(CLAIM_SCRIPT_PATH));
 
 // CLAIM NOTE
 // ================================================================================================

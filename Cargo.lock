@@ -2008,6 +2008,7 @@ dependencies = [
 name = "miden-tx"
 version = "0.16.0-alpha.3"
 dependencies = [
+ "miden-agglayer",
  "miden-processor",
  "miden-protocol",
  "miden-prover",

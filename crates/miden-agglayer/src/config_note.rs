@@ -25,25 +25,20 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::vm::Package;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::{EthAddress, MetadataHash};
+use crate::{EthAddress, MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer library.
+const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::notes::config_agg_bridge::main";
+
 // Initialize the CONFIG_AGG_BRIDGE note script only once
-static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/note_scripts/miden-agglayer-config_agg_bridge.masp"
-    ));
-    let library = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CONFIG_AGG_BRIDGE script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
-});
+static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(CONFIG_AGG_BRIDGE_SCRIPT_PATH));
 
 // CONVERSION METADATA
 // ================================================================================================
