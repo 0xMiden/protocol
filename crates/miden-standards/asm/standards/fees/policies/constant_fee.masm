@@ -10,14 +10,16 @@
 #   distinguishing scheduled entries (including explicit 0 fees) from the zero word returned for
 #   unset keys; lookup keys without a schedule entry abort fee computation.
 # - `lookup_key_proc_root` word: the root of the procedure that builds the fee schedule lookup
-#   key from the note parameters. The built-in `build_note_fee_lookup_key` keys on
-#   NOTE_SCRIPT_ROOT.
+#   key from the note parameters. The built-in `build_note_fee_lookup_key` keys on the note's
+#   script root, recovered from RECIPIENT via the advice provider.
 
 use miden::core::word
 
 use miden::protocol::active_account
 
-use {Asset, NoteScriptRoot, StorageMapKey} from miden::protocol::types
+use miden::standards::note
+
+use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -51,37 +53,44 @@ const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule ent
 #!
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters by
 #! the lookup-key procedure whose root is stored in the `lookup_key_proc_root` slot (invoked via
-#! `dyncall`). The built-in `build_note_fee_lookup_key` derives the key from just NOTE_SCRIPT_ROOT.
-#! Lookup keys without a schedule entry abort; to make one free, schedule an explicit 0 fee.
+#! `dyncall`). The built-in `build_note_fee_lookup_key` derives the key from just the note's
+#! script root, which it recovers from RECIPIENT via the advice provider, and ignores the
+#! remaining parameters, including timeframe and priority. Lookup keys without a schedule entry
+#! abort; to make one free, schedule an explicit 0 fee.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
-#! - NOTE_SCRIPT_ROOT is the root of the script of the note whose fee is estimated.
-#! - STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - RECIPIENT is the recipient of the note whose fee is estimated.
 #! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments.
+#! - timeframe is the timeframe the fee is estimated for.
+#! - priority is the priority the fee is estimated for.
 #! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
 #! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
 #!
 #! Panics if:
 #! - the lookup-key procedure root is not set.
 #! - the lookup-key procedure root is not a procedure of this account.
-#! - the note's script root has no fee schedule entry.
+#! - the lookup-key procedure requires the note's recipient preimage and the advice map has no
+#!   preimage for the recipient (or the intermediate hash), or a preimage does not hash to the
+#!   commitment it claims to open.
+#! - the computed lookup key has no fee schedule entry.
 #!
 #! Invocation: call
 @locals(4)
 @account_procedure
 pub proc compute_note_fee(
-    note_script_root: NoteScriptRoot,
-    storage_commitment: word,
+    recipient: NoteRecipient,
     assets_commitment: word,
-    attachments_commitment: word
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
 ) -> Asset
     push.LOOKUP_KEY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
-    # => [LOOKUP_KEY_PROC_ROOT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
-    #     ATTACHMENTS_COMMITMENT]
+    # => [LOOKUP_KEY_PROC_ROOT, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+    #     priority, pad(2)]
 
     exec.word::testz
     assertz.err=ERR_LOOKUP_KEY_PROC_ROOT_NOT_SET
@@ -91,8 +100,8 @@ pub proc compute_note_fee(
 
     loc_storew_le.LOOKUP_KEY_PROC_ROOT_PTR dropw
     locaddr.LOOKUP_KEY_PROC_ROOT_PTR
-    # => [lookup_key_proc_root_ptr, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT,
-    #     ATTACHMENTS_COMMITMENT]
+    # => [lookup_key_proc_root_ptr, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
+    #     timeframe, priority, pad(2)]
 
     dyncall
     # => [LOOKUP_KEY, pad(12)]
@@ -124,20 +133,31 @@ end
 
 #! Builds the fee schedule lookup key from the note parameters.
 #!
-#! This is the built-in lookup-key procedure: the key is just NOTE_SCRIPT_ROOT; the remaining
-#! parameters are ignored.
+#! This is the built-in lookup-key procedure: the key is the note's script root, recovered from
+#! RECIPIENT via the advice provider; the remaining parameters are ignored.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT]
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [LOOKUP_KEY, pad(12)]
+#!
+#! Panics if:
+#! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a preimage does not hash to the commitment it claims to open.
 #!
 #! Invocation: call
 @account_procedure
 pub proc build_note_fee_lookup_key(
-    note_script_root: NoteScriptRoot,
-    storage_commitment: word,
+    recipient: NoteRecipient,
     assets_commitment: word,
-    attachments_commitment: word
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
 ) -> StorageMapKey
-    swapw.3 dropw dropw dropw
+    exec.note::get_recipient_preimage
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
+    #     timeframe, priority, pad(2)]
+
+    # keep the script root as the lookup key, dropping the recovered storage commitment and the
+    # remaining note parameters
+    swapw.3 dropw dropw dropw movup.4 drop movup.4 drop
     # => [LOOKUP_KEY, pad(12)]
 end

@@ -120,7 +120,9 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// [`Self::lookup_key_proc_root_slot_name`] slot, and lookup keys without a schedule entry abort
 /// fee estimation. To make a lookup key free, schedule an explicit 0 fee via
 /// [`ConstantFeePolicy::with_fee`]. The slot defaults to the built-in `build_note_fee_lookup_key`
-/// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root.
+/// procedure ([`Self::lookup_key_proc_root`]), which keys on the note's script root (recovered
+/// from the note's recipient via the advice provider) and ignores the remaining parameters,
+/// including the timeframe and priority.
 ///
 /// The `From<ConstantFeePolicy>` conversion always writes the built-in root; a custom lookup-key
 /// procedure requires building the [`AccountComponent`] manually. The stored root must be an

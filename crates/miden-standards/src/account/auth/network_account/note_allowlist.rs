@@ -247,7 +247,8 @@ mod tests {
             .expect("allowlist should be reconstructable from account storage");
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
-        let expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
+        let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
+        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 
