@@ -74,7 +74,9 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// (recovered from the note's recipient via the advice provider), and note scripts without a
 /// schedule entry abort fee estimation. To make a note script free, schedule an explicit 0 fee
 /// for it via [`ConstantFeePolicy::with_fee`]. The remaining note parameters, including the
-/// timeframe and priority, are ignored by this policy.
+/// timeframe and priority, are ignored by this policy. The manager asserts the returned fee
+/// asset ID matches the fee asset ID it stores itself, so a policy configured with a different
+/// fee asset than its manager aborts fee estimation.
 ///
 /// ## Storage layout
 ///
@@ -172,8 +174,8 @@ impl ConstantFeePolicy {
             (
                 Self::fee_schedule_slot_name().clone(),
                 StorageSlotSchema::map(
-                    "Fee charged per note script root, as [fee_amount, 0, 0, 1] with a set-marker \
-                     as the last element",
+                    "Fee charged per note script root, as [fee_amount, 0, 0, 1] with a \
+                     set-marker as the last element",
                     SchemaType::native_word(),
                     SchemaType::native_word(),
                 ),
@@ -221,7 +223,7 @@ impl From<ConstantFeePolicy> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, AccountType, StorageSlotContent};
+    use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
@@ -233,8 +235,7 @@ mod tests {
             .expect("testing account ID should be valid")
     }
 
-    /// Check that the policy's storage slots contain the fee asset ID and the fee schedule
-    /// entries.
+    /// Check that the policy's storage slot contains the fee schedule entries.
     #[test]
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
@@ -244,7 +245,10 @@ mod tests {
         let policy = ConstantFeePolicy::new(fee_faucet_id())
             .with_fee(script_root, fee)
             .with_fee(free_script_root, AssetAmount::ZERO);
-        let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
+        let fee_manager = FeeManager::builder()
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(policy.into())
+            .build();
 
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
@@ -252,9 +256,15 @@ mod tests {
             .with_components(fee_manager)
             .build_existing()?;
 
-        let fee_asset_id_word =
-            account.storage().get_item(ConstantFeePolicy::fee_asset_id_slot_name())?;
-        assert_eq!(fee_asset_id_word, AssetId::new_fungible(fee_faucet_id()).to_word());
+        let fee_asset_id_slot = account
+            .storage()
+            .get(ConstantFeePolicy::fee_asset_id_slot_name())
+            .expect("fee asset ID slot should exist");
+        assert_eq!(
+            fee_asset_id_slot.value(),
+            AssetId::new_fungible(fee_faucet_id()).to_word(),
+            "the fee asset ID slot should hold the configured fee asset ID"
+        );
 
         let slot = account
             .storage()
