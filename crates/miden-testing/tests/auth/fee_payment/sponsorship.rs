@@ -77,7 +77,7 @@ fn network_account(
 /// conversion info, for a signing account paying its own fee.
 fn native_conversion_info() -> (Word, Vec<miden_protocol::Felt>) {
     commit_fee_conversion_info(
-        FeeConversionInfo::trivial(ACCOUNT_ID_FEE_FAUCET.try_into().unwrap()),
+        FeeConversionInfo::one_to_one(ACCOUNT_ID_FEE_FAUCET.try_into().unwrap()),
         Word::from([9u32, 10, 11, 12]),
     )
 }
