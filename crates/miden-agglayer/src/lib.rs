@@ -31,7 +31,7 @@ pub mod eth_types;
 pub mod faucet;
 mod ger_note;
 pub mod remove_ger_note;
-#[cfg(feature = "testing")]
+#[cfg(any(feature = "testing", test))]
 pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
