@@ -46,6 +46,12 @@
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 
+## v0.16.0-alpha.4 (2026-07-16)
+
+### Features
+
+- Added the canonical `ExpirationTransactionScript` to the transaction-script allowlists for AggLayer bridge and faucet accounts, allowing the network transaction builder to bound their transaction expiration.
+
 ## v0.16.0-alpha.3 (2026-07-15)
 
 ### Fixes
