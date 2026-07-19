@@ -14,6 +14,7 @@ use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
     ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP,
     ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
@@ -74,6 +75,16 @@ static FEE_COLLECTOR_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
             # collect fees in the asset the fee manager is configured with
             exec.fee_manager::read_fee_asset_id
             # => [FEE_ASSET_ID, pad(16)]
+
+            exec.fees::collect_sponsored_fees drop
+            # => [pad(16)]
+        end
+
+        @account_procedure
+        pub proc collect_sponsored_fees_wrong_asset
+            # pass an expected fee asset that differs from the manager's configured fee asset
+            push.1.2.3.4
+            # => [WRONG_FEE_ASSET_ID, pad(16)]
 
             exec.fees::collect_sponsored_fees drop
             # => [pad(16)]
@@ -234,6 +245,40 @@ async fn collects_sponsored_fee_for_a_pair(#[case] sponsored_amount: u64) -> any
         balance, sponsored_amount,
         "the account should collect the sponsored fee into its vault"
     );
+
+    Ok(())
+}
+
+/// `collect_sponsored_fees` rejects an expected fee asset that differs from the fee manager's
+/// configured fee asset, so a caller cannot price fees in one asset while collecting sponsorship
+/// payments in another.
+#[tokio::test]
+async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
+    let Test { mock_chain, network_account, .. } = build_test(None, vec![])?;
+
+    let src = r#"
+        use test::fee_collector
+
+        @transaction_script
+        pub proc main
+            call.fee_collector::collect_sponsored_fees_wrong_asset
+            # => [pad(16)]
+
+            dropw dropw dropw dropw
+        end
+        "#;
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(&*FEE_COLLECTOR_CODE)?
+        .compile_tx_script(src)?;
+
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH);
 
     Ok(())
 }

@@ -80,6 +80,8 @@ const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must 
 
 const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset does not match the expected fee asset"
 
+const ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH = "expected fee asset does not match the fee asset configured in the fee manager"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -116,11 +118,13 @@ const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset do
 #! Outputs: [collected_fee_amount]
 #!
 #! Where:
-#! - FEE_ASSET_ID is the ID of the asset fees are collected in, typically read from the fee
-#!   manager's fee asset ID slot.
+#! - FEE_ASSET_ID is the ID of the asset fees are collected in; it must be the fee asset
+#!   configured in the fee manager (asserted below, so fees cannot be priced in one asset and
+#!   collected in another).
 #! - collected_fee_amount is the total amount of collected fees.
 #!
 #! Panics if:
+#! - FEE_ASSET_ID does not match the fee manager's configured fee asset.
 #! - the active fee policy is not set.
 #! - the active fee policy returns a fee asset other than the fee manager's configured fee asset.
 #! - a FEE_SPONSORSHIP note is encountered as a current note rather than as a feature note's
@@ -136,6 +140,12 @@ const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset do
 #! Invocation: exec
 @locals(4)
 pub proc collect_sponsored_fees(fee_asset_id: AssetId) -> felt
+    # the expected fee asset must be the one the fee manager prices fees in, otherwise fees
+    # could be priced in one asset and collected in another
+    dupw exec.fee_manager::read_fee_asset_id exec.word::eq
+    assert.err=ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH
+    # => [FEE_ASSET_ID]
+
     # cache the expected fee asset ID for the per-pair sponsorship asset checks
     loc_storew_le.FEE_ASSET_ID_LOC dropw
     # => []
