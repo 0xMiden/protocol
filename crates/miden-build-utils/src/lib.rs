@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{env, io};
 
 use fs_err as fs;
@@ -109,6 +109,28 @@ pub fn write_release_package(package: &Package) -> Result<()> {
 // ERROR CONSTANTS EXTRACTION
 // ================================================================================================
 
+/// Matches MASM error constant definitions of the form `const ERR_<NAME> = "<message>"`.
+static MASM_ERROR_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap());
+
+#[derive(Debug, Clone)]
+struct ExtractedError {
+    message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NamedError {
+    pub name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorModule {
+    pub file_path: PathBuf,
+    pub array_name: &'static str,
+    pub is_crate_local: bool,
+}
+
 /// Extract all masm errors from the given path and returns a map by error category.
 pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>> {
     // We use a BTree here to order the errors by their categories which is the first part after
@@ -139,9 +161,7 @@ fn extract_masm_errors(
     errors: &mut BTreeMap<String, ExtractedError>,
     file_contents: &str,
 ) -> Result<()> {
-    let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
-
-    for capture in regex.captures_iter(file_contents) {
+    for capture in MASM_ERROR_REGEX.captures_iter(file_contents) {
         let error_name = capture
             .name("name")
             .expect("error name should be captured")
@@ -262,22 +282,4 @@ pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Resu
     fs::write(module.file_path, output).into_diagnostic()?;
 
     Ok(())
-}
-
-#[derive(Debug, Clone)]
-struct ExtractedError {
-    message: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct NamedError {
-    pub name: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ErrorModule {
-    pub file_path: PathBuf,
-    pub array_name: &'static str,
-    pub is_crate_local: bool,
 }
