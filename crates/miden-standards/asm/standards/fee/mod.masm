@@ -364,7 +364,10 @@ end
 #! Invocation: exec
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
-    # this creates are counted by both the cycle estimate and compute_fee
+    # this creates are counted by both the cycle estimate and compute_fee.
+    exec.tx::get_fee_faucet_id exec.fungible_asset::create_id
+    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
+
     exec.fees::create_network_note_sponsorships
     # => [num_extra_cycles, CONVERSION_INFO]
 

@@ -8,6 +8,7 @@ use miden::core::word
 use miden::standards::auth::network_account
 use miden::standards::fee
 use miden::standards::fees
+use miden::standards::fees::fee_manager
 
 pub use {add_allowed_note_script} from miden::standards::auth::network_account
 pub use {remove_allowed_note_script} from miden::standards::auth::network_account
@@ -55,7 +56,11 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Collect fees prepaid by sponsorship input notes into the account's vault ----
-    # done before paying the fee so the collected assets can fund the fee payment
+    # done before paying the fee so the collected assets can fund the fee payment.
+    # collect fees in the asset the fee manager is configured with
+    exec.fee_manager::read_fee_asset_id
+    # => [FEE_ASSET_ID, pad(16)]
+
     exec.fees::collect_sponsored_fees drop
     # => [pad(16)]
 
