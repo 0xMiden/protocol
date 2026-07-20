@@ -5,16 +5,12 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
@@ -46,7 +42,7 @@ fn free_root() -> NoteScriptRoot {
 /// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
 /// registers the user-defined [`custom_fee_policy`] for runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
-    let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
+    let constant_fee_policy = ConstantFeePolicy::new()
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
     Ok(FeeManager::builder()
@@ -376,50 +372,6 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE);
-
-    Ok(())
-}
-
-/// `estimate_note_fee` aborts when the active `ConstantFeePolicy` is configured with a different
-/// fee asset than the `FeeManager` dispatching to it: the manager asserts the fee asset returned
-/// by the policy matches its own configured fee asset, surfacing the misconfiguration at
-/// estimation time.
-#[tokio::test]
-async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Result<()> {
-    let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-    let misconfigured_policy = ConstantFeePolicy::new(other_faucet_id)
-        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
-    let fee_manager = FeeManager::builder()
-        .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(misconfigured_policy.into())
-        .build();
-
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    // The expected fee asset words are irrelevant: execution aborts in the manager's fee asset
-    // consistency check before the tx script's assertions are reached.
-    let tx_script_code =
-        estimate_note_fee_tx_script_code(Word::empty(), 0, 0, Word::empty(), Word::empty());
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .tx_script(tx_script)
-        .tx_script_args(priced_root().as_word())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_POLICY_FEE_ASSET_MISMATCH);
 
     Ok(())
 }

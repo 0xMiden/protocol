@@ -284,10 +284,10 @@ fn generate_agglayer_constants(
         }
 
         // Both the bridge and the faucet install a FeeManager (see `agglayer_fee_manager` in
-        // lib.rs). Only its procedure code affects the commitment, so the fee faucet id backing the
-        // policy is immaterial here.
+        // lib.rs). Only its procedure code affects the commitment, so the fee faucet id configured
+        // on the manager is immaterial here.
         let fee_manager = FeeManager::builder()
-            .active_fee_policy(ConstantFeePolicy::new(dummy_owner).into())
+            .active_fee_policy(ConstantFeePolicy::new().into())
             .fee_faucet_id(dummy_owner)
             .build();
         components.extend(fee_manager);
