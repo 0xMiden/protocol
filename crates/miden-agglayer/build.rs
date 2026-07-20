@@ -21,6 +21,7 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -357,6 +358,15 @@ fn generate_agglayer_constants(
 
             components.extend(token_policy_manager);
         }
+
+        // Both the bridge and the faucet install a FeeManager (see `agglayer_fee_manager` in
+        // lib.rs). Only its procedure code affects the commitment, so the fee faucet id backing the
+        // policy is immaterial here.
+        let fee_manager = FeeManager::builder()
+            .active_fee_policy(ConstantFeePolicy::new(dummy_owner).into())
+            .fee_faucet_id(dummy_owner)
+            .build();
+        components.extend(fee_manager);
 
         // use `AccountCode` to merge codes of agglayer and authentication components
         let account_code =

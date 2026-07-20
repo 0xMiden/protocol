@@ -473,8 +473,12 @@ impl From<AggLayerBridge> for AccountComponent {
 
 #[cfg(any(feature = "testing", test))]
 impl AggLayerBridge {
-    const REGISTERED_GER_MAP_VALUE: Word =
-        Word::new([miden_core::ONE, miden_core::ZERO, miden_core::ZERO, miden_core::ZERO]);
+    const REGISTERED_GER_MAP_VALUE: Word = Word::new([
+        miden_protocol::Felt::ONE,
+        miden_protocol::Felt::ZERO,
+        miden_protocol::Felt::ZERO,
+        miden_protocol::Felt::ZERO,
+    ]);
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
     /// bridge account.
