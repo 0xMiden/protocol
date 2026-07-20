@@ -40,7 +40,7 @@ async fn execute_network_account_tx(
     // collect_sponsored_fees requires; a constant policy aborts fee estimation for note scripts
     // without a schedule entry, so schedule an explicit 0 fee for every allowlisted note to keep
     // collection a no-op here
-    let mut constant_fee_policy = ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?);
+    let mut constant_fee_policy = ConstantFeePolicy::new();
     for note_script in auth_component.allowed_notes().allowed_script_roots() {
         constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }

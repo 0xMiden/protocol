@@ -46,7 +46,7 @@ fn free_root() -> NoteScriptRoot {
 /// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
 /// registers the user-defined [`custom_fee_policy`] for runtime switching.
 fn fee_manager() -> anyhow::Result<FeeManager> {
-    let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
+    let constant_fee_policy = ConstantFeePolicy::new()
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
     Ok(FeeManager::builder()
@@ -380,18 +380,81 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `estimate_note_fee` aborts when the active `ConstantFeePolicy` is configured with a different
-/// fee asset than the `FeeManager` dispatching to it: the manager asserts the fee asset returned
-/// by the policy matches its own configured fee asset, surfacing the misconfiguration at
-/// estimation time.
+/// The namespace under which the mismatched-asset test policy is compiled.
+const MISMATCHED_FEE_POLICY_NAME: &str = "test::fees::mismatched_asset_fee";
+
+/// Builds a user-defined fee policy whose `compute_note_fee` charges [`FEE_AMOUNT`] in the given
+/// hardcoded fee asset instead of reading the fee asset of the dispatching manager.
+fn mismatched_asset_fee_policy(fee_asset_id: AssetId) -> anyhow::Result<FeePolicy> {
+    let masm_source = format!(
+        r#"
+        use {{Asset, NoteRecipient}} from miden::protocol::types
+
+        #! Fee policy charging a fixed amount in a hardcoded fee asset, ignoring the note
+        #! parameters.
+        #!
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+        #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc compute_note_fee(
+            recipient: NoteRecipient,
+            assets_commitment: word,
+            attachments_commitment: word,
+            timeframe: u32,
+            priority: u32
+        ) -> Asset
+            # drop the note parameters; zeros shift in at the stack-depth-16 floor
+            dropw dropw dropw drop drop
+            # => [pad(16)]
+
+            push.{fee_asset_value}
+            # => [FEE_ASSET_VALUE, pad(16)]
+
+            # drop the excess padding before pushing the fee asset ID
+            movupw.3 dropw
+            # => [FEE_ASSET_VALUE, pad(12)]
+
+            push.{fee_asset_id}
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
+
+            # drop the excess padding to restore the stack depth for the call boundary
+            movupw.3 dropw
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+        end
+        "#,
+        fee_asset_value = AssetAmount::new(FEE_AMOUNT)?.to_word(),
+        fee_asset_id = fee_asset_id.to_word(),
+    );
+
+    let code =
+        CodeBuilder::default().compile_component_code(MISMATCHED_FEE_POLICY_NAME, &masm_source)?;
+    let root = code
+        .get_procedure_root_by_path(
+            format!("{MISMATCHED_FEE_POLICY_NAME}::compute_note_fee").as_str(),
+        )
+        .expect("mismatched-asset fee policy should export compute_note_fee");
+    let component = AccountComponent::new(
+        code,
+        vec![],
+        AccountComponentMetadata::mock(MISMATCHED_FEE_POLICY_NAME),
+    )?;
+
+    Ok(FeePolicy::custom(root, [component])?)
+}
+
+/// `estimate_note_fee` aborts when the active fee policy returns a fee denominated in an asset
+/// other than the fee asset the `FeeManager` is configured with: the manager asserts the fee
+/// asset returned by the policy matches its own configured fee asset, surfacing a misconfigured
+/// policy at estimation time.
 #[tokio::test]
 async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Result<()> {
     let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-    let misconfigured_policy = ConstantFeePolicy::new(other_faucet_id)
-        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
+    let mismatched_policy = mismatched_asset_fee_policy(AssetId::new_fungible(other_faucet_id))?;
     let fee_manager = FeeManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(misconfigured_policy.into())
+        .active_fee_policy(mismatched_policy)
         .build();
 
     let account = AccountBuilder::new([1; 32])

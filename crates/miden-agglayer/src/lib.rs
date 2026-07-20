@@ -160,9 +160,10 @@ fn create_agglayer_faucet_component(
 /// a real fee faucet and schedule are configured when fees are enabled on these accounts.
 ///
 /// Because every scheduled fee is 0, the fee asset (and hence the placeholder faucet id below)
-/// never funds a transfer; only the policy's procedure code contributes to the account code
+/// never funds a transfer; only the components' procedure code contributes to the account code
 /// commitment, which `build.rs` mirrors when computing the compile-time commitment constants (the
-/// fee schedule entries are storage, so they do not affect the commitment).
+/// fee schedule entries and the manager's fee asset id are storage, so they do not affect the
+/// commitment).
 fn agglayer_fee_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeeManager {
     // A placeholder public faucet id; see the note above on why its value is immaterial.
     let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
@@ -170,7 +171,7 @@ fn agglayer_fee_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeeManager {
 
     // A constant fee policy aborts fee estimation for note scripts without a schedule entry, so
     // enumerate the allowlist and schedule each as free.
-    let mut constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id);
+    let mut constant_fee_policy = ConstantFeePolicy::new();
     for note_script in allowed_notes {
         constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
