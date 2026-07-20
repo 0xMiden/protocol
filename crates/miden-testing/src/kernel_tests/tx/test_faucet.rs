@@ -111,7 +111,7 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
@@ -213,7 +213,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         ASSET_ID = FungibleAsset::mock(0).to_id_word(),
         max_amount_plus_1 = FungibleAsset::MAX_AMOUNT.as_u64() + 1,
     );
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::with_fungible_faucet(FungibleAsset::mock_issuer().into())
         .tx_script(tx_script)
@@ -322,7 +322,7 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
@@ -442,7 +442,7 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
         FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
         FUNGIBLE_ASSET_ID = asset.to_id_word(),
     );
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
@@ -627,7 +627,7 @@ async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         ASSET_VALUE = asset.to_value_word(),
         ASSET_ID = asset.to_id_word(),
     );
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
@@ -681,7 +681,7 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     use miden_protocol::account::component::AccountComponentMetadata;
 
     // Build a custom non-faucet account that (invalidly) exposes faucet procedures.
-    let faucet_code = CodeBuilder::with_mock_libraries_with_source_manager(Arc::new(
+    let faucet_code = CodeBuilder::with_mock_packages_with_source_manager(Arc::new(
         DefaultSourceManager::default(),
     ))
     .compile_component_code(

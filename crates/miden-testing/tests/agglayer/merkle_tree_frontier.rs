@@ -100,7 +100,7 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_library())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();
@@ -137,7 +137,7 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_library())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();

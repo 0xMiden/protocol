@@ -372,7 +372,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         num_attachment3_words = attachment3.content().num_words(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     // expected delta
     // --------------------------------------------------------------------------------------------
@@ -612,7 +612,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&library)?
+        .with_statically_linked_package(&library)?
         .compile_tx_script(source)?;
     let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
@@ -894,7 +894,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         "#;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(component_code)?
+        .with_dynamically_linked_package(component_code)?
         .compile_tx_script(script)?;
 
     assert!(tx_script.mast().advice_map().get(&Word::try_from([1u64, 2, 3, 4])?).is_some());

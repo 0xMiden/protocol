@@ -69,7 +69,7 @@ fn create_multisig_smart_account(
 /// the wrapper-exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisigSmart::code())?
+        .with_dynamically_linked_package(AuthMultisigSmart::code())?
         .compile_tx_script(script.as_ref())?)
 }
 

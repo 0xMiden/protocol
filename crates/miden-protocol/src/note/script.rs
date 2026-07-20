@@ -383,14 +383,14 @@ impl Display for NoteScript {
 mod tests {
 
     use super::{Felt, NoteScript, Vec};
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
         let script_src = DEFAULT_NOTE_SCRIPT;
         let library =
-            assemble_test_library("test-note-script-roundtrip", "test::note_roundtrip", script_src);
+            assemble_test_package("test-note-script-roundtrip", "test::note_roundtrip", script_src);
         let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_note_script_preserves_package_debug_info() {
-        let library = assemble_test_library(
+        let library = assemble_test_package(
             "test-note-script-debug-info",
             "test::note_debug_info",
             DEFAULT_NOTE_SCRIPT,
@@ -417,7 +417,7 @@ mod tests {
 
         use crate::Word;
 
-        let library = assemble_test_library(
+        let library = assemble_test_package(
             "test-note-script-with-advice-map",
             "test::note_with_advice_map",
             DEFAULT_NOTE_SCRIPT,

@@ -226,14 +226,14 @@ mod tests {
 
     use super::*;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {
         // Create a simple library for testing
         let library =
-            assemble_test_library("test-extract-metadata", "test::extract_metadata", CODE);
+            assemble_test_package("test-extract-metadata", "test::extract_metadata", CODE);
 
         // Test with metadata
         let metadata = AccountComponentMetadata::new("test_component")
@@ -263,7 +263,7 @@ mod tests {
     fn test_from_library_with_init_data() {
         // Create a simple library for testing
         let library =
-            assemble_test_library("test-from-library-init-data", "test::from_library", CODE);
+            assemble_test_package("test-from-library-init-data", "test::from_library", CODE);
         let component_code = AccountComponentCode::from(library.clone());
 
         // Create metadata for the component

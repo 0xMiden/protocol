@@ -321,7 +321,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "
             @transaction_script
@@ -484,7 +484,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "
             @transaction_script
@@ -574,7 +574,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_with_output_script = CodeBuilder::new()
-        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "
             @transaction_script
@@ -646,7 +646,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     // epilogue, so the "called alone" error surfaces first.)
     let extra_asset = FungibleAsset::mock(1);
     let update_guardian_with_receive_script = CodeBuilder::new()
-        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "
             use miden::standards::wallets::basic as wallet
@@ -781,7 +781,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         output_note.as_ref(),
     );
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
         .compile_tx_script(script_source)?;
 
     // Optional no-op input note seeded into the chain so the multisig account can consume it

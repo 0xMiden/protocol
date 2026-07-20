@@ -330,7 +330,7 @@ mod tests {
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
@@ -347,10 +347,10 @@ mod tests {
           ";
 
     static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
+        assemble_test_package("custom-library-1", "custom::component1", CUSTOM_CODE1)
     });
     static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
+        assemble_test_package("custom-library-2", "custom::component2", CUSTOM_CODE2)
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {

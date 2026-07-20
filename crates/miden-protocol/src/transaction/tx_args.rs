@@ -588,7 +588,7 @@ mod tests {
 
         use super::TransactionScript;
         use crate::errors::TransactionScriptError;
-        use crate::testing::assembler::assemble_test_library;
+        use crate::testing::assembler::assemble_test_package;
         use crate::utils::serde::{Deserializable, Serializable};
 
         let source = "
@@ -597,7 +597,7 @@ mod tests {
                 push.1 drop
             end
         ";
-        let library = assemble_test_library("test-tx-script", "test::tx_script", source);
+        let library = assemble_test_package("test-tx-script", "test::tx_script", source);
 
         let script = TransactionScript::from_library(&library).unwrap();
 
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(script, decoded);
 
         // a library without the attribute is rejected
-        let no_attr = assemble_test_library(
+        let no_attr = assemble_test_package(
             "test-tx-script-no-attr",
             "test::tx_script_no_attr",
             "pub proc main push.1 drop end",
@@ -618,7 +618,7 @@ mod tests {
         );
 
         // a library with multiple tagged procedures is rejected
-        let multiple = assemble_test_library(
+        let multiple = assemble_test_package(
             "test-tx-script-multiple",
             "test::tx_script_multiple",
             "@transaction_script pub proc main_a push.1 drop end
@@ -640,7 +640,7 @@ mod tests {
         use crate::Word;
         use crate::assembly::Path;
         use crate::errors::TransactionScriptError;
-        use crate::testing::assembler::assemble_test_library;
+        use crate::testing::assembler::assemble_test_package;
 
         let source = "
             @transaction_script
@@ -658,7 +658,7 @@ mod tests {
             end
         ";
         let library =
-            assemble_test_library("test-tx-script-reference", "test::tx_script_reference", source);
+            assemble_test_package("test-tx-script-reference", "test::tx_script_reference", source);
 
         // each tagged procedure can be extracted selectively, and the resulting script's root
         // matches the digest of the referenced procedure

@@ -68,7 +68,7 @@ impl TransactionContext {
     /// Executes arbitrary code within the context of a mocked transaction environment and returns
     /// the resulting [`ExecutionOutput`].
     ///
-    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_libraries`]
+    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_packages`]
     /// and executed with advice inputs constructed from the data stored in the context. The program
     /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
     /// by the transaction kernel, and also individual kernel functions (not normally exposed).
@@ -114,7 +114,7 @@ impl TransactionContext {
         );
 
         let assembler: Assembler =
-            CodeBuilder::with_mock_libraries_with_source_manager(self.source_manager.clone())
+            CodeBuilder::with_mock_packages_with_source_manager(self.source_manager.clone())
                 .into();
 
         let program = assembler

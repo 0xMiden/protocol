@@ -158,7 +158,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
     );
 
     let tx_context_builder = TestTransactionBuilder::new(account);
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
     let tx_context = tx_context_builder.tx_script(tx_script).build()?;
 
     tx_context
@@ -618,7 +618,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
                 call.account::get_item
             end
             "#;
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = chain
         .build_tx_context(account_empty_storage, &[], &[])?
@@ -1242,7 +1242,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_existing_source)?;
 
     let tx_context = mock_chain
         .build_tx_context(
@@ -1296,7 +1296,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_new_source)?;
 
     let tx_context = mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_new_asset])?
@@ -1391,7 +1391,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
     let tx_context = mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
@@ -1484,7 +1484,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FINAL_ASSET = final_asset.to_value_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
     mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
@@ -1606,7 +1606,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     );
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_code)?;
 
     // Create transaction context and execute
     let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
@@ -1668,7 +1668,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         })?;
 
     let assembler: miden_protocol::assembly::Assembler =
-        CodeBuilder::with_mock_libraries_with_source_manager(source_manager.clone()).into();
+        CodeBuilder::with_mock_packages_with_source_manager(source_manager.clone()).into();
     let assembler =
         assembler
             .with_package(Arc::from(external_library), Linkage::Static)
@@ -1711,7 +1711,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         .build_existing()?;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&account_component_lib)?
+        .with_dynamically_linked_package(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
     let tx_context = TestTransactionBuilder::new(native_account.clone())
@@ -1809,7 +1809,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         "#;
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries()
+    let tx_script = CodeBuilder::with_mock_packages()
         .compile_tx_script(tx_script_code)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
@@ -2234,8 +2234,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(COMPONENT_1_LIBRARY.clone())?
-        .with_dynamically_linked_library(COMPONENT_2_LIBRARY.clone())?
+        .with_dynamically_linked_package(COMPONENT_1_LIBRARY.clone())?
+        .with_dynamically_linked_package(COMPONENT_2_LIBRARY.clone())?
         .compile_tx_script(tx_script)?;
 
     TestTransactionBuilder::new(account)

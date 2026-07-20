@@ -50,7 +50,7 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(CodeInspection::code())?
+        .with_dynamically_linked_package(CodeInspection::code())?
         .compile_tx_script(tx_script_code)?;
 
     mock_chain

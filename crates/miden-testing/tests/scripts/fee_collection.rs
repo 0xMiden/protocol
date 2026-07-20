@@ -199,7 +199,7 @@ fn collect_tx_script() -> anyhow::Result<TransactionScript> {
         "#;
 
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(&*FEE_COLLECTOR_CODE)?
+        .with_dynamically_linked_package(&*FEE_COLLECTOR_CODE)?
         .compile_tx_script(src)?)
 }
 
@@ -268,7 +268,7 @@ async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
         end
         "#;
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&*FEE_COLLECTOR_CODE)?
+        .with_dynamically_linked_package(&*FEE_COLLECTOR_CODE)?
         .compile_tx_script(src)?;
 
     let result = mock_chain
@@ -911,7 +911,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         serial_num = serial_num,
     );
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&*SPONSORSHIP_CREATOR_CODE)?
+        .with_dynamically_linked_package(&*SPONSORSHIP_CREATOR_CODE)?
         .compile_tx_script(tx_script_src)?;
 
     let foreign_inputs = mock_chain.get_foreign_account_inputs(target.id())?;

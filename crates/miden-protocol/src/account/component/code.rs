@@ -121,11 +121,11 @@ mod tests {
     use miden_core::{Felt, Word};
 
     use super::*;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
 
     #[test]
     fn test_account_component_code_with_advice_map() {
-        let library = assemble_test_library(
+        let library = assemble_test_package(
             "test-component-code-advice-map",
             "test::component_code_advice_map",
             "@account_procedure pub proc test nop end",
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_get_procedure_root_by_path() {
-        let library = assemble_test_library(
+        let library = assemble_test_package(
             "test-component-code-procedure-root",
             "test::component_code_procedure_root",
             "@account_procedure pub proc test_proc nop end",

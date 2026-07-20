@@ -365,7 +365,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -626,7 +626,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -850,7 +850,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };

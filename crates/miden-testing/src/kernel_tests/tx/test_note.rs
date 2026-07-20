@@ -458,7 +458,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()?;
 
     builder.add_output_note(RawOutputNote::Full(timelock_note.clone()));

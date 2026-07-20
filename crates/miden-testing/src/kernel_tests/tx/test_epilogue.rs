@@ -278,7 +278,7 @@ async fn epilogue_fails_when_assets_arent_preserved(
         OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -468,7 +468,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = TestTransactionBuilder::with_noop_auth_account()
         .tx_script(tx_script)

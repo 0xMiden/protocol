@@ -30,34 +30,34 @@ use crate::standards_lib::StandardsLib;
 const NOTE_SCRIPT_MODULE_PATH: &str = "::note_script";
 const TX_SCRIPT_MODULE_PATH: &str = "::tx_script";
 
-/// A value that can provide a compiled Miden library to the code builder.
-pub trait CodeBuilderLibrary {
-    fn as_code_builder_library(&self) -> &Package;
+/// A value that can provide a compiled Miden package to the code builder.
+pub trait CodeBuilderPackage {
+    fn as_code_builder_package(&self) -> &Package;
 }
 
-impl<T> CodeBuilderLibrary for &T
+impl<T> CodeBuilderPackage for &T
 where
-    T: CodeBuilderLibrary + ?Sized,
+    T: CodeBuilderPackage + ?Sized,
 {
-    fn as_code_builder_library(&self) -> &Package {
-        (*self).as_code_builder_library()
+    fn as_code_builder_package(&self) -> &Package {
+        (*self).as_code_builder_package()
     }
 }
 
-impl CodeBuilderLibrary for Package {
-    fn as_code_builder_library(&self) -> &Package {
+impl CodeBuilderPackage for Package {
+    fn as_code_builder_package(&self) -> &Package {
         self
     }
 }
 
-impl CodeBuilderLibrary for Box<Package> {
-    fn as_code_builder_library(&self) -> &Package {
+impl CodeBuilderPackage for Box<Package> {
+    fn as_code_builder_package(&self) -> &Package {
         self
     }
 }
 
-impl CodeBuilderLibrary for AccountComponentCode {
-    fn as_code_builder_library(&self) -> &Package {
+impl CodeBuilderPackage for AccountComponentCode {
+    fn as_code_builder_package(&self) -> &Package {
         self.as_package()
     }
 }
@@ -187,32 +187,32 @@ impl CodeBuilderScriptSource for std::path::PathBuf {
 // ================================================================================================
 
 /// A builder for compiling account components, note scripts, and transaction scripts with optional
-/// library dependencies.
+/// package dependencies.
 ///
 /// The [`CodeBuilder`] simplifies the process of creating transaction scripts by providing:
-/// - A clean API for adding multiple libraries with static or dynamic linking
-/// - Automatic assembler configuration with all added libraries
+/// - A clean API for adding multiple packages with static or dynamic linking
+/// - Automatic assembler configuration with all added packages
 /// - Debug mode support
 /// - Builder pattern support for method chaining
 ///
 /// ## Static vs Dynamic Linking
 ///
-/// **Static Linking** (`link_static_library()` / `with_statically_linked_library()`):
-/// - Use when you control and know the library code
-/// - The library code is copied into the script code
-/// - Best for most user-written libraries and dependencies
+/// **Static Linking** (`link_static_package()` / `with_statically_linked_package()`):
+/// - Use when you control and know the package code
+/// - The package code is copied into the script code
+/// - Best for most user-written packages and dependencies
 /// - Results in larger script size but ensures the code is always available
 ///
-/// **Dynamic Linking** (`link_dynamic_library()` / `with_dynamically_linked_library()`):
+/// **Dynamic Linking** (`link_dynamic_package()` / `with_dynamically_linked_package()`):
 /// - Use when making Foreign Procedure Invocation (FPI) calls
-/// - The library code is available on-chain and referenced, not copied
+/// - The package code is available on-chain and referenced, not copied
 /// - Results in smaller script size but requires the code to be available on-chain
 ///
 /// ## Typical Workflow
 ///
 /// 1. Create a new CodeBuilder with debug mode preference
 /// 2. Add any required modules using `link_module()` or `with_linked_module()`
-/// 3. Add libraries using `link_static_library()` / `link_dynamic_library()` as appropriate
+/// 3. Add packages using `link_static_package()` / `link_dynamic_package()` as appropriate
 /// 4. Compile your script with `compile_note_script()` or `compile_tx_script()`
 ///
 /// Note that the compiling methods consume the CodeBuilder, so if you need to compile
@@ -229,13 +229,13 @@ impl CodeBuilderScriptSource for std::path::PathBuf {
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
 /// # let script_code = "@transaction_script pub proc main nop end";
-/// # // Create sample libraries for the example
+/// # // Create sample packages for the example
 /// # let my_lib: Package = StandardsLib::default().into();
 /// # let fpi_lib: Package = ProtocolLib::default().into();
 /// let script = CodeBuilder::default()
 ///     .with_linked_module("my::module", module_code).context("failed to link module")?
-///     .with_statically_linked_library(&my_lib).context("failed to link static library")?
-///     .with_dynamically_linked_library(&fpi_lib).context("failed to link dynamic library")?  // For FPI calls
+///     .with_statically_linked_package(&my_lib).context("failed to link static package")?
+///     .with_dynamically_linked_package(&fpi_lib).context("failed to link dynamic package")?  // For FPI calls
 ///     .compile_tx_script(script_code).context("failed to parse tx script")?;
 /// # Ok(())
 /// # }
@@ -326,77 +326,77 @@ impl CodeBuilder {
         Ok(())
     }
 
-    /// Statically links the given library.
+    /// Statically links the given package.
     ///
-    /// Static linking means the library code is copied into the script code.
-    /// Use this for most libraries that are not available on-chain.
+    /// Static linking means the package code is copied into the script code.
+    /// Use this for most packages that are not available on-chain.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to statically link
+    /// * `package` - The compiled package to statically link
     ///
     /// # Errors
     /// Returns an error if:
-    /// - adding the library to the assembler failed
-    pub fn link_static_library(&mut self, library: &Package) -> Result<(), CodeBuilderError> {
+    /// - adding the package to the assembler failed
+    pub fn link_static_package(&mut self, package: &Package) -> Result<(), CodeBuilderError> {
         self.assembler
-            .link_package(Arc::new(library.clone()), Linkage::Static)
+            .link_package(Arc::new(package.clone()), Linkage::Static)
             .map_err(|err| {
-                CodeBuilderError::build_error_with_report("failed to add static library", err)
+                CodeBuilderError::build_error_with_report("failed to add static package", err)
             })
     }
 
-    /// Dynamically links a library.
+    /// Dynamically links a package.
     ///
     /// This is useful to dynamically link the [`Package`] of a foreign account
     /// that is invoked using foreign procedure invocation (FPI). Its code is available
     /// on-chain and so it does not have to be copied into the script code.
     ///
-    /// For all other use cases not involving FPI, link the library statically.
+    /// For all other use cases not involving FPI, link the package statically.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to dynamically link
+    /// * `package` - The compiled package to dynamically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn link_dynamic_library(&mut self, library: &Package) -> Result<(), CodeBuilderError> {
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn link_dynamic_package(&mut self, package: &Package) -> Result<(), CodeBuilderError> {
         self.assembler
-            .link_package(Arc::new(library.clone()), Linkage::Dynamic)
+            .link_package(Arc::new(package.clone()), Linkage::Dynamic)
             .map_err(|err| {
-                CodeBuilderError::build_error_with_report("failed to add dynamic library", err)
+                CodeBuilderError::build_error_with_report("failed to add dynamic package", err)
             })
     }
 
-    /// Builder-style method to statically link a library and return the modified builder.
+    /// Builder-style method to statically link a package and return the modified builder.
     ///
     /// This enables method chaining for convenient builder patterns.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to statically link
+    /// * `package` - The compiled package to statically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn with_statically_linked_library(
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn with_statically_linked_package(
         mut self,
-        library: &Package,
+        package: &Package,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_static_library(library)?;
+        self.link_static_package(package)?;
         Ok(self)
     }
 
-    /// Builder-style method to dynamically link a library and return the modified builder.
+    /// Builder-style method to dynamically link a package and return the modified builder.
     ///
     /// This enables method chaining for convenient builder patterns.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to dynamically link
+    /// * `package` - The compiled package to dynamically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn with_dynamically_linked_library(
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn with_dynamically_linked_package(
         mut self,
-        library: impl CodeBuilderLibrary,
+        package: impl CodeBuilderPackage,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_dynamic_library(library.as_code_builder_library())?;
+        self.link_dynamic_package(package.as_code_builder_package())?;
         Ok(self)
     }
 
@@ -464,14 +464,14 @@ impl CodeBuilder {
     // PRIVATE HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the advice map to a library if it's non-empty.
+    /// Applies the advice map to a package if it's non-empty.
     ///
     /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map_to_library(advice_map: AdviceMap, library: Package) -> Package {
+    fn apply_advice_map_to_package(advice_map: AdviceMap, package: Package) -> Package {
         if advice_map.is_empty() {
-            library
+            package
         } else {
-            library.with_advice_map(advice_map)
+            package.with_advice_map(advice_map)
         }
     }
 
@@ -502,14 +502,14 @@ impl CodeBuilder {
                 CodeBuilderError::build_error_with_report("failed to parse component code", err)
             })?;
 
-        let library = assembler
+        let package = assembler
             .assemble_library("account-component", module, None::<Box<Module>>)
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report("failed to parse component code", err)
             })?;
 
-        Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
-            advice_map, *library,
+        Ok(AccountComponentCode::from(Self::apply_advice_map_to_package(
+            advice_map, *package,
         )))
     }
 
@@ -538,7 +538,7 @@ impl CodeBuilder {
             )
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
-                    "failed to parse transaction script library",
+                    "failed to parse transaction script package",
                     err,
                 )
             })?;
@@ -547,7 +547,7 @@ impl CodeBuilder {
             .assemble_library("transaction-script", module, None::<Box<Module>>)
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
-                    "failed to parse transaction script library",
+                    "failed to parse transaction script package",
                     err,
                 )
             })?;
@@ -587,7 +587,7 @@ impl CodeBuilder {
             )
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
-                    "failed to parse note script library",
+                    "failed to parse note script package",
                     err,
                 )
             })?;
@@ -596,7 +596,7 @@ impl CodeBuilder {
             .assemble_library("note-script", module, None::<Box<Module>>)
             .map_err(|err| {
                 CodeBuilderError::build_error_with_report(
-                    "failed to parse note script library",
+                    "failed to parse note script package",
                     err,
                 )
             })?;
@@ -633,7 +633,7 @@ impl CodeBuilder {
     pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
         builder
-            .link_dynamic_library(&TransactionKernel::library())
+            .link_dynamic_package(&TransactionKernel::library())
             .expect("failed to link transaction kernel library");
         builder
     }
@@ -641,47 +641,47 @@ impl CodeBuilder {
     /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` libraries.
     ///
     /// This assembler includes:
-    /// - [`MockAccountCodeExt::mock_account_library`][account_lib],
-    /// - [`MockAccountCodeExt::mock_faucet_library`][faucet_lib],
-    /// - [`mock_util_library`][util_lib]
+    /// - [`MockAccountCodeExt::mock_account_package`][account_pkg],
+    /// - [`MockAccountCodeExt::mock_faucet_package`][faucet_pkg],
+    /// - [`mock_util_package`][util_pkg]
     ///
-    /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
-    /// [faucet_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_library
-    /// [util_lib]: crate::testing::mock_util_lib::mock_util_library
+    /// [account_pkg]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_package
+    /// [faucet_pkg]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_package
+    /// [util_pkg]: crate::testing::mock_util_package::mock_util_package
     #[cfg(any(feature = "testing", test))]
-    pub fn with_mock_libraries() -> Self {
-        Self::with_mock_libraries_with_source_manager(Arc::new(DefaultSourceManager::default()))
+    pub fn with_mock_packages() -> Self {
+        Self::with_mock_packages_with_source_manager(Arc::new(DefaultSourceManager::default()))
     }
 
     /// Returns the mock account and faucet libraries used in testing.
     #[cfg(any(feature = "testing", test))]
-    pub fn mock_libraries() -> impl Iterator<Item = Package> {
+    pub fn mock_packages() -> impl Iterator<Item = Package> {
         use miden_protocol::account::AccountCode;
 
         use crate::testing::mock_account_code::MockAccountCodeExt;
 
-        vec![AccountCode::mock_account_library(), AccountCode::mock_faucet_library()].into_iter()
+        vec![AccountCode::mock_account_package(), AccountCode::mock_faucet_package()].into_iter()
     }
 
     #[cfg(any(feature = "testing", test))]
-    pub fn with_mock_libraries_with_source_manager(
+    pub fn with_mock_packages_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        use crate::testing::mock_util_lib::mock_util_library;
+        use crate::testing::mock_util_package::mock_util_package;
 
         // Start with the builder linking against the transaction kernel, protocol library and
         // standards library.
         let mut builder = Self::with_kernel_library(source_manager);
 
         // Add mock account/faucet libs (built in debug mode) and mock util.
-        for library in Self::mock_libraries() {
+        for package in Self::mock_packages() {
             builder
-                .link_dynamic_library(&library)
+                .link_dynamic_package(&package)
                 .expect("failed to link mock account libraries");
         }
         builder
-            .link_static_library(&mock_util_library())
-            .expect("failed to link mock util library");
+            .link_static_package(&mock_util_package())
+            .expect("failed to link mock util package");
 
         builder
     }
@@ -908,31 +908,31 @@ mod tests {
                 account_code_1,
                 source_manager.clone(),
             )
-            .map_err(|e| anyhow::anyhow!("failed to parse static library: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to parse static package: {}", e))?;
         let dynamic_module = parser
             .parse_str(
                 Some(Path::new("contracts::dynamic_contract")),
                 account_code_2,
                 source_manager.clone(),
             )
-            .map_err(|e| anyhow::anyhow!("failed to parse dynamic library: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to parse dynamic package: {}", e))?;
         let temp_assembler = TransactionKernel::assembler_with_source_manager(source_manager);
 
         let static_lib = temp_assembler
             .clone()
             .assemble_library("static-contract", static_module, None::<&str>)
-            .map_err(|e| anyhow::anyhow!("failed to assemble static library: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to assemble static package: {}", e))?;
 
         let dynamic_lib = temp_assembler
             .assemble_library("dynamic-contract", dynamic_module, None::<&str>)
-            .map_err(|e| anyhow::anyhow!("failed to assemble dynamic library: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to assemble dynamic package: {}", e))?;
 
         // Test linking both static and dynamic libraries
         let builder = CodeBuilder::default()
-            .with_statically_linked_library(&static_lib)
-            .context("failed to link static library")?
-            .with_dynamically_linked_library(&dynamic_lib)
-            .context("failed to link dynamic library")?;
+            .with_statically_linked_package(&static_lib)
+            .context("failed to link static package")?
+            .with_dynamically_linked_package(&dynamic_lib)
+            .context("failed to link dynamic package")?;
 
         builder
             .compile_tx_script(script_code)

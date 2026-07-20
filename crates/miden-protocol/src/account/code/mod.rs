@@ -476,7 +476,7 @@ mod tests {
     use crate::account::{AccountComponent, AccountProcedureRoot};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     #[test]
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn test_account_code_no_auth_component() {
         let library =
-            assemble_test_library("test-account-code-no-auth", "test::account_code", CODE);
+            assemble_test_package("test-account-code-no-auth", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::no_auth");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn test_account_code_preserves_component_debug_info() {
         let library =
-            assemble_test_library("test-account-code-debug-info", "test::account_code", CODE);
+            assemble_test_package("test-account-code-debug-info", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::debug_info");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
@@ -548,7 +548,7 @@ mod tests {
             end
         ";
 
-        let library = assemble_test_library(
+        let library = assemble_test_package(
             "test-account-code-multiple-auth",
             "test::account_code_multiple_auth",
             code_with_multiple_auth,

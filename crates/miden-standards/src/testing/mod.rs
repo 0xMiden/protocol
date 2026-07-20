@@ -6,5 +6,5 @@ pub mod faucet;
 pub mod mock_account;
 pub mod mock_account_code;
 
-pub mod mock_util_lib;
+pub mod mock_util_package;
 pub mod note;

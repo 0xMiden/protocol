@@ -724,7 +724,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -849,7 +849,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
@@ -1089,7 +1089,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
+        .with_dynamically_linked_package(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     mock_chain
@@ -1178,7 +1178,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
 
     // Link against the second foreign account.
     let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
-        .with_dynamically_linked_library(second_foreign_account_component.component_code())?
+        .with_dynamically_linked_package(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
     let first_foreign_account_component = AccountComponent::new(
         first_foreign_account_code,
@@ -1250,7 +1250,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
+        .with_dynamically_linked_package(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let executed_transaction = mock_chain
@@ -1532,7 +1532,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1759,7 +1759,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1848,8 +1848,8 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
         foreign_account_id_suffix = foreign_account.id().suffix(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let result = mock_chain

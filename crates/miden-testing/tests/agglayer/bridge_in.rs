@@ -1606,7 +1606,7 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
         let tx_script = CodeBuilder::new()
-            .with_statically_linked_library(&agglayer_library())?
+            .with_statically_linked_package(&agglayer_library())?
             .compile_tx_script(source)?;
 
         mock_chain

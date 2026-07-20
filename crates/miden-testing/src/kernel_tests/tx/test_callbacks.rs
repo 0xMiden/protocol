@@ -481,7 +481,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -594,7 +594,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
