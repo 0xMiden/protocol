@@ -4,18 +4,18 @@
 edition = "2024"
 
 [dependencies]
+miden-agglayer-current = { package = "miden-agglayer", path = "../crates/miden-agglayer" }
 miden-protocol-current = { package = "miden-protocol", path = "../crates/miden-protocol" }
 miden-standards-current = { package = "miden-standards", path = "../crates/miden-standards" }
 
 # The release wrapper rewrites these tags to the latest release tag on main.
+miden-agglayer-previous = { package = "miden-agglayer", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
 miden-protocol-previous = { package = "miden-protocol", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
 miden-standards-previous = { package = "miden-standards", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
 ---
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    process,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::process;
 
 // Maps the fully-qualified path of an exported procedure to its MAST root (hex digest).
 type Roots = BTreeMap<String, String>;
@@ -64,6 +64,7 @@ fn compare_roots(previous: Roots, current: Roots) -> Result<(), String> {
 }
 
 mod current {
+    use miden_agglayer_current::agglayer_library;
     use miden_protocol_current::ProtocolLib;
     use miden_protocol_current::account::AccountComponentCode;
     use miden_protocol_current::assembly::Library;
@@ -140,6 +141,8 @@ mod current {
         let standards = StandardsLib::default();
         collect_library(standards.as_ref(), &mut roots);
 
+        collect_library(&agglayer_library(), &mut roots);
+
         for code in COMPONENT_CODE {
             collect_library(code().as_ref(), &mut roots);
         }
@@ -160,6 +163,7 @@ mod current {
 }
 
 mod previous {
+    use miden_agglayer_previous::agglayer_library;
     use miden_protocol_previous::ProtocolLib;
     use miden_protocol_previous::account::AccountComponentCode;
     use miden_protocol_previous::assembly::Library;
@@ -235,6 +239,8 @@ mod previous {
 
         let standards = StandardsLib::default();
         collect_library(standards.as_ref(), &mut roots);
+
+        collect_library(&agglayer_library(), &mut roots);
 
         for code in COMPONENT_CODE {
             collect_library(code().as_ref(), &mut roots);
