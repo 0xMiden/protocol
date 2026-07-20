@@ -86,7 +86,6 @@ pub proc compute_note_fee(
     assert.err=ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE
     # => [FEE_ASSET_VALUE, pad(12)]
 
-    # charge the fee in the asset the manager is configured with
     exec.fee_manager::read_fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
 
