@@ -204,7 +204,7 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// from the note parameters by the active lookup-key builder procedure stored in the policy's
 /// [`Self::active_lookup_key_builder_slot`] slot, and lookup keys without a schedule entry abort
 /// fee estimation. To make a lookup key free, schedule an explicit 0 fee via
-/// [`ConstantFeePolicy::with_fee`]. The active builder defaults to the built-in
+/// [`ConstantFeePolicy::with_fee`]. The active builder defaults to the
 /// `build_default_note_fee_lookup_key` procedure ([`NoteFeeLookupKeyBuilder::default`]), which keys
 /// on the note's script root (recovered from the note's recipient via the advice provider) and
 /// ignores the remaining parameters, including the timeframe and priority. The manager asserts
@@ -275,9 +275,8 @@ impl ConstantFeePolicy {
     ///
     /// The key must match the output of the policy's active lookup-key builder for the targeted
     /// notes; with the default `build_default_note_fee_lookup_key`, that is the note's script
-    /// root.
-    /// Scheduling an explicit fee of 0 makes matching notes free; lookup keys without a schedule
-    /// entry abort fee estimation.
+    /// root. Scheduling an explicit fee of 0 makes matching notes free; lookup keys without a
+    /// schedule entry abort fee estimation.
     #[must_use]
     pub fn with_fee(mut self, lookup_key: impl Into<NoteFeeLookupKey>, fee: AssetAmount) -> Self {
         self.fee_schedule.insert(lookup_key.into(), fee);
@@ -561,7 +560,7 @@ mod tests {
         assert_eq!(
             active_builder_word,
             ConstantFeePolicy::default_lookup_key_builder_root().as_word(),
-            "the active lookup-key builder slot should default to the built-in procedure"
+            "the active lookup-key builder slot should hold the default builder root"
         );
 
         let allowed_slot = account

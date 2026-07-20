@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.16.0 (TBD)
+
+### Changes
+
+- [BREAKING] `ConstantFeePolicy` now derives its fee schedule lookup key via a swappable lookup-key builder procedure: the active builder root lives in the new `active_lookup_key_builder_proc_root` slot (default: the `build_default_note_fee_lookup_key` procedure keying on the note's script root), reserved alternatives are registered in the `allowed_lookup_key_builder_proc_roots` map, and custom builders are configured in Rust via `NoteFeeLookupKeyBuilder`; schedule entries are keyed by `NoteFeeLookupKey` ([#3352](https://github.com/0xMiden/protocol/pull/3352)).
+
 ## v0.16.0-beta.1 (2026-07-20)
 
 ### Features
@@ -9,7 +15,7 @@
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
 - Added the `UpgradeManager` account component for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
-- Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (first policy: `ConstantFeePolicy`, with a swappable lookup-key builder configured via `NoteFeeLookupKeyBuilder`) switchable via the authority-gated `set_fee_policy` ([#3309](https://github.com/0xMiden/protocol/pull/3309), [#3352](https://github.com/0xMiden/protocol/pull/3352)).
+- Added a `FeeManager` account component exposing the FPI-callable `estimate_note_fee` procedure, dispatching the fee computation to a configurable fee policy (first policy: `ConstantFeePolicy`) switchable via the authority-gated `set_fee_policy` ([#3309](https://github.com/0xMiden/protocol/pull/3309)).
 - Added the `collect_sponsored_fees` procedure to the `FeeManager`, which walks a transaction's input notes to tally the fees prepaid by their paired `FEE_SPONSORSHIP` notes and credits the aggregated fee to the account's vault ([#3320](https://github.com/0xMiden/protocol/pull/3320)).
 - Added the `create_sponsorship_notes` procedure to the `FeeManager` to create sponsorship notes for all created network notes ([#3321](https://github.com/0xMiden/protocol/pull/3321)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
