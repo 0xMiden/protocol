@@ -14,6 +14,7 @@
 - Made `AuthNetworkAccount` allowlist management enabled by default: every account now allowlists the standardized `NetworkAccountConfigNote` script root at construction (folded into `with_allowed_notes`), replacing the dedicated `with_allowlist_management` constructor ([#](https://github.com/0xMiden/protocol/pull/)).
 
 ### Changes
+- Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
 
 - [BREAKING] Added a fee asset ID slot to the `FeeManager` (set via the required `FeeManagerBuilder::fee_faucet_id`, read via the FPI-callable `get_fee_asset_id`); the manager asserts the fee asset returned by the active fee policy matches it, and `collect_sponsored_fees` / `create_network_note_sponsorships` now take the expected fee asset ID as a stack input ([#3347](https://github.com/0xMiden/protocol/pull/3347)).
 - [BREAKING] Added `timeframe` and `priority` pricing inputs to `estimate_note_fee`; the note's script root and storage commitment are now collapsed into its recipient ([#3349](https://github.com/0xMiden/protocol/pull/3349)).

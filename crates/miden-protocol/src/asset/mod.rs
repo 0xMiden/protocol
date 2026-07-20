@@ -6,7 +6,7 @@ use super::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use super::{Felt, Word};
+use super::{DoubleWord, Felt, Word};
 use crate::account::AccountId;
 
 mod asset_amount;
@@ -182,10 +182,8 @@ impl Asset {
     /// The first four elements contain the asset ID and the last four elements contain the asset
     /// value.
     pub fn as_elements(&self) -> [Felt; 8] {
-        let mut elements = [Felt::ZERO; 8];
-        elements[0..4].copy_from_slice(self.to_id_word().as_elements());
-        elements[4..8].copy_from_slice(self.to_value_word().as_elements());
-        elements
+        let dword = DoubleWord::new(self.to_id_word(), self.to_value_word());
+        dword.into()
     }
 
     /// Returns the inner [`FungibleAsset`].

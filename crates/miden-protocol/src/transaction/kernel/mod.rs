@@ -22,7 +22,7 @@ use crate::vm::{
     StackInputs,
     StackOutputs,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{DoubleWord, Felt, Hasher, Word};
 
 mod procedures {
     include!(concat!(env!("OUT_DIR"), "/procedures.rs"));
@@ -429,23 +429,13 @@ impl TransactionKernel {
                 )
             })?;
 
-        if account_update_data.len() != 8 {
-            return Err(TransactionOutputError::AccountUpdateCommitment(
+        let account_update = DoubleWord::try_from(account_update_data.as_ref()).map_err(|_| {
+            TransactionOutputError::AccountUpdateCommitment(
                 "expected account update commitment advice map entry to contain exactly 8 elements"
                     .into(),
-            ));
-        }
-
-        // SAFETY: We just asserted that the data is of length 8 so slicing the data into two words
-        // is fine.
-        let final_account_commitment = Word::from(
-            <[Felt; 4]>::try_from(&account_update_data[0..4])
-                .expect("we should have sliced off exactly four elements"),
-        );
-        let account_patch_commitment = Word::from(
-            <[Felt; 4]>::try_from(&account_update_data[4..8])
-                .expect("we should have sliced off exactly four elements"),
-        );
+            )
+        })?;
+        let (final_account_commitment, account_patch_commitment) = account_update.into_tuple();
 
         let computed_account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_patch_commitment]);

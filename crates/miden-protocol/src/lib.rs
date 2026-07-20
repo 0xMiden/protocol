@@ -16,6 +16,7 @@ pub mod note;
 pub mod package;
 mod protocol;
 pub mod transaction;
+pub mod types;
 
 #[cfg(any(feature = "testing", test))]
 pub mod testing;
@@ -34,6 +35,7 @@ pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
+pub use types::DoubleWord;
 
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};

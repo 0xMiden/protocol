@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use super::map::EMPTY_STORAGE_MAP_ROOT;
 use super::{AccountStorage, Felt, StorageSlotType, Word};
-use crate::ZERO;
+use crate::DoubleWord;
 use crate::account::{StorageSlot, StorageSlotId, StorageSlotName};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
@@ -215,7 +215,7 @@ impl SequentialCommit for AccountStorageHeader {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        self.slots().flat_map(|slot| slot.to_elements()).collect()
+        self.slots().flat_map(|slot| slot.to_dword()).collect()
     }
 }
 
@@ -297,23 +297,14 @@ impl StorageSlotHeader {
         self.value
     }
 
-    /// Returns this storage slot header as field elements.
+    /// Returns this storage slot header as a [`DoubleWord`].
     ///
-    /// This is done by converting this storage slot into 8 field elements as follows:
-    /// ```text
-    /// [[0, slot_type, slot_id_suffix, slot_id_prefix], SLOT_VALUE]
-    /// ```
-    pub(crate) fn to_elements(&self) -> [Felt; StorageSlot::NUM_ELEMENTS] {
+    /// The low word is `[0, slot_type, slot_id_suffix, slot_id_prefix]` and the high word is the
+    /// slot value.
+    pub(crate) fn to_dword(&self) -> DoubleWord {
         let id = self.id();
-        let mut elements = [ZERO; StorageSlot::NUM_ELEMENTS];
-        elements[0..4].copy_from_slice(&[
-            Felt::ZERO,
-            self.r#type.as_felt(),
-            id.suffix(),
-            id.prefix(),
-        ]);
-        elements[4..8].copy_from_slice(self.value.as_elements());
-        elements
+        let header_word = Word::new([Felt::ZERO, self.r#type.as_felt(), id.suffix(), id.prefix()]);
+        DoubleWord::new(header_word, self.value)
     }
 }
 
@@ -503,7 +494,7 @@ mod tests {
         );
 
         // Serialize the single slot to elements
-        let elements = slot1.to_elements();
+        let elements = slot1.to_dword();
 
         // Create slot names map using the slot's ID
         let mut slot_names = BTreeMap::new();
@@ -511,7 +502,7 @@ mod tests {
 
         // Test from_elements with provided slot names on raw slot elements.
         let reconstructed_header =
-            AccountStorageHeader::try_from_elements(&elements, &slot_names).unwrap();
+            AccountStorageHeader::try_from_elements(elements.as_elements(), &slot_names).unwrap();
 
         // Verify that the original slot names are preserved.
         assert_eq!(reconstructed_header.slots().count(), 1);
