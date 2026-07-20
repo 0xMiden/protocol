@@ -179,6 +179,55 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
 /// The namespace under which the user-defined lookup-key procedure is compiled.
 const CUSTOM_LOOKUP_KEY_NAME: &str = "test::fees::storage_commitment_lookup";
 
+/// Builds the custom lookup-key builder used by these tests: a component exporting a
+/// `build_note_fee_lookup_key` procedure that keys the fee schedule on the note's storage
+/// commitment, recovered from the recipient via the advice provider.
+fn custom_lookup_key_builder() -> anyhow::Result<NoteFeeLookupKeyBuilder> {
+    let masm_source = r#"
+        use miden::standards::note
+
+        use {NoteRecipient, StorageMapKey} from miden::protocol::types
+
+        #! Lookup-key procedure keying the fee schedule on the note's storage commitment,
+        #! recovered from the recipient via the advice provider.
+        #!
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+        #! Outputs: [LOOKUP_KEY, pad(12)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc build_note_fee_lookup_key(
+            recipient: NoteRecipient,
+            assets_commitment: word,
+            attachments_commitment: word,
+            timeframe: u32,
+            priority: u32
+        ) -> StorageMapKey
+            exec.note::get_recipient_preimage
+            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
+            #     timeframe, priority, pad(2)]
+
+            # keep STORAGE_COMMITMENT as the lookup key, dropping the other note parameters
+            dropw swapw.2 dropw dropw movup.4 drop movup.4 drop
+            # => [LOOKUP_KEY, pad(12)]
+        end
+        "#;
+
+    let lookup_code =
+        CodeBuilder::default().compile_component_code(CUSTOM_LOOKUP_KEY_NAME, masm_source)?;
+    let lookup_root = lookup_code
+        .get_procedure_root_by_path(
+            format!("{CUSTOM_LOOKUP_KEY_NAME}::build_note_fee_lookup_key").as_str(),
+        )
+        .expect("custom lookup-key component should export build_note_fee_lookup_key");
+    let lookup_component = AccountComponent::new(
+        lookup_code,
+        vec![],
+        AccountComponentMetadata::mock(CUSTOM_LOOKUP_KEY_NAME),
+    )?;
+    Ok(NoteFeeLookupKeyBuilder::custom(lookup_root, [lookup_component])?)
+}
+
 /// Builds the `constant_fee` policy component by hand with the given fee schedule and active
 /// lookup-key builder root - the `ConstantFeePolicy` API never writes an invalid root, so the
 /// invalid-root cases below require hand-built storage.
@@ -487,64 +536,38 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A lookup-key builder registered as both reserved and active contributes its companion
+/// component to the policy's component set only once: the conversion yields exactly the policy
+/// component and one companion.
+#[test]
+fn lookup_key_builder_active_and_allowed_bundles_components_once() -> anyhow::Result<()> {
+    let builder = custom_lookup_key_builder()?;
+    let policy = ConstantFeePolicy::new(fee_faucet_id()?)
+        .with_allowed_lookup_key_builder(builder.clone())
+        .with_active_lookup_key_builder(builder);
+
+    let components: Vec<AccountComponent> = policy.into_iter().collect();
+    assert_eq!(
+        components.len(),
+        2,
+        "the conversion should yield the policy component and the shared companion exactly once"
+    );
+
+    Ok(())
+}
+
 /// A `ConstantFeePolicy` instantiated with a custom [`NoteFeeLookupKeyBuilder`] dispatches to
 /// that procedure: it keys on STORAGE_COMMITMENT, so an unpriced note script root estimates to
 /// the fee stored under the note's storage commitment. The custom builder's component is bundled
 /// into the policy's component set by the `ConstantFeePolicy` conversion itself.
 #[tokio::test]
 async fn estimate_note_fee_dispatches_to_custom_lookup_key_builder() -> anyhow::Result<()> {
-    let masm_source = r#"
-        use miden::standards::note
-
-        use {NoteRecipient, StorageMapKey} from miden::protocol::types
-
-        #! Lookup-key procedure keying the fee schedule on the note's storage commitment,
-        #! recovered from the recipient via the advice provider.
-        #!
-        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
-        #! Outputs: [LOOKUP_KEY, pad(12)]
-        #!
-        #! Invocation: call
-        @account_procedure
-        pub proc build_note_fee_lookup_key(
-            recipient: NoteRecipient,
-            assets_commitment: word,
-            attachments_commitment: word,
-            timeframe: u32,
-            priority: u32
-        ) -> StorageMapKey
-            exec.note::get_recipient_preimage
-            # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
-            #     timeframe, priority, pad(2)]
-
-            # keep STORAGE_COMMITMENT as the lookup key, dropping the other note parameters
-            dropw swapw.2 dropw dropw movup.4 drop movup.4 drop
-            # => [LOOKUP_KEY, pad(12)]
-        end
-        "#;
-
-    let lookup_code =
-        CodeBuilder::default().compile_component_code(CUSTOM_LOOKUP_KEY_NAME, masm_source)?;
-    let lookup_root = lookup_code
-        .get_procedure_root_by_path(
-            format!("{CUSTOM_LOOKUP_KEY_NAME}::build_note_fee_lookup_key").as_str(),
-        )
-        .expect("custom lookup-key component should export build_note_fee_lookup_key");
-    let lookup_component = AccountComponent::new(
-        lookup_code,
-        vec![],
-        AccountComponentMetadata::mock(CUSTOM_LOOKUP_KEY_NAME),
-    )?;
-
     // The custom lookup-key builder keys on the storage commitment, so the fee is scheduled
     // under it.
     let storage_commitment = Word::from([5u32, 6, 7, 8]);
     let policy = ConstantFeePolicy::new(fee_faucet_id()?)
         .with_fee(NoteFeeLookupKey::from_raw(storage_commitment), AssetAmount::new(FEE_AMOUNT)?)
-        .with_active_lookup_key_builder(NoteFeeLookupKeyBuilder::custom(
-            lookup_root,
-            [lookup_component],
-        )?);
+        .with_active_lookup_key_builder(custom_lookup_key_builder()?);
 
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)

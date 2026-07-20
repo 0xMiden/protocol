@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] `ConstantFeePolicy` now derives its fee schedule lookup key via a swappable lookup-key builder procedure: the active builder root lives in the new `active_lookup_key_builder_proc_root` slot (default: the `build_default_note_fee_lookup_key` procedure keying on the note's script root), reserved alternatives are registered in the `allowed_lookup_key_builder_proc_roots` map, and custom builders are configured in Rust via `NoteFeeLookupKeyBuilder`; schedule entries are keyed by `NoteFeeLookupKey` ([#3352](https://github.com/0xMiden/protocol/pull/3352)).
+- [BREAKING] `ConstantFeePolicy` now derives its fee schedule lookup key via a swappable lookup-key builder procedure: the active builder root lives in the new `active_lookup_key_builder_proc_root` slot (default: the `build_default_note_fee_lookup_key` procedure keying on the note's script root), registered builder roots (active and reserved) are tracked in the `allowed_lookup_key_builder_proc_roots` map, and custom builders are configured in Rust via `NoteFeeLookupKeyBuilder`; schedule entries are keyed by `NoteFeeLookupKey` ([#3352](https://github.com/0xMiden/protocol/pull/3352)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 

@@ -474,14 +474,17 @@ impl IntoIterator for ConstantFeePolicy {
 
     /// Yields the [`AccountComponent`]s implementing this fee policy configuration: the policy
     /// component itself first, then the companion components contributed by the active and every
-    /// reserved lookup-key builder. Deduplication of reserved builders by procedure root is
-    /// implicit (the internal map is keyed by root).
+    /// reserved lookup-key builder. A builder registered as both active and reserved contributes
+    /// its companion components only once.
     fn into_iter(self) -> Self::IntoIter {
+        let active_root = self.active_lookup_key_builder.root();
         let policy_component = self.to_policy_component();
         let mut components = vec![policy_component];
         components.extend(self.active_lookup_key_builder);
-        for (_, builder) in self.allowed_lookup_key_builders {
-            components.extend(builder);
+        for (root, builder) in self.allowed_lookup_key_builders {
+            if root != active_root {
+                components.extend(builder);
+            }
         }
         components.into_iter()
     }

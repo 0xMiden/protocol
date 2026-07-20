@@ -3,8 +3,9 @@
 # Exposes:
 # - `compute_note_fee`: the procedure whose MAST root is registered as the active (or allowed)
 #   fee policy on a `FeeManager`.
-# - `build_default_note_fee_lookup_key`: the default lookup-key builder; the procedure's MAST
-#   root is stored in the `active_lookup_key_builder_proc_root` slot for dynamic invocation.
+# - `build_default_note_fee_lookup_key`: the default lookup-key builder; its MAST root is the
+#   value the `active_lookup_key_builder_proc_root` slot holds unless a custom builder is
+#   configured, and the slot's value is dispatched via `dyncall`.
 #
 # Owns the `fee_asset_id`, `fee_schedule`, `active_lookup_key_builder_proc_root`, and
 # `allowed_lookup_key_builder_proc_roots` slots.
