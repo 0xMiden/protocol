@@ -208,7 +208,7 @@ impl NoteBuilder {
                     .compile_note_script(virtual_source_file)
                     .expect("note script should compile")
             },
-            SourceCodeOrigin::Package(package) => NoteScript::from_library(&package)?,
+            SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
             SourceCodeOrigin::Script(script) => script,
         };
 

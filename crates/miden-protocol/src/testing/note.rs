@@ -47,6 +47,6 @@ impl NoteScript {
             "miden::testing::note",
             DEFAULT_NOTE_SCRIPT,
         );
-        Self::from_library(&package).unwrap()
+        Self::from_package(&package).unwrap()
     }
 }

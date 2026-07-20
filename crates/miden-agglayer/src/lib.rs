@@ -108,7 +108,7 @@ pub fn agglayer_library() -> Package {
 /// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
 /// e.g. `::agglayer::notes::claim::main`.
 pub(crate) fn note_script(path: &str) -> NoteScript {
-    NoteScript::from_library_reference(&AGGLAYER_LIBRARY, Path::new(path))
+    NoteScript::from_package_reference(&AGGLAYER_LIBRARY, Path::new(path))
         .expect("agglayer library contains the note script procedure")
 }
 

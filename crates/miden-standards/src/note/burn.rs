@@ -33,7 +33,7 @@ const BURN_SCRIPT_PATH: &str = "::miden::standards::notes::burn::main";
 static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(BURN_SCRIPT_PATH);
-    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+    NoteScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains BURN note script procedure")
 });
 
