@@ -94,9 +94,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
@@ -145,9 +143,7 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
@@ -210,9 +206,7 @@ async fn test_active_note_is_public_and_is_private(
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let (expected_public, expected_private) = match note_type {
@@ -256,9 +250,7 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // calling get_sender should return sender of the active note
@@ -302,9 +294,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = "

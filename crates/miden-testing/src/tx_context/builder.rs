@@ -38,6 +38,7 @@ use crate::MockChain;
 ///
 /// Create a transaction context for an existing account and execute code:
 /// ```
+/// # #![allow(deprecated)]
 /// # use anyhow::Result;
 /// # use miden_protocol::Felt;
 /// # use miden_testing::{Auth, MockChain};

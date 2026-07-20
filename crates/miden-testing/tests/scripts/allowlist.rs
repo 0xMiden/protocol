@@ -620,7 +620,8 @@ async fn rbac_allowlister_can_allow_and_disallow() -> anyhow::Result<()> {
     // Allowed → receiving the asset succeeds.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_allow.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_allow.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -632,7 +633,8 @@ async fn rbac_allowlister_can_allow_and_disallow() -> anyhow::Result<()> {
     // Disallowed → receiving the asset now fails.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_disallow.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_disallow.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -660,7 +662,8 @@ async fn rbac_allow_fails_when_sender_lacks_role() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[allow.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(allow.id())
         .build()?
         .execute()
         .await;

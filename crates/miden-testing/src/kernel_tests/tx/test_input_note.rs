@@ -684,9 +684,7 @@ async fn test_remove_asset_fails(
             ACCOUNT_ID_SENDER.try_into()?,
             [fungible_asset, non_fungible_asset],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
@@ -725,9 +723,7 @@ async fn test_get_asset_index_out_of_bounds(#[case] get_asset_call: &str) -> any
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note =
             create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // the note has a single asset, so asset index 1 is out of bounds for both APIs (the input note
@@ -792,9 +788,7 @@ async fn test_remove_asset(
             ACCOUNT_ID_SENDER.try_into()?,
             [fungible_asset, non_fungible_asset],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // derive the indices of the assets from the note's asset order

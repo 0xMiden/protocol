@@ -348,7 +348,8 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[config_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(config_note)
         .build()?
         .execute()
         .await;

@@ -778,9 +778,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .input_note(input_note_1)
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note_1).build()?
     };
     let input_note_1 = mock_tx.tx_inputs().input_notes().get_note(0).note();
 

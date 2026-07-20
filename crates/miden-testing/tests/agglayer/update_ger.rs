@@ -385,7 +385,8 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await;

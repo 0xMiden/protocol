@@ -83,7 +83,7 @@ fn compute_fee_code(
 #[tokio::test]
 async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+    let tx_context = mock_chain.build_transaction(account).build()?;
 
     let fee_faucet_id = tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id();
 

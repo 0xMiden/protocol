@@ -611,7 +611,8 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     // Blocked → receiving the asset fails.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_block.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_block.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -624,7 +625,8 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     // Unblocked → receiving the asset now succeeds.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_unblock.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_unblock.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -650,7 +652,8 @@ async fn rbac_block_fails_when_sender_lacks_role() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[block.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(block.id())
         .build()?
         .execute()
         .await;

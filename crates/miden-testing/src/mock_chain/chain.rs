@@ -625,6 +625,7 @@ impl MockChain {
     /// [`MockTransactionInput::Account`] can be used to build a chain of transactions against the
     /// same account that build on top of each other. For example, transaction A modifies an
     /// account from state 0 to 1, and transaction B modifies it from state 1 to 2.
+    #[deprecated(note = "use `MockChain::build_transaction` instead")]
     pub fn build_tx_context_at(
         &self,
         reference_block: impl Into<BlockNumber>,
@@ -715,6 +716,8 @@ impl MockChain {
     ///
     /// This is a wrapper around [`Self::build_tx_context_at`] which uses the latest block as the
     /// reference block. See that function's docs for details.
+    #[deprecated(note = "use `MockChain::build_transaction` instead")]
+    #[allow(deprecated)]
     pub fn build_tx_context(
         &self,
         input: impl Into<MockTransactionInput>,
