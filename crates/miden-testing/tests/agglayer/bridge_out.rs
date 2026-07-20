@@ -185,8 +185,11 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut burn_note_ids = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
+        // creating the BURN note requires reading its note fee from the target account
+        let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
         let executed_tx = mock_chain
             .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
+            .foreign_accounts(vec![faucet_inputs])
             .build()?
             .execute()
             .await?;
