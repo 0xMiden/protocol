@@ -84,15 +84,15 @@ static ALLOWED_LOOKUP_KEY_BUILDER_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName
 ///
 /// The on-chain policy computes this key from the note parameters via the active lookup-key
 /// builder procedure stored in its [`ConstantFeePolicy::active_lookup_key_builder_slot`] slot; a
-/// note's fee is the schedule entry stored under the computed key. The built-in
-/// `build_note_fee_lookup_key` procedure uses the note's script root as the key, which the
-/// [`NoteScriptRoot`] conversion mirrors.
+/// note's fee is the schedule entry stored under the computed key. The default
+/// `build_default_note_fee_lookup_key` procedure uses the note's script root as the key, which
+/// the [`NoteScriptRoot`] conversion mirrors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct NoteFeeLookupKey(Word);
 
 impl From<NoteScriptRoot> for NoteFeeLookupKey {
-    /// Converts a [`NoteScriptRoot`] into the lookup key the built-in `build_note_fee_lookup_key`
-    /// procedure produces for a note with that script root.
+    /// Converts a [`NoteScriptRoot`] into the lookup key the default
+    /// `build_default_note_fee_lookup_key` procedure produces for a note with that script root.
     fn from(root: NoteScriptRoot) -> Self {
         Self(root.as_word())
     }
@@ -116,11 +116,12 @@ pub enum NoteFeeLookupKeyBuilderError {
 ///
 /// Binds the procedure root the policy dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work. The procedure must
-/// match the `build_note_fee_lookup_key` interface (unchecked on-chain; a non-conforming one
-/// yields schedule-miss keys that abort fee estimation).
+/// match the `build_default_note_fee_lookup_key` interface (unchecked on-chain; a non-conforming
+/// one yields schedule-miss keys that abort fee estimation).
 ///
-/// Construct via [`Self::built_in`] (keys on the note's script root) or [`Self::custom`]. Pass
-/// to a [`ConstantFeePolicy`] via [`ConstantFeePolicy::with_active_lookup_key_builder`] or
+/// Construct via [`NoteFeeLookupKeyBuilder::default`] (keys on the note's script root) or
+/// [`Self::custom`]. Pass to a [`ConstantFeePolicy`] via
+/// [`ConstantFeePolicy::with_active_lookup_key_builder`] or
 /// [`ConstantFeePolicy::with_allowed_lookup_key_builder`].
 #[derive(Debug, Clone)]
 pub struct NoteFeeLookupKeyBuilder {
@@ -128,16 +129,19 @@ pub struct NoteFeeLookupKeyBuilder {
     components: Vec<AccountComponent>,
 }
 
-impl NoteFeeLookupKeyBuilder {
-    /// Returns the built-in lookup-key builder: the `build_note_fee_lookup_key` procedure of the
-    /// `constant_fee` component itself, which keys the fee schedule on the note's script root.
-    pub fn built_in() -> Self {
+impl Default for NoteFeeLookupKeyBuilder {
+    /// Returns the default lookup-key builder: the `build_default_note_fee_lookup_key` procedure
+    /// of the `constant_fee` component itself, which keys the fee schedule on the note's script
+    /// root.
+    fn default() -> Self {
         Self {
-            root: ConstantFeePolicy::built_in_lookup_key_builder_root(),
+            root: ConstantFeePolicy::default_lookup_key_builder_root(),
             components: Vec::new(),
         }
     }
+}
 
+impl NoteFeeLookupKeyBuilder {
     /// Returns a lookup-key builder resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
@@ -201,8 +205,8 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// [`Self::active_lookup_key_builder_slot`] slot, and lookup keys without a schedule entry abort
 /// fee estimation. To make a lookup key free, schedule an explicit 0 fee via
 /// [`ConstantFeePolicy::with_fee`]. The active builder defaults to the built-in
-/// `build_note_fee_lookup_key` procedure ([`NoteFeeLookupKeyBuilder::built_in`]), which keys on
-/// the note's script root (recovered from the note's recipient via the advice provider) and
+/// `build_default_note_fee_lookup_key` procedure ([`NoteFeeLookupKeyBuilder::default`]), which keys
+/// on the note's script root (recovered from the note's recipient via the advice provider) and
 /// ignores the remaining parameters, including the timeframe and priority. The manager asserts
 /// the returned fee asset ID matches the fee asset ID it stores itself, so a policy configured
 /// with a different fee asset than its manager aborts fee estimation.
@@ -211,7 +215,7 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// [`Self::with_active_lookup_key_builder`]; its companion components are bundled into the
 /// policy's component set. Additional builders may be registered for future runtime switching
 /// via [`Self::with_allowed_lookup_key_builder`]. The stored root must be an account procedure
-/// (enforced on dispatch) matching the `build_note_fee_lookup_key` interface (unchecked
+/// (enforced on dispatch) matching the `build_default_note_fee_lookup_key` interface (unchecked
 /// on-chain; a non-conforming one yields schedule-miss keys that abort fee estimation).
 ///
 /// ## Storage layout
@@ -245,7 +249,7 @@ impl ConstantFeePolicy {
 
     pub(crate) const PROC_NAME: &str = "compute_note_fee";
 
-    pub(crate) const LOOKUP_KEY_PROC_NAME: &str = "build_note_fee_lookup_key";
+    pub(crate) const LOOKUP_KEY_PROC_NAME: &str = "build_default_note_fee_lookup_key";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -257,12 +261,12 @@ impl ConstantFeePolicy {
 
     /// Creates a new `constant_fee` fee policy with an empty fee schedule, charging fees in the
     /// fungible asset issued by the given faucet. The active lookup-key builder defaults to the
-    /// built-in `build_note_fee_lookup_key` procedure, which keys on the note's script root.
+    /// `build_default_note_fee_lookup_key` procedure, which keys on the note's script root.
     pub fn new(fee_faucet_id: AccountId) -> Self {
         Self {
             fee_asset_id: AssetId::new_fungible(fee_faucet_id),
             fee_schedule: BTreeMap::new(),
-            active_lookup_key_builder: NoteFeeLookupKeyBuilder::built_in(),
+            active_lookup_key_builder: NoteFeeLookupKeyBuilder::default(),
             allowed_lookup_key_builders: BTreeMap::new(),
         }
     }
@@ -270,7 +274,8 @@ impl ConstantFeePolicy {
     /// Sets the fee for notes with the given lookup key, replacing any previous entry.
     ///
     /// The key must match the output of the policy's active lookup-key builder for the targeted
-    /// notes; with the built-in `build_note_fee_lookup_key`, that is the note's script root.
+    /// notes; with the default `build_default_note_fee_lookup_key`, that is the note's script
+    /// root.
     /// Scheduling an explicit fee of 0 makes matching notes free; lookup keys without a schedule
     /// entry abort fee estimation.
     #[must_use]
@@ -279,7 +284,7 @@ impl ConstantFeePolicy {
         self
     }
 
-    /// Sets the lookup-key builder the policy dispatches to, replacing the built-in default. Its
+    /// Sets the lookup-key builder the policy dispatches to, replacing the default. Its
     /// companion components are bundled into the policy's component set.
     #[must_use]
     pub fn with_active_lookup_key_builder(mut self, builder: NoteFeeLookupKeyBuilder) -> Self {
@@ -309,9 +314,9 @@ impl ConstantFeePolicy {
         *CONSTANT_FEE_POLICY_ROOT
     }
 
-    /// Returns the procedure root of the built-in `build_note_fee_lookup_key` procedure, which
-    /// keys the fee schedule on the note's script root.
-    pub fn built_in_lookup_key_builder_root() -> AccountProcedureRoot {
+    /// Returns the procedure root of the default `build_default_note_fee_lookup_key` procedure,
+    /// which keys the fee schedule on the note's script root.
+    pub fn default_lookup_key_builder_root() -> AccountProcedureRoot {
         *CONSTANT_FEE_POLICY_LOOKUP_KEY_PROC_ROOT
     }
 
@@ -555,7 +560,7 @@ mod tests {
             .get_item(ConstantFeePolicy::active_lookup_key_builder_slot())?;
         assert_eq!(
             active_builder_word,
-            ConstantFeePolicy::built_in_lookup_key_builder_root().as_word(),
+            ConstantFeePolicy::default_lookup_key_builder_root().as_word(),
             "the active lookup-key builder slot should default to the built-in procedure"
         );
 
@@ -568,7 +573,7 @@ mod tests {
         };
         assert_eq!(
             allowed_map.get(&StorageMapKey::new(
-                ConstantFeePolicy::built_in_lookup_key_builder_root().as_word()
+                ConstantFeePolicy::default_lookup_key_builder_root().as_word()
             )),
             Word::from([1u32, 0, 0, 0]),
             "the active builder root should be registered in the allowed map"

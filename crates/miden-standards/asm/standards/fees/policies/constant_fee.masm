@@ -11,8 +11,8 @@
 #   distinguishing scheduled entries (including explicit 0 fees) from the zero word returned for
 #   unset keys; lookup keys without a schedule entry abort fee computation.
 # - `active_lookup_key_builder_proc_root` word: the root of the procedure that builds the fee
-#   schedule lookup key from the note parameters. The built-in `build_note_fee_lookup_key` keys
-#   on the note's script root, recovered from RECIPIENT via the advice provider.
+#   schedule lookup key from the note parameters. Defaults to `build_default_note_fee_lookup_key`,
+#   which keys on the note's script root, recovered from RECIPIENT via the advice provider.
 # - `allowed_lookup_key_builder_proc_roots` map: lookup-key builder roots registered for runtime
 #   switching, as [PROC_ROOT] -> [1, 0, 0, 0]. Not read by this module yet; a switching
 #   procedure validating against this map is planned.
@@ -36,8 +36,12 @@ const FEE_ASSET_ID_SLOT = word("miden::standards::fees::policies::constant_fee::
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
 
 # Slot holding the root of the active procedure that builds the fee schedule lookup key. Must be
-# a procedure of this account (validated at dispatch) with the `build_note_fee_lookup_key`
-# interface (not checkable on-chain; the deployer's responsibility).
+# a procedure of this account (validated at dispatch) with the same interface as
+# `build_default_note_fee_lookup_key`:
+#   Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+#   Outputs: [LOOKUP_KEY, pad(12)]
+# Interface conformance is the deployer's responsibility. The `ConstantFeePolicy` Rust conversion
+# always initializes this slot with the default builder.
 const ACTIVE_LOOKUP_KEY_BUILDER_PROC_ROOT_SLOT = word("miden::standards::fees::policies::constant_fee::active_lookup_key_builder_proc_root")
 
 # Local memory pointer used to pass the lookup-key builder root to `dyncall`.
@@ -57,13 +61,13 @@ const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule ent
 #!
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters by
 #! the active lookup-key builder procedure, whose root is stored in the
-#! `active_lookup_key_builder_proc_root` slot (invoked via `dyncall`). The built-in
-#! `build_note_fee_lookup_key` derives the key from just the note's
+#! `active_lookup_key_builder_proc_root` slot (invoked via `dyncall`). The default
+#! `build_default_note_fee_lookup_key` derives the key from just the note's
 #! script root, which it recovers from RECIPIENT via the advice provider, and ignores the
 #! remaining parameters, including timeframe and priority. Lookup keys without a schedule entry
-#! abort; to make one free, schedule an explicit 0 fee. The fee asset ID is read from this
-#! policy's own storage; the dispatching `FeeManager` asserts it matches the fee asset ID the
-#! manager is configured with.
+#! abort; to make the notes matching a lookup key free, schedule an explicit 0 fee for that key.
+#! The fee asset ID is read from this policy's own storage; the dispatching `FeeManager` asserts
+#! it matches the fee asset ID the manager is configured with.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -140,7 +144,7 @@ end
 
 #! Builds the fee schedule lookup key from the note parameters.
 #!
-#! This is the built-in lookup-key procedure: the key is the note's script root, recovered from
+#! This is the default lookup-key procedure: the key is the note's script root, recovered from
 #! RECIPIENT via the advice provider; the remaining parameters are ignored.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
@@ -152,7 +156,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc build_note_fee_lookup_key(
+pub proc build_default_note_fee_lookup_key(
     recipient: NoteRecipient,
     assets_commitment: word,
     attachments_commitment: word,
