@@ -1,15 +1,10 @@
 # Changelog
 
-## v0.16.0 (TBD)
-
-### Changes
-
-- [BREAKING] Made the AggLayer bridge's network ID a deployment setting: the ID is stored in the `agglayer::bridge::network_id` storage slot (written once at account creation and read at runtime via `bridge_config::load_network_id`) instead of being compiled in as the `MIDEN_NETWORK_ID` MASM constant, so all deployments share one bridge code commitment; `create_bridge_account` now takes a `network_id` argument ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
-
 ## v0.16.0-beta.1 (2026-07-20)
 
 ### Features
 
+- [BREAKING] Made the AggLayer bridge's network ID a deployment setting: the ID is stored in the `agglayer::bridge::network_id` storage slot (written once at account creation and read at runtime via `bridge_config::load_network_id`) instead of being compiled in as the `MIDEN_NETWORK_ID` MASM constant, so all deployments share one bridge code commitment; `create_bridge_account` now takes a `network_id` argument ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
 - Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
 - Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, and a `miden::standards::note::note_id` MASM module for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
