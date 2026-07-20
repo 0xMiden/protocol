@@ -245,10 +245,10 @@ pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
 
         @note_script
         pub proc main
-            padw padw padw
             push.{policy_root}
             call.fee_manager::set_fee_policy
-            dropw dropw dropw dropw
+
+            dropw
         end
         "#
     )
@@ -263,10 +263,10 @@ fn create_allowlist_mutation_note_script(proc_name: &str, policy_root: Word) -> 
 
         @note_script
         pub proc main
-            padw padw padw
             push.{policy_root}
             call.fee_manager::{proc_name}
-            dropw dropw dropw dropw
+            
+            dropw
         end
         "#
     )

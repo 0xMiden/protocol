@@ -182,13 +182,13 @@ pub proc add_allowed_fee_policy(policy_root: AccountProcedureRoot)
     # => [FEE_POLICY_ROOT, pad(12)]
 
     push.ALLOWED_FLAG swapw
-    # => [FEE_POLICY_ROOT, ALLOWED_FLAG, pad(8)]
+    # => [FEE_POLICY_ROOT, ALLOWED_FLAG, pad(12)]
 
     push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, ALLOWED_FLAG, pad(8)]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, ALLOWED_FLAG, pad(12)]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(8)]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
     # => [pad(16)]
@@ -201,9 +201,9 @@ end
 #! root does not stop it from being used for fee estimation (that reads the active root directly);
 #! it only prevents switching back to it.
 #!
-#! Note: this leaves a `FEE_POLICY_ROOT -> EMPTY_WORD` entry in the map rather than deleting the key,
-#! so a root that was allowed and then removed is not the same map state as a root that was never
-#! added (whose key is absent). Both read as not-allowed.
+#! Note: this leaves a `FEE_POLICY_ROOT -> EMPTY_WORD` entry in the map rather than deleting the
+#! key, so a root that was allowed and then removed is not the same map state as a root that was
+#! never added (whose key is absent). Both read as not-allowed.
 #!
 #! Inputs:  [FEE_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -218,13 +218,13 @@ pub proc remove_allowed_fee_policy(policy_root: AccountProcedureRoot)
     # => [FEE_POLICY_ROOT, pad(12)]
 
     push.EMPTY_WORD swapw
-    # => [FEE_POLICY_ROOT, EMPTY_WORD, pad(8)]
+    # => [FEE_POLICY_ROOT, EMPTY_WORD, pad(12)]
 
     push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, EMPTY_WORD, pad(8)]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, EMPTY_WORD, pad(12)]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(8)]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
     # => [pad(16)]
