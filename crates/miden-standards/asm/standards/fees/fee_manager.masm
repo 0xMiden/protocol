@@ -21,6 +21,7 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 
 use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # DEPENDENCY NOTE
 # `set_fee_policy` consults the account-wide [`Authority`] component (installed separately) via
@@ -38,6 +39,12 @@ const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_man
 
 # Slot holding the ID of the asset fees are charged in. Layout: [FEE_ASSET_ID]
 const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
+
+# Map entry value marking a fee policy root as allowed.
+const ALLOWED_FLAG = ONE_WORD
+
+# Map entry value marking a fee policy root as not allowed.
+const EMPTY_WORD = ZERO_WORD
 
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR = 0
@@ -153,6 +160,73 @@ pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
     # => [NEW_POLICY_ROOT, pad(12)]
 
     push.ACTIVE_FEE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+#! Adds a fee policy root to the allowed fee policy roots map.
+#!
+#! Registers `FEE_POLICY_ROOT` as an allowed alternative that `set_fee_policy` may later activate.
+#! Adding a root that is already allowed is a no-op. This only mutates the allowlist gate; the root
+#! must additionally be a procedure of this account for `set_fee_policy` to accept it.
+#!
+#! Inputs:  [FEE_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_allowed_fee_policy(policy_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    push.ALLOWED_FLAG swapw
+    # => [FEE_POLICY_ROOT, ALLOWED_FLAG, pad(8)]
+
+    push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, ALLOWED_FLAG, pad(8)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(8)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Removes a fee policy root from the allowed fee policy roots map.
+#!
+#! Writes the empty word for `FEE_POLICY_ROOT`, which `set_fee_policy` treats as not allowed.
+#! Removing a root that is not currently allowed is a no-op. Removing the currently active policy's
+#! root does not stop it from being used for fee estimation (that reads the active root directly);
+#! it only prevents switching back to it.
+#!
+#! Note: this leaves a `FEE_POLICY_ROOT -> EMPTY_WORD` entry in the map rather than deleting the key,
+#! so a root that was allowed and then removed is not the same map state as a root that was never
+#! added (whose key is absent). Both read as not-allowed.
+#!
+#! Inputs:  [FEE_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#!
+#! Invocation: call
+@account_procedure
+pub proc remove_allowed_fee_policy(policy_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    push.EMPTY_WORD swapw
+    # => [FEE_POLICY_ROOT, EMPTY_WORD, pad(8)]
+
+    push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, EMPTY_WORD, pad(8)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(8)]
+
+    dropw
     # => [pad(16)]
 end
 

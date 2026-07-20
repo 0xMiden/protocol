@@ -72,6 +72,20 @@ procedure_root!(
     FeeManager::code()
 );
 
+procedure_root!(
+    FEE_MANAGER_ADD_ALLOWED_FEE_POLICY,
+    FEE_MANAGER_LIBRARY_PATH,
+    FeeManager::ADD_ALLOWED_FEE_POLICY_PROC_NAME,
+    FeeManager::code()
+);
+
+procedure_root!(
+    FEE_MANAGER_REMOVE_ALLOWED_FEE_POLICY,
+    FEE_MANAGER_LIBRARY_PATH,
+    FeeManager::REMOVE_ALLOWED_FEE_POLICY_PROC_NAME,
+    FeeManager::code()
+);
+
 // STORAGE SLOT NAMES
 // ================================================================================================
 
@@ -184,6 +198,8 @@ impl FeeManager {
     const SET_FEE_POLICY_PROC_NAME: &'static str = "set_fee_policy";
     const GET_FEE_POLICY_PROC_NAME: &'static str = "get_fee_policy";
     const GET_FEE_ASSET_ID_PROC_NAME: &'static str = "get_fee_asset_id";
+    const ADD_ALLOWED_FEE_POLICY_PROC_NAME: &'static str = "add_allowed_fee_policy";
+    const REMOVE_ALLOWED_FEE_POLICY_PROC_NAME: &'static str = "remove_allowed_fee_policy";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -221,6 +237,16 @@ impl FeeManager {
     /// Returns the procedure root of the `get_fee_policy` account procedure.
     pub fn get_fee_policy_root() -> AccountProcedureRoot {
         *FEE_MANAGER_GET_FEE_POLICY
+    }
+
+    /// Returns the procedure root of the `add_allowed_fee_policy` account procedure.
+    pub fn add_allowed_fee_policy_root() -> AccountProcedureRoot {
+        *FEE_MANAGER_ADD_ALLOWED_FEE_POLICY
+    }
+
+    /// Returns the procedure root of the `remove_allowed_fee_policy` account procedure.
+    pub fn remove_allowed_fee_policy_root() -> AccountProcedureRoot {
+        *FEE_MANAGER_REMOVE_ALLOWED_FEE_POLICY
     }
 
     /// Returns the procedure root of the `get_fee_asset_id` account procedure.

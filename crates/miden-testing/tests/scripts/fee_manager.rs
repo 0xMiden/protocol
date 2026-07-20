@@ -1,23 +1,31 @@
+use alloc::sync::Arc;
+
 use miden_processor::ExecutionError;
+use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, AssetId};
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
 };
+use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
+    ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
+    ERR_SENDER_NOT_OWNER,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -244,6 +252,53 @@ pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
         end
         "#
     )
+}
+
+/// Builds a note script that calls the owner-gated allowlist mutator `proc_name` (either
+/// `add_allowed_fee_policy` or `remove_allowed_fee_policy`) with the given policy root.
+fn create_allowlist_mutation_note_script(proc_name: &str, policy_root: Word) -> String {
+    format!(
+        r#"
+        use miden::standards::fees::fee_manager
+
+        @note_script
+        pub proc main
+            padw padw padw
+            push.{policy_root}
+            call.fee_manager::{proc_name}
+            dropw dropw dropw dropw
+        end
+        "#
+    )
+}
+
+/// Builds a private note carrying `note_script`, sent by `sender` and seeded from `seed`.
+fn build_sender_note(sender: AccountId, seed: u32, note_script: &str) -> anyhow::Result<Note> {
+    let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
+    Ok(NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .code(note_script)
+        .build()?)
+}
+
+/// Consumes `note` with `account_id`, commits the resulting transaction, and advances the chain so
+/// the account's storage mutation takes effect for subsequent transactions. Panics if the
+/// transaction fails.
+async fn consume_note(
+    mock_chain: &mut MockChain,
+    account_id: AccountId,
+    note: &Note,
+) -> anyhow::Result<()> {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let executed_transaction = mock_chain
+        .build_tx_context(account_id, &[note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+    Ok(())
 }
 
 // TESTS
@@ -600,6 +655,128 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// The owner adds a fee policy root to the allowed-policies map after deployment via
+/// `add_allowed_fee_policy`, after which `set_fee_policy` accepts that root - a root that
+/// `set_fee_policy_rejects_non_allowed_root` shows is rejected before the addition. This proves the
+/// allowlist can be extended post-deployment.
+#[tokio::test]
+async fn owner_can_add_allowed_fee_policy_root_after_deployment() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let account = build_fee_account_with_switching(owner_account_id)?;
+
+    // A procedure of the account that is not in the initial fee policy allowlist (the same root
+    // `set_fee_policy_rejects_non_allowed_root` uses to show set_fee_policy rejects it).
+    let new_root = FeeManager::get_fee_policy_root().as_word();
+
+    let add_note = build_sender_note(
+        owner_account_id,
+        700,
+        &create_allowlist_mutation_note_script("add_allowed_fee_policy", new_root),
+    )?;
+    let set_note =
+        build_sender_note(owner_account_id, 701, &create_set_fee_policy_note_script(new_root))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Register the new root in the allowlist; the mutation takes effect from the next block.
+    consume_note(&mut mock_chain, account.id(), &add_note).await?;
+
+    // With the root now allowed, `set_fee_policy` accepts it. Successful execution (rather than the
+    // `ERR_FEE_POLICY_ROOT_NOT_ALLOWED` abort) proves the addition took effect.
+    consume_note(&mut mock_chain, account.id(), &set_note).await?;
+
+    Ok(())
+}
+
+/// A non-owner cannot mutate the allowed-policies map: `add_allowed_fee_policy` is gated by the
+/// account-wide `Authority`, which rejects a note sent by anyone other than the owner.
+#[tokio::test]
+async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+    let non_owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    let account = build_fee_account_with_switching(owner_account_id)?;
+
+    let new_root = FeeManager::get_fee_policy_root().as_word();
+    let add_note = build_sender_note(
+        non_owner_account_id,
+        702,
+        &create_allowlist_mutation_note_script("add_allowed_fee_policy", new_root),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_tx_context(account.id(), &[add_note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// The owner removes an allowed fee policy root via `remove_allowed_fee_policy`, after which
+/// `set_fee_policy` rejects that root with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED` even though it was
+/// registered at deployment. This proves the allowlist can be narrowed post-deployment.
+#[tokio::test]
+async fn owner_can_remove_allowed_fee_policy_root_after_deployment() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let account = build_fee_account_with_switching(owner_account_id)?;
+
+    // The custom policy root is registered in the allowlist at deployment by `fee_manager`.
+    let allowed_root = custom_fee_policy()?.root().as_word();
+
+    let remove_note = build_sender_note(
+        owner_account_id,
+        710,
+        &create_allowlist_mutation_note_script("remove_allowed_fee_policy", allowed_root),
+    )?;
+    let set_note =
+        build_sender_note(owner_account_id, 711, &create_set_fee_policy_note_script(allowed_root))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Remove the root from the allowlist; the mutation takes effect from the next block.
+    consume_note(&mut mock_chain, account.id(), &remove_note).await?;
+
+    // With the root no longer allowed, `set_fee_policy` rejects switching back to it.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_tx_context(account.id(), &[set_note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_NOT_ALLOWED);
 
     Ok(())
 }
