@@ -8,10 +8,11 @@ miden-agglayer-current = { package = "miden-agglayer", path = "../crates/miden-a
 miden-protocol-current = { package = "miden-protocol", path = "../crates/miden-protocol" }
 miden-standards-current = { package = "miden-standards", path = "../crates/miden-standards" }
 
-# The release wrapper rewrites these tags to the latest release tag on main.
-miden-agglayer-previous = { package = "miden-agglayer", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
-miden-protocol-previous = { package = "miden-protocol", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
-miden-standards-previous = { package = "miden-standards", git = "https://github.com/0xMiden/protocol", tag = "v0.15.4" }
+# The tags below are placeholders: check-masm-root-stability.sh rewrites them to the latest release
+# tag. This script should not be run standalone.
+miden-agglayer-previous = { package = "miden-agglayer", git = "https://github.com/0xMiden/protocol", tag = "v0.0.0" }
+miden-protocol-previous = { package = "miden-protocol", git = "https://github.com/0xMiden/protocol", tag = "v0.0.0" }
+miden-standards-previous = { package = "miden-standards", git = "https://github.com/0xMiden/protocol", tag = "v0.0.0" }
 ---
 
 use std::collections::{BTreeMap, BTreeSet};
