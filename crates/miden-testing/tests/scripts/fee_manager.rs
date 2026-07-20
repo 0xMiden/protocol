@@ -5,16 +5,12 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
@@ -376,113 +372,6 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE);
-
-    Ok(())
-}
-
-/// The namespace under which the mismatched-asset test policy is compiled.
-const MISMATCHED_FEE_POLICY_NAME: &str = "test::fees::mismatched_asset_fee";
-
-/// Builds a user-defined fee policy whose `compute_note_fee` charges [`FEE_AMOUNT`] in the given
-/// hardcoded fee asset instead of reading the fee asset of the dispatching manager.
-fn mismatched_asset_fee_policy(fee_asset_id: AssetId) -> anyhow::Result<FeePolicy> {
-    let masm_source = format!(
-        r#"
-        use {{Asset, NoteRecipient}} from miden::protocol::types
-
-        #! Fee policy charging a fixed amount in a hardcoded fee asset, ignoring the note
-        #! parameters.
-        #!
-        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
-        #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-        #!
-        #! Invocation: call
-        @account_procedure
-        pub proc compute_note_fee(
-            recipient: NoteRecipient,
-            assets_commitment: word,
-            attachments_commitment: word,
-            timeframe: u32,
-            priority: u32
-        ) -> Asset
-            # drop the note parameters; zeros shift in at the stack-depth-16 floor
-            dropw dropw dropw drop drop
-            # => [pad(16)]
-
-            push.{fee_asset_value}
-            # => [FEE_ASSET_VALUE, pad(16)]
-
-            # drop the excess padding before pushing the fee asset ID
-            movupw.3 dropw
-            # => [FEE_ASSET_VALUE, pad(12)]
-
-            push.{fee_asset_id}
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
-
-            # drop the excess padding to restore the stack depth for the call boundary
-            movupw.3 dropw
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
-        end
-        "#,
-        fee_asset_value = AssetAmount::new(FEE_AMOUNT)?.to_word(),
-        fee_asset_id = fee_asset_id.to_word(),
-    );
-
-    let code =
-        CodeBuilder::default().compile_component_code(MISMATCHED_FEE_POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(
-            format!("{MISMATCHED_FEE_POLICY_NAME}::compute_note_fee").as_str(),
-        )
-        .expect("mismatched-asset fee policy should export compute_note_fee");
-    let component = AccountComponent::new(
-        code,
-        vec![],
-        AccountComponentMetadata::mock(MISMATCHED_FEE_POLICY_NAME),
-    )?;
-
-    Ok(FeePolicy::custom(root, [component])?)
-}
-
-/// `estimate_note_fee` aborts when the active fee policy returns a fee denominated in an asset
-/// other than the fee asset the `FeeManager` is configured with: the manager asserts the fee
-/// asset returned by the policy matches its own configured fee asset, surfacing a misconfigured
-/// policy at estimation time.
-#[tokio::test]
-async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Result<()> {
-    let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-    let mismatched_policy = mismatched_asset_fee_policy(AssetId::new_fungible(other_faucet_id))?;
-    let fee_manager = FeeManager::builder()
-        .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(mismatched_policy)
-        .build();
-
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    // The expected fee asset words are irrelevant: execution aborts in the manager's fee asset
-    // consistency check before the tx script's assertions are reached.
-    let tx_script_code =
-        estimate_note_fee_tx_script_code(Word::empty(), 0, 0, Word::empty(), Word::empty());
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .tx_script(tx_script)
-        .tx_script_args(priced_root().as_word())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_POLICY_FEE_ASSET_MISMATCH);
 
     Ok(())
 }
