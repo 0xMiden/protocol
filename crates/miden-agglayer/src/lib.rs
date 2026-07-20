@@ -192,6 +192,9 @@ fn agglayer_fee_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeeManager {
 /// initial holders of the `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
 /// bridge's privileged procedures.
 ///
+/// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
+/// bridge's [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
+///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
 /// tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the network
@@ -200,10 +203,11 @@ fn create_bridge_account_builder(
     seed: Word,
     admin: AccountId,
     roles: BridgeRoles,
+    network_id: u32,
 ) -> AccountBuilder {
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes())
         .expect("bridge note allowlist is non-empty")
-        .with_component(AggLayerBridge)
+        .with_component(AggLayerBridge::new(network_id))
         .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
@@ -215,9 +219,14 @@ fn create_bridge_account_builder(
 ///
 /// This creates a new account suitable for production use. `admin` bootstraps the `ADMIN` role
 /// (role administration); the initial operational-role holders are seeded from `roles` (see
-/// [`BridgeRoles`]).
-pub fn create_bridge_account(seed: Word, admin: AccountId, roles: BridgeRoles) -> Account {
-    create_bridge_account_builder(seed, admin, roles)
+/// [`BridgeRoles`]). `network_id` is the AggLayer network ID assigned to the Miden chain.
+pub fn create_bridge_account(
+    seed: Word,
+    admin: AccountId,
+    roles: BridgeRoles,
+    network_id: u32,
+) -> Account {
+    create_bridge_account_builder(seed, admin, roles, network_id)
         .build()
         .expect("bridge account should be valid")
 }
@@ -359,7 +368,7 @@ mod tests {
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id);
+        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",

@@ -42,7 +42,11 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::merkle_tree_frontier::MerkleTreeFrontier32;
-use super::test_utils::{SOLIDITY_MTF_VECTORS, create_existing_bridge_account_with_roles};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    SOLIDITY_MTF_VECTORS,
+    create_existing_bridge_account_with_roles,
+};
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
 ///
@@ -53,8 +57,8 @@ use super::test_utils::{SOLIDITY_MTF_VECTORS, create_existing_bridge_account_wit
 /// 3. Creates a B2AGG note with assets from the agglayer faucet
 /// 4. Consumes the B2AGG note against the bridge account — the bridge's `bridge_out` procedure:
 ///    - Validates the faucet is registered via `convert_asset`
-///    - Calls the faucet's `asset_to_origin_asset` via FPI to get the scaled amount, origin token
-///      address, and origin network
+///    - Reads the faucet's conversion metadata from the bridge's `faucet_metadata_map` to get the
+///      scaled amount, origin token address, and origin network
 ///    - Writes the leaf data and computes the Keccak hash for the Merkle Tree Faucet
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
@@ -98,6 +102,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -384,11 +389,12 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     let amount = vectors.amounts[0].parse::<u64>().expect("valid amount decimal string");
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
@@ -516,6 +522,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -614,10 +621,11 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use MTF vector token metadata and a fixed origin network compatible with the vectors.
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
@@ -667,7 +675,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     let b2agg_note = match invalid_note {
         // Destination network equals Miden's own network ID, which `bridge_out` rejects.
         InvalidB2aggNote::DestinationIsMiden => B2AggNote::create(
-            AggLayerBridge::MIDEN_NETWORK_ID,
+            MIDEN_NETWORK_ID,
             eth_address,
             NoteAssets::new(vec![bridge_asset])?,
             bridge_account.id(),
@@ -784,6 +792,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -908,6 +917,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -922,6 +932,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(malicious_account.clone())?;
 
@@ -991,6 +1002,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

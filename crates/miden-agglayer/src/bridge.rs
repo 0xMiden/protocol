@@ -4,7 +4,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::Word;
+use miden_core::{Felt, Word};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
@@ -79,6 +79,10 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 static FAUCET_METADATA_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::faucet_metadata_map")
         .expect("faucet metadata map storage slot name should be valid")
+});
+static NETWORK_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::network_id")
+        .expect("network ID storage slot name should be valid")
 });
 
 // bridge in
@@ -254,6 +258,7 @@ impl BridgeRoles {
 /// - [`Self::faucet_metadata_map_slot_name`]: Stores conversion metadata (origin address, origin
 ///   network, scale, metadata hash) for all registered faucets, keyed by sub-key scheme based on
 ///   faucet ID.
+/// - [`Self::network_id_slot_name`]: Stores the bridge's AggLayer network ID.
 /// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
 ///   source_bridge_network) → \[1, 0, 0, 0\]).
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
@@ -266,25 +271,34 @@ impl BridgeRoles {
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_FAUCET notes.
 ///
-/// Claim validation compares the leaf's `destination_network` to the global MASM constant
-/// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
-/// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct AggLayerBridge;
+/// Claim validation compares the leaf's `destination_network` to the bridge's own network ID,
+/// which is stored in [`Self::network_id_slot_name`] at account creation and read at runtime by
+/// the bridge MASM. The network ID is set once and never mutated, so different deployments (e.g.
+/// testnet vs mainnet) can use different IDs.
+#[derive(Debug, Clone, Copy)]
+pub struct AggLayerBridge {
+    network_id: u32,
+}
 
 impl AggLayerBridge {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// AggLayer-assigned network ID for this Miden chain.
-    ///
-    /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
-    pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
-
     /// Namespace of the assembled bridge account component library (the
     /// `asm/components/bridge/bridge.masm` wrapper). Procedure roots are resolved as
     /// `<namespace>::<proc_name>`.
     const COMPONENT_NAMESPACE: &'static str = "agglayer::components::bridge";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new AggLayer bridge component with the standard configuration.
+    ///
+    /// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
+    /// [`Self::network_id_slot_name`] storage slot at account creation.
+    pub fn new(network_id: u32) -> Self {
+        Self { network_id }
+    }
 
     // RBAC ROLES
     // --------------------------------------------------------------------------------------------
@@ -386,6 +400,14 @@ impl AggLayerBridge {
         &FAUCET_METADATA_MAP_SLOT_NAME
     }
 
+    /// Storage slot name for the bridge's AggLayer network ID.
+    ///
+    /// Holds the network ID assigned to this bridge as a single felt in the first word element.
+    /// It is set at account creation and never mutated by any bridge procedure.
+    pub fn network_id_slot_name() -> &'static StorageSlotName {
+        &NETWORK_ID_SLOT_NAME
+    }
+
     // --- bridge in --------
 
     /// Storage slot name for the CLAIM note nullifiers map.
@@ -448,7 +470,7 @@ impl AggLayerBridge {
 }
 
 impl From<AggLayerBridge> for AccountComponent {
-    fn from(_bridge: AggLayerBridge) -> Self {
+    fn from(bridge: AggLayerBridge) -> Self {
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
@@ -463,6 +485,10 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+            StorageSlot::with_value(
+                NETWORK_ID_SLOT_NAME.clone(),
+                Word::new([Felt::from(bridge.network_id), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            ),
         ];
         bridge_component(bridge_storage_slots)
     }
@@ -552,6 +578,28 @@ impl AggLayerBridge {
         root.extend(root_hi.to_vec());
 
         Ok(root)
+    }
+
+    /// Returns the AggLayer network ID stored in the bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn network_id(
+        account: &miden_protocol::account::Account,
+    ) -> Result<u32, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(account)?;
+
+        let value = account
+            .storage()
+            .get_item(AggLayerBridge::network_id_slot_name())
+            .expect("should be able to read the network ID");
+        let network_id = u32::try_from(value.to_vec()[0].as_canonical_u64())
+            .map_err(|_| AgglayerBridgeError::InvalidNetworkId)?;
+
+        Ok(network_id)
     }
 
     /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
@@ -716,6 +764,7 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
+            &*NETWORK_ID_SLOT_NAME,
         ]
     }
 }
@@ -736,6 +785,8 @@ pub enum AgglayerBridgeError {
     CodeCommitmentMismatch,
     #[error("bridge role {0} must have at least one initial holder")]
     EmptyBridgeRole(RoleSymbol),
+    #[error("the network ID stored in the bridge account does not fit into a u32")]
+    InvalidNetworkId,
 }
 
 // HELPER FUNCTIONS
