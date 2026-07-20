@@ -143,8 +143,7 @@ impl ConstantFeePolicy {
         let storage_schema = StorageSchema::new([(
             Self::fee_schedule_slot_name().clone(),
             StorageSlotSchema::map(
-                "Fee charged per note script root, as [fee_amount, 0, 0, 1] with a \
-                 set-marker as the last element",
+                "Fee charged per note script root",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
