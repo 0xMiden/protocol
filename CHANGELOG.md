@@ -215,13 +215,17 @@
 
 - Added a CI release job that uploads the pre-built `protocol.masp` and `standards.masp` packages to the GitHub release page to aid `midenup`'s installation speed ([#2859](https://github.com/0xMiden/protocol/pull/2859)).
 
+## v0.15.3 (2026-06-10)
+
+- [BREAKING] Changed AggLayerBridge to store its AggLayer network ID in account storage ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
+
 ## v0.15.2 (2026-06-05)
 
 - [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
 - [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
 - Renamed `AuthNetworkAccount::with_allowlist` to `with_allowed_notes` and aligned the component's internal allowlist field names, for consistency with `with_allowed_tx_scripts` ([#3049](https://github.com/0xMiden/protocol/pull/3049)).
 
-## v0.15.0 (2026-05-22)
+## v0.15.1 (2026-05-31)
 
 - Reject batches and blocks where an unauthenticated note is consumed before it is created to prevent circular note dependencies ([#2993](https://github.com/0xMiden/protocol/pull/2993)).
 
