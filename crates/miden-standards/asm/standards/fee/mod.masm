@@ -1,5 +1,6 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
+use miden::core::math::u128
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -13,8 +14,9 @@ use miden::standards::notes::tx_fee
 # TYPE ALIASES
 # =================================================================================================
 
-#! A fee conversion rate, applied to an amount as ceil(amount * num / den).
-pub type ConversionRate = struct { num: u32, den: u32 }
+#! A fee conversion rate, applied to an amount as ceil(amount * num / den). The numerator and
+#! denominator are arbitrary non-zero field elements.
+pub type ConversionRate = struct { num: felt, den: felt }
 
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
 #! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
@@ -60,8 +62,6 @@ const FEE_DOMAIN_TAG = 0xFEE
 const ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH = "conversion info loaded from the advice map does not match the commitment provided via the auth args"
 
 const ERR_FEE_CONVERSION_INFO_MISSING = "paying a non-zero fee requires conversion info committed via the auth args"
-
-const ERR_FEE_CONVERSION_RATE_NOT_U32 = "fee conversion rate numerator and denominator must be u32 values"
 
 const ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO = "fee conversion rate denominator must be non-zero"
 
@@ -157,18 +157,22 @@ end
 
 #! Converts an amount at the given conversion rate, rounding up.
 #!
-#! The converted amount is ceil(amount * rate_num / rate_den).
+#! The converted amount is ceil(amount * rate_num / rate_den). The intermediate product is
+#! computed with 128-bit precision, so it may exceed a u64 (e.g. for rates scaling between
+#! decimal conventions, like 10^12 for an 18-decimals vs 6-decimals asset pair) as long as the
+#! final converted amount fits into a fungible asset amount.
 #!
 #! Inputs:  [amount, rate_num, rate_den]
 #! Outputs: [converted_amount]
 #!
 #! Where:
 #! - amount is the amount to convert.
-#! - rate_num and rate_den are the numerator and denominator of the conversion rate.
+#! - rate_num and rate_den are the numerator and denominator of the conversion rate, as
+#!   arbitrary non-zero field elements.
 #! - converted_amount is the converted amount.
 #!
 #! Panics if:
-#! - rate_num or rate_den is not a u32, or either of them is zero.
+#! - rate_num or rate_den is zero.
 #! - the converted amount overflows a fungible asset amount.
 #!
 #! Invocation: exec
@@ -177,36 +181,37 @@ pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
     movdn.2
     # => [rate_num, rate_den, amount]
 
-    u32assert2.err=ERR_FEE_CONVERSION_RATE_NOT_U32
     dup neq.0 assert.err=ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO
     dup.1 neq.0 assert.err=ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO
     # => [rate_num, rate_den, amount]
 
-    # compute amount * rate_num as a u64 product
+    # compute amount * rate_num as a 128-bit product
     movup.2 u32split
     # => [amount_lo, amount_hi, rate_num, rate_den]
 
-    movup.2 push.0 swap
-    # => [rate_num, 0, amount_lo, amount_hi, rate_den]
+    movup.2 u32split
+    # => [num_lo, num_hi, amount_lo, amount_hi, rate_den]
 
-    exec.u64::overflowing_mul
-    # => [overflow, prod_lo, prod_hi, rate_den]
+    exec.u64::widening_mul
+    # => [prod0, prod1, prod2, prod3, rate_den]
 
-    assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
-    # => [prod_lo, prod_hi, rate_den]
+    # divide by rate_den as a u128, rounding up
+    push.0.0 movup.6 u32split
+    # => [den_lo, den_hi, 0, 0, prod0, prod1, prod2, prod3]
 
-    # divide by rate_den, rounding up
-    movup.2 push.0 swap
-    # => [rate_den, 0, prod_lo, prod_hi]
+    exec.u128::divmod
+    # => [rem0, rem1, rem2, rem3, quot0, quot1, quot2, quot3]
 
-    exec.u64::divmod
-    # => [rem_lo, rem_hi, quot_lo, quot_hi]
+    # round up if the remainder is non-zero; the limbs are u32s, so the felt sum cannot wrap
+    add add add neq.0
+    # => [round_up, quot0, quot1, quot2, quot3]
 
-    u32or neq.0
-    # => [round_up, quot_lo, quot_hi]
+    # the quotient must fit into a u64
+    movup.3 movup.4 add assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
+    # => [round_up, quot0, quot1]
 
     push.0 swap
-    # => [round_up, 0, quot_lo, quot_hi]
+    # => [round_up, 0, quot0, quot1]
 
     exec.u64::overflowing_add
     # => [overflow, converted_lo, converted_hi]

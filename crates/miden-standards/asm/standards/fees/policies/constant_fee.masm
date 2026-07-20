@@ -2,7 +2,8 @@
 #
 # Constant fee policy: derives the fee from a fixed per-note-script fee schedule. Designed to be
 # registered on a `FeeManager` (see `miden::standards::fees::fee_manager`), which dispatches fee
-# estimation to `compute_note_fee` via `dyncall`.
+# estimation to `compute_note_fee` via `dyncall` and asserts the returned fee asset ID matches
+# the fee asset ID the manager is configured with.
 #
 # Storage layout:
 # - `fee_asset_id` word: the ID of the asset the fee is charged in.
@@ -40,7 +41,8 @@ const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule ent
 #! This policy derives the key from just the note's script root, which it recovers from RECIPIENT
 #! via the advice provider, and ignores the remaining parameters, including timeframe and
 #! priority. Note scripts without a schedule entry abort; to make one free, schedule an explicit
-#! 0 fee.
+#! 0 fee. The fee asset ID is read from this policy's own storage; the dispatching `FeeManager`
+#! asserts it matches the fee asset ID the manager is configured with.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]

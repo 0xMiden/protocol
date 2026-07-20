@@ -11,8 +11,8 @@ use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
 
 use super::Felt;
+use crate::assembly::Path;
 use crate::assembly::mast::{MastForest, MastNodeId};
-use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
 use crate::package::{loaded_mast_forest, package_debug_info};
 use crate::utils::create_external_node_forest;
@@ -23,7 +23,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceMap, Program};
+use crate::vm::AdviceMap;
 use crate::{PrettyPrint, Word};
 
 /// The attribute name used to mark the entrypoint procedure in a note script library.
@@ -83,19 +83,6 @@ impl NoteScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [NoteScript] instantiated from the provided program.
-    ///
-    /// TODO: since the note script now should be created from `Library`, not `Program`, this
-    /// constructor should be removed:
-    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
-    pub fn new(code: Program) -> Self {
-        Self {
-            entrypoint: code.entrypoint(),
-            mast: code.mast_forest().clone(),
-            package_debug_info: None,
-        }
-    }
-
     /// Returns a new [NoteScript] deserialized from the provided bytes.
     ///
     /// # Errors
@@ -126,7 +113,7 @@ impl NoteScript {
     /// Returns an error if:
     /// - The library does not contain a procedure with the `@note_script` attribute.
     /// - The library contains multiple procedures with the `@note_script` attribute.
-    pub fn from_library(library: &Library) -> Result<Self, NoteError> {
+    pub fn from_library(library: &Package) -> Result<Self, NoteError> {
         let mut entrypoint = None;
 
         for export in library.manifest.exports() {
@@ -169,7 +156,7 @@ impl NoteScript {
     /// Returns an error if:
     /// - The library does not contain a procedure at the specified path.
     /// - The procedure at the specified path does not have the `@note_script` attribute.
-    pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
+    pub fn from_library_reference(library: &Package, path: &Path) -> Result<Self, NoteError> {
         // Find the export matching the path
         let export = library
             .manifest
@@ -197,19 +184,6 @@ impl NoteScript {
             entrypoint,
             package_debug_info: package_debug_info(library),
         })
-    }
-
-    /// Creates an [`NoteScript`] from a [`Package`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The package contains a library which does not contain a procedure with the `@note_script`
-    ///   attribute.
-    /// - The package contains a library which contains multiple procedures with the `@note_script`
-    ///   attribute.
-    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        Ok(NoteScript::from_library(package))?
     }
 
     // PUBLIC ACCESSORS

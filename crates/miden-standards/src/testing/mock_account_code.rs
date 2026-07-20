@@ -1,5 +1,5 @@
 use miden_protocol::account::AccountCode;
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Package;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::code_builder::CodeBuilder;
@@ -340,14 +340,14 @@ const MOCK_ACCOUNT_CODE: &str = "
     end
 ";
 
-static MOCK_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static MOCK_FAUCET_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("mock::faucet", MOCK_FAUCET_CODE)
         .expect("mock faucet code should be valid")
         .into()
 });
 
-static MOCK_ACCOUNT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static MOCK_ACCOUNT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("mock::account", MOCK_ACCOUNT_CODE)
         .expect("mock account code should be valid")
@@ -359,17 +359,17 @@ static MOCK_ACCOUNT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 
 /// Extension trait for [`AccountCode`] to access the mock libraries.
 pub trait MockAccountCodeExt {
-    /// Returns the [`Library`] of the mock account under the `mock::account` namespace.
+    /// Returns the [`Package`] of the mock account under the `mock::account` namespace.
     ///
     /// This account interface wraps most account kernel APIs for testing purposes.
-    fn mock_account_library() -> Library {
+    fn mock_account_library() -> Package {
         MOCK_ACCOUNT_LIBRARY.clone()
     }
 
-    /// Returns the [`Library`] of the mock faucet under the `mock::faucet` namespace.
+    /// Returns the [`Package`] of the mock faucet under the `mock::faucet` namespace.
     ///
     /// This account interface wraps most faucet kernel APIs for testing purposes.
-    fn mock_faucet_library() -> Library {
+    fn mock_faucet_library() -> Package {
         MOCK_FAUCET_LIBRARY.clone()
     }
 }
