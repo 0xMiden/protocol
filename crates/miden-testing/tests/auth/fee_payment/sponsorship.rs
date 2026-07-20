@@ -61,7 +61,10 @@ fn network_account(
     for (root, amount) in priced {
         policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
     }
-    let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
+    let fee_manager = FeeManager::builder()
+        .active_fee_policy(policy.into())
+        .fee_faucet_id(fee_faucet_id()?)
+        .build();
     let auth = AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter(allowed_notes))?;
 
     Ok(AccountBuilder::new(seed)

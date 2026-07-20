@@ -175,7 +175,10 @@ fn agglayer_fee_manager(auth: &AuthNetworkAccount) -> FeeManager {
         constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
 
-    FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build()
+    FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(fee_faucet_id)
+        .build()
 }
 
 /// Creates a complete bridge account builder with the standard configuration.

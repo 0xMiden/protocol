@@ -54,7 +54,10 @@ fn zero_fee_manager(
         constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
-    Ok(FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build())
+    Ok(FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build())
 }
 
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided

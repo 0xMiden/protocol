@@ -375,8 +375,10 @@ impl MockChainBuilder {
             constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO)
         }
 
-        let fee_manager =
-            FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build();
+        let fee_manager = FeeManager::builder()
+            .active_fee_policy(constant_fee_policy.into())
+            .fee_faucet_id(self.fee_faucet_id)
+            .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)

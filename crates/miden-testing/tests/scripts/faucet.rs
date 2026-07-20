@@ -2364,7 +2364,10 @@ fn build_network_faucet_with_blocklist_transfer(
     for note_script in auth.allowed_notes().allowed_script_roots() {
         constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
-    let fee_manager = FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build();
+    let fee_manager = FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)

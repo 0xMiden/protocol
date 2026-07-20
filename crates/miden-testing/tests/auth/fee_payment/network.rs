@@ -44,7 +44,10 @@ async fn execute_network_account_tx(
     for note_script in auth_component.allowed_notes().allowed_script_roots() {
         constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
-    let fee_manager = FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build();
+    let fee_manager = FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build();
 
     let account = AccountBuilder::new([9; 32])
         .with_auth_component(auth_component)

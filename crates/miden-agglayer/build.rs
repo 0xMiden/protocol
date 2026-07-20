@@ -364,6 +364,7 @@ fn generate_agglayer_constants(
         // policy is immaterial here.
         let fee_manager = FeeManager::builder()
             .active_fee_policy(ConstantFeePolicy::new(dummy_owner).into())
+            .fee_faucet_id(dummy_owner)
             .build();
         components.extend(fee_manager);
 
