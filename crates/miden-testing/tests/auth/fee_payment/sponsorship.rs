@@ -330,11 +330,12 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     let spawn_note = create_spawn_note([&spawned_note])?;
 
     // real network account A allowlists the spawn note, funded to pay its own fee, to sponsor the
-    // spawned note, and to move the payload into it
+    // spawned note, and to move the payload into it; A's policy must price the spawn note it
+    // consumes, since a constant policy aborts fee estimation for unscheduled note scripts
     let network_a = network_account(
         [2; 32],
         [spawn_note.script().root(), FeeSponsorshipNote::script_root()],
-        &[],
+        &[(spawn_note.script().root(), 0)],
         [fee_asset(1_000_000)?, payload_asset],
     )?;
     assert_eq!(network_a.id(), network_a_id, "account id must not depend on the allowlist");

@@ -56,6 +56,7 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
@@ -360,7 +361,7 @@ impl MockChainBuilder {
     /// Bundles [`PausableManager`] to match the `create_network_fungible_faucet` factory.
     fn add_existing_network_fungible_faucet(
         &mut self,
-        auth_method: Auth,
+        auth: AuthNetworkAccount,
         faucet: FungibleFaucet,
         account_type: AccountType,
         access_control: AccessControl,
@@ -369,9 +370,13 @@ impl MockChainBuilder {
         // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
         // answers sponsorship fee estimates; both require an active fee policy. The empty schedule
         // keeps this a no-op on fee-free chains.
-        let fee_manager = FeeManager::builder()
-            .active_fee_policy(ConstantFeePolicy::new(self.fee_faucet_id).into())
-            .build();
+        let mut constant_fee_policy = ConstantFeePolicy::new(self.fee_faucet_id);
+        for note_script in auth.allowed_notes().allowed_script_roots() {
+            constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO)
+        }
+
+        let fee_manager =
+            FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)
@@ -385,7 +390,12 @@ impl MockChainBuilder {
             .with_component(PausableManager)
             .with_components(fee_manager);
 
-        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+        let auth = Auth::NetworkAccount {
+            allowed_script_roots: auth.allowed_notes().allowed_script_roots().clone(),
+            allowed_tx_script_roots: auth.allowed_tx_scripts().allowed_script_roots().clone(),
+        };
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
@@ -483,10 +493,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            AuthNetworkAccount::with_allowed_notes(allowed_script_roots)?,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -519,10 +526,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            AuthNetworkAccount::with_allowed_notes(allowed_script_roots)?,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },

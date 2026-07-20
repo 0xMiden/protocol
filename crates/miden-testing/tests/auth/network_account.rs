@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
@@ -40,13 +41,20 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     build_account_with_allowlists(allowed_script_roots, Vec::new())
 }
 
-/// A zero-fee `FeeManager` (empty `ConstantFeePolicy`) giving a network account an active fee
-/// policy for `collect_sponsored_fees`. With an empty schedule every note prices to zero, so
-/// collection is a no-op on these fee-free chains.
-fn zero_fee_manager() -> anyhow::Result<FeeManager> {
-    Ok(FeeManager::builder()
-        .active_fee_policy(ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?).into())
-        .build())
+/// A zero-fee `FeeManager` giving a network account an active fee policy for
+/// `collect_sponsored_fees`. A constant policy aborts fee estimation for note scripts without a
+/// schedule entry, so every note the account can consume must be scheduled; each root in
+/// `note_script_roots` is scheduled with an explicit 0 fee, keeping collection a no-op on these
+/// fee-free chains.
+fn zero_fee_manager(
+    note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+) -> anyhow::Result<FeeManager> {
+    let mut constant_fee_policy = ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?);
+    for note_script in note_script_roots {
+        constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+
+    Ok(FeeManager::builder().active_fee_policy(constant_fee_policy.into()).build())
 }
 
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
@@ -60,10 +68,13 @@ fn build_account_with_allowlists(
     )?
     .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
 
+    let fee_manager =
+        zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
+
     Ok(AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
-        .with_components(zero_fee_manager()?)
+        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
@@ -332,10 +343,15 @@ fn owner_id() -> AccountId {
 /// Builds a network account that opts into allowlist management (its note allowlist includes the
 /// standardized action-note root plus `extra_allowed_note_roots`) and whose admin procedures are
 /// gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
+///
+/// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
+/// deployment, so a note whose root is added to the allowlist post-deployment can still be
+/// consumed: a constant fee policy aborts fee estimation for note scripts without a schedule entry.
 fn build_owner_controlled_account(
     extra_allowed_note_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
     owner: AccountId,
+    fee_scheduled_note_roots: Vec<NoteScriptRoot>,
 ) -> anyhow::Result<Account> {
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
@@ -343,10 +359,19 @@ fn build_owner_controlled_account(
     let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
         .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
+    let scheduled_roots = auth_component
+        .allowed_notes()
+        .allowed_script_roots()
+        .iter()
+        .copied()
+        .chain(fee_scheduled_note_roots);
+    let fee_manager = zero_fee_manager(scheduled_roots)?;
+
     Ok(AccountBuilder::new([7; 32])
         .with_auth_component(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(BasicWallet)
+        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
@@ -397,8 +422,9 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`.
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`, but
+    // fee-schedule `new_root` so the note is consumable once it is added to the allowlist.
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![new_root])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -434,7 +460,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         stranger,
         account.id(),
@@ -470,7 +496,7 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
     let target_root = target_note.script().root();
 
     // Deploy with the target note allowlisted (plus the config note via allowlist management).
-    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -511,7 +537,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -552,7 +578,7 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
     let plain_root = plain_note.script().root();
 
     // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
-    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -664,12 +690,15 @@ fn build_upgradeable_network_account(
         allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
     )?;
 
+    let fee_manager =
+        zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
+
     Ok(AccountBuilder::new([7; 32])
         .with_auth_component(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
         .with_component(BasicWallet)
-        .with_components(zero_fee_manager()?)
+        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
