@@ -203,7 +203,9 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// [`ConstantFeePolicy::with_fee`]. The active builder defaults to the built-in
 /// `build_note_fee_lookup_key` procedure ([`NoteFeeLookupKeyBuilder::built_in`]), which keys on
 /// the note's script root (recovered from the note's recipient via the advice provider) and
-/// ignores the remaining parameters, including the timeframe and priority.
+/// ignores the remaining parameters, including the timeframe and priority. The manager asserts
+/// the returned fee asset ID matches the fee asset ID it stores itself, so a policy configured
+/// with a different fee asset than its manager aborts fee estimation.
 ///
 /// A custom key computation is installed by activating a [`NoteFeeLookupKeyBuilder`] via
 /// [`Self::with_active_lookup_key_builder`]; its companion components are bundled into the
@@ -486,7 +488,7 @@ impl IntoIterator for ConstantFeePolicy {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, AccountType, StorageSlotContent};
+    use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
@@ -509,7 +511,10 @@ mod tests {
         let policy = ConstantFeePolicy::new(fee_faucet_id())
             .with_fee(script_root, fee)
             .with_fee(free_script_root, AssetAmount::ZERO);
-        let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
+        let fee_manager = FeeManager::builder()
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(policy.into())
+            .build();
 
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
@@ -517,9 +522,15 @@ mod tests {
             .with_components(fee_manager)
             .build_existing()?;
 
-        let fee_asset_id_word =
-            account.storage().get_item(ConstantFeePolicy::fee_asset_id_slot_name())?;
-        assert_eq!(fee_asset_id_word, AssetId::new_fungible(fee_faucet_id()).to_word());
+        let fee_asset_id_slot = account
+            .storage()
+            .get(ConstantFeePolicy::fee_asset_id_slot_name())
+            .expect("fee asset ID slot should exist");
+        assert_eq!(
+            fee_asset_id_slot.value(),
+            AssetId::new_fungible(fee_faucet_id()).to_word(),
+            "the fee asset ID slot should hold the configured fee asset ID"
+        );
 
         let slot = account
             .storage()

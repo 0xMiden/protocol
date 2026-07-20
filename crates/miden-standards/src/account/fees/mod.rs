@@ -2,7 +2,8 @@
 //!
 //! [`FeeManager`] is structured like the token policy managers
 //! (see [`crate::account::policies`]): it owns an `active_fee_policy_proc_root` slot plus an
-//! `allowed_fee_policy_proc_roots` map slot for set-time validation, and its `estimate_note_fee`
+//! `allowed_fee_policy_proc_roots` map slot for set-time validation, as well as a `fee_asset_id`
+//! slot holding the ID of the asset fees are charged in, and its `estimate_note_fee`
 //! procedure dispatches to the active fee policy via `dyncall`. The actual fee computation logic
 //! lives in fee policy components ([`ConstantFeePolicy`]), and the active
 //! policy can be switched to any allowlisted policy root through the authority-gated
@@ -11,8 +12,8 @@
 //! the manager).
 //!
 //! An account constructs the manager via [`FeeManager::builder`], setting the required
-//! `active_fee_policy` (and optionally any number of reserved `allowed_fee_policy` entries),
-//! then passes the built manager directly to
+//! `fee_faucet_id` and `active_fee_policy` (and optionally any number of reserved
+//! `allowed_fee_policy` entries), then passes the built manager directly to
 //! [`miden_protocol::account::AccountBuilder::with_components`].
 
 mod fee_manager;

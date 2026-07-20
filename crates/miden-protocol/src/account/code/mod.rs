@@ -436,7 +436,7 @@ fn merge_component_debug_info(
         .iter()
         .enumerate()
         .filter_map(|(idx, component)| {
-            package_debug_info(component.component_code().as_library()).map(|debug| (idx, debug))
+            package_debug_info(component.component_code().as_package()).map(|debug| (idx, debug))
         })
         .collect::<Vec<_>>();
 

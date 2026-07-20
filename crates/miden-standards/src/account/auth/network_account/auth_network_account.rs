@@ -175,6 +175,16 @@ impl AuthNetworkAccount {
         &NETWORK_ACCOUNT_AUTH_CODE
     }
 
+    /// Returns the [`NetworkAccountNoteAllowlist`] of this component.
+    pub fn allowed_notes(&self) -> &NetworkAccountNoteAllowlist {
+        &self.allowed_notes
+    }
+
+    /// Returns the [`NetworkAccountTxScriptAllowlist`] of this component.
+    pub fn allowed_tx_scripts(&self) -> &NetworkAccountTxScriptAllowlist {
+        &self.allowed_tx_scripts
+    }
+
     /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
     /// component.
     pub fn add_allowed_note_script_root() -> AccountProcedureRoot {

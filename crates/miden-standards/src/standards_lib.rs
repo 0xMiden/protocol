@@ -1,9 +1,8 @@
 use alloc::sync::Arc;
 
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Package;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
@@ -26,14 +25,19 @@ static STANDARDS_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
 pub struct StandardsLib(Arc<Package>);
 
 impl StandardsLib {
+    /// Returns the underlying [`Arc<Package>`]
+    pub fn package(&self) -> Arc<Package> {
+        self.0.clone()
+    }
+
     /// Returns a reference to the [`MastForest`] of the inner [`Package`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
     }
 }
 
-impl AsRef<Library> for StandardsLib {
-    fn as_ref(&self) -> &Library {
+impl AsRef<Package> for StandardsLib {
+    fn as_ref(&self) -> &Package {
         self.0.as_ref()
     }
 }

@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::TxFeeNote;
 use miden_standards::testing::note::NoteBuilder;
@@ -35,9 +36,23 @@ async fn execute_network_account_tx(
         .unwrap_or_else(|| NoteScriptRoot::from_array([1, 0, 0, 0]));
     let auth_component = AuthNetworkAccount::with_allowed_notes(BTreeSet::from([allowed_root]))?;
 
+    // a zero-fee FeeManager gives the network account the active fee policy that
+    // collect_sponsored_fees requires; a constant policy aborts fee estimation for note scripts
+    // without a schedule entry, so schedule an explicit 0 fee for every allowlisted note to keep
+    // collection a no-op here
+    let mut constant_fee_policy = ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?);
+    for note_script in auth_component.allowed_notes().allowed_script_roots() {
+        constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+    }
+    let fee_manager = FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build();
+
     let account = AccountBuilder::new([9; 32])
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
+        .with_components(fee_manager)
         .with_assets(assets)
         .account_type(AccountType::Public)
         .build_existing()?;

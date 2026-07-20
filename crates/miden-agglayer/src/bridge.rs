@@ -4,26 +4,22 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, ONE, Word, ZERO};
+use miden_core::Word;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
-    Account,
     AccountComponent,
     AccountId,
     AccountProcedureRoot,
     RoleSymbol,
-    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
-use crate::claim_note::CgiChainHash;
 use crate::utils::Keccak256Output;
 
 /// Removed-GER hash chain representation (32-byte Keccak256 hash)
@@ -285,8 +281,6 @@ impl AggLayerBridge {
     /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
     pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
 
-    const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
-
     /// Namespace of the assembled bridge account component library (the
     /// `asm/components/bridge/bridge.masm` wrapper). Procedure roots are resolved as
     /// `<namespace>::<proc_name>`.
@@ -431,7 +425,7 @@ impl AggLayerBridge {
         &LET_NUM_LEAVES_SLOT_NAME
     }
 
-    // ALLOWED NOTES
+    // ALLOWED SCRIPTS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
@@ -451,6 +445,40 @@ impl AggLayerBridge {
             RemoveGerNote::script_root(),
         ])
     }
+}
+
+impl From<AggLayerBridge> for AccountComponent {
+    fn from(_bridge: AggLayerBridge) -> Self {
+        let bridge_storage_slots = vec![
+            StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
+            StorageSlot::with_value(LET_ROOT_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_empty_map(FAUCET_REGISTRY_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+        ];
+        bridge_component(bridge_storage_slots)
+    }
+}
+
+// TESTING
+// ================================================================================================
+
+#[cfg(any(feature = "testing", test))]
+impl AggLayerBridge {
+    const REGISTERED_GER_MAP_VALUE: Word = Word::new([
+        miden_protocol::Felt::ONE,
+        miden_protocol::Felt::ZERO,
+        miden_protocol::Felt::ZERO,
+        miden_protocol::Felt::ZERO,
+    ]);
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
     /// bridge account.
@@ -461,8 +489,11 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn is_ger_registered(
         ger: ExitRoot,
-        bridge_account: &Account,
+        bridge_account: &miden_protocol::account::Account,
     ) -> Result<bool, AgglayerBridgeError> {
+        use miden_protocol::account::StorageMapKey;
+        use miden_protocol::crypto::hash::poseidon2::Poseidon2;
+
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
@@ -498,7 +529,9 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerBridge`] account.
-    pub fn read_local_exit_root(account: &Account) -> Result<Vec<Felt>, AgglayerBridgeError> {
+    pub fn read_local_exit_root(
+        account: &miden_protocol::account::Account,
+    ) -> Result<Vec<miden_core::Felt>, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(account)?;
 
@@ -522,7 +555,7 @@ impl AggLayerBridge {
     }
 
     /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
-    pub fn read_let_num_leaves(account: &Account) -> u64 {
+    pub fn read_let_num_leaves(account: &miden_protocol::account::Account) -> u64 {
         let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
         let value = account
             .storage()
@@ -537,7 +570,9 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerBridge`] account.
-    pub fn cgi_chain_hash(bridge_account: &Account) -> Result<CgiChainHash, AgglayerBridgeError> {
+    pub fn cgi_chain_hash(
+        bridge_account: &miden_protocol::account::Account,
+    ) -> Result<crate::claim_note::CgiChainHash, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
@@ -550,7 +585,10 @@ impl AggLayerBridge {
             .get_item(AggLayerBridge::cgi_chain_hash_hi_slot_name())
             .expect("failed to get CGI hash chain hi slot");
 
-        Ok(CgiChainHash::new(Self::chain_hash_bytes(cgi_chain_hash_lo, cgi_chain_hash_hi)))
+        Ok(crate::claim_note::CgiChainHash::new(Self::chain_hash_bytes(
+            cgi_chain_hash_lo,
+            cgi_chain_hash_hi,
+        )))
     }
 
     /// Returns the removed-GER keccak256 hash chain from the corresponding storage slots.
@@ -563,7 +601,7 @@ impl AggLayerBridge {
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn removed_ger_hash_chain(
-        bridge_account: &Account,
+        bridge_account: &miden_protocol::account::Account,
     ) -> Result<RemovedGerHashChain, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
@@ -604,7 +642,9 @@ impl AggLayerBridge {
     /// - the provided account does not have all AggLayer Bridge specific storage slots.
     /// - the code commitment of the provided account does not match the code commitment of the
     ///   [`AggLayerBridge`].
-    fn assert_bridge_account(account: &Account) -> Result<(), AgglayerBridgeError> {
+    fn assert_bridge_account(
+        account: &miden_protocol::account::Account,
+    ) -> Result<(), AgglayerBridgeError> {
         // check that the storage slots are as expected
         Self::assert_storage_slots(account)?;
 
@@ -620,7 +660,9 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - provided account does not have all AggLayer Bridge specific storage slots.
-    fn assert_storage_slots(account: &Account) -> Result<(), AgglayerBridgeError> {
+    fn assert_storage_slots(
+        account: &miden_protocol::account::Account,
+    ) -> Result<(), AgglayerBridgeError> {
         // get the storage slot names of the provided account
         let account_storage_slot_names: Vec<&StorageSlotName> = account
             .storage()
@@ -648,7 +690,9 @@ impl AggLayerBridge {
     /// Returns an error if:
     /// - the code commitment of the provided account does not match the code commitment of the
     ///   [`AggLayerBridge`].
-    fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
+    fn assert_code_commitment(
+        account: &miden_protocol::account::Account,
+    ) -> Result<(), AgglayerBridgeError> {
         if BRIDGE_CODE_COMMITMENT != account.code().commitment() {
             return Err(AgglayerBridgeError::CodeCommitmentMismatch);
         }
@@ -673,27 +717,6 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
         ]
-    }
-}
-
-impl From<AggLayerBridge> for AccountComponent {
-    fn from(_bridge: AggLayerBridge) -> Self {
-        let bridge_storage_slots = vec![
-            StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
-            StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
-            StorageSlot::with_value(LET_ROOT_LO_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_empty_map(FAUCET_REGISTRY_MAP_SLOT_NAME.clone()),
-            StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
-            StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
-            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_LO_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_value(REMOVED_GER_HASH_CHAIN_HI_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
-        ];
-        bridge_component(bridge_storage_slots)
     }
 }
 
