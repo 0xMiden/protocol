@@ -53,12 +53,7 @@ pub mod assembly {
         mast,
     };
     pub use miden_assembly_syntax::Parse;
-    pub use miden_mast_package::{
-        Package as KernelLibrary,
-        Package as Library,
-        PackageExport as LibraryExport,
-        ProcedureExport,
-    };
+    pub use miden_mast_package::{Package, ProcedureExport};
 }
 
 pub mod crypto {

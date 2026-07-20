@@ -1,6 +1,5 @@
 use std::env;
 use std::path::Path;
-use std::sync::Arc;
 
 use miden_assembly::ProjectTargetSelector;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
@@ -14,7 +13,6 @@ use miden_build_utils::{
     write_release_package,
 };
 use miden_core_lib::CoreLibrary;
-use miden_mast_package::Package;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_protocol::ProtocolLib;
 use miden_protocol::transaction::TransactionKernel;
@@ -83,7 +81,7 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // must be available in the registry for project dependency resolution to succeed.
     for package in [
         CoreLibrary::default().package(),
-        Arc::new(Package::from(ProtocolLib::default())),
+        ProtocolLib::default().package(),
         TransactionKernel::package(),
     ] {
         registry.cache_package(package).into_diagnostic()?;

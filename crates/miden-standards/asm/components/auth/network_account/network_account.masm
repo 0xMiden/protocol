@@ -7,6 +7,8 @@ use miden::protocol::native_account
 use miden::core::word
 use miden::standards::auth::network_account
 use miden::standards::fee
+use miden::standards::fees
+use miden::standards::fees::fee_manager
 
 pub use {add_allowed_note_script} from miden::standards::auth::network_account
 pub use {remove_allowed_note_script} from miden::standards::auth::network_account
@@ -27,9 +29,14 @@ const NETWORK_POST_FEE_CYCLES = 1024
 #!    that executed no tx script is always allowed).
 #! 2. Every consumed input note must have a script root present in the note-script allowlist.
 #!
-#! If both checks pass, the transaction fee is paid by creating a public TX_FEE note funded
-#! from the account's vault in the native fee asset at rate 1/1 (see fee::pay_fee and
-#! fee::native_conversion_info). On chains with a zero verification base fee no note is created.
+#! If both checks pass, the fees prepaid by any FEE_SPONSORSHIP input notes are collected into the
+#! account's vault (see fees::collect_sponsored_fees). This requires the account to have an active
+#! fee policy and to allowlist the FEE_SPONSORSHIP script root so the sponsorship notes pass the
+#! input-note check above.
+#!
+#! The transaction fee is then paid by creating a public TX_FEE note funded from the account's
+#! vault in the native fee asset at rate 1/1 (see fee::pay_fee and fee::native_conversion_info). On
+#! chains with a zero verification base fee no note is created.
 #!
 #! Finally, the nonce is incremented when the account state changed or the account is new,
 #! matching the behavior of the NoAuth and SingleSig components. Note that on fee-charging
@@ -46,6 +53,15 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     exec.network_account::assert_transaction_allowed
+    # => [pad(16)]
+
+    # ---- Collect fees prepaid by sponsorship input notes into the account's vault ----
+    # done before paying the fee so the collected assets can fund the fee payment.
+    # collect fees in the asset the fee manager is configured with
+    exec.fee_manager::read_fee_asset_id
+    # => [FEE_ASSET_ID, pad(16)]
+
+    exec.fees::collect_sponsored_fees drop
     # => [pad(16)]
 
     # ---- Pay the transaction fee in the native fee asset ----

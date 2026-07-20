@@ -1,4 +1,3 @@
 pub mod asset_conversion
-pub mod constants
 pub mod eth_address
 pub mod utils

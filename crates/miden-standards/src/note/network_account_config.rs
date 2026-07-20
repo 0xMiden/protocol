@@ -123,9 +123,9 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// component against the note sender.
 ///
 /// For the consuming network account to accept this note, its own script root must be in the
-/// account's note script allowlist; the
-/// [`AuthNetworkAccount::with_allowlist_management`](crate::account::auth::AuthNetworkAccount::with_allowlist_management)
-/// constructor allowlists it automatically.
+/// account's note script allowlist. Every
+/// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) allowlists it by default at
+/// construction, so no extra setup is required.
 ///
 /// Construct one with the [builder](NetworkAccountConfigNote::builder); convert it into a
 /// protocol [`Note`] infallibly via `Note::from`.

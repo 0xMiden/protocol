@@ -137,6 +137,23 @@ impl AuthMultisigConfig {
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
 ///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
+/// payment asset and conversion rate are committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
+/// 1/1 for plain native payment). On chains with a zero verification base fee no note is
+/// created. The fee note is created before the transaction summary, so it is covered by the
+/// approver signatures. The auth args word (the commitment `hash(CONVERSION_INFO || SALT)`)
+/// continues to serve as the transaction summary salt; the uniqueness that replay protection
+/// relies on originates from the caller-chosen `SALT`: distinct salts produce distinct
+/// commitments and therefore distinct signed summaries, which `record_and_assert_new_tx`
+/// records and checks.
+///
 /// # Privacy
 ///
 /// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
