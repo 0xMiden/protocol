@@ -55,4 +55,3 @@ miden-mast-package     = { features = ["std"], workspace = true }
 miden-package-registry = { features = ["resolver", "std"], workspace = true }
 miden-protocol         = { features = ["testing"], workspace = true }
 miden-standards        = { workspace = true }
-regex                  = { workspace = true }

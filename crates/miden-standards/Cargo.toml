@@ -32,7 +32,6 @@ thiserror = { workspace = true }
 miden-assembly         = { features = ["std"], workspace = true }
 miden-build-utils      = { workspace = true }
 miden-core-lib         = { workspace = true }
-miden-mast-package     = { features = ["std"], workspace = true }
 miden-package-registry = { features = ["resolver", "std"], workspace = true }
 miden-protocol         = { workspace = true }
 
