@@ -21,6 +21,7 @@ use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
 use super::test_utils::{
+    MIDEN_NETWORK_ID,
     create_existing_bridge_account_with_roles,
     execute_program_with_default_host,
 };
@@ -77,6 +78,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -307,6 +309,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -372,6 +375,7 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

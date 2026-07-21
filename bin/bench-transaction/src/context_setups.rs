@@ -26,6 +26,10 @@ use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, MockTransaction};
 use rand::RngExt;
 
+/// AggLayer network ID encoded in the bundled claim test vectors. Bridges in these benchmark
+/// setups are created with this value so vector-based claims validate against the configured ID.
+const MIDEN_NETWORK_ID: u32 = 77;
+
 // P2ID NOTE SETUPS
 // ================================================================================================
 
@@ -217,6 +221,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<MockT
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -437,6 +442,7 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<M
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
 
     // Pre-populate frontier before adding the account to the mock chain

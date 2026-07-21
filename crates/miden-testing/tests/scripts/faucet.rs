@@ -29,11 +29,13 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
@@ -2403,6 +2405,22 @@ fn build_network_faucet_with_blocklist_transfer(
         .active_receive_policy(TransferPolicy::empty_basic_blocklist())
         .build();
 
+    let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
+    let auth = AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())?;
+
+    // the network-account auth procedure collects sponsored fees, which needs an active fee policy;
+    // a constant policy aborts fee estimation for note scripts without a schedule entry, so
+    // schedule an explicit 0 fee for every allowlisted note to keep this a no-op on this fee-free
+    // chain
+    let mut constant_fee_policy = ConstantFeePolicy::new();
+    for note_script in auth.allowed_notes().allowed_script_roots() {
+        constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+    }
+    let fee_manager = FeeManager::builder()
+        .active_fee_policy(constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build();
+
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -2410,11 +2428,12 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(Authority::OwnerControlled)
         .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused());
+        .with_component(Pausable::unpaused())
+        .with_components(fee_manager);
 
     builder.add_account_from_builder(
         Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::from([MintNote::script_root()]),
+            allowed_script_roots,
             allowed_tx_script_roots: BTreeSet::new(),
         },
         account_builder,

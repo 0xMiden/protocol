@@ -10,7 +10,6 @@ use miden_agglayer::errors::{
     ERR_TOKEN_NOT_REGISTERED,
 };
 use miden_agglayer::{
-    AggLayerBridge,
     B2AggNote,
     ClaimNote,
     ClaimNoteStorage,
@@ -48,6 +47,7 @@ use rand::RngExt;
 
 use super::test_utils::{
     ClaimDataSource,
+    MIDEN_NETWORK_ID,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
     create_existing_bridge_account_with_roles,
@@ -160,7 +160,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
+    assert_eq!(AggLayerBridge::network_id(&bridge_account)?, MIDEN_NETWORK_ID);
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
@@ -456,6 +458,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -628,9 +631,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     Ok(())
 }
 
-/// CLAIM must reject a leaf whose `destination_network` does not match the global Miden
-/// AggLayer network ID (`MIDEN_NETWORK_ID` in `constants.masm`), even when the rest of the proof
-/// data is unchanged.
+/// CLAIM must reject a leaf whose `destination_network` does not match the bridge's configured
+/// network ID, even when the rest of the proof data is unchanged.
 #[tokio::test]
 async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
@@ -662,6 +664,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -672,7 +675,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // Override destination_network so it no longer matches the bridge's MIDEN_NETWORK_ID.
     // Proof data is unchanged; the bridge should fail before Merkle verification.
     // --------------------------------------------------------------------------------------------
-    leaf_data.destination_network = AggLayerBridge::MIDEN_NETWORK_ID.saturating_add(1);
+    leaf_data.destination_network = MIDEN_NETWORK_ID.saturating_add(1);
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -811,6 +814,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -937,13 +941,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         .build()?;
     let result = claim_mock_tx_2.execute().await;
 
-    assert!(result.is_err(), "Second claim with same PROOF_DATA_KEY should fail");
-    let error_msg = result.unwrap_err().to_string();
-    let expected_err_code = ERR_CLAIM_ALREADY_SPENT.code().to_string();
-    assert!(
-        error_msg.contains(&expected_err_code),
-        "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
-    );
+    assert_transaction_executor_error!(result, ERR_CLAIM_ALREADY_SPENT);
 
     Ok(())
 }
@@ -982,6 +980,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -1138,6 +1137,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -1425,6 +1425,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -1610,16 +1611,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await;
-    assert!(
-        result.is_err(),
-        "Second native-path claim with the same PROOF_DATA_KEY should fail"
-    );
-    let error_msg = result.unwrap_err().to_string();
-    let expected_err_code = ERR_CLAIM_ALREADY_SPENT.code().to_string();
-    assert!(
-        error_msg.contains(&expected_err_code),
-        "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
-    );
+    assert_transaction_executor_error!(result, ERR_CLAIM_ALREADY_SPENT);
 
     Ok(())
 }
@@ -1683,6 +1675,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -1792,13 +1785,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         .build()?;
 
     let result = claim_tx.execute().await;
-    assert!(result.is_err(), "CLAIM whose origin_network is not registered must fail");
-    let error_msg = result.unwrap_err().to_string();
-    let expected_err_code = ERR_TOKEN_NOT_REGISTERED.code().to_string();
-    assert!(
-        error_msg.contains(&expected_err_code),
-        "expected error code {expected_err_code} for cross-network unregistered claim, got: {error_msg}"
-    );
+    assert_transaction_executor_error!(result, ERR_TOKEN_NOT_REGISTERED);
 
     Ok(())
 }
@@ -1832,6 +1819,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -1966,13 +1954,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         .build()?;
 
     let result = claim_tx.execute().await;
-    assert!(result.is_err(), "CLAIM via a cleared prior token key must fail");
-    let error_msg = result.unwrap_err().to_string();
-    let expected_err_code = ERR_TOKEN_NOT_REGISTERED.code().to_string();
-    assert!(
-        error_msg.contains(&expected_err_code),
-        "expected ERR_TOKEN_NOT_REGISTERED ({expected_err_code}) for claim via cleared prior token key, got: {error_msg}"
-    );
+    assert_transaction_executor_error!(result, ERR_TOKEN_NOT_REGISTERED);
 
     Ok(())
 }

@@ -587,7 +587,7 @@ async fn test_get_asset_from_active_and_input_note() -> anyhow::Result<()> {
             {checks}
 
             # claim the note's assets into the account so the epilogue conservation check passes
-            exec.wallet::add_assets_to_account
+            exec.wallet::move_note_assets_to_account
         end
     "#
     );

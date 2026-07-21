@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -22,22 +21,19 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::utils::serde::Deserializable;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddress;
+use crate::{EthAddress, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the B2AGG note script procedure in the agglayer library.
+const B2AGG_SCRIPT_PATH: &str = "::agglayer::notes::b2agg::main";
+
 // Initialize the B2AGG note script only once
-static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/b2agg.masp"));
-    let library =
-        Library::read_from_bytes(bytes).expect("shipped B2AGG script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped B2AGG script is well-formed")
-});
+static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(B2AGG_SCRIPT_PATH));
 
 // B2AGG NOTE
 // ================================================================================================

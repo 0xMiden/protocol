@@ -140,7 +140,7 @@ impl FungibleAsset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        Word::new([Felt::from(self.amount), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        self.amount.to_word()
     }
 
     // OPERATIONS

@@ -56,7 +56,9 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -64,7 +66,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
-use miden_standards::note::{BatchFeeNote, BurnNote, MintNote, P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -359,12 +361,25 @@ impl MockChainBuilder {
     /// Bundles [`PausableManager`] to match the `create_network_fungible_faucet` factory.
     fn add_existing_network_fungible_faucet(
         &mut self,
-        auth_method: Auth,
+        auth: AuthNetworkAccount,
         faucet: FungibleFaucet,
         account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
+        // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
+        // answers sponsorship fee estimates; both require an active fee policy. The empty schedule
+        // keeps this a no-op on fee-free chains.
+        let mut constant_fee_policy = ConstantFeePolicy::new();
+        for note_script in auth.allowed_notes().allowed_script_roots() {
+            constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO)
+        }
+
+        let fee_manager = FeeManager::builder()
+            .active_fee_policy(constant_fee_policy.into())
+            .fee_faucet_id(self.fee_faucet_id)
+            .build();
+
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)
             .with_component(faucet)
@@ -374,9 +389,15 @@ impl MockChainBuilder {
             ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
-            .with_component(PausableManager);
+            .with_component(PausableManager)
+            .with_components(fee_manager);
 
-        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+        let auth = Auth::NetworkAccount {
+            allowed_script_roots: auth.allowed_notes().allowed_script_roots().clone(),
+            allowed_tx_script_roots: auth.allowed_tx_scripts().allowed_script_roots().clone(),
+        };
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
@@ -474,10 +495,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            AuthNetworkAccount::with_allowed_notes(allowed_script_roots)?,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -510,10 +528,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            AuthNetworkAccount::with_allowed_notes(allowed_script_roots)?,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -727,16 +742,16 @@ impl MockChainBuilder {
         Ok(note)
     }
 
-    /// Creates a new BATCH_FEE note from the provided parameters and adds it to the list of genesis
+    /// Creates a new TX_FEE note from the provided parameters and adds it to the list of genesis
     /// notes.
     ///
     /// In the created [`MockChain`], the note will be immediately spendable by any account.
-    pub fn add_batch_fee_note(
+    pub fn add_tx_fee_note(
         &mut self,
         sender_account_id: AccountId,
         assets: &[Asset],
     ) -> Result<Note, NoteError> {
-        let note: Note = BatchFeeNote::builder()
+        let note: Note = TxFeeNote::builder()
             .sender(sender_account_id)
             .assets(assets.iter().copied())
             .generate_serial_number(&mut self.rng)

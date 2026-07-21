@@ -1,0 +1,14 @@
+[package]
+name              = "miden-agglayer-bridge"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "agglayer::components::bridge"
+path      = "bridge.masm"
+
+[dependencies]
+miden-agglayer.workspace  = true
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

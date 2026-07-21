@@ -26,9 +26,12 @@ members = [
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
   "faucets/policies/transfer/blocklist/manager",
+  "fees/fee_manager",
+  "fees/policies/constant_fee",
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
+  "upgrade/manager",
   "wallets/basic_wallet",
 ]
 

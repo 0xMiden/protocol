@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -26,21 +25,20 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::utils::serde::Deserializable;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
+
+use crate::note_script;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the DEREGISTER_AGG_FAUCET note script procedure in the agglayer library.
+const DEREGISTER_AGG_FAUCET_SCRIPT_PATH: &str = "::agglayer::notes::deregister_agg_faucet::main";
+
 // Initialize the DEREGISTER_AGG_FAUCET note script only once
-static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/deregister_agg_faucet.masp"));
-    let library = Library::read_from_bytes(bytes)
-        .expect("shipped DEREGISTER_AGG_FAUCET script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped DEREGISTER_AGG_FAUCET script is well-formed")
-});
+static DEREGISTER_AGG_FAUCET_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(DEREGISTER_AGG_FAUCET_SCRIPT_PATH));
 
 // DEREGISTER_AGG_FAUCET NOTE
 // ================================================================================================

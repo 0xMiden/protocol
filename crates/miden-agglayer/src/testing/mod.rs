@@ -38,11 +38,14 @@ use crate::{
 
 /// Creates an existing bridge account seeded with a single holder per operational role and a
 /// fixed dummy account as the built-in `ADMIN` role member.
+///
+/// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
+    network_id: u32,
 ) -> Account {
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
@@ -54,7 +57,7 @@ pub fn create_existing_bridge_account_with_roles(
     let admin_account =
         AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-    create_bridge_account_builder(seed, admin_account, roles)
+    create_bridge_account_builder(seed, admin_account, roles, network_id)
         .build_existing()
         .expect("bridge account should be valid")
 }

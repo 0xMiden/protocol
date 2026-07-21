@@ -8,6 +8,7 @@ use miden::protocol::native_account
 use miden::standards::auth
 use miden::standards::auth::signature
 use miden::core::word
+use {ONE_WORD} from miden::standards::utils
 
 # Local Memory Addresses
 const IS_SIGNER_FOUND_LOC=0
@@ -67,7 +68,7 @@ const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_trans
 const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
 
 # Executed Transaction Flag Constant
-const IS_EXECUTED_FLAG = [1, 0, 0, 0]
+const IS_EXECUTED_FLAG = ONE_WORD
 
 # ERRORS
 # =================================================================================================

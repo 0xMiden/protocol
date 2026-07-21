@@ -5,6 +5,7 @@ use miden::core::crypto::hashes::poseidon2
 pub mod guardian
 pub mod multisig
 pub mod multisig_smart
+pub mod network_account
 pub mod note_script_allowlist
 pub mod signature
 pub mod tx_policy

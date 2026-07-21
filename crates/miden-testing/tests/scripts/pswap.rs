@@ -11,6 +11,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
+    ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
 };
@@ -834,6 +835,135 @@ async fn pswap_note_invalid_input_test(
 
     let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, expected_err);
+
+    Ok(())
+}
+
+/// The per-fill floor (`min_fill_step`) is a pure assertion guard: it aborts the fill before
+/// any asset moves or output note is created, and never changes state on its own. It rejects any
+/// fill below the effective floor `min(min_fill_step, min_requested_amount)` and accepts anything
+/// at or above it. Clamping to `min_requested_amount` keeps a swap whose requested amount is below
+/// `min_fill_step` fillable in full (no permanently-stuck note).
+///
+/// Cases (offered = 200 USDC throughout; `total_fill` = the ETH amount Bob fills):
+/// 1. fill 20 < min_fill_step 30                         → rejected (floor is binding)
+/// 2. fill 30 == min_fill_step 30                        → accepted
+/// 3. fill 40 > min_fill_step 30                         → accepted
+/// 4. fill 20 < min_fill_step 50 but == min_requested 20 → accepted (floor clamps to min_requested,
+///    so a full fill still completes)
+/// 5. min_fill_step 0 (floor disabled) with a tiny fill 10 → accepted (a fill this small would be
+///    rejected under any positive floor)
+#[rstest]
+#[case::below_floor(50, 30, 20, false)]
+#[case::equal_floor(50, 30, 30, true)]
+#[case::above_floor(50, 30, 40, true)]
+#[case::clamped_to_min_requested(20, 50, 20, true)]
+#[case::floor_disabled_zero(50, 0, 10, true)]
+#[tokio::test]
+async fn pswap_note_min_fill_step_test(
+    #[case] requested_total: u64,
+    #[case] min_fill_step: u64,
+    #[case] fill_amount: u64,
+    #[case] expect_ok: bool,
+) -> anyhow::Result<()> {
+    let offered_total = 200;
+
+    let mut builder = MockChain::builder();
+    let usdc_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1_000, Some(offered_total))?;
+    let eth_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1_000, Some(fill_amount))?;
+
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()],
+    )?;
+
+    let offered_asset = FungibleAsset::new(usdc_faucet.id(), offered_total)?;
+    let min_requested_asset = FungibleAsset::new(eth_faucet.id(), requested_total)?;
+
+    // Build the PSWAP note via the builder, setting the per-fill floor.
+    let serial_number = builder.rng_mut().draw_word();
+    let storage = PswapNoteStorage::builder()
+        .min_requested_asset(min_requested_asset)
+        .creator_account_id(alice)
+        .min_fill_step(AssetAmount::new(min_fill_step)?)
+        .build();
+    let pswap = PswapNote::builder()
+        .sender(alice)
+        .storage(storage)
+        .serial_number(serial_number)
+        .note_type(NoteType::Public)
+        .offered_asset(offered_asset)
+        .build()?;
+    let pswap_note: Note = pswap.clone().into();
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
+    let mut mock_chain = builder.build()?;
+
+    let fill_asset = FungibleAsset::new(eth_faucet.id(), fill_amount)?;
+
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
+
+    if expect_ok {
+        // The Rust mirror must agree and predict the output notes.
+        let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), Some(fill_asset), None)?;
+
+        let mut expected_notes = vec![RawOutputNote::Full(p2id_note.clone())];
+        if let Some(remainder) = remainder_pswap.clone() {
+            expected_notes.push(RawOutputNote::Full(Note::from(remainder)));
+        }
+
+        let executed_transaction = mock_chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(pswap_note.id())
+            .expected_output_notes(expected_notes)
+            .extend_note_args(note_args_map)
+            .build()?
+            .execute()
+            .await?;
+
+        let output_notes = executed_transaction.output_notes();
+        let expected_count = if remainder_pswap.is_some() { 2 } else { 1 };
+        assert_eq!(output_notes.num_notes(), expected_count);
+
+        // Payback recipient parity: the floor guard must not perturb the P2ID payback.
+        assert_eq!(
+            output_notes.get_note(0).recipient_digest(),
+            p2id_note.recipient().digest(),
+            "on-chain payback recipient must match the Rust prediction",
+        );
+
+        // On a partial fill, the on-chain remainder must match the Rust remainder exactly. This
+        // proves the remainder inherits min_fill_step (stored at slot [3] and copied verbatim by
+        // the MASM `compute_and_store_recipient` over all storage items).
+        if let Some(remainder) = remainder_pswap {
+            assert_eq!(
+                output_notes.get_note(1).recipient_digest(),
+                Note::from(remainder).recipient().digest(),
+                "on-chain remainder (carrying the inherited min_fill_step) must match Rust",
+            );
+        }
+
+        mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+        mock_chain.prove_next_block()?;
+    } else {
+        // The Rust mirror rejects the sub-floor fill as well.
+        assert!(
+            pswap.execute(bob.id(), Some(fill_asset), None).is_err(),
+            "Rust mirror must reject a fill below the floor",
+        );
+
+        let result = mock_chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(pswap_note.id())
+            .extend_note_args(note_args_map)
+            .build()?
+            .execute()
+            .await;
+        assert_transaction_executor_error!(result, ERR_PSWAP_FILL_BELOW_MINIMUM);
+    }
 
     Ok(())
 }

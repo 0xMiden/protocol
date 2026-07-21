@@ -506,8 +506,8 @@ struct TestSetup {
 
 /// Returns the procedure roots used by the ACL tests, in this order:
 ///   (`get_item`, `set_item`, `account_procedure_1`).
-fn mock_component_proc_roots() -> (AccountProcedureRoot, AccountProcedureRoot, AccountProcedureRoot)
-{
+pub(super) fn mock_component_proc_roots()
+-> (AccountProcedureRoot, AccountProcedureRoot, AccountProcedureRoot) {
     let component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
@@ -587,7 +587,7 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
 
 /// Compiles the canonical "call `mock::account::set_item` on `MOCK_VALUE_SLOT0` with a fixed
 /// dummy word" tx script.
-fn compile_call_set_item_script() -> anyhow::Result<TransactionScript> {
+pub(super) fn compile_call_set_item_script() -> anyhow::Result<TransactionScript> {
     let src = format!(
         r#"
         use mock::account

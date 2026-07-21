@@ -1,0 +1,13 @@
+# The MASM code of the Fee Manager Account Component.
+#
+# Owns the `active_fee_policy_proc_root` slot plus the `allowed_fee_policy_proc_roots` map slot
+# for set-time validation, and the `fee_asset_id` slot holding the ID of the asset fees are
+# charged in. `estimate_note_fee` dispatches to the active fee policy via dynamic execution. Pair
+# with fee policy components whose procedure roots are registered in the allowed-policies map.
+#
+# See the `FeeManager` Rust type's documentation for more details.
+
+pub use {estimate_note_fee} from miden::standards::fees::fee_manager
+pub use {get_fee_asset_id} from miden::standards::fees::fee_manager
+pub use {get_fee_policy} from miden::standards::fees::fee_manager
+pub use {set_fee_policy} from miden::standards::fees::fee_manager
