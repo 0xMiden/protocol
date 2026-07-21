@@ -28,13 +28,7 @@ use rstest::rstest;
 
 use super::{TestSetup, setup_test};
 use crate::utils::create_public_p2any_note;
-use crate::{
-    Auth,
-    MockChain,
-    MockTransactionInput,
-    TestTransactionBuilder,
-    assert_execution_error,
-};
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_execution_error};
 
 /// Check that the initial assets number and assets commitment obtained from the
 /// `input_note::get_initial_assets_info` and `input_note::get_initial_num_assets` procedures are
@@ -260,7 +254,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
@@ -311,7 +305,7 @@ async fn test_get_sender() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
@@ -938,7 +932,7 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
@@ -983,7 +977,7 @@ async fn test_get_script_root() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
@@ -1028,7 +1022,7 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;

@@ -38,7 +38,6 @@ use crate::MockChain;
 ///
 /// Create a transaction context for an existing account and execute code:
 /// ```
-/// # #![allow(deprecated)]
 /// # use anyhow::Result;
 /// # use miden_protocol::Felt;
 /// # use miden_testing::{Auth, MockChain};
@@ -48,6 +47,7 @@ use crate::MockChain;
 /// let mut builder = MockChain::builder();
 /// let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
 /// let mock_chain = builder.build()?;
+/// # #[allow(deprecated)]
 /// let tx_context = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?;
 ///
 /// let code = "
@@ -65,6 +65,7 @@ use crate::MockChain;
 /// # Ok(())
 /// # }
 /// ```
+#[deprecated(note = "use `MockChain::build_transaction` instead")]
 #[derive(Clone)]
 pub struct TransactionContextBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
@@ -84,6 +85,7 @@ pub struct TransactionContextBuilder {
     is_lazy_loading_enabled: bool,
 }
 
+#[allow(deprecated)]
 impl TransactionContextBuilder {
     pub fn new(account: Account) -> Self {
         Self {

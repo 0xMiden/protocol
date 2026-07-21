@@ -44,7 +44,6 @@ use crate::{
     Auth,
     MockChain,
     MockTransaction,
-    MockTransactionInput,
     TestTransactionBuilder,
     assert_transaction_executor_error,
 };
@@ -66,7 +65,7 @@ async fn test_note_setup() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
@@ -117,7 +116,7 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
         mock_chain.prove_next_block().unwrap();
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()
             .unwrap()

@@ -99,7 +99,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
     // construct the mock transaction
     mock_chain
         .build_transaction(account.id())
-        .expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .tx_script(tx_script)
         .build()
 }

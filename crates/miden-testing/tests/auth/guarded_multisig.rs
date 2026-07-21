@@ -390,10 +390,13 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let mock_tx_builder_next =
         mock_chain.build_transaction(updated_multisig_account.id()).auth_args(next_salt);
 
-    let tx_summary_next = match mock_tx_builder_next.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary_next = mock_tx_builder_next
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
     let next_msg = tx_summary_next.as_ref().to_commitment();
     let tx_summary_next_signing = SigningInputs::TransactionSummary(tx_summary_next);
 

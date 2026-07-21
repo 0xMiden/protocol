@@ -5,6 +5,7 @@ mod mock_transaction_builder;
 #[cfg(test)]
 mod test_builder;
 
+#[allow(deprecated)]
 pub use builder::TransactionContextBuilder;
 pub use context::MockTransaction;
 pub use errors::ExecError;

@@ -33,13 +33,7 @@ use rstest::rstest;
 use super::StackInputs;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
-use crate::{
-    Auth,
-    MockChain,
-    MockTransactionInput,
-    TestTransactionBuilder,
-    assert_transaction_executor_error,
-};
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
 #[tokio::test]
 async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
@@ -71,7 +65,7 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
         .context("failed to parse tx script")?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .authenticated_input_note(p2id_note.id())
         .tx_script(tx_script)
         .build()?;
@@ -382,7 +376,7 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()?
     };
@@ -526,7 +520,7 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_note(p2id_note)
             .build()?
     };
@@ -689,7 +683,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
@@ -731,7 +725,7 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_transaction(MockTransactionInput::AccountId(account.id()))
+            .build_transaction(account.id())
             .unauthenticated_input_note(p2id_note_1)
             .build()?
     };

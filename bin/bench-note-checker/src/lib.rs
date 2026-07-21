@@ -7,7 +7,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain, MockTransactionInput};
+use miden_testing::{Auth, MockChain};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor};
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()
     // Create the mock transaction with the setup data.
     let mock_tx = setup
         .mock_chain
-        .build_transaction(MockTransactionInput::AccountId(setup.target_account_id))
+        .build_transaction(setup.target_account_id)
         .unauthenticated_input_notes(setup.notes.clone())
         .build()?;
 

@@ -37,6 +37,7 @@ use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializabl
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
+#[allow(deprecated)]
 use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder};
 
 // MOCK CHAIN
@@ -626,6 +627,7 @@ impl MockChain {
     /// same account that build on top of each other. For example, transaction A modifies an
     /// account from state 0 to 1, and transaction B modifies it from state 1 to 2.
     #[deprecated(note = "use `MockChain::build_transaction` instead")]
+    #[allow(deprecated)]
     pub fn build_tx_context_at(
         &self,
         reference_block: impl Into<BlockNumber>,
@@ -1437,7 +1439,7 @@ mod tests {
         mock_chain.prove_next_block()?;
 
         let tx = mock_chain
-            .build_transaction(MockTransactionInput::Account(account))
+            .build_transaction(account)
             .unauthenticated_input_note(note_1)
             .build()?
             .execute()
@@ -1490,7 +1492,7 @@ mod tests {
         let mut chain = builder.build().unwrap();
         for (account, note) in notes {
             let tx = chain
-                .build_transaction(MockTransactionInput::Account(account))
+                .build_transaction(account)
                 .unauthenticated_input_note(note)
                 .build()
                 .unwrap()

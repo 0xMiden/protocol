@@ -34,7 +34,7 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, MockTransactionInput, TestTransactionBuilder};
+use crate::{Auth, MockChain, TestTransactionBuilder};
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
@@ -175,7 +175,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         successful_note_3.clone(),
     ];
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .unauthenticated_input_notes(notes.clone())
         .build()?;
 
@@ -248,7 +248,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .unauthenticated_input_notes(notes.clone())
         .build()?;
 
@@ -324,7 +324,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         successful_note_3.clone(),
     ];
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .unauthenticated_input_notes(notes.clone())
         .build()?;
 
@@ -398,7 +398,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .unauthenticated_input_notes(notes)
         .build()?;
 
@@ -494,7 +494,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     mock_chain.prove_next_block()?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .unauthenticated_input_notes([
             p2ide_wrong_inputs_number.clone(),
             p2ide_invalid_target_id.clone(),
@@ -651,7 +651,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     mock_chain.prove_until_block(3)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .authenticated_input_note(p2ide.id())
         .build()?;
 
@@ -744,7 +744,7 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     mock_chain.prove_until_block(3)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::Account(account))
+        .build_transaction(account)
         .authenticated_input_note(p2ide.id())
         .build()?;
 

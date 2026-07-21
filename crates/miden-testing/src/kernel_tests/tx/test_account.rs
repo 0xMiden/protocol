@@ -76,7 +76,6 @@ use crate::{
     Auth,
     ExecError,
     MockChain,
-    MockTransactionInput,
     TestTransactionBuilder,
     assert_transaction_executor_error,
 };
@@ -1251,7 +1250,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_existing_source)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_existing_asset)
         .tx_script(tx_script)
         .build()?;
@@ -1302,7 +1301,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .unauthenticated_input_note(p2id_note_new_asset)
         .tx_script(tx_script)
         .build()?;
@@ -1398,7 +1397,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
     let mock_tx = mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?;
@@ -1491,7 +1490,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
     mock_chain
-        .build_transaction(MockTransactionInput::AccountId(account.id()))
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?
