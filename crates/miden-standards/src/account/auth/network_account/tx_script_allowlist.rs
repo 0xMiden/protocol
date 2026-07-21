@@ -205,7 +205,7 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([
                     miden_protocol::note::NoteScriptRoot::from_array([9, 9, 9, 9]),
                 ]))

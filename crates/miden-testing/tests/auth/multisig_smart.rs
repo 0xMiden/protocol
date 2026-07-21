@@ -56,7 +56,7 @@ fn create_multisig_smart_account(
     )?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(AuthMultisigSmart::new(config)?)
+        .with_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(core::iter::once(asset.into()))

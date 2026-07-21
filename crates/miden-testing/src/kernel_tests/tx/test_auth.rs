@@ -74,7 +74,7 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
     let (auth_component, _) = Auth::IncrNonce.build_component();
 
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(auth_component.clone())
+        .with_component(auth_component.clone())
         .with_component(BasicWallet)
         .build_existing()?;
 

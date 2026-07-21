@@ -29,10 +29,21 @@ use crate::{Felt, Word};
 /// - The `account_type` set to [`AccountType::Private`].
 /// - The `version` set to [`AccountIdVersion::Version1`].
 ///
-/// The methods that are required to be called are:
+/// [`AccountBuilder::with_component`] (or [`AccountBuilder::with_components`]) must be called at
+/// least once, and exactly one of the added components must be an authentication component (i.e. a
+/// component exporting a procedure marked with the `@auth_script` attribute). The auth component is
+/// identified and extracted automatically when [`AccountBuilder::build`] is called.
 ///
-/// - [`AccountBuilder::with_auth_component`],
-/// - [`AccountBuilder::with_component`], which must be called at least once.
+/// # Security
+///
+/// The builder only enforces the structural requirement of exactly one auth component; it does not
+/// check that the auth component is a sensible choice for the other components on the account. In
+/// particular, an auth component that performs no authentication makes the account permissionless:
+/// every state-changing procedure it exposes can be called by anyone. This is especially dangerous
+/// when combined with components that rely on the auth component as their sole access gate (such as
+/// authority-controlled setters), which then become permissionless as well. Higher-level factory
+/// functions vet these combinations; when building an account directly, the caller is responsible
+/// for pairing a suitable auth component with the account's other components.
 ///
 /// Under the `testing` feature, it is possible to:
 /// - Build an existing account using `AccountBuilder::build_existing`, which will set the account's
@@ -53,7 +64,6 @@ pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
     nonce: Option<Felt>,
     components: Vec<AccountComponent>,
-    auth_component: Option<AccountComponent>,
     account_type: AccountType,
     asset_callbacks: AssetCallbackFlag,
     init_seed: [u8; 32],
@@ -72,7 +82,6 @@ impl AccountBuilder {
             #[cfg(any(feature = "testing", test))]
             nonce: None,
             components: vec![],
-            auth_component: None,
             init_seed,
             account_type: AccountType::Private,
             asset_callbacks: AssetCallbackFlag::Disabled,
@@ -107,6 +116,9 @@ impl AccountBuilder {
     /// **must be called at least once** since an account must export at least one procedure.
     ///
     /// All components will be merged to form the final code and storage of the built account.
+    /// Exactly one of the added components must be an authentication component (see
+    /// [`AccountComponent::is_auth_component`]); it is identified and moved to the front of the
+    /// procedure list automatically when [`Self::build`] is called.
     ///
     /// For composite configurations that expand into multiple components (such as
     /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
@@ -132,37 +144,9 @@ impl AccountBuilder {
         self
     }
 
-    /// Adds a designated authentication [`AccountComponent`] to the builder.
-    ///
-    /// This component may contain multiple procedures, but is expected to contain exactly one
-    /// authentication procedure (marked with the `@auth_script` attribute).
-    /// Calling this method multiple times will override the previous auth component.
-    ///
-    /// Procedures from this component will be placed at the beginning of the account procedure
-    /// list.
-    ///
-    /// # Security
-    ///
-    /// This only enforces the structural requirement above; it does not check that the auth
-    /// component is a sensible choice for the other components on the account. In particular, an
-    /// auth component that performs no authentication makes the account permissionless: every
-    /// state-changing procedure it exposes can be called by anyone. This is especially dangerous
-    /// when combined with components that rely on the auth component as their sole access gate
-    /// (such as authority-controlled setters), which then become permissionless as well.
-    /// Higher-level factory functions vet these combinations; when building an account
-    /// directly, the caller is responsible for pairing a suitable auth component with the
-    /// account's other components.
-    pub fn with_auth_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
-        self.auth_component = Some(account_component.into());
-        self
-    }
-
     /// Returns an iterator of storage schemas attached to the builder's components.
     pub fn storage_schemas(&self) -> impl Iterator<Item = &StorageSchema> + '_ {
-        self.auth_component
-            .iter()
-            .chain(self.components.iter())
-            .map(|component| component.storage_schema())
+        self.components.iter().map(|component| component.storage_schema())
     }
 
     /// Builds the common parts of testing and non-testing code.
@@ -175,14 +159,8 @@ impl AccountBuilder {
         #[cfg(all(not(feature = "testing"), not(test)))]
         let vault = AssetVault::default();
 
-        let auth_component = self
-            .auth_component
-            .take()
-            .ok_or(AccountError::BuildError("auth component must be set".into(), None))?;
-
-        let mut components = vec![auth_component];
-        components.append(&mut self.components);
-
+        // The build method does not access components, so it is safe to `take` them out.
+        let components = core::mem::take(&mut self.components);
         let (code, storage) = Account::initialize_from_components(components).map_err(|err| {
             AccountError::BuildError(
                 "account components failed to build".into(),
@@ -415,7 +393,7 @@ mod tests {
         let storage_slot2 = 42;
 
         let account = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_component(CustomComponent2 {
                 slot0: storage_slot1,
@@ -479,7 +457,7 @@ mod tests {
         ];
 
         let account = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_components(components)
             .build()
             .unwrap();
@@ -487,7 +465,7 @@ mod tests {
         // The account built via `with_components` should be identical to one built via
         // chained `with_component` calls in the same order.
         let expected = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_component(CustomComponent2 {
                 slot0: storage_slot1,
@@ -502,14 +480,14 @@ mod tests {
 
         // Empty iterators are accepted and behave as a no-op.
         let account_no_extra = Account::builder([6; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_components(core::iter::empty::<CustomComponent2>())
             .build()
             .unwrap();
 
         let expected_no_extra = Account::builder([6; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .build()
             .unwrap();
@@ -518,11 +496,59 @@ mod tests {
     }
 
     #[test]
+    fn account_builder_auth_component_position_is_irrelevant() {
+        let component1 = CustomComponent1 { slot0: 25 };
+        let component2 = CustomComponent2 { slot0: 12, slot1: 42 };
+        let common_components =
+            vec![AccountComponent::from(component1), AccountComponent::from(component2)];
+
+        let mut components_auth_1st = common_components.clone();
+        components_auth_1st.insert(0, AccountComponent::from(NoopAuthComponent));
+
+        let mut components_auth_2nd = common_components.clone();
+        components_auth_2nd.insert(1, AccountComponent::from(NoopAuthComponent));
+
+        let seed = [5; 32];
+        let auth_1st = Account::builder(seed).with_components(components_auth_1st).build().unwrap();
+        let auth_2nd = Account::builder(seed).with_components(components_auth_2nd).build().unwrap();
+
+        assert_eq!(auth_1st.id(), auth_2nd.id());
+        assert_eq!(auth_1st.code().commitment(), auth_2nd.code().commitment());
+        assert_eq!(auth_1st.storage().to_commitment(), auth_2nd.storage().to_commitment());
+    }
+
+    #[test]
+    fn account_builder_without_auth_component_fails() {
+        let build_error = Account::builder([5; 32])
+            .with_component(CustomComponent1 { slot0: 25 })
+            .build()
+            .unwrap_err();
+
+        assert_matches!(build_error, AccountError::BuildError(_, Some(source)) => {
+            assert_matches!(*source, AccountError::AccountCodeNoAuthComponent);
+        });
+    }
+
+    #[test]
+    fn account_builder_with_multiple_auth_components_fails() {
+        let build_error = Account::builder([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: 25 })
+            .build()
+            .unwrap_err();
+
+        assert_matches!(build_error, AccountError::BuildError(_, Some(source)) => {
+            assert_matches!(*source, AccountError::AccountCodeMultipleAuthComponents);
+        });
+    }
+
+    #[test]
     fn account_builder_non_empty_vault_on_new_account() {
         let storage_slot0 = 25;
 
         let build_error = Account::builder([0xff; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_assets(AssetVault::mock().assets())
             .build()

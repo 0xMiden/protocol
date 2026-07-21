@@ -69,7 +69,7 @@ fn network_account(
 
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
-        .with_auth_component(auth)
+        .with_component(auth)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .with_assets(assets)

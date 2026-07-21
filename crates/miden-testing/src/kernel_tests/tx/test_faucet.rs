@@ -701,7 +701,7 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
     let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
     Ok(AccountBuilder::new([4; 32])
-        .with_auth_component(NoopAuthComponent)
+        .with_component(NoopAuthComponent)
         .with_component(faucet_component)
         .build_existing()?)
 }

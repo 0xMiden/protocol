@@ -643,7 +643,7 @@ impl MockChainBuilder {
         account_state: AccountState,
     ) -> anyhow::Result<Account> {
         let (auth_component, authenticator) = auth_method.build_component();
-        account_builder = account_builder.with_auth_component(auth_component);
+        account_builder = account_builder.with_component(auth_component);
 
         let account = if let AccountState::New = account_state {
             account_builder.build().context("failed to build account from builder")?

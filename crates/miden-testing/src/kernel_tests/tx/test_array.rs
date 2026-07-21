@@ -74,7 +74,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
 
     // Build an account with the wrapper component that uses the array utility
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 
@@ -194,7 +194,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     )?;
 
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 

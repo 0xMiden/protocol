@@ -712,7 +712,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(delta_check_auth_component())
+        .with_component(delta_check_auth_component())
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
             StorageSlot::with_map(map0_slot_name.clone(), map0.clone()),
@@ -838,7 +838,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .build()?;
 
     let tx = TestTransactionBuilder::new(account.clone()).build()?.execute().await?;
@@ -886,7 +886,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
             StorageSlot::with_empty_map(slot_name0.clone()),
             StorageSlot::with_empty_map(slot_name1.clone()),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .build()?;
 
     let map_key = StorageMapKey::from_array([1, 2, 3, 4u32]);
@@ -1068,7 +1068,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = Account::builder(builder.rng_mut().random())
         .account_type(AccountType::Public)
-        .with_auth_component(AccountComponent::new(
+        .with_component(AccountComponent::new(
             auth_component_code,
             vec![],
             AccountComponentMetadata::new("test::account"),
@@ -1271,7 +1271,7 @@ impl AccountUpdateTest {
         let mut builder = MockChain::builder();
         let account = Account::builder(builder.rng_mut().random())
             .account_type(AccountType::Public)
-            .with_auth_component(delta_check_auth_component())
+            .with_component(delta_check_auth_component())
             .with_component(MockAccountComponent::with_slots(initial_storage_slots))
             .with_assets(initial_vault_assets)
             .build_existing()?;
