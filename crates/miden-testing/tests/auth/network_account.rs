@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -40,20 +40,20 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     build_account_with_allowlists(allowed_script_roots, Vec::new())
 }
 
-/// A zero-fee `FeeManager` giving a network account an active fee policy for
+/// A zero-fee `FeePolicyManager` giving a network account an active fee policy for
 /// `collect_sponsored_fees`. A constant policy aborts fee estimation for note scripts without a
 /// schedule entry, so every note the account can consume must be scheduled; each root in
 /// `note_script_roots` is scheduled with an explicit 0 fee, keeping collection a no-op on these
 /// fee-free chains.
-fn zero_fee_manager(
+fn zero_fee_policy_manager(
     note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
-) -> anyhow::Result<FeeManager> {
+) -> anyhow::Result<FeePolicyManager> {
     let mut constant_fee_policy = ConstantFeePolicy::new();
     for note_script in note_script_roots {
         constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
-    Ok(FeeManager::builder()
+    Ok(FeePolicyManager::builder()
         .active_fee_policy(constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build())
@@ -65,18 +65,18 @@ fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
-    )?
-    .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+    let fee_policy_manager = zero_fee_policy_manager(
+        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
+    )?;
 
-    let fee_manager =
-        zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
 
     Ok(AccountBuilder::new([0; 32])
-        .with_component(auth_component)
+        .with_components(auth_component)
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
@@ -362,22 +362,23 @@ fn build_owner_controlled_account(
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
-        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
-
-    let scheduled_roots = auth_component
-        .allowed_notes()
-        .allowed_script_roots()
+    // The config note is always allowlisted by `with_allowed_notes` and may be consumed to update
+    // the allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
+    // entry too.
+    let scheduled_roots = note_roots
         .iter()
         .copied()
-        .chain(fee_scheduled_note_roots);
-    let fee_manager = zero_fee_manager(scheduled_roots)?;
+        .chain(fee_scheduled_note_roots)
+        .chain([NetworkAccountConfigNote::script_root()]);
+    let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
+
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
-        .with_component(auth_component)
+        .with_components(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
@@ -699,19 +700,19 @@ fn build_upgradeable_network_account(
     owner: AccountId,
     allowed_note_script_roots: Vec<Word>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+    let fee_policy_manager = zero_fee_policy_manager(
+        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
     )?;
 
-    let fee_manager =
-        zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?;
 
     Ok(AccountBuilder::new([7; 32])
-        .with_component(auth_component)
+        .with_components(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .account_type(AccountType::Public)
         .build_existing()?)
 }

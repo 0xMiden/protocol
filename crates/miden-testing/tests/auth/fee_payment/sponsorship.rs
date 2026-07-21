@@ -14,7 +14,7 @@ use miden_standards::account::auth::{
     FeeConversionInfo,
     commit_fee_conversion_info,
 };
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FeeSponsorshipNote,
@@ -48,9 +48,9 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
 
-/// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` + `FeeManager`)
-/// that allowlists `allowed_notes`, prices each `(root, amount)` in `priced` through its active
-/// `ConstantFeePolicy`, and holds `assets` in its vault.
+/// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` +
+/// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
+/// through its active `ConstantFeePolicy`, and holds `assets` in its vault.
 fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
@@ -61,17 +61,16 @@ fn network_account(
     for (root, amount) in priced {
         policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
     }
-    let fee_manager = FeeManager::builder()
+    let fee_policy_manager = FeePolicyManager::builder()
         .active_fee_policy(policy.into())
         .fee_faucet_id(fee_faucet_id()?)
         .build();
-    let auth = AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter(allowed_notes))?;
+    let auth = AuthNetworkAccount::new(BTreeSet::from_iter(allowed_notes), fee_policy_manager)?;
 
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
-        .with_component(auth)
+        .with_components(auth)
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .with_assets(assets)
         .build_existing()?)
 }

@@ -25,7 +25,7 @@ pub const ERR_WRONG_ARGS: MasmError = MasmError::from_static_str(ERR_WRONG_ARGS_
 #[tokio::test]
 async fn test_auth_procedure_args() -> anyhow::Result<()> {
     let account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [ConditionalAuthComponent]);
 
     let auth_args = [
         Felt::new_unchecked(97),
@@ -49,7 +49,7 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
     let account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [ConditionalAuthComponent]);
 
     // The auth script expects [99, 98, 97, nonce_increment_flag]
     let auth_args = [
@@ -71,7 +71,8 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
 /// Tests that attempting to call the auth procedure manually from user code fails.
 #[tokio::test]
 async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
-    let (auth_component, _) = Auth::IncrNonce.build_component();
+    let (auth_components, _) = Auth::IncrNonce.build_components();
+    let auth_component = auth_components.into_iter().next().expect("auth component is yielded");
 
     let account = AccountBuilder::new([42; 32])
         .with_component(auth_component.clone())

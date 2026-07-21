@@ -533,11 +533,11 @@ fn setup_acl_test(
     let component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
-    let (auth_component, authenticator) =
-        Auth::Acl { exempt_procedures, auth_scheme }.build_component();
+    let (auth_components, authenticator) =
+        Auth::Acl { exempt_procedures, auth_scheme }.build_components();
 
     let account = AccountBuilder::new([0; 32])
-        .with_component(auth_component)
+        .with_components(auth_components)
         .with_component(component)
         .account_type(AccountType::Public)
         .build_existing()
