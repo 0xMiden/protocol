@@ -49,7 +49,7 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
 fn zero_fee_manager(
     note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
 ) -> anyhow::Result<FeeManager> {
-    let mut constant_fee_policy = ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?);
+    let mut constant_fee_policy = ConstantFeePolicy::new();
     for note_script in note_script_roots {
         constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }

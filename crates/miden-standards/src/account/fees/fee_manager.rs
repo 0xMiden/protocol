@@ -407,7 +407,7 @@ mod tests {
     fn fee_manager() -> FeeManager {
         FeeManager::builder()
             .fee_faucet_id(fee_faucet_id())
-            .active_fee_policy(ConstantFeePolicy::new(fee_faucet_id()).into())
+            .active_fee_policy(ConstantFeePolicy::new().into())
             .allowed_fee_policy(custom_fee_policy())
             .build()
     }

@@ -370,7 +370,7 @@ impl MockChainBuilder {
         // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
         // answers sponsorship fee estimates; both require an active fee policy. The empty schedule
         // keeps this a no-op on fee-free chains.
-        let mut constant_fee_policy = ConstantFeePolicy::new(self.fee_faucet_id);
+        let mut constant_fee_policy = ConstantFeePolicy::new();
         for note_script in auth.allowed_notes().allowed_script_roots() {
             constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO)
         }

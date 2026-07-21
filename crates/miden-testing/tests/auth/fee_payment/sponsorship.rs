@@ -57,7 +57,7 @@ fn network_account(
     priced: &[(NoteScriptRoot, u64)],
     assets: impl IntoIterator<Item = Asset>,
 ) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new(fee_faucet_id()?);
+    let mut policy = ConstantFeePolicy::new();
     for (root, amount) in priced {
         policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
     }
