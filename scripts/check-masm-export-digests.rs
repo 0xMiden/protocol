@@ -65,10 +65,11 @@ fn compare_roots(previous: Roots, current: Roots) -> Result<(), String> {
 }
 
 mod current {
-    use miden_agglayer_current::agglayer_library;
+    use miden_agglayer_current::{agglayer_library, bridge, faucet};
     use miden_protocol_current::ProtocolLib;
     use miden_protocol_current::account::AccountComponentCode;
     use miden_protocol_current::assembly::Library;
+    use miden_protocol_current::transaction::TransactionKernel;
     use miden_standards_current::StandardsLib;
     use miden_standards_current::account::access::{
         Authority,
@@ -136,13 +137,26 @@ mod current {
     pub fn collect_roots() -> Roots {
         let mut roots = Roots::new();
 
-        let protocol = ProtocolLib::default();
-        collect_library(protocol.as_ref(), &mut roots);
+        collect_library(ProtocolLib::default().as_ref(), &mut roots);
 
-        let standards = StandardsLib::default();
-        collect_library(standards.as_ref(), &mut roots);
+        // The transaction kernel is compiled into its own artifact so its roots are collected
+        // separately.
+        collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
+
+        collect_library(StandardsLib::default().as_ref(), &mut roots);
 
         collect_library(&agglayer_library(), &mut roots);
+
+        // Also collect the agglayer account code commitments since they are not covered by the
+        // library root.
+        roots.insert(
+            "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
+            bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
+        );
+        roots.insert(
+            "agglayer::FAUCET_CODE_COMMITMENT".to_string(),
+            faucet::FAUCET_CODE_COMMITMENT.to_hex(),
+        );
 
         for code in COMPONENT_CODE {
             collect_library(code().as_ref(), &mut roots);
@@ -164,10 +178,11 @@ mod current {
 }
 
 mod previous {
-    use miden_agglayer_previous::agglayer_library;
+    use miden_agglayer_previous::{agglayer_library, bridge, faucet};
     use miden_protocol_previous::ProtocolLib;
     use miden_protocol_previous::account::AccountComponentCode;
     use miden_protocol_previous::assembly::Library;
+    use miden_protocol_previous::transaction::TransactionKernel;
     use miden_standards_previous::StandardsLib;
     use miden_standards_previous::account::access::{
         Authority,
@@ -235,13 +250,26 @@ mod previous {
     pub fn collect_roots() -> Roots {
         let mut roots = Roots::new();
 
-        let protocol = ProtocolLib::default();
-        collect_library(protocol.as_ref(), &mut roots);
+        collect_library(ProtocolLib::default().as_ref(), &mut roots);
 
-        let standards = StandardsLib::default();
-        collect_library(standards.as_ref(), &mut roots);
+        // The transaction kernel is compiled into its own artifact so its roots are collected
+        // separately.
+        collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
+
+        collect_library(StandardsLib::default().as_ref(), &mut roots);
 
         collect_library(&agglayer_library(), &mut roots);
+
+        // Also collect the agglayer account code commitments since they are not covered by the
+        // library root.
+        roots.insert(
+            "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
+            bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
+        );
+        roots.insert(
+            "agglayer::FAUCET_CODE_COMMITMENT".to_string(),
+            faucet::FAUCET_CODE_COMMITMENT.to_hex(),
+        );
 
         for code in COMPONENT_CODE {
             collect_library(code().as_ref(), &mut roots);
