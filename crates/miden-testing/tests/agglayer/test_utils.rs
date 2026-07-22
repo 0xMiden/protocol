@@ -62,8 +62,8 @@ pub async fn execute_program_with_default_host(
 ) -> Result<ExecutionOutput, ExecutionError> {
     let mut host = DefaultHost::default();
 
-    let test_lib = TransactionKernel::library();
-    host.load_library(test_lib.mast_forest()).unwrap();
+    let kernel_core_package = TransactionKernel::core_package();
+    host.load_library(kernel_core_package.mast_forest()).unwrap();
 
     let std_lib = CoreLibrary::default();
     host.load_library(std_lib.mast_forest()).unwrap();

@@ -124,7 +124,7 @@ impl TransactionContext {
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
         // TransactionContextBuilder.
-        self.mast_store.insert_package(&TransactionKernel::library());
+        self.mast_store.insert_package(&TransactionKernel::core_package());
         self.mast_store.insert_package(&program);
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(

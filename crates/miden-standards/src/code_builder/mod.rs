@@ -622,23 +622,23 @@ impl CodeBuilder {
     // TESTING CONVENIENCE FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [`CodeBuilder`] with the transaction kernel as a library.
+    /// Returns a [`CodeBuilder`] with the transaction kernel core package linked.
     ///
     /// This assembler is the same as [`TransactionKernel::assembler`] but additionally includes the
-    /// kernel library on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
-    /// library is added separately because even though the library (`api.masm`) and the kernel
+    /// kernel core package on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
+    /// package is added separately because even though the library (`api.masm`) and the kernel
     /// binary (`main.masm`) include this code, it is not otherwise accessible. By adding it
-    /// separately, we can invoke procedures from the kernel library to test them individually.
+    /// separately, we can invoke procedures from the kernel core package to test them individually.
     #[cfg(any(feature = "testing", test))]
-    pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
+    pub fn with_kernel_core_package(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
         builder
-            .link_dynamic_package(&TransactionKernel::library())
-            .expect("failed to link transaction kernel library");
+            .link_dynamic_package(&TransactionKernel::core_package())
+            .expect("failed to link transaction kernel core package");
         builder
     }
 
-    /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` libraries.
+    /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` packages.
     ///
     /// This assembler includes:
     /// - [`MockAccountCodeExt::mock_account_package`][account_pkg],
@@ -653,7 +653,7 @@ impl CodeBuilder {
         Self::with_mock_packages_with_source_manager(Arc::new(DefaultSourceManager::default()))
     }
 
-    /// Returns the mock account and faucet libraries used in testing.
+    /// Returns the mock account and faucet packages used in testing.
     #[cfg(any(feature = "testing", test))]
     pub fn mock_packages() -> impl Iterator<Item = Package> {
         use miden_protocol::account::AccountCode;
@@ -669,15 +669,15 @@ impl CodeBuilder {
     ) -> Self {
         use crate::testing::mock_util_package::mock_util_package;
 
-        // Start with the builder linking against the transaction kernel, protocol library and
-        // standards library.
-        let mut builder = Self::with_kernel_library(source_manager);
+        // Start with the builder linking against the transaction kernel, protocol package and
+        // standards package.
+        let mut builder = Self::with_kernel_core_package(source_manager);
 
-        // Add mock account/faucet libs (built in debug mode) and mock util.
+        // Add mock account/faucet packages (built in debug mode) and mock util.
         for package in Self::mock_packages() {
             builder
                 .link_dynamic_package(&package)
-                .expect("failed to link mock account libraries");
+                .expect("failed to link mock account packages");
         }
         builder
             .link_static_package(&mock_util_package())

@@ -601,7 +601,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
         AccountComponentMetadata::mock("foreign_account"),
@@ -934,7 +934,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let second_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone()).compile_component_code(
+        CodeBuilder::with_kernel_core_package(source_manager.clone()).compile_component_code(
             "test::second_foreign_account",
             second_foreign_account_code_source,
         )?,
@@ -1000,7 +1000,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     );
 
     let first_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("first_foreign_account", first_foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_value_slot1.clone()],
         AccountComponentMetadata::mock("first_foreign_account"),
@@ -1133,7 +1133,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let second_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("foreign_account", second_foreign_account_code_source)?,
         vec![],
         AccountComponentMetadata::mock("foreign_account"),
@@ -1177,7 +1177,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     );
 
     // Link against the second foreign account.
-    let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
+    let first_foreign_account_code = CodeBuilder::with_kernel_core_package(source_manager.clone())
         .with_dynamically_linked_package(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
     let first_foreign_account_component = AccountComponent::new(

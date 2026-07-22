@@ -69,7 +69,7 @@ impl<H: Host> CodeExecutor<H> {
         use miden_standards::code_builder::CodeBuilder;
 
         let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-        let assembler: Assembler = CodeBuilder::with_kernel_library(source_manager.clone()).into();
+        let assembler: Assembler = CodeBuilder::with_kernel_core_package(source_manager.clone()).into();
 
         // Virtual file name should be unique.
         let virtual_source_file =
@@ -164,8 +164,8 @@ impl CodeExecutor<DefaultHost> {
         let protocol_lib = ProtocolLib::default();
         host.load_library(protocol_lib.mast_forest()).unwrap();
 
-        let kernel_lib = TransactionKernel::library();
-        host.load_library(kernel_lib.mast_forest()).unwrap();
+        let kernel_core_package = TransactionKernel::core_package();
+        host.load_library(kernel_core_package.mast_forest()).unwrap();
 
         CodeExecutor::new(host)
     }
