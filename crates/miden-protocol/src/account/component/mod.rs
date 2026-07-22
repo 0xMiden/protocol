@@ -252,8 +252,7 @@ mod tests {
         // Test with empty init data - this tests the complete workflow:
         // Package -> AccountComponent
         let init_data = InitStorageData::default();
-        let component =
-            AccountComponent::from_package(&package_with_metadata, &init_data).unwrap();
+        let component = AccountComponent::from_package(&package_with_metadata, &init_data).unwrap();
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);

@@ -69,7 +69,8 @@ impl<H: Host> CodeExecutor<H> {
         use miden_standards::code_builder::CodeBuilder;
 
         let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-        let assembler: Assembler = CodeBuilder::with_kernel_core_package(source_manager.clone()).into();
+        let assembler: Assembler =
+            CodeBuilder::with_kernel_core_package(source_manager.clone()).into();
 
         // Virtual file name should be unique.
         let virtual_source_file =

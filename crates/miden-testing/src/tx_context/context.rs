@@ -114,8 +114,7 @@ impl TransactionContext {
         );
 
         let assembler: Assembler =
-            CodeBuilder::with_mock_packages_with_source_manager(self.source_manager.clone())
-                .into();
+            CodeBuilder::with_mock_packages_with_source_manager(self.source_manager.clone()).into();
 
         let program = assembler
             .assemble_program("tx-context-code", virtual_source_file)

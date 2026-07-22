@@ -369,10 +369,8 @@ impl TransactionScript {
     /// # Errors
     /// Returns an error if:
     /// - An executable package cannot be converted to a program.
-    /// - A library package does not contain a procedure with the `@transaction_script`
-    ///   attribute.
-    /// - A library package contains multiple procedures with the `@transaction_script`
-    ///   attribute.
+    /// - A library package does not contain a procedure with the `@transaction_script` attribute.
+    /// - A library package contains multiple procedures with the `@transaction_script` attribute.
     pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
         if package.is_program() {
             let program =
