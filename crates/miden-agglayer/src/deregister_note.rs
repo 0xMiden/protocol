@@ -33,7 +33,7 @@ use crate::note_script;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the DEREGISTER_AGG_FAUCET note script procedure in the agglayer library.
+/// Path to the DEREGISTER_AGG_FAUCET note script procedure in the agglayer package.
 const DEREGISTER_AGG_FAUCET_SCRIPT_PATH: &str = "::agglayer::notes::deregister_agg_faucet::main";
 
 // Initialize the DEREGISTER_AGG_FAUCET note script only once

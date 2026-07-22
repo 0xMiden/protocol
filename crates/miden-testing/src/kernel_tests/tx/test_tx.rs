@@ -592,7 +592,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let library = compile_test_library(
+    let package = compile_test_package(
         source_manager.clone(),
         "test-tx-view-script",
         "test::module_1",
@@ -612,7 +612,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_package(&library)?
+        .with_statically_linked_package(&package)?
         .compile_tx_script(source)?;
     let tx_context = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
@@ -634,7 +634,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn compile_test_library(
+fn compile_test_package(
     source_manager: Arc<DefaultSourceManager>,
     name: &str,
     path: &str,

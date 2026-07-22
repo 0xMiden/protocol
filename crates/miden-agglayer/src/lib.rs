@@ -70,56 +70,56 @@ pub use utils::Keccak256Output;
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-static AGGLAYER_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static AGGLAYER_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
     Package::read_from_bytes_trusted(bytes).expect("shipped AggLayer package is well-formed")
 });
 
-static BRIDGE_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static BRIDGE_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped bridge component package is well-formed")
 });
 
-static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static FAUCET_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped faucet component package is well-formed")
 });
 
-/// Returns the AggLayer Library containing all agglayer modules, including the note scripts.
+/// Returns the AggLayer package containing all agglayer modules, including the note scripts.
 ///
-/// The note scripts this crate builds are external references into this library rather than
+/// The note scripts this crate builds are external references into this package rather than
 /// self-contained copies of it, so it must be registered with the MAST store of any executor that
 /// runs AggLayer notes. This mirrors the standard note scripts, which are external references into
-/// the standards library. `TransactionMastStore::new` preloads both libraries, so the in-repo
+/// the standards library. `TransactionMastStore::new` preloads both packages, so the in-repo
 /// prover and test executors resolve AggLayer notes automatically; a downstream executor that
-/// supplies its own `DataStore` must register this library into it (e.g. via
+/// supplies its own `DataStore` must register this package into it (e.g. via
 /// `TransactionMastStore::insert_package`), exactly as it must already register the standards
-/// library to run standard notes.
-pub fn agglayer_library() -> Package {
-    AGGLAYER_LIBRARY.clone()
+/// package to run standard notes.
+pub fn agglayer_package() -> Package {
+    AGGLAYER_PACKAGE.clone()
 }
 
-/// Resolves the note script exported at `path` from the AggLayer library.
+/// Resolves the note script exported at `path` from the AggLayer package.
 ///
 /// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
 /// e.g. `::agglayer::notes::claim::main`.
 pub(crate) fn note_script(path: &str) -> NoteScript {
-    NoteScript::from_package_reference(&AGGLAYER_LIBRARY, Path::new(path))
-        .expect("agglayer library contains the note script procedure")
+    NoteScript::from_package_reference(&AGGLAYER_PACKAGE, Path::new(path))
+        .expect("agglayer package contains the note script procedure")
 }
 
-/// Returns the Bridge component library.
-fn agglayer_bridge_component_library() -> Package {
-    BRIDGE_COMPONENT_LIBRARY.clone()
+/// Returns the Bridge component package.
+fn agglayer_bridge_component_package() -> Package {
+    BRIDGE_COMPONENT_PACKAGE.clone()
 }
 
-/// Returns the Faucet component library.
-fn agglayer_faucet_component_library() -> Package {
-    FAUCET_COMPONENT_LIBRARY.clone()
+/// Returns the Faucet component package.
+fn agglayer_faucet_component_package() -> Package {
+    FAUCET_COMPONENT_PACKAGE.clone()
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

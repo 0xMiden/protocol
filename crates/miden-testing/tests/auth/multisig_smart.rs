@@ -65,7 +65,7 @@ fn create_multisig_smart_account(
     Ok(multisig_account)
 }
 
-/// Compiles a transaction script that links against the multisig smart library so it can `call.`
+/// Compiles a transaction script that links against the multisig smart package so it can `call.`
 /// the wrapper-exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()

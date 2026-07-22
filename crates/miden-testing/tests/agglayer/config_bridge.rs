@@ -44,7 +44,7 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
 }
 
 /// Pins the bridge's procedure-to-role authorization map: each role-gated procedure must map to
-/// the expected role. Resolving the procedure roots also exercises the component-library lookup,
+/// the expected role. Resolving the procedure roots also exercises the component-package lookup,
 /// so a broken namespace or missing export would fail here.
 #[test]
 fn test_bridge_procedure_roles_mapping() {

@@ -126,11 +126,11 @@ end
 const ERR_ACCOUNT_BLOCKED: MasmError =
     MasmError::from_static_str("the account is blocked and cannot receive this asset");
 
-// Initialize the Basic Fungible Faucet library only once.
+// Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code(BlockList::NAME, BLOCK_LIST_MASM)
-        .expect("block list library should be valid")
+        .expect("block list component code should be valid")
 });
 
 static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {

@@ -46,7 +46,7 @@ impl AccountComponent {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`AccountComponent`] constructed from the provided `library`,
+    /// Returns a new [`AccountComponent`] constructed from the provided `code`,
     /// `storage_slots`, and `metadata`.
     ///
     /// Procedures exported from the provided code that are marked with the `@account_procedure`
@@ -170,7 +170,7 @@ impl AccountComponent {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library.
+    /// if it was not found in this component's code.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,
@@ -205,8 +205,8 @@ mod tests {
 
     #[test]
     fn test_extract_metadata_from_package() {
-        // Create a simple library for testing
-        let library =
+        // Create a simple package for testing
+        let package =
             assemble_test_package("test-extract-metadata", "test::extract_metadata", CODE);
 
         // Test with metadata
@@ -215,7 +215,7 @@ mod tests {
             .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
-        let mut package_with_metadata = library.clone();
+        let mut package_with_metadata = package.clone();
         package_with_metadata
             .sections
             .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, metadata_bytes.clone()));
@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(extracted_metadata.name(), "test_component");
 
         // Test without metadata - should fail
-        let package_without_metadata = library;
+        let package_without_metadata = package;
 
         let result = AccountComponentMetadata::try_from(&package_without_metadata);
         assert!(result.is_err());

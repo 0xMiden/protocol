@@ -290,7 +290,7 @@ impl CodeBuilder {
         self
     }
 
-    // LIBRARY MANAGEMENT
+    // PACKAGE MANAGEMENT
     // --------------------------------------------------------------------------------------------
 
     /// Parses and links a module to the code builder.
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_library_and_create_tx_script() -> anyhow::Result<()> {
+    fn test_create_package_and_create_tx_script() -> anyhow::Result<()> {
         let script_code = "
             use external_contract::counter_contract
 
@@ -750,11 +750,11 @@ mod tests {
             end
         ";
 
-        let library_path = "external_contract::counter_contract";
+        let module_path = "external_contract::counter_contract";
 
         let mut builder_with_lib = CodeBuilder::default();
         builder_with_lib
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link module")?;
         builder_with_lib
             .compile_tx_script(script_code)
@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_library_and_add_to_builder() -> anyhow::Result<()> {
+    fn test_parse_package_and_add_to_builder() -> anyhow::Result<()> {
         let script_code = "
             use external_contract::counter_contract
 
@@ -789,28 +789,28 @@ mod tests {
             end
         ";
 
-        let library_path = "external_contract::counter_contract";
+        let module_path = "external_contract::counter_contract";
 
-        // Test single library
+        // Test a single module
         let mut builder_with_lib = CodeBuilder::default();
         builder_with_lib
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link module")?;
         builder_with_lib
             .compile_tx_script(script_code)
             .context("failed to parse tx script")?;
 
-        // Test multiple libraries
+        // Test multiple modules
         let mut builder_with_libs = CodeBuilder::default();
         builder_with_libs
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link first module")?;
         builder_with_libs
             .link_module("test::lib", "pub proc test nop end")
             .context("failed to link second module")?;
         builder_with_libs
             .compile_tx_script(script_code)
-            .context("failed to parse tx script with multiple libraries")?;
+            .context("failed to parse tx script with multiple modules")?;
 
         Ok(())
     }
@@ -899,7 +899,7 @@ mod tests {
             end
         ";
 
-        // Create libraries using the assembler
+        // Create packages using the assembler
         let source_manager = Arc::new(DefaultSourceManager::default());
         let mut parser = ModuleParser::new(Some(ModuleKind::Library));
         let static_module = parser
@@ -927,7 +927,7 @@ mod tests {
             .assemble_library("dynamic-contract", dynamic_module, None::<&str>)
             .map_err(|e| anyhow::anyhow!("failed to assemble dynamic package: {}", e))?;
 
-        // Test linking both static and dynamic libraries
+        // Test linking both static and dynamic packages
         let builder = CodeBuilder::default()
             .with_statically_linked_package(&static_lib)
             .context("failed to link static package")?
@@ -936,7 +936,7 @@ mod tests {
 
         builder
             .compile_tx_script(script_code)
-            .context("failed to parse tx script with static and dynamic libraries")?;
+            .context("failed to parse tx script with static and dynamic packages")?;
 
         Ok(())
     }

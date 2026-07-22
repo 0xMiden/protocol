@@ -23,7 +23,7 @@ use miden_agglayer::{
     RemoveGerNote,
     SmtNode,
     UpdateGerNote,
-    agglayer_library,
+    agglayer_package,
     create_existing_agglayer_faucet,
     create_existing_agglayer_faucet_with_callbacks,
 };
@@ -1606,7 +1606,7 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
         let tx_script = CodeBuilder::new()
-            .with_statically_linked_package(&agglayer_library())?
+            .with_statically_linked_package(&agglayer_package())?
             .compile_tx_script(source)?;
 
         mock_chain

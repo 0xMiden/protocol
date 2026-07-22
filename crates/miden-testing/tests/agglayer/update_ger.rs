@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::errors::ERR_GER_ALREADY_REGISTERED;
-use miden_agglayer::{AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_library};
+use miden_agglayer::{AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_package};
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
@@ -120,7 +120,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 /// The GER (Global Exit Root) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
 #[tokio::test]
 async fn compute_ger() -> anyhow::Result<()> {
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
     let vectors = &*EXIT_ROOTS_VECTORS;
 
     for i in 0..vectors.mainnet_exit_roots.len() {
@@ -180,7 +180,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
             .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .unwrap()
-            .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
+            .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
             .unwrap()
             .assemble_program("agglayer-test-script", &source)
             .unwrap()
@@ -202,7 +202,7 @@ async fn compute_ger() -> anyhow::Result<()> {
 /// The GER (Global Exit Root) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
 #[tokio::test]
 async fn test_compute_ger_basic() -> anyhow::Result<()> {
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
 
     // Define test exit roots (32 bytes each)
     let mainnet_exit_root: [u8; 32] = [
@@ -265,7 +265,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
         .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
+        .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
         .unwrap()
         .assemble_program("agglayer-test-script", &source)
         .unwrap()

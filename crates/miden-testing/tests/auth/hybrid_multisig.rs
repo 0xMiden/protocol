@@ -802,7 +802,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     // SECTION 2: Prepare a signer update transaction with new approvers
     // ================================================================================
 
-    // Get the multisig library
+    // Get the multisig package
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();

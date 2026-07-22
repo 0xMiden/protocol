@@ -15,7 +15,7 @@ use crate::{ExitRoot, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the UPDATE_GER note script procedure in the agglayer library.
+/// Path to the UPDATE_GER note script procedure in the agglayer package.
 const UPDATE_GER_SCRIPT_PATH: &str = "::agglayer::notes::update_ger::main";
 
 // Initialize the UPDATE_GER note script only once

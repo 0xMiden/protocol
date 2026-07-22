@@ -57,7 +57,7 @@ impl AccountComponentCode {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library.
+    /// if it was not found in this component's code.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,
@@ -125,12 +125,12 @@ mod tests {
 
     #[test]
     fn test_account_component_code_with_advice_map() {
-        let library = assemble_test_package(
+        let package = assemble_test_package(
             "test-component-code-advice-map",
             "test::component_code_advice_map",
             "@account_procedure pub proc test nop end",
         );
-        let component_code = AccountComponentCode::from(library);
+        let component_code = AccountComponentCode::from(package);
 
         assert!(component_code.mast_forest().advice_map().is_empty());
 
@@ -155,25 +155,25 @@ mod tests {
 
     #[test]
     fn test_get_procedure_root_by_path() {
-        let library = assemble_test_package(
+        let package = assemble_test_package(
             "test-component-code-procedure-root",
             "test::component_code_procedure_root",
             "@account_procedure pub proc test_proc nop end",
         );
-        let component_code = AccountComponentCode::from(library);
+        let component_code = AccountComponentCode::from(package);
 
-        // The test library exports exactly one procedure.
+        // The test package exports exactly one procedure.
         assert_eq!(component_code.procedure_roots().count(), 1);
         let expected = component_code.procedure_roots().next().expect("one procedure exported");
 
-        let library_namespace = component_code
+        let package_namespace = component_code
             .as_package()
             .module_infos()
             .next()
-            .expect("library should have one module")
+            .expect("package should have one module")
             .path()
             .to_string();
-        let proc_path = alloc::format!("{library_namespace}::test_proc");
+        let proc_path = alloc::format!("{package_namespace}::test_proc");
 
         let root = component_code
             .get_procedure_root_by_path(&*proc_path)

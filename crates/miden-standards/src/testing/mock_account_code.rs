@@ -357,7 +357,7 @@ static MOCK_ACCOUNT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
 // MOCK ACCOUNT CODE EXT
 // ================================================================================================
 
-/// Extension trait for [`AccountCode`] to access the mock libraries.
+/// Extension trait for [`AccountCode`] to access the mock packages.
 pub trait MockAccountCodeExt {
     /// Returns the [`Package`] of the mock account under the `mock::account` namespace.
     ///

@@ -1619,15 +1619,15 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an account can call code in a custom library when loading that library into the
+/// Tests that an account can call code in a custom package when loading that package into the
 /// executor.
 ///
 /// The call chain and dependency graph in this test is:
-/// `tx script -> account code -> external library`
+/// `tx script -> account code -> external package`
 #[tokio::test]
-async fn transaction_executor_account_code_using_custom_library() -> anyhow::Result<()> {
+async fn transaction_executor_account_code_using_custom_package() -> anyhow::Result<()> {
     let slot_value = Word::from([2, 3, 4, 5u32]);
-    let external_library_code = format!(
+    let external_package_code = format!(
         r#"
       use miden::protocol::native_account
 
@@ -1643,7 +1643,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     );
 
     const ACCOUNT_COMPONENT_CODE: &str = "
-      use external_library::external_module
+      use external_package::external_module
 
       @account_procedure
       pub proc custom_setter
@@ -1652,28 +1652,28 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mut parser = ModuleParser::new(Some(ModuleKind::Library));
-    let external_library_root = parser
+    let external_package_root = parser
         .parse_str(
-            Some(Path::new("external_library::external_module")),
-            &external_library_code,
+            Some(Path::new("external_package::external_module")),
+            &external_package_code,
             source_manager.clone(),
         )
         .map_err(|err| {
-            anyhow::anyhow!("failed to parse library: {}", PrintDiagnostic::new(&err))
+            anyhow::anyhow!("failed to parse package: {}", PrintDiagnostic::new(&err))
         })?;
-    let external_library = TransactionKernel::assembler_with_source_manager(source_manager.clone())
-        .assemble_library("external-library", external_library_root, None::<&str>)
+    let external_package = TransactionKernel::assembler_with_source_manager(source_manager.clone())
+        .assemble_library("external-library", external_package_root, None::<&str>)
         .map_err(|err| {
-            anyhow::anyhow!("failed to assemble library: {}", PrintDiagnostic::new(&err))
+            anyhow::anyhow!("failed to assemble package: {}", PrintDiagnostic::new(&err))
         })?;
 
     let assembler: miden_protocol::assembly::Assembler =
         CodeBuilder::with_mock_packages_with_source_manager(source_manager.clone()).into();
     let assembler =
         assembler
-            .with_package(Arc::from(external_library), Linkage::Static)
+            .with_package(Arc::from(external_package), Linkage::Static)
             .map_err(|err| {
-                anyhow::anyhow!("failed to link static library: {}", PrintDiagnostic::new(&err))
+                anyhow::anyhow!("failed to link static package: {}", PrintDiagnostic::new(&err))
             })?;
 
     let account_component_root = parser
@@ -2114,7 +2114,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         StorageSlotName::new("miden::slot::test").expect("storage slot name should be valid")
     });
 
-    static COMPONENT_1_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    static COMPONENT_1_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -2140,7 +2140,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
             .expect("mock account code should be valid")
     });
 
-    static COMPONENT_2_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    static COMPONENT_2_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -2182,7 +2182,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent1> for AccountComponent {
         fn from(component: CustomComponent1) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_1_LIBRARY.clone(),
+                COMPONENT_1_PACKAGE.clone(),
                 vec![component.slot],
                 AccountComponentMetadata::mock("component1::interface"),
             )
@@ -2195,7 +2195,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent2> for AccountComponent {
         fn from(_component: CustomComponent2) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_2_LIBRARY.clone(),
+                COMPONENT_2_PACKAGE.clone(),
                 vec![],
                 AccountComponentMetadata::mock("component2::interface"),
             )
@@ -2234,8 +2234,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_package(COMPONENT_1_LIBRARY.clone())?
-        .with_dynamically_linked_package(COMPONENT_2_LIBRARY.clone())?
+        .with_dynamically_linked_package(COMPONENT_1_PACKAGE.clone())?
+        .with_dynamically_linked_package(COMPONENT_2_PACKAGE.clone())?
         .compile_tx_script(tx_script)?;
 
     TestTransactionBuilder::new(account)

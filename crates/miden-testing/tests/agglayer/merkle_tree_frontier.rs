@@ -1,7 +1,7 @@
 use alloc::format;
 use alloc::string::ToString;
 
-use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
+use miden_agglayer::{ExitRoot, SmtNode, agglayer_package};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
@@ -100,7 +100,7 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_package(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_package())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();
@@ -137,7 +137,7 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_package(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_package())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();

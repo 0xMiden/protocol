@@ -224,7 +224,7 @@ impl AccountBuilder {
     /// - The init seed is not set.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
@@ -346,11 +346,11 @@ mod tests {
             end
           ";
 
-    static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_package("custom-library-1", "custom::component1", CUSTOM_CODE1)
+    static CUSTOM_PACKAGE1: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_package("custom-package-1", "custom::component1", CUSTOM_CODE1)
     });
-    static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_package("custom-library-2", "custom::component2", CUSTOM_CODE2)
+    static CUSTOM_PACKAGE2: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_package("custom-package-2", "custom::component2", CUSTOM_CODE2)
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -376,7 +376,7 @@ mod tests {
 
             let metadata = AccountComponentMetadata::new("test::custom_component1");
             AccountComponent::new(
-                CUSTOM_LIBRARY1.clone(),
+                CUSTOM_PACKAGE1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
                 metadata,
             )
@@ -397,7 +397,7 @@ mod tests {
 
             let metadata = AccountComponentMetadata::new("test::custom_component2");
             AccountComponent::new(
-                CUSTOM_LIBRARY2.clone(),
+                CUSTOM_PACKAGE2.clone(),
                 vec![
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME0.clone(), value0),
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME1.clone(), value1),
@@ -436,14 +436,14 @@ mod tests {
         .unwrap();
         assert_eq!(account.id(), computed_id);
 
-        // The merged code should have one procedure from each library.
+        // The merged code should have one procedure from each package.
         assert_eq!(account.code.procedure_roots().count(), 3);
 
-        let foo_root = CUSTOM_LIBRARY1.mast_forest()[CUSTOM_LIBRARY1
-            .get_export_node_id(CUSTOM_LIBRARY1.manifest.exports().next().unwrap().path())]
+        let foo_root = CUSTOM_PACKAGE1.mast_forest()[CUSTOM_PACKAGE1
+            .get_export_node_id(CUSTOM_PACKAGE1.manifest.exports().next().unwrap().path())]
         .digest();
-        let bar_root = CUSTOM_LIBRARY2.mast_forest()[CUSTOM_LIBRARY2
-            .get_export_node_id(CUSTOM_LIBRARY2.manifest.exports().next().unwrap().path())]
+        let bar_root = CUSTOM_PACKAGE2.mast_forest()[CUSTOM_PACKAGE2
+            .get_export_node_id(CUSTOM_PACKAGE2.manifest.exports().next().unwrap().path())]
         .digest();
 
         assert!(account.code().procedures().contains(&AccountProcedureRoot::from_raw(foo_root)));

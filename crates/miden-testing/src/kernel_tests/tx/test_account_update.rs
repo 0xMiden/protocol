@@ -1214,7 +1214,7 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
     end
 "#;
 
-static DELTA_CHECK_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+static DELTA_CHECK_AUTH_PACKAGE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::with_mock_packages()
         .compile_component_code("test::incr_nonce_with_delta_check_auth", DELTA_CHECK_AUTH_CODE)
         .expect("delta-check auth code should compile")
@@ -1222,7 +1222,7 @@ static DELTA_CHECK_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(
 
 fn delta_check_auth_component() -> AccountComponent {
     AccountComponent::new(
-        DELTA_CHECK_AUTH_LIBRARY.clone(),
+        DELTA_CHECK_AUTH_PACKAGE.clone(),
         vec![],
         AccountComponentMetadata::new("test::incr_nonce_with_delta_check_auth"),
     )
