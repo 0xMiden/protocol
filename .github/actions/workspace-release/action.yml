@@ -14,6 +14,10 @@ inputs:
     description: "Branch to verify HEAD against (used when verify-branch-head is true)"
     required: false
     default: "main"
+  skip-masm-root-check:
+    description: "Skip the MAST root stability check. Use only for release recovery if root changes are intended."
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -90,8 +94,11 @@ runs:
         chmod +x scripts/check-msrv.sh
         ./scripts/check-msrv.sh
 
+    # The script itself decides whether the check applies: it only compares MAST roots when
+    # the workspace version is in the same Cargo-compatible release line as the latest release
+    # tag (i.e. a patch release), so it is safe to run on every ref and in both modes.
     - name: Check MAST root stability
-      if: ${{ inputs.mode == 'dry-run' && github.ref == 'refs/heads/main' }}
+      if: ${{ inputs.skip-masm-root-check != 'true' }}
       shell: bash
       run: |
         rustup toolchain install nightly --profile minimal --no-self-update
