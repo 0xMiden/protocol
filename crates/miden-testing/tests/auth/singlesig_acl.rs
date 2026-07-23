@@ -195,7 +195,7 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
     );
 
     let tx_script_mixed_compiled =
-        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_mixed)?;
+        CodeBuilder::with_mock_packages().compile_tx_script(tx_script_mixed)?;
 
     // Without auth: must fail because `set_item` is not exempt.
     let result_no_auth = mock_chain
@@ -264,7 +264,7 @@ async fn test_acl_auth_uses_initial_public_key(
         .build_transaction(account.id())
         .unauthenticated_input_note(input_note)
         .authenticator(authenticator)
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await?;
@@ -320,7 +320,7 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         .build_transaction(account.id())
         .unauthenticated_input_note(input_note)
         .authenticator(Some(authenticator))
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await;
@@ -582,7 +582,7 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }
 
 /// Compiles the canonical "call `mock::account::set_item` on `MOCK_VALUE_SLOT0` with a fixed
@@ -604,5 +604,5 @@ pub(super) fn compile_call_set_item_script() -> anyhow::Result<TransactionScript
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }

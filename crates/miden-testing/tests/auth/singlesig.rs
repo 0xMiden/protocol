@@ -87,7 +87,7 @@ async fn test_singlesig_auth_uses_initial_public_key(
         "#,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
     let mock_tx = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)
@@ -149,7 +149,7 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         new_pub_key = pub_key_b_commitment,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
     let mock_tx = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)

@@ -17,7 +17,7 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 
 // Note: note creation must originate from the account context. These helpers therefore delegate to
 // the account procedures exposed by the mock account, which perform the actual creation.
-const MOCK_UTIL_LIBRARY_CODE: &str = "
+const MOCK_UTIL_PACKAGE_CODE: &str = "
     use miden::protocol::output_note
     use {NOTE_TYPE_PRIVATE} from miden::protocol::note
     use miden::standards::wallets::basic as wallet
@@ -76,27 +76,27 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
     end
 ";
 
-static MOCK_UTIL_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static MOCK_UTIL_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let root = ModuleParser::new(Some(ModuleKind::Library))
-        .parse_str(Some(Path::new("mock::util")), MOCK_UTIL_LIBRARY_CODE, source_manager.clone())
-        .expect("mock util library should parse");
+        .parse_str(Some(Path::new("mock::util")), MOCK_UTIL_PACKAGE_CODE, source_manager.clone())
+        .expect("mock util package should parse");
     let mut assembler = TransactionKernel::assembler_with_source_manager(source_manager);
     assembler
         .link_package(StandardsLib::default().package(), Linkage::Dynamic)
-        .expect("dynamically linking standards library should work");
-    // Link the mock account library so the helpers' delegating `mock::account::*` calls resolve.
+        .expect("dynamically linking standards package should work");
+    // Link the mock account package so the helpers' delegating `mock::account::*` calls resolve.
     assembler
-        .link_package(Arc::new(AccountCode::mock_account_library()), Linkage::Dynamic)
-        .expect("dynamically linking mock account library should work");
+        .link_package(Arc::new(AccountCode::mock_account_package()), Linkage::Dynamic)
+        .expect("dynamically linking mock account package should work");
     *assembler
         .assemble_library("mock-util", root, None::<&str>)
-        .expect("mock util library should be valid")
+        .expect("mock util package should be valid")
 });
 
 /// Returns the mock test [`Package`] under the `mock::util` namespace.
 ///
 /// This provides convenient wrappers for testing purposes.
-pub fn mock_util_library() -> Package {
-    MOCK_UTIL_LIBRARY.clone()
+pub fn mock_util_package() -> Package {
+    MOCK_UTIL_PACKAGE.clone()
 }
