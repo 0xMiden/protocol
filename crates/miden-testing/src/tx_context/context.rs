@@ -135,6 +135,7 @@ impl MockTransaction {
 
         // The ref block is unimportant when using execute_code so we can set it to any value.
         let ref_block = tx_inputs.block_header().block_num();
+        let ref_block_commitment = tx_inputs.block_header().commitment();
 
         let exec_host = TransactionExecutorHost::<'_, '_, _, UnreachableAuth>::new(
             &PartialAccount::from(self.account()),
@@ -144,6 +145,7 @@ impl MockTransaction {
             account_procedure_idx_map,
             None,
             ref_block,
+            ref_block_commitment,
             self.source_manager(),
         );
 

@@ -1039,17 +1039,14 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         # => [[AUTH_ARGS], pad(12)]
 
         # Build the tx summary.
-        # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
-        dropw padw
-        # => [SALT, pad(12)]
+        # Replace AUTH_ARGS with an EMPTY_WORD salt on top of zeroed user params.
+        dropw padw push.0.0.0
+        # => [SALT, param0, param1, param2, pad(12)]
 
         exec.::miden::standards::auth::create_tx_summary
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(12)]
 
-        adv.insert_hqword
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-        exec.::miden::standards::auth::hash_tx_summary
+        exec.::miden::standards::auth::hash_and_insert_tx_summary
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
         emit.AUTH_UNAUTHORIZED_EVENT
@@ -1193,17 +1190,14 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
 
         dup
         if.true
-            # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
-            dropw padw
-            # => [SALT, pad(12)]
+            # Replace AUTH_ARGS with an EMPTY_WORD salt on top of zeroed user params.
+            dropw padw push.0.0.0
+            # => [SALT, param0, param1, param2, pad(12)]
 
             exec.::miden::standards::auth::create_tx_summary
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(12)]
 
-            adv.insert_hqword
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-            exec.::miden::standards::auth::hash_tx_summary
+            exec.::miden::standards::auth::hash_and_insert_tx_summary
             # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
             emit.AUTH_UNAUTHORIZED_EVENT

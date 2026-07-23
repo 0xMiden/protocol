@@ -57,6 +57,7 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
+    TransactionSummaryParams,
 };
 pub(crate) use tx_event::{
     RecipientData,
@@ -100,6 +101,9 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
+    /// The commitment to the reference block of the transaction.
+    ref_block_commitment: Word,
+
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
@@ -116,6 +120,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        ref_block_commitment: Word,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -140,6 +145,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
+            ref_block_commitment,
             core_lib_handlers,
         }
     }
@@ -429,6 +435,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        block_commitment: Word,
+        params: TransactionSummaryParams,
         salt: Word,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
@@ -469,7 +477,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        Ok(TransactionSummary::new(account_delta, input_notes, output_notes, salt))
+        let expected_block_commitment = self.ref_block_commitment;
+        if expected_block_commitment != block_commitment {
+            return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+                format!(
+                    "expected block commitment to be {expected_block_commitment} but was {block_commitment}"
+                )
+                .into(),
+            ));
+        }
+
+        Ok(TransactionSummary::new(
+            account_delta,
+            input_notes,
+            output_notes,
+            block_commitment,
+            params,
+            salt,
+        ))
     }
 
     /// Returns the underlying store of the base host.

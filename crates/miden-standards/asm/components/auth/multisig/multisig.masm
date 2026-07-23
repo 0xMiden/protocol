@@ -59,6 +59,10 @@ pub proc auth_tx_multisig(auth_args: word)
     # Authenticate the transaction and record it for replay protection.
     # ---------------------------------------------------------------------------------------------
 
+    # zero the user params (not exposed through this component's interface)
+    padw swapw movup.7 drop
+    # => [AUTH_ARGS, param0, param1, param2]
+
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 

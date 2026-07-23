@@ -362,6 +362,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
+    let ref_block = mock_chain.latest_block_header().block_num();
 
     // Build base mock transaction
     let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
@@ -398,10 +399,14 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
     mock_chain.add_pending_executed_transaction(&mock_tx_execute)?;
     mock_chain.prove_next_block()?;
 
-    // Attempt to execute the same transaction again - should fail due to replay protection
-    // Must rebuild from the updated mock chain to pick up the new account state
+    // Attempt to execute the same transaction again - should fail due to replay protection.
+    // Must rebuild from the updated mock chain to pick up the new account state. The reference
+    // block is pinned to the original one because the signed message commits to the reference
+    // block commitment: against a newer reference block the signatures would not verify and the
+    // transaction would fail authentication before the replay protection check is reached.
     let mock_tx_replay = mock_chain
         .build_transaction(multisig_account.id())
+        .reference_block(ref_block)
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)

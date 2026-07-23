@@ -26,7 +26,11 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
-use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
+use miden_protocol::transaction::{
+    TransactionEventId,
+    TransactionSummary,
+    TransactionSummaryParams,
+};
 use miden_protocol::vm::EventId;
 use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 
@@ -709,13 +713,19 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     }
 }
 
+/// The number of felts in the transaction summary preimage (6 words). Must match
+/// `TX_SUMMARY_NUM_ELEMENTS` in the standard auth library
+/// (crates/miden-standards/asm/standards/auth/mod.masm).
+const TX_SUMMARY_NUM_ELEMENTS: usize = 24;
+
 /// Extracts the transaction summary from the advice map using the provided `message` as the
 /// key.
 ///
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+///         BLOCK_COMMITMENT, PARAMS, SALT
 ///     ]
 /// }
 /// ```
@@ -730,21 +740,31 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    if commitments.len() != 16 {
+    if commitments.len() != TX_SUMMARY_NUM_ELEMENTS {
         return Err(TransactionKernelError::TransactionSummaryConstructionFailed(
-            "expected 4 words for transaction summary commitments".into(),
+            "expected 6 words for transaction summary commitments".into(),
         ));
     }
 
     let account_delta_commitment = extract_word(commitments, 0);
     let input_notes_commitment = extract_word(commitments, 4);
     let output_notes_commitment = extract_word(commitments, 8);
-    let salt = extract_word(commitments, 12);
+    let block_commitment = extract_word(commitments, 12);
+    let params =
+        TransactionSummaryParams::try_from(extract_word(commitments, 16)).map_err(|source| {
+            TransactionKernelError::other_with_source(
+                "failed to convert word to transaction summary params",
+                source,
+            )
+        })?;
+    let salt = extract_word(commitments, 20);
 
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        block_commitment,
+        params,
         salt,
     )?;
 

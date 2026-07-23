@@ -4,6 +4,8 @@
 
 ### Changes
 
+- [BREAKING] Extended the signed transaction summary to bind the reference block commitment, the transaction expiration delta and three user-defined parameters. The preimage is now `[ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, [expiration_delta, param0, param1, param2], SALT]`; `auth::create_tx_summary` takes `(salt, param0, param1, param2)`, `auth::hash_tx_summary` is replaced by `auth::hash_and_insert_tx_summary`, the singlesig salt is `[0, 0, 0, final_nonce]` (`ref_block_num` dropped as redundant with `BLOCK_COMMITMENT`) and the host validates the block commitment against the reference block ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
+
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 
 ## v0.16.0-beta.1 (2026-07-20)
