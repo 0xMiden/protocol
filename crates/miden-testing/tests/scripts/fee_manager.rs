@@ -234,26 +234,10 @@ pub(super) fn estimate_note_fee_tx_script_code(
     )
 }
 
-/// Builds a note script that calls the owner-gated `set_fee_policy` with the given policy root.
-pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
-    format!(
-        r#"
-        use miden::standards::fees::fee_manager
-
-        @note_script
-        pub proc main
-            push.{policy_root}
-            call.fee_manager::set_fee_policy
-
-            dropw
-        end
-        "#
-    )
-}
-
-/// Builds a note script that calls the owner-gated allowlist mutator `proc_name` (either
-/// `add_allowed_fee_policy` or `remove_allowed_fee_policy`) with the given policy root.
-fn create_allowlist_mutation_note_script(proc_name: &str, policy_root: Word) -> String {
+/// Builds a note script that calls the owner-gated `fee_manager` procedure `proc_name` with the
+/// given policy root. Covers the procedures taking a single policy-root word: `set_fee_policy`,
+/// `add_allowed_fee_policy`, and `remove_allowed_fee_policy`.
+pub(super) fn create_fee_manager_note_script(proc_name: &str, policy_root: Word) -> String {
     format!(
         r#"
         use miden::standards::fees::fee_manager
@@ -262,7 +246,7 @@ fn create_allowlist_mutation_note_script(proc_name: &str, policy_root: Word) -> 
         pub proc main
             push.{policy_root}
             call.fee_manager::{proc_name}
-            
+
             dropw
         end
         "#
@@ -642,10 +626,13 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
     let mutation_note = build_sender_note(
         owner_account_id,
         700,
-        &create_allowlist_mutation_note_script(mutator_proc, target_root),
+        &create_fee_manager_note_script(mutator_proc, target_root),
     )?;
-    let set_note =
-        build_sender_note(owner_account_id, 701, &create_set_fee_policy_note_script(target_root))?;
+    let set_note = build_sender_note(
+        owner_account_id,
+        701,
+        &create_fee_manager_note_script("set_fee_policy", target_root),
+    )?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -692,7 +679,7 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
     let add_note = build_sender_note(
         non_owner_account_id,
         702,
-        &create_allowlist_mutation_note_script("add_allowed_fee_policy", new_root),
+        &create_fee_manager_note_script("add_allowed_fee_policy", new_root),
     )?;
 
     let mut builder = MockChain::builder();
@@ -732,7 +719,7 @@ async fn removing_active_policy_root_does_not_disable_estimation() -> anyhow::Re
     let remove_note = build_sender_note(
         owner_account_id,
         720,
-        &create_allowlist_mutation_note_script("remove_allowed_fee_policy", active_root),
+        &create_fee_manager_note_script("remove_allowed_fee_policy", active_root),
     )?;
 
     let mut builder = MockChain::builder();
