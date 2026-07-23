@@ -201,10 +201,6 @@ end
 #! root does not stop it from being used for fee estimation (that reads the active root directly);
 #! it only prevents switching back to it.
 #!
-#! Note: this leaves a `FEE_POLICY_ROOT -> EMPTY_WORD` entry in the map rather than deleting the
-#! key, so a root that was allowed and then removed is not the same map state as a root that was
-#! never added (whose key is absent). Both read as not-allowed.
-#!
 #! Inputs:  [FEE_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
 #!
