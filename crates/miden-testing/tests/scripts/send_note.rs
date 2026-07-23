@@ -23,14 +23,19 @@ use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
 use miden_standards::note::P2idNote;
-use miden_standards::tx_script::{
-    NOTE_RECORD_NUM_ASSETS_OFFSET,
-    PAYLOAD_HEADER_NUM_ELEMENTS,
-    SendNotesTransactionScript,
-    SendNotesTransactionScriptError,
-};
+use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+// These constants describe the `send_notes` payload layout and must be kept in sync with the
+// layout defined by `encode_payload` in `miden-standards`' `send_notes_script.rs`.
+
+/// Number of elements in the payload header word: `[num_notes, expiration_delta, 0, 0]`.
+const PAYLOAD_HEADER_NUM_ELEMENTS: usize = 4;
+
+/// Element offset of the asset count within a note record, after the RECIPIENT word and the
+/// `tag` and `note_type` elements.
+const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
@@ -150,6 +155,12 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     );
     assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(p2id_note));
 
+    assert_eq!(
+        executed_transaction.expiration_block_num(),
+        executed_transaction.block_header().block_num() + u32::from(expiration_delta.get()),
+        "the payload-supplied expiration delta should be applied",
+    );
+
     Ok(())
 }
 
@@ -230,6 +241,76 @@ async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Resul
     Ok(())
 }
 
+/// Tests that the wallet path rejects notes whose sender is not the sending account at
+/// script-build time.
+#[tokio::test]
+async fn test_send_note_script_rejects_sender_mismatch() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let other_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    builder.build()?;
+
+    let foreign_note = create_assetless_note(other_account.id())?;
+    let partial_note = PartialNote::from(foreign_note);
+
+    let result = SendNotesTransactionScript::new(
+        &sender_account.code_interface(),
+        slice::from_ref(&partial_note),
+    );
+
+    assert!(matches!(
+        result,
+        Err(SendNotesTransactionScriptError::InvalidSenderAccount(sender)) if sender == other_account.id()
+    ));
+
+    Ok(())
+}
+
+/// Tests that the faucet path rejects notes carrying an asset issued by a different faucet at
+/// script-build time.
+#[tokio::test]
+async fn test_send_note_script_rejects_foreign_faucet_asset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "POL",
+        200,
+        None,
+    )?;
+    builder.build()?;
+
+    // The mock asset is issued by a mock faucet, not by the sending faucet.
+    let foreign_asset = FungibleAsset::mock(10);
+    let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
+    let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Private)
+        .with_tag(tag);
+    let assets = NoteAssets::new(vec![foreign_asset])?;
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
+    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    let note = Note::new(assets, metadata, recipient);
+    let partial_note = PartialNote::from(note);
+
+    let result = SendNotesTransactionScript::new(
+        &sender_fungible_faucet_account.code_interface(),
+        slice::from_ref(&partial_note),
+    );
+
+    assert!(matches!(
+        result,
+        Err(SendNotesTransactionScriptError::IssuanceFaucetMismatch(faucet_id))
+            if faucet_id == foreign_asset.faucet_id()
+    ));
+
+    Ok(())
+}
+
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`FungibleFaucet`][faucet] interface.
 ///
@@ -278,6 +359,12 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
         .await?;
 
     assert_eq!(executed_transaction.output_notes().get_note(0), &RawOutputNote::Full(note));
+
+    assert_eq!(
+        executed_transaction.expiration_block_num(),
+        executed_transaction.block_header().block_num() + u32::from(expiration_delta.get()),
+        "the payload-supplied expiration delta should be applied",
+    );
 
     Ok(())
 }

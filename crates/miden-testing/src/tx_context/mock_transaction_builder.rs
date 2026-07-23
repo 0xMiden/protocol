@@ -214,7 +214,8 @@ impl<'chain> MockTransactionBuilder<'chain> {
         for (key, value) in script.advice_entries() {
             self.advice_inputs.map.insert(*key, value.clone());
         }
-        self.tx_script(script.tx_script().clone()).tx_script_args(script.tx_script_args())
+        self.tx_script(script.tx_script().clone())
+            .tx_script_args(script.tx_script_args())
     }
 
     /// Sets the desired auth arguments.

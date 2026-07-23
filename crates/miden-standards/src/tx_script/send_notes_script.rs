@@ -25,17 +25,6 @@ const SEND_NOTES_WALLET_TX_SCRIPT_PATH: &str =
 const SEND_NOTES_FAUCET_TX_SCRIPT_PATH: &str =
     "::miden::standards::tx_scripts::send_notes_faucet::main";
 
-/// Number of elements in the payload header word: `[num_notes, expiration_delta, 0, 0]`.
-///
-/// See `encode_payload` for the full payload layout.
-pub const PAYLOAD_HEADER_NUM_ELEMENTS: usize = 4;
-
-/// Element offset of the asset count within a note record, after the RECIPIENT word and the
-/// `tag` and `note_type` elements.
-///
-/// See `encode_payload` for the full payload layout.
-pub const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
-
 // SEND NOTES TRANSACTION SCRIPT
 // ================================================================================================
 
@@ -248,7 +237,15 @@ fn validate_note_sender(
 }
 
 /// Encodes the notes and expiration delta into the payload element expected by the `send_notes`
-/// MASM scripts.
+/// MASM scripts. The payload structure is as follows:
+/// ```text
+/// word 0 (header):             [num_notes, expiration_delta, 0, 0]
+/// per note record:
+///   word 0:                    RECIPIENT
+///   word 1:                    [tag, note_type, num_assets, num_attachments]
+///   num_assets * 2 words:      ASSET_ID, ASSET_VALUE
+///   num_attachments * 2 words: [attachment_scheme, 0, 0, 0], ATTACHMENT_COMMITMENT
+/// ```
 fn encode_payload(notes: &[PartialNote], expiration_delta: u16) -> Vec<Felt> {
     // SAFETY: kernel caps output notes and assets per note below u32::MAX, so these conversions
     // cannot truncate for any executable transaction.
