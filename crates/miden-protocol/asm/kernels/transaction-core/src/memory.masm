@@ -1485,6 +1485,20 @@ pub proc set_input_note_id
     mem_storew_le
 end
 
+#! Returns the note ID of the input note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the input note data segment begins.
+#! - NOTE_ID is the ID of the input note.
+pub proc get_input_note_id
+    padw
+    movup.4 add.INPUT_NOTE_ID_OFFSET
+    mem_loadw_le
+end
+
 #! Stores the nullifier of the input note with `idx` in the nullifier memory section.
 #!
 #! Inputs:  [idx, NULLIFIER]

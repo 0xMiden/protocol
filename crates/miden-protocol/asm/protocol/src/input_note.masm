@@ -1,7 +1,7 @@
-use {INPUT_NOTE_GET_ASSET_OFFSET, INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, INPUT_NOTE_GET_INITIAL_ASSETS_INFO_OFFSET, INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET, INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET, INPUT_NOTE_REMOVE_ASSET_OFFSET}
+use {INPUT_NOTE_GET_ASSET_OFFSET, INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, INPUT_NOTE_GET_INITIAL_ASSETS_INFO_OFFSET, INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_NOTE_ID_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET, INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET, INPUT_NOTE_REMOVE_ASSET_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::protocol::note
-use {AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot}
+use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteScriptRoot}
     from miden::protocol::types
 
 # PROCEDURES
@@ -429,6 +429,44 @@ pub proc get_recipient(note_index: u16) -> NoteRecipient
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [RECIPIENT]
+end
+
+#! Returns the ID of the input note with the specified index.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_index is the index of the input note whose ID should be returned.
+#! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#!
+#! Invocation: exec
+pub proc get_note_id(note_index: u16) -> NoteId
+    # start padding the stack
+    push.0 swap
+    # => [note_index, 0]
+
+    # push the flag indicating that we want to request the note ID from the note with the specified
+    # index
+    push.0
+    # => [is_active_note = 0, note_index, 0]
+
+    push.INPUT_NOTE_GET_NOTE_ID_OFFSET
+    # => [offset, is_active_note = 0, note_index, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, is_active_note = 0, note_index, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [NOTE_ID, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [NOTE_ID]
 end
 
 #! Returns the metadata of the input note with the specified index.

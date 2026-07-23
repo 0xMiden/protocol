@@ -5,7 +5,10 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
+use miden_protocol::errors::tx_kernel::{
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED,
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -706,6 +709,91 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 
     let serial_number = mock_tx.input_notes().get_note(0).note().serial_num();
     assert_eq!(exec_output.get_stack_word(0), serial_number);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_active_note_get_note_id() -> anyhow::Result<()> {
+    let mock_tx = {
+        let mut builder = MockChain::builder();
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
+        let p2id_note_1 = builder.add_p2id_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            account.id(),
+            &[FungibleAsset::mock(150)],
+            NoteType::Public,
+        )?;
+        let mock_chain = builder.build()?;
+
+        mock_chain
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note_1)
+            .build()?
+    };
+
+    // calling get_note_id should return the ID of the active note
+    let code = "
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::active_note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.active_note::get_note_id
+
+            # truncate the stack
+            swapw dropw
+        end
+        ";
+
+    let exec_output = mock_tx.execute_code(code).await?;
+
+    let note_id = mock_tx.input_notes().get_note(0).note().id();
+    assert_eq!(exec_output.get_stack_word(0), note_id.as_word());
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_active_note_get_note_id_fails_from_tx_script() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let p2id_note = builder.add_p2id_note(
+        ACCOUNT_ID_SENDER.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(150)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let code = "
+        use miden::protocol::active_note
+
+        @transaction_script
+        pub proc main
+            # try to get the note ID from the transaction script
+            exec.active_note::get_note_id
+        end
+        ";
+    let tx_script = CodeBuilder::default()
+        .compile_tx_script(code)
+        .context("failed to parse tx script")?;
+
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(p2id_note.id())
+        .tx_script(tx_script)
+        .build()?;
+
+    let result = mock_tx.execute().await;
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED
+    );
+
     Ok(())
 }
 

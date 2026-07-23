@@ -1,10 +1,11 @@
 #! miden::standards::note::note_id
 #!
-#! Recomputes a note's ID from the components exposed by the kernel's indexed note accessors.
+#! Note ID helpers for input, active, and output notes.
 #!
-#! The transaction kernel derives note IDs internally during the prologue but exposes no accessor
-#! for them. This module reconstructs the ID from the four commitments that are exposed, for input,
-#! output, and active notes, mirroring the kernel's own derivation.
+#! Input and active note IDs are read from the transaction kernel's prologue cache via the
+#! `input_note::get_note_id` and `active_note::get_note_id` accessors. Output note IDs have no
+#! kernel cache, so they are recomputed from the four commitments the kernel exposes, mirroring
+#! the kernel's own derivation.
 
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
@@ -58,13 +59,15 @@ proc compute_note_id
     # => [NOTE_ID]
 end
 
-#! Computes the ID of the input note at the provided index.
+#! Returns the ID of the input note at the provided index.
+#!
+#! The ID is read from the transaction kernel's prologue cache.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
-#! - note_idx is the index of the input note whose ID should be computed.
+#! - note_idx is the index of the input note whose ID should be returned.
 #! - NOTE_ID is the ID of the specified input note.
 #!
 #! Panics if:
@@ -72,26 +75,13 @@ end
 #!
 #! Invocation: exec
 pub proc compute_input_note_id
-    dup exec.input_note::get_initial_assets_info
-    # => [ASSETS_COMMITMENT, num_assets, note_idx]
-
-    movup.4 drop movup.4
-    # => [note_idx, ASSETS_COMMITMENT]
-
-    dup exec.input_note::get_recipient movup.4
-    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
-
-    dup exec.input_note::get_attachments_commitment movup.4
-    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.input_note::get_metadata
-    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.compute_note_id
+    exec.input_note::get_note_id
     # => [NOTE_ID]
 end
 
-#! Computes the ID of the active note.
+#! Returns the ID of the active note.
+#!
+#! The ID is read from the transaction kernel's prologue cache.
 #!
 #! Inputs:  []
 #! Outputs: [NOTE_ID]
@@ -104,22 +94,7 @@ end
 #!
 #! Invocation: exec
 pub proc compute_active_note_id
-    exec.active_note::get_initial_assets_info
-    # => [ASSETS_COMMITMENT, num_assets]
-
-    movup.4 drop
-    # => [ASSETS_COMMITMENT]
-
-    exec.active_note::get_recipient
-    # => [RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.active_note::get_attachments_commitment
-    # => [ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.active_note::get_metadata
-    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.compute_note_id
+    exec.active_note::get_note_id
     # => [NOTE_ID]
 end
 
@@ -161,8 +136,9 @@ end
 
 #! Finds the input note with the specified ID among the transaction's input notes.
 #!
-#! Every input note's ID is recomputed and compared against the provided ID; the search takes no
-#! index hint from the caller, so it cannot be misdirected by whoever assembles the transaction.
+#! Every input note's ID is read from the kernel's prologue cache and compared against the provided
+#! ID; the search takes no index hint from the caller, so it cannot be misdirected by whoever
+#! assembles the transaction.
 #!
 #! Inputs:  [NOTE_ID]
 #! Outputs: [is_found, note_idx]

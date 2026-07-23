@@ -1,8 +1,9 @@
 //! Tests for the `miden::standards::note::note_id` module.
 //!
-//! The kernel derives note IDs internally but exposes no accessor for them, so the standards module
-//! recomputes them from the four commitments that *are* exposed. These tests pin that recomputation
-//! against the Rust [`NoteId`](miden_protocol::note::NoteId) so the two cannot drift.
+//! Input and active note IDs are read from the kernel's prologue cache via the `get_note_id`
+//! accessors, while output note IDs are recomputed from the four commitments the kernel exposes.
+//! These tests pin both paths against the Rust [`NoteId`](miden_protocol::note::NoteId) so they
+//! cannot drift.
 
 use miden_protocol::Word;
 use miden_protocol::account::Account;
