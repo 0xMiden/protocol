@@ -186,11 +186,11 @@ async fn execute_tx_script(
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code.as_ref())?;
-    let tx_context = TestTransactionBuilder::new(account)
+    let mock_tx = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
     Ok(())
 }
 
@@ -637,13 +637,13 @@ async fn test_field_setter_immutable_fails(
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(&tx_script_code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, immutable_error);
 
     Ok(())
@@ -698,13 +698,14 @@ async fn test_field_setter_owner_succeeds(
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
-        .extend_advice_map([(hash, field_advice_map_value(&new_data))])
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
+        .extend_advice_map(hash, field_advice_map_value(&new_data))
         .with_source_manager(source_manager)
         .build()?;
 
-    let executed = tx_context.execute().await?;
+    let executed = mock_tx.execute().await?;
     let mut updated_faucet = faucet_account.clone();
     updated_faucet.apply_patch(executed.account_patch())?;
 
@@ -761,12 +762,13 @@ async fn test_field_setter_non_owner_fails(
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
@@ -887,13 +889,13 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_MAX_SUPPLY_NOT_MUTABLE);
 
     Ok(())
@@ -933,12 +935,13 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let executed = tx_context.execute().await?;
+    let executed = mock_tx.execute().await?;
     let mut updated_faucet = faucet_account.clone();
     updated_faucet.apply_patch(executed.account_patch())?;
 
@@ -984,12 +987,13 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())

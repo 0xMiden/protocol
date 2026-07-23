@@ -272,7 +272,8 @@ async fn consume_note(
 ) -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let executed_transaction = mock_chain
-        .build_tx_context(account_id, &[note.id()], &[])?
+        .build_transaction(account_id)
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -320,7 +321,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(queried_root.as_word())
         .build()?
@@ -361,7 +362,7 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(priced_root().as_word())
         .build()?
@@ -404,7 +405,7 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(NoteScriptRoot::from_array([9, 10, 11, 12]).as_word())
         .build()?
@@ -521,7 +522,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
@@ -586,7 +587,7 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
@@ -648,7 +649,8 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
     // removed root aborts with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED`.
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
-        .build_tx_context(account.id(), &[set_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -690,7 +692,8 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
-        .build_tx_context(account.id(), &[add_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(add_note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -744,7 +747,7 @@ async fn removing_active_policy_root_does_not_disable_estimation() -> anyhow::Re
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(priced_root().as_word())
         .build()?

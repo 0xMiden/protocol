@@ -23,7 +23,7 @@ async fn expiration_tx_script_sets_expiration_from_tx_args() -> anyhow::Result<(
     let script = ExpirationTransactionScript::new(DELTA);
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(script.into())
         .tx_script_args(script.tx_script_args())
         .build()?

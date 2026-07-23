@@ -34,9 +34,9 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
         ONE, // incr_nonce = true
     ];
 
-    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
-    tx_context.execute().await.context("failed to execute transaction")?;
+    mock_tx.execute().await.context("failed to execute transaction")?;
 
     Ok(())
 }
@@ -59,9 +59,9 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
         Felt::new_unchecked(101),
     ];
 
-    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
-    let execution_result = tx_context.execute().await;
+    let execution_result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(execution_result, ERR_WRONG_ARGS);
 
@@ -90,9 +90,9 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
         .with_dynamically_linked_library(auth_component.component_code())?
         .compile_tx_script(tx_script_source)?;
 
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    let execution_result = tx_context.execute().await;
+    let execution_result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(
         execution_result,
@@ -155,7 +155,7 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
 
     let execution_result = chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .add_signature(pub_key_commitment, message, signature)
         .build()?
@@ -194,7 +194,7 @@ async fn test_privileged_event_from_script_is_rejected() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script_source)?;
 
     let execution_result = chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()

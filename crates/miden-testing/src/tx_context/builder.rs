@@ -24,13 +24,13 @@ use miden_protocol::transaction::{
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
-use super::TransactionContext;
+use super::MockTransaction;
 use crate::MockChain;
 
 // TRANSACTION CONTEXT BUILDER
 // ================================================================================================
 
-/// [TransactionContextBuilder] is a utility to construct [TransactionContext] for testing
+/// [TransactionContextBuilder] is a utility to construct [MockTransaction] for testing
 /// purposes. It allows users to build accounts, create notes, provide advice inputs, and
 /// execute code. The VM process can be inspected afterward.
 ///
@@ -47,6 +47,7 @@ use crate::MockChain;
 /// let mut builder = MockChain::builder();
 /// let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
 /// let mock_chain = builder.build()?;
+/// # #[allow(deprecated)]
 /// let tx_context = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?;
 ///
 /// let code = "
@@ -64,6 +65,7 @@ use crate::MockChain;
 /// # Ok(())
 /// # }
 /// ```
+#[deprecated(note = "use `MockChain::build_transaction` instead")]
 #[derive(Clone)]
 pub struct TransactionContextBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
@@ -83,6 +85,7 @@ pub struct TransactionContextBuilder {
     is_lazy_loading_enabled: bool,
 }
 
+#[allow(deprecated)]
 impl TransactionContextBuilder {
     pub fn new(account: Account) -> Self {
         Self {
@@ -167,7 +170,7 @@ impl TransactionContextBuilder {
 
     /// Disables lazy loading.
     ///
-    /// Only affects [`TransactionContext::execute_code`] and causes the host to _not_ handle lazy
+    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
     /// loading events.
     pub fn disable_lazy_loading(mut self) -> Self {
         self.is_lazy_loading_enabled = false;
@@ -191,7 +194,7 @@ impl TransactionContextBuilder {
         self
     }
 
-    /// Sets the [`SourceManagerSync`] on the [`TransactionContext`] that will be built.
+    /// Sets the [`SourceManagerSync`] on the [`MockTransaction`] that will be built.
     ///
     /// This source manager should contain the sources of all involved scripts and account code in
     /// order to provide better error messages if an error occurs.
@@ -217,11 +220,11 @@ impl TransactionContextBuilder {
         self
     }
 
-    /// Builds the [TransactionContext].
+    /// Builds the [MockTransaction].
     ///
     /// If no transaction inputs were provided manually, an ad-hoc MockChain is created in order
     /// to generate valid block data for the required notes.
-    pub fn build(self) -> anyhow::Result<TransactionContext> {
+    pub fn build(self) -> anyhow::Result<MockTransaction> {
         let mut tx_inputs = match self.tx_inputs {
             Some(tx_inputs) => tx_inputs,
             None => {
@@ -275,7 +278,7 @@ impl TransactionContextBuilder {
             mast_forest_store
         };
 
-        Ok(TransactionContext {
+        Ok(MockTransaction {
             account: self.account,
             expected_output_notes: self.expected_output_notes,
             foreign_account_inputs: self.foreign_account_inputs,
