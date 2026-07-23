@@ -148,9 +148,11 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // CONSUME THE CONFIG_AGG_BRIDGE NOTE WITH THE BRIDGE ACCOUNT
-    let tx_context =
-        mock_chain.build_tx_context(bridge_account.id(), &[], &[config_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(config_note)
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // VERIFY FAUCET IS NOW REGISTERED
     let mut updated_bridge = bridge_account.clone();
@@ -251,14 +253,16 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     // Consume the two registration notes in two separate transactions so each one writes its
     // own delta to the bridge account.
     let tx1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_1.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_1.id())
         .build()?;
     let executed_1 = tx1.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_1)?;
     mock_chain.prove_next_block()?;
 
     let tx2 = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_2.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_2.id())
         .build()?;
     let executed_2 = tx2.execute().await?;
 
@@ -347,7 +351,8 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[config_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(config_note)
         .build()?
         .execute()
         .await;
@@ -468,7 +473,8 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     // ---- TX0: consume CONFIG_AGG_BRIDGE to register ----
     let register_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
     let register_executed = register_tx.execute().await?;
 
@@ -515,7 +521,8 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     // ---- TX1: consume DEREGISTER_AGG_FAUCET to clear ----
     let deregister_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?;
     let deregister_executed = deregister_tx.execute().await?;
 
@@ -608,7 +615,8 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     let mut mock_chain = builder.build()?;
 
     let register_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
@@ -632,7 +640,8 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     mock_chain.prove_next_block()?;
 
     let deregister_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?
         .execute()
         .await?;
@@ -763,7 +772,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     if let Some(note) = config_note {
         let register_executed = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
             .build()?
             .execute()
             .await?;
@@ -773,7 +783,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     if let Some(note) = prior_deregister_note {
         let deregister_executed = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
             .build()?
             .execute()
             .await?;
@@ -782,7 +793,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
     }
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?
         .execute()
         .await;

@@ -19,13 +19,13 @@ use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 
-use super::TransactionContext;
+use super::MockTransaction;
 use crate::MockChain;
 
 // TEST TRANSACTION BUILDER
 // ================================================================================================
 
-/// A crate-internal builder that makes a [TransactionContext] for tests.
+/// A crate-internal builder that makes a [MockTransaction] for tests.
 ///
 /// Use it when a test just needs some valid chain data to run against and does not care about the
 /// exact state of a [`crate::MockChain`]. It makes a simple [`crate::MockChain`] inside and builds
@@ -95,17 +95,24 @@ impl TestTransactionBuilder {
         Self::new(Account::mock_non_fungible_faucet(acct_id))
     }
 
-    /// Extend the advice inputs map with the provided iterator.
-    pub(crate) fn extend_advice_map(
-        mut self,
-        map_entries: impl IntoIterator<Item = (Word, Vec<Felt>)>,
-    ) -> Self {
-        self.advice_inputs.map.extend(map_entries);
+    /// Inserts a single key-value pair into the advice inputs map.
+    ///
+    /// To add multiple entries, call this repeatedly.
+    pub(crate) fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+        self.advice_inputs.map.insert(key, value);
         self
     }
 
-    /// Extend the set of used input notes.
-    pub(crate) fn extend_input_notes(mut self, input_notes: Vec<Note>) -> Self {
+    /// Adds a single input note that the transaction consumes.
+    pub(crate) fn input_note(mut self, input_note: Note) -> Self {
+        self.input_notes.push(input_note);
+        self
+    }
+
+    /// Adds multiple input notes that the transaction consumes.
+    ///
+    /// This is the iterator equivalent of [`Self::input_note`].
+    pub(crate) fn input_notes(mut self, input_notes: Vec<Note>) -> Self {
         self.input_notes.extend(input_notes);
         self
     }
@@ -130,20 +137,28 @@ impl TestTransactionBuilder {
 
     /// Disables lazy loading.
     ///
-    /// Only affects [`TransactionContext::execute_code`] and causes the host to _not_ handle lazy
+    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
     /// loading events.
     pub(crate) fn disable_lazy_loading(mut self) -> Self {
         self.is_lazy_loading_enabled = false;
         self
     }
 
-    /// Extend the expected output notes.
-    pub(crate) fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
+    /// Adds a single expected output note that the transaction produces.
+    pub(crate) fn expected_output_note(mut self, output_note: RawOutputNote) -> Self {
+        self.expected_output_notes.push(output_note);
+        self
+    }
+
+    /// Adds multiple expected output notes that the transaction produces.
+    ///
+    /// This is the iterator equivalent of [`Self::expected_output_note`].
+    pub(crate) fn expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         self.expected_output_notes.extend(output_notes);
         self
     }
 
-    /// Sets the [`SourceManagerSync`] on the [`TransactionContext`] that will be built.
+    /// Sets the [`SourceManagerSync`] on the [`MockTransaction`] that will be built.
     pub(crate) fn with_source_manager(
         mut self,
         source_manager: Arc<dyn SourceManagerSync>,
@@ -158,15 +173,15 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Builds the [TransactionContext].
+    /// Builds the [MockTransaction].
     ///
     /// An ad-hoc [`crate::MockChain`] is created to generate valid block data for the requested
     /// input notes, and the transaction is then built against it through
     /// [`crate::MockChain::build_transaction`]. The account is passed by value so that it is used
     /// directly without requiring it to be committed to the chain. The rest of the configuration
     /// (advice inputs, transaction script, expected output notes, ...) is forwarded to the
-    /// [`crate::MockTransactionBuilder`] before the [TransactionContext] is assembled.
-    pub(crate) fn build(self) -> anyhow::Result<TransactionContext> {
+    /// [`crate::MockTransactionBuilder`] before the [MockTransaction] is assembled.
+    pub(crate) fn build(self) -> anyhow::Result<MockTransaction> {
         // Spin up an ad-hoc mock chain that commits the requested input notes, so that valid block
         // data (block headers and the chain's Merkle Mountain Range) can be generated for them.
         let mut chain_builder = MockChain::builder();
@@ -235,7 +250,7 @@ mod tests {
         );
 
         let executed = TestTransactionBuilder::with_existing_mock_account()
-            .extend_input_notes(vec![input_note.clone()])
+            .input_note(input_note.clone())
             .build()?
             .execute()
             .await?;

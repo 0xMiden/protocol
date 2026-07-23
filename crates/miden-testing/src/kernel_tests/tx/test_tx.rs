@@ -1,6 +1,5 @@
 use alloc::string::ToString;
 use alloc::sync::Arc;
-use core::slice;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
@@ -112,8 +111,9 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     // block 11. We use account 1 for this, so that account 2 remains unchanged and is still valid
     // against reference block 1 which we'll use for the later transaction.
     let tx = mock_chain
-        .build_tx_context(account1.id(), &[spawn_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .build_transaction(account1.id())
+        .authenticated_input_note(spawn_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -132,10 +132,10 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
 
     // Attempt to execute a transaction against reference block 1 with the note created in block 11
     // - which should fail.
-    let tx_context = mock_chain.build_tx_context(account2.id(), &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account2.id()).build()?;
 
-    let tx_executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context)
-        .with_source_manager(tx_context.source_manager());
+    let tx_executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_source_manager(mock_tx.source_manager());
 
     // Try to execute with block_ref==1
     let error = tx_executor
@@ -160,7 +160,7 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_block_procedures() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = "
         use miden::protocol::tx
@@ -180,23 +180,23 @@ async fn test_block_procedures() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = &tx_context.execute_code(code).await?;
+    let exec_output = &mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
-        tx_context.tx_inputs().block_header().commitment(),
+        mock_tx.tx_inputs().block_header().commitment(),
         "top word on the stack should be equal to the block header commitment"
     );
 
     assert_eq!(
         exec_output.get_stack_element(4).as_canonical_u64(),
-        tx_context.tx_inputs().block_header().timestamp() as u64,
+        mock_tx.tx_inputs().block_header().timestamp() as u64,
         "fifth element on the stack should be equal to the timestamp of the last block creation"
     );
 
     assert_eq!(
         exec_output.get_stack_element(5).as_canonical_u64(),
-        tx_context.tx_inputs().block_header().block_num().as_u64(),
+        mock_tx.tx_inputs().block_header().block_num().as_u64(),
         "sixth element on the stack should be equal to the block number"
     );
     Ok(())
@@ -380,15 +380,15 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
-    let tx_context = TestTransactionBuilder::new(executor_account)
+    let mock_tx = TestTransactionBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),
         ])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // output notes
     // --------------------------------------------------------------------------------------------
@@ -498,13 +498,16 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(account, &[input_note.id()], &[])?.build()?;
-    let ref_block_num = tx_context.tx_inputs().block_header().block_num().as_u32();
-    let final_nonce = tx_context.account().nonce().as_canonical_u64() as u32 + 1;
-    let input_notes = tx_context.input_notes().clone();
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(input_note.id())
+        .build()?;
+    let ref_block_num = mock_tx.tx_inputs().block_header().block_num().as_u32();
+    let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
+    let input_notes = mock_tx.input_notes().clone();
     let output_notes = RawOutputNotes::new(vec![RawOutputNote::Partial(output_note.into())])?;
 
-    let error = tx_context.execute().await.unwrap_err();
+    let error = mock_tx.execute().await.unwrap_err();
 
     assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
         assert!(tx_summary.account_delta().vault().is_empty());
@@ -536,8 +539,9 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let chain = builder.build()?;
 
-    let tx_builder =
-        chain.build_tx_context(account.id(), &[], core::slice::from_ref(&spawn_note))?;
+    let tx_builder = chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(spawn_note.clone());
 
     let tx = tx_builder.clone().build()?;
     let ref_block_num = tx.tx_inputs().block_header().block_num();
@@ -614,15 +618,15 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new()
         .with_statically_linked_library(&library)?
         .compile_tx_script(source)?;
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
         .tx_script(tx_script.clone())
         .build()?;
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let advice_inputs = mock_tx.tx_args().advice_inputs().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context)
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
         .with_source_manager(source_manager);
 
     let stack_outputs = executor
@@ -661,10 +665,10 @@ async fn failed_tx_script_reports_package_debug_message() -> anyhow::Result<()> 
         "#
     ))?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?;
-    let error = tx_context.execute().await.expect_err("transaction script should fail");
+    let error = mock_tx.execute().await.expect_err("transaction script should fail");
 
     assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
 
@@ -684,12 +688,12 @@ async fn failed_tx_view_script_reports_package_debug_message() -> anyhow::Result
         "#
     ))?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let advice_inputs = mock_tx.tx_args().advice_inputs().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let error = executor
         .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
         .await
@@ -738,12 +742,12 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_input_key, tx_script_input_value.to_vec())])
+        .extend_advice_map(tx_script_input_key, tx_script_input_value.to_vec())
         .build()?;
 
-    tx_context.execute().await.context("failed to execute transaction")?;
+    mock_tx.execute().await.context("failed to execute transaction")?;
 
     Ok(())
 }
@@ -782,13 +786,13 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     // extend the advice map with the entry that is accessed using the provided transaction script
     // argument
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_args, advice_entry.as_elements().to_vec())])
+        .extend_advice_map(tx_script_args, advice_entry.as_elements().to_vec())
         .tx_script_args(tx_script_args)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -816,11 +820,11 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
         "#
     );
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -843,9 +847,9 @@ async fn test_get_script_root_without_script() -> anyhow::Result<()> {
         end
         "#;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
-    tx_context.execute_code(code).await?;
+    mock_tx.execute_code(code).await?;
 
     Ok(())
 }
@@ -913,13 +917,13 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         account_code,
         Felt::new_unchecked(1u64),
     );
-    let tx_context = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
-    _ = tx_context.execute().await?;
+    let mock_tx = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    _ = mock_tx.execute().await?;
 
     Ok(())
 }
 
-/// Test that reexecuting a transaction with no authenticator and the tx inputs from a first
+/// Test that reexecuting a transaction with no authenticator and the advice witness from a first
 /// successful execution is possible. This ensures that the signature generated in the first
 /// execution is present during re-execution.
 #[tokio::test]
@@ -938,15 +942,20 @@ async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let chain = builder.build()?;
 
     let tx = chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
 
+    // The advice witness of the executed transaction carries the signature generated during the
+    // first execution, so feeding it back in lets the re-execution authenticate without an
+    // authenticator.
     let _reexecuted_tx = chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .authenticator(None)
-        .tx_inputs(tx.tx_inputs().clone())
+        .extend_advice_inputs(tx.advice_witness().clone())
         .build()?
         .execute()
         .await?;
@@ -975,9 +984,10 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
 
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
         .tx_script(script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
