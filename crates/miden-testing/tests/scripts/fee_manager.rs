@@ -7,6 +7,7 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, AssetId};
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
@@ -611,42 +612,67 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
     Ok(())
 }
 
-/// The owner adds a fee policy root to the allowed-policies map after deployment via
-/// `add_allowed_fee_policy`, after which `set_fee_policy` accepts that root - a root that
-/// `set_fee_policy_rejects_non_allowed_root` shows is rejected before the addition. This proves the
-/// allowlist can be extended post-deployment.
+/// The owner mutates the allowed-policies map after deployment, and a follow-up `set_fee_policy` to
+/// the mutated root reflects the change: an added root becomes switchable, while a removed root can
+/// no longer be switched to (`ERR_FEE_POLICY_ROOT_NOT_ALLOWED`). This proves the allowlist can be
+/// both extended and narrowed post-deployment.
+///
+/// - `add`: `FeeManager::get_fee_policy_root` is a procedure of the account but not in the initial
+///   allowlist, so `set_fee_policy` rejects it before the add and accepts it after.
+/// - `remove`: the reserved `custom_fee_policy` root is allowlisted at deployment, so
+///   `set_fee_policy` accepts it before the remove and rejects it after.
+#[rstest]
+#[case::add("add_allowed_fee_policy", FeeManager::get_fee_policy_root().as_word(), None)]
+#[case::remove(
+    "remove_allowed_fee_policy",
+    custom_fee_policy().unwrap().root().as_word(),
+    Some(ERR_FEE_POLICY_ROOT_NOT_ALLOWED)
+)]
 #[tokio::test]
-async fn owner_can_add_allowed_fee_policy_root_after_deployment() -> anyhow::Result<()> {
+async fn owner_can_mutate_allowed_fee_policy_roots(
+    #[case] mutator_proc: &str,
+    #[case] target_root: Word,
+    #[case] set_fee_policy_error: Option<MasmError>,
+) -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
     let account = build_fee_account_with_switching(owner_account_id)?;
 
-    // A procedure of the account that is not in the initial fee policy allowlist (the same root
-    // `set_fee_policy_rejects_non_allowed_root` uses to show set_fee_policy rejects it).
-    let new_root = FeeManager::get_fee_policy_root().as_word();
-
-    let add_note = build_sender_note(
+    let mutation_note = build_sender_note(
         owner_account_id,
         700,
-        &create_allowlist_mutation_note_script("add_allowed_fee_policy", new_root),
+        &create_allowlist_mutation_note_script(mutator_proc, target_root),
     )?;
     let set_note =
-        build_sender_note(owner_account_id, 701, &create_set_fee_policy_note_script(new_root))?;
+        build_sender_note(owner_account_id, 701, &create_set_fee_policy_note_script(target_root))?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(mutation_note.clone()));
     builder.add_output_note(RawOutputNote::Full(set_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Register the new root in the allowlist; the mutation takes effect from the next block.
-    consume_note(&mut mock_chain, account.id(), &add_note).await?;
+    // Apply the allowlist mutation; it takes effect from the next block.
+    consume_note(&mut mock_chain, account.id(), &mutation_note).await?;
 
-    // With the root now allowed, `set_fee_policy` accepts it. Successful execution (rather than the
-    // `ERR_FEE_POLICY_ROOT_NOT_ALLOWED` abort) proves the addition took effect.
-    consume_note(&mut mock_chain, account.id(), &set_note).await?;
+    // Switching to the mutated root now behaves per the mutation: an added root is accepted, a
+    // removed root aborts with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED`.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_tx_context(account.id(), &[set_note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    match set_fee_policy_error {
+        None => {
+            result?;
+        },
+        Some(expected) => assert_transaction_executor_error!(result, expected),
+    }
 
     Ok(())
 }
@@ -688,47 +714,55 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The owner removes an allowed fee policy root via `remove_allowed_fee_policy`, after which
-/// `set_fee_policy` rejects that root with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED` even though it was
-/// registered at deployment. This proves the allowlist can be narrowed post-deployment.
+/// Removing the active fee policy's root from the allowed-policies map does not disable it for fee
+/// estimation: `estimate_note_fee` reads the active policy root directly from its slot, not the
+/// allowlist, so estimation still returns the scheduled fee after the active root is removed.
+/// (Removal only prevents switching *back* to the root via `set_fee_policy`.)
 #[tokio::test]
-async fn owner_can_remove_allowed_fee_policy_root_after_deployment() -> anyhow::Result<()> {
+async fn removing_active_policy_root_does_not_disable_estimation() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
     let account = build_fee_account_with_switching(owner_account_id)?;
 
-    // The custom policy root is registered in the allowlist at deployment by `fee_manager`.
-    let allowed_root = custom_fee_policy()?.root().as_word();
+    // The active policy is the `ConstantFeePolicy`; its root is registered in the allowlist at
+    // deployment.
+    let active_root = ConstantFeePolicy::root().as_word();
 
     let remove_note = build_sender_note(
         owner_account_id,
-        710,
-        &create_allowlist_mutation_note_script("remove_allowed_fee_policy", allowed_root),
+        720,
+        &create_allowlist_mutation_note_script("remove_allowed_fee_policy", active_root),
     )?;
-    let set_note =
-        build_sender_note(owner_account_id, 711, &create_set_fee_policy_note_script(allowed_root))?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
-    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Remove the root from the allowlist; the mutation takes effect from the next block.
+    // Remove the active policy's root from the allowlist; the mutation takes effect from the next
+    // block.
     consume_note(&mut mock_chain, account.id(), &remove_note).await?;
 
-    // With the root no longer allowed, `set_fee_policy` rejects switching back to it.
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let result = mock_chain
-        .build_tx_context(account.id(), &[set_note.id()], &[])?
-        .with_source_manager(source_manager)
+    // Estimation still returns the scheduled fee for `priced_root`: the active policy remains in
+    // use for fee estimation even though its root is no longer allowlisted.
+    let tx_script_code = estimate_note_fee_tx_script_code(
+        Word::empty(),
+        11,
+        7,
+        AssetId::new_fungible(fee_faucet_id()?).to_word(),
+        AssetAmount::new(FEE_AMOUNT)?.to_word(),
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(priced_root().as_word())
         .build()?
         .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_NOT_ALLOWED);
+        .await?;
 
     Ok(())
 }
