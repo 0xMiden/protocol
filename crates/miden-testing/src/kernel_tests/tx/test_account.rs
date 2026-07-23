@@ -71,7 +71,6 @@ use crate::{
     ExecError,
     MockChain,
     TestTransactionBuilder,
-    TxContextInput,
     assert_transaction_executor_error,
 };
 
@@ -157,11 +156,11 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         expected_commitment = &expected_commitment,
     );
 
-    let tx_context_builder = TestTransactionBuilder::new(account);
+    let mock_tx_builder = TestTransactionBuilder::new(account);
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
-    let tx_context = tx_context_builder.tx_script(tx_script).build()?;
+    let mock_tx = mock_tx_builder.tx_script(tx_script).build()?;
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("failed to execute transaction: {err}"))?;
@@ -424,8 +423,8 @@ async fn test_account_id_comparison() -> anyhow::Result<()> {
 // TODO: update this test once the ability to change the account code will be implemented
 #[tokio::test]
 pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
-    let account = tx_context.account();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let account = mock_tx.account();
 
     let code = format!(
         r#"
@@ -443,7 +442,7 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
         expected_code_commitment = account.code().commitment()
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -454,7 +453,7 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_item() -> anyhow::Result<()> {
     for storage_item in [AccountStorage::mock_value_slot0(), AccountStorage::mock_value_slot1()] {
-        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             r#"
@@ -480,7 +479,7 @@ async fn test_get_item() -> anyhow::Result<()> {
             item_value = &storage_item.content().value(),
         );
 
-        tx_context.execute_code(&code).await.unwrap();
+        mock_tx.execute_code(&code).await.unwrap();
     }
 
     Ok(())
@@ -495,7 +494,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     let StorageSlotContent::Map(map) = slot.content() else {
         panic!("expected map")
@@ -527,7 +526,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
             slot_name = slot.name(),
         );
 
-        tx_context.execute_code(&code).await?;
+        mock_tx.execute_code(&code).await?;
     }
 
     Ok(())
@@ -540,8 +539,8 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         AccountStorage::mock_value_slot1().name(),
         AccountStorage::mock_map_slot().name(),
     ] {
-        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
-        let (slot_idx, slot) = tx_context
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+        let (slot_idx, slot) = mock_tx
             .account()
             .storage()
             .slots()
@@ -570,7 +569,7 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
             ",
         );
 
-        let exec_output = &tx_context.execute_code(&code).await.unwrap();
+        let exec_output = &mock_tx.execute_code(&code).await.unwrap();
 
         assert_eq!(
             slot.slot_type(),
@@ -621,7 +620,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
     let result = chain
-        .build_tx_context(account_empty_storage, &[], &[])?
+        .build_transaction(account_empty_storage)
         .tx_script(tx_script.clone())
         .build()?
         .execute()
@@ -629,7 +628,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     assert_transaction_executor_error!(result, ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME);
 
     let result = chain
-        .build_tx_context(account_non_empty_storage, &[], &[])?
+        .build_transaction(account_non_empty_storage)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -703,11 +702,11 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     let slot_name = &*MOCK_VALUE_SLOT0;
     let new_value = Word::from([91, 92, 93, 94u32]);
-    let old_value = tx_context.account().storage().get_item(slot_name)?;
+    let old_value = mock_tx.account().storage().get_item(slot_name)?;
 
     let code = format!(
         r#"
@@ -741,7 +740,7 @@ async fn test_set_item() -> anyhow::Result<()> {
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -760,7 +759,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     let code = format!(
         r#"
@@ -803,7 +802,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         new_value = &new_value,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let mut new_storage_map = AccountStorage::mock_map();
     new_storage_map.insert(new_key, new_value).unwrap();
@@ -843,7 +842,7 @@ async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
         r#"
@@ -862,9 +861,9 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="actual storage commitment is not equal to the expected one"
         end
         "#,
-        expected_storage_commitment = &tx_context.account().storage().to_commitment(),
+        expected_storage_commitment = &mock_tx.account().storage().to_commitment(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -873,7 +872,7 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
 /// dedicated kernel memory region.
 #[tokio::test]
 async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
@@ -898,7 +897,7 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
         storage_upgrade_commitment = &storage_upgrade_commitment,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
@@ -925,8 +924,8 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
 /// - After updating the 2nd storage slot (map slot).
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
-    let mut account_clone = tx_context.account().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mut account_clone = mock_tx.account().clone();
     let account_storage = account_clone.storage_mut();
 
     let init_storage_commitment = account_storage.to_commitment();
@@ -994,7 +993,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -1077,9 +1076,9 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_vault_root() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
-    let mut account = tx_context.account().clone();
+    let mut account = mock_tx.account().clone();
 
     let fungible_asset = Asset::Fungible(
         FungibleAsset::new(
@@ -1109,7 +1108,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         "#,
         expected_vault_root = &account.vault().root(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     // get the current vault root
     account.vault_mut().add_asset(fungible_asset)?;
@@ -1143,7 +1142,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
         expected_vault_root = &account.vault().root(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -1244,16 +1243,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_existing_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(
-            TxContextInput::AccountId(account.id()),
-            &[],
-            &[p2id_note_existing_asset],
-        )?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_existing_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     // case 2: new asset was added to the account
     // ------------------------------------------
@@ -1298,12 +1294,13 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_new_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_new_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1393,13 +1390,13 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1487,9 +1484,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
 
     mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?
         .execute()
         .await?;
@@ -1515,7 +1512,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
         vec![(tc_0, true), (tc_1, true), (tc_2, true), (Word::from([1, 0, 1, 0u32]), false)];
 
     for (root, valid) in test_cases.into_iter() {
-        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             "
@@ -1538,7 +1535,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
         // Execution of this code will return an EventError(UnknownAccountProcedure) for procs
         // that are not in the advice provider.
-        let exec_output = tx_context.execute_code(&code).await;
+        let exec_output = mock_tx.execute_code(&code).await;
 
         match valid {
             true => {
@@ -1608,10 +1605,10 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Compile the transaction script using the testing assembler with mock account
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
 
-    // Create transaction context and execute
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
@@ -1714,12 +1711,12 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         .with_dynamically_linked_library(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
-    let tx_context = TestTransactionBuilder::new(native_account.clone())
+    let mock_tx = TestTransactionBuilder::new(native_account.clone())
         .tx_script(tx_script)
         .build()
         .unwrap();
 
-    let executed_tx = tx_context.execute().await?;
+    let executed_tx = mock_tx.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
     assert_eq!(
@@ -1813,10 +1810,10 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .compile_tx_script(tx_script_code)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
-    // Create transaction context and execute
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
@@ -1832,7 +1829,7 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
     let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
 
     for (slot_name, expected_to_exist) in test_cases {
-        let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let assertion = if expected_to_exist {
             r#"assert.err="installed storage slot should be reported as present""#
@@ -1867,7 +1864,7 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
             "#,
         );
 
-        tx_context.execute_code(&code).await?;
+        mock_tx.execute_code(&code).await?;
     }
 
     Ok(())
@@ -1878,7 +1875,7 @@ async fn test_has_storage_slot() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_initial_item() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     // Test that get_initial_item returns the initial value before any changes
     let code = format!(
@@ -1921,7 +1918,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
         expected_initial_value = &AccountStorage::mock_value_slot0().content().value(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -1935,7 +1932,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     // Use the first key-value pair from the mock storage
     let StorageSlotContent::Map(map) = map_slot.content() else {
@@ -2000,7 +1997,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
         new_value = &new_value,
     );
 
-    tx_context.execute_code(&code).await.unwrap();
+    mock_tx.execute_code(&code).await.unwrap();
 
     Ok(())
 }
@@ -2025,7 +2022,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         .build_existing()
         .unwrap();
 
-    let tx_context = TestTransactionBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     // Build MASM code that, for each slot:
     // 1. Sets a new value [index, 0, 0, 0]
@@ -2080,7 +2077,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }

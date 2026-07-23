@@ -1,5 +1,4 @@
 use alloc::sync::Arc;
-use core::slice;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
@@ -113,9 +112,10 @@ pub async fn setup_circular_note_dependency_test()
     // TX 1: consume note_x -> create note_y.
     // The tx script creates note_y with the asset out of thin air.
     let executed_tx1 = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
         .send_notes_script(&tx_script_y)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_y.clone())])
+        .expected_output_note(RawOutputNote::Full(note_y.clone()))
         .build()?
         .execute()
         .await?;
@@ -131,9 +131,10 @@ pub async fn setup_circular_note_dependency_test()
     )?;
     // TX 2: consume note_y -> create note_x (output via tx script).
     let executed_tx2 = chain
-        .build_tx_context(updated_account, &[], slice::from_ref(&note_y))?
+        .build_transaction(updated_account)
+        .unauthenticated_input_note(note_y)
         .send_notes_script(&tx_script_x)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
@@ -501,8 +502,9 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
     let mut chain = builder.build()?;
 
     let tx = chain
-        .build_tx_context(account1.clone(), &[spawn_note.id()], &[])?
-        .extend_expected_output_notes(vec![
+        .build_transaction(account1.clone())
+        .authenticated_input_note(spawn_note.id())
+        .expected_output_notes(vec![
             RawOutputNote::Full(note1.clone()),
             RawOutputNote::Full(note2.clone()),
         ])
@@ -904,7 +906,8 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     // TX 1: consume note_x to move the asset to the vault.
     let executed_tx1 = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
         .build()?
         .execute()
         .await?;
@@ -922,9 +925,9 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     )?;
     // TX 2: create note_x with the asset from the account vault.
     let executed_tx2 = chain
-        .build_tx_context(updated_account, &[], &[])?
+        .build_transaction(updated_account)
         .send_notes_script(&tx_script_x)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;

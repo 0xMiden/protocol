@@ -17,24 +17,24 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
-use super::TransactionContext;
+use super::MockTransaction;
 use crate::MockChain;
-use crate::mock_chain::TxContextInput;
+use crate::mock_chain::MockTransactionInput;
 
 // MOCK TRANSACTION BUILDER
 // ================================================================================================
 
-/// A builder for a [`TransactionContext`] that is coupled to a concrete [`MockChain`].
+/// A builder for a [`MockTransaction`] that is coupled to a concrete [`MockChain`].
 ///
 /// It is the public entry point for executing a transaction against a chain and is created through
-/// [`MockChain::build_transaction`]. Contrary to [`MockChain::build_tx_context`], input notes are
-/// not passed up front but added explicitly through [`Self::authenticated_input_note`] and
-/// [`Self::unauthenticated_input_note`]. The transaction inputs are only resolved against the chain
-/// in [`Self::build`], once all input notes are known, by calling
-/// [`MockChain::get_transaction_inputs`].
+/// [`MockChain::build_transaction`]. Input notes are added explicitly through
+/// [`Self::authenticated_input_note`] and [`Self::unauthenticated_input_note`]. The transaction
+/// inputs are only resolved against the chain in [`Self::build`], once all input notes are known,
+/// by calling [`MockChain::get_transaction_inputs`].
 ///
 /// # Examples
 ///
@@ -70,7 +70,7 @@ use crate::mock_chain::TxContextInput;
 #[derive(Clone)]
 pub struct MockTransactionBuilder<'chain> {
     chain: &'chain MockChain,
-    input: TxContextInput,
+    input: MockTransactionInput,
     reference_block: Option<BlockNumber>,
     authenticated_notes: Vec<NoteId>,
     unauthenticated_notes: Vec<Note>,
@@ -92,7 +92,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Creates a new [`MockTransactionBuilder`] against the provided chain.
     ///
     /// Use [`MockChain::build_transaction`] instead of calling this directly.
-    pub(crate) fn new(chain: &'chain MockChain, input: impl Into<TxContextInput>) -> Self {
+    pub(crate) fn new(chain: &'chain MockChain, input: impl Into<MockTransactionInput>) -> Self {
         let input = input.into();
         // Resolve the chain's authenticator for the account up front. The chain is borrowed
         // immutably for the builder's lifetime, so this default cannot change before `build`; an
@@ -208,6 +208,15 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the transaction script, script arguments, and advice map entries required to execute
+    /// the provided [`SendNotesTransactionScript`].
+    pub fn send_notes_script(mut self, script: &SendNotesTransactionScript) -> Self {
+        for (key, value) in script.advice_entries() {
+            self.advice_inputs.map.insert(*key, value.clone());
+        }
+        self.tx_script(script.tx_script().clone()).tx_script_args(script.tx_script_args())
+    }
+
     /// Sets the desired auth arguments.
     pub fn auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
@@ -260,7 +269,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Sets the [`SourceManagerSync`] on the [`TransactionContext`] that will be built.
+    /// Sets the [`SourceManagerSync`] on the [`MockTransaction`] that will be built.
     ///
     /// This source manager should contain the sources of all involved scripts and account code in
     /// order to provide better error messages if an error occurs.
@@ -271,22 +280,22 @@ impl<'chain> MockTransactionBuilder<'chain> {
 
     /// Disables lazy loading.
     ///
-    /// Only affects [`TransactionContext::execute_code`] and causes the host to _not_ handle lazy
+    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
     /// loading events.
     pub fn disable_lazy_loading(mut self) -> Self {
         self.is_lazy_loading_enabled = false;
         self
     }
 
-    /// Builds the [`TransactionContext`].
+    /// Builds the [`MockTransaction`].
     ///
     /// The configured account and input notes are resolved into [`TransactionInputs`] against the
     /// [`Self::reference_block`] (defaulting to the chain's latest block) through
     /// [`MockChain::get_transaction_inputs`], and the remaining configuration is assembled into the
-    /// [`TransactionContext`].
+    /// [`MockTransaction`].
     ///
     /// [`TransactionInputs`]: miden_protocol::transaction::TransactionInputs
-    pub fn build(self) -> anyhow::Result<TransactionContext> {
+    pub fn build(self) -> anyhow::Result<MockTransaction> {
         let account = self.chain.resolve_tx_account(self.input)?;
 
         let mut tx_inputs = match self.reference_block {
@@ -333,7 +342,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         let source_manager =
             self.source_manager.unwrap_or_else(|| Arc::new(DefaultSourceManager::default()));
 
-        Ok(TransactionContext {
+        Ok(MockTransaction {
             account,
             expected_output_notes: self.expected_output_notes,
             foreign_account_inputs: self.foreign_account_inputs,

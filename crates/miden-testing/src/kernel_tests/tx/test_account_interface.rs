@@ -34,7 +34,7 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, TxContextInput};
+use crate::{Auth, MockChain, TestTransactionBuilder};
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
@@ -57,15 +57,15 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .into();
 
     let notes = vec![p2id_note, p2ide_note];
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
-        .extend_input_notes(notes.clone())
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_notes(notes.clone())
         .build()?;
 
-    let target_account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let target_account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -96,13 +96,16 @@ async fn check_note_consumability_custom_notes_success(
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(account, &[], &notes)?.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
 
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -171,15 +174,16 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         failing_note_1.clone(),
         successful_note_3.clone(),
     ];
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
         .build()?;
 
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -243,16 +247,17 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
         .build()?;
 
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -318,15 +323,16 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         failing_note_1.clone(),
         successful_note_3.clone(),
     ];
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
         .build()?;
 
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
@@ -391,16 +397,17 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
 
     let mock_chain = builder.build()?;
     let notes = vec![successful_note.clone()];
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[], &notes)?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes)
         .build()?;
 
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumability_info: NoteConsumptionStatus = notes_checker
@@ -486,22 +493,19 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(
-            TxContextInput::Account(account),
-            &[],
-            &[
-                p2ide_wrong_inputs_number.clone(),
-                p2ide_invalid_target_id.clone(),
-                p2ide_invalid_reclaim.clone(),
-                p2ide_invalid_timelock.clone(),
-            ],
-        )?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([
+            p2ide_wrong_inputs_number.clone(),
+            p2ide_invalid_target_id.clone(),
+            p2ide_invalid_reclaim.clone(),
+            p2ide_invalid_timelock.clone(),
+        ])
         .build()?;
 
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args();
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args();
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -646,14 +650,15 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[p2ide.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(p2ide.id())
         .build()?;
 
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
@@ -738,14 +743,15 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::Account(account), &[p2ide.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(p2ide.id())
         .build()?;
 
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs

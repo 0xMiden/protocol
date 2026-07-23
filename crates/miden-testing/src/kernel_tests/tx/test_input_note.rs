@@ -28,7 +28,7 @@ use rstest::rstest;
 
 use super::{TestSetup, setup_test};
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, TxContextInput, assert_execution_error};
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_execution_error};
 
 /// Check that the initial assets number and assets commitment obtained from the
 /// `input_note::get_initial_assets_info` and `input_note::get_initial_num_assets` procedures are
@@ -253,12 +253,13 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -303,12 +304,13 @@ async fn test_get_sender() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -669,16 +671,14 @@ async fn test_remove_asset_fails(
     // the note is consumed at input index 0: `active_note` targets it directly while `input_note`
     // targets it via that index; both removals must fail identically
 
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into()?,
             [fungible_asset, non_fungible_asset],
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
@@ -699,7 +699,7 @@ async fn test_remove_asset_fails(
             "#,
     );
 
-    let result = tx_context.execute_code(&code).await;
+    let result = mock_tx.execute_code(&code).await;
     assert_execution_error!(result, expected_err);
 
     Ok(())
@@ -712,14 +712,12 @@ async fn test_remove_asset_fails(
 #[case::input_note("push.0 push.1 exec.input_note::get_asset")]
 #[tokio::test]
 async fn test_get_asset_index_out_of_bounds(#[case] get_asset_call: &str) -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note =
             create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // the note has a single asset, so asset index 1 is out of bounds for both APIs (the input note
@@ -742,7 +740,7 @@ async fn test_get_asset_index_out_of_bounds(#[case] get_asset_call: &str) -> any
         "#,
     );
 
-    let result = tx_context.execute_code(&code).await;
+    let result = mock_tx.execute_code(&code).await;
     assert_execution_error!(result, ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS);
 
     Ok(())
@@ -777,20 +775,18 @@ async fn test_remove_asset(
     let remaining_asset =
         Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT - PARTIAL_AMOUNT)?);
 
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into()?,
             [fungible_asset, non_fungible_asset],
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // derive the indices of the assets from the note's asset order
-    let note = tx_context.input_notes().get_note(0).note().clone();
+    let note = mock_tx.input_notes().get_note(0).note().clone();
     let note_assets: Vec<Asset> = note.assets().iter().copied().collect();
     let fungible_index = note_assets
         .iter()
@@ -890,7 +886,7 @@ async fn test_remove_asset(
         ASSETS_COMMITMENT = note.assets().commitment(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
@@ -935,12 +931,13 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -979,12 +976,13 @@ async fn test_get_script_root() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1023,12 +1021,13 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_1_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

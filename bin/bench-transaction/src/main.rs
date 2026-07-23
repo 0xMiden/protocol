@@ -21,13 +21,13 @@ mod cycle_counting_benchmarks;
 use cycle_counting_benchmarks::ExecutionBenchmark;
 use cycle_counting_benchmarks::trace_capture::capture_measurements_and_trace_summary;
 use cycle_counting_benchmarks::utils::{MeasurementsPrinter, write_bench_results_to_json};
-use miden_testing::TransactionContext;
+use miden_testing::MockTransaction;
 
 async fn run_scenario(
     bench: ExecutionBenchmark,
-    context: TransactionContext,
+    mock_tx: MockTransaction,
 ) -> Result<(ExecutionBenchmark, MeasurementsPrinter)> {
-    let (measurements, trace) = capture_measurements_and_trace_summary(context)
+    let (measurements, trace) = capture_measurements_and_trace_summary(mock_tx)
         .await
         .with_context(|| format!("failed to capture measurements for `{bench}`"))?;
     Ok((bench, MeasurementsPrinter::from_parts(measurements, trace)))

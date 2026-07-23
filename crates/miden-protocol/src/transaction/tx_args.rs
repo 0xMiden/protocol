@@ -13,7 +13,7 @@ use miden_processor::LoadedMastForest;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
-use crate::assembly::{Library, Path};
+use crate::assembly::Path;
 use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::package::{loaded_mast_forest, package_debug_info};
@@ -25,7 +25,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceInputs, AdviceMap, Program};
+use crate::vm::{AdviceInputs, AdviceMap};
 use crate::{EMPTY_WORD, MastForest, MastNodeId};
 
 // TRANSACTION ARGUMENTS
@@ -344,13 +344,6 @@ impl TransactionScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [TransactionScript] instantiated with the provided code.
-    // TODO: we can remove this `Program` based constructor once the compiler integrates the
-    // `@transaction_script` attribute (https://github.com/0xMiden/compiler/issues/1190).
-    pub fn new(code: Program) -> Self {
-        Self::from_parts(code.mast_forest().clone(), code.entrypoint())
-    }
-
     /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
     ///
     /// # Panics
@@ -392,7 +385,7 @@ impl TransactionScript {
     /// Returns an error if:
     /// - The library does not contain a procedure with the `@transaction_script` attribute.
     /// - The library contains multiple procedures with the `@transaction_script` attribute.
-    pub fn from_library(library: &Library) -> Result<Self, TransactionScriptError> {
+    pub fn from_library(library: &Package) -> Result<Self, TransactionScriptError> {
         let mut entrypoint = None;
 
         for export in library.manifest.exports() {
@@ -434,7 +427,7 @@ impl TransactionScript {
     /// - The library does not contain a procedure at the specified path.
     /// - The procedure at the specified path does not have the `@transaction_script` attribute.
     pub fn from_library_reference(
-        library: &Library,
+        library: &Package,
         path: &Path,
     ) -> Result<Self, TransactionScriptError> {
         // Find the export matching the path
@@ -566,13 +559,9 @@ mod tests {
         use crate::assembly::Assembler;
 
         let assembler = Assembler::default();
-        let program = assembler
-            .assemble_program("test-transaction-script", "begin nop end")
-            .unwrap()
-            .try_into_program()
-            .unwrap();
-        let script = TransactionScript::new(program);
-
+        let package =
+            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
+        let script = TransactionScript::from_package(&package).unwrap();
         assert!(script.mast().advice_map().is_empty());
 
         // Empty advice map should be a no-op

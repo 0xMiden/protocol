@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -21,13 +21,13 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
-use regex::Regex;
 
 // CONSTANTS
 // ================================================================================================
@@ -36,9 +36,7 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_COMPONENTS_DIR: &str = "components";
-const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
-const ASM_AGGLAYER_CONSTANTS_MASM: &str = "agglayer/common/constants.masm";
 
 /// Name of the manifest file defining a Miden project.
 const PROJECT_MANIFEST: &str = "miden-project.toml";
@@ -95,26 +93,12 @@ fn main() -> Result<()> {
         &target_dir.join(ASM_COMPONENTS_DIR),
         &assembler,
         &mut registry,
-        source_manager.clone(),
-    )?;
-
-    // compile note scripts (each statically links the agglayer library so it is self-contained)
-    compile_note_scripts(
-        &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &assembler,
-        &mut registry,
         source_manager,
     )?;
 
     // generate agglayer specific constants
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
-    let agglayer_constants_masm_path = crate_path.join(ASM_DIR).join(ASM_AGGLAYER_CONSTANTS_MASM);
-    generate_agglayer_constants(
-        constants_out_path,
-        component_packages,
-        &agglayer_constants_masm_path,
-    )?;
+    generate_agglayer_constants(constants_out_path, component_packages)?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
@@ -135,9 +119,9 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // for project dependency resolution to succeed.
     for package in [
         CoreLibrary::default().package(),
-        Arc::new(Package::from(ProtocolLib::default())),
+        ProtocolLib::default().package(),
         TransactionKernel::package(),
-        Arc::new(Package::from(StandardsLib::default())),
+        StandardsLib::default().package(),
     ] {
         registry.cache_package(package).into_diagnostic()?;
     }
@@ -203,117 +187,17 @@ fn compile_account_components(
     Ok(packages)
 }
 
-// COMPILE NOTE SCRIPTS
-// ================================================================================================
-
-/// Assembles each member of the note-scripts workspace in `source_dir` into a self-contained
-/// package and saves it to `target_dir`.
-///
-/// Each note script statically links the agglayer library, so the agglayer procedures it uses are
-/// inlined into the resulting package. This keeps note scripts portable: the standards and protocol
-/// procedures they reference are resolved at execution time from the libraries loaded into the
-/// transaction, but the agglayer-specific code travels with the note.
-///
-/// Each file is named after its package (e.g. `miden-agglayer-claim.masp`), so the include path
-/// used by the note modules in `src/` is the package name.
-fn compile_note_scripts(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<()> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    for note_script in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(note_script.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-    }
-
-    Ok(())
-}
-
 // GENERATE AGGLAYER CONSTANTS
 // ================================================================================================
-
-/// Parses every decimal `u32` constant from `asm/agglayer/common/constants.masm`.
-///
-/// Recognized lines (whitespace-flexible, one definition per line, `#` comments ignored by the
-/// regex):
-///
-/// ```text
-/// const SOME_NAME = 123
-/// ```
-///
-/// Each match is emitted to `agglayer_constants.rs` as `pub const SOME_NAME: u32`.
-/// Duplicate `const` names in the same file are a build error. Non-decimal values (e.g. `word(...)`
-/// or array literals) are not parsed here; add support in this function when needed.
-fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(String, u32)>> {
-    // Read the full `constants.masm` text; parsing is line-based so we need the whole file.
-    let contents = fs::read_to_string(masm_path)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
-
-    // One line per match: optional leading space, optional `pub` visibility, `const`, identifier
-    // (no leading digit), `=`, decimal digits only. `(?m)^` makes `^` match after newlines so we
-    // skip comment-only lines.
-    let re = Regex::new(r"(?m)^\s*(?:pub\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
-        .expect("constants.masm parse regex should compile");
-
-    // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
-    let mut out = Vec::new();
-    let mut seen = HashSet::new();
-
-    for caps in re.captures_iter(&contents) {
-        let name = caps.get(1).expect("group 1").as_str();
-
-        // Require each identifier at most once so generated Rust names are unique.
-        if !seen.insert(name.to_string()) {
-            return Err(Report::msg(format!(
-                "duplicate `const {name}` in {}",
-                masm_path.display()
-            )));
-        }
-
-        // Right-hand side must fit `u32` (same range we emit in Rust).
-        let raw = caps.get(2).expect("group 2").as_str();
-        let value = raw.parse::<u32>().map_err(|_| {
-            Report::msg(format!(
-                "`const {name}` value `{raw}` is not a valid u32 in {}",
-                masm_path.display()
-            ))
-        })?;
-
-        out.push((name.to_string(), value));
-    }
-
-    // Empty match set is almost certainly a misconfigured or mistyped `constants.masm`.
-    if out.is_empty() {
-        return Err(Report::msg(format!(
-            "{} does not contain any constants to parse",
-            masm_path.display()
-        )));
-    }
-
-    Ok(out)
-}
 
 /// Generates a Rust file containing AggLayer specific constants.
 ///
 /// This file contains:
-/// - All the constants listed in the `constants.masm` file.
 /// - AggLayer Bridge code commitment.
 /// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_packages: Vec<Arc<Package>>,
-    constants_masm_path: &Path,
 ) -> Result<()> {
     let mut file_contents = String::new();
 
@@ -330,11 +214,6 @@ fn generate_agglayer_constants(
 "
     )
     .unwrap();
-
-    let masm_constants = parse_numeric_constants_from_constants_masm(constants_masm_path)?;
-    for (name, value) in &masm_constants {
-        writeln!(file_contents, "pub const {name}: u32 = {value};\n").unwrap();
-    }
 
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
@@ -403,6 +282,15 @@ fn generate_agglayer_constants(
 
             components.extend(token_policy_manager);
         }
+
+        // Both the bridge and the faucet install a FeeManager (see `agglayer_fee_manager` in
+        // lib.rs). Only its procedure code affects the commitment, so the fee faucet id configured
+        // on the manager is immaterial here.
+        let fee_manager = FeeManager::builder()
+            .active_fee_policy(ConstantFeePolicy::new().into())
+            .fee_faucet_id(dummy_owner)
+            .build();
+        components.extend(fee_manager);
 
         // use `AccountCode` to merge codes of agglayer and authentication components
         let account_code =

@@ -108,10 +108,10 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     )?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
-        .expect("failed to build tx context")
+        .build_transaction(sender_basic_wallet_account.id())
+        .authenticated_input_note(spawn_note.id())
         .send_notes_script(&send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
+        .expected_output_note(RawOutputNote::Full(p2id_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -188,10 +188,9 @@ async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<(
     )?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_basic_wallet_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(sender_basic_wallet_account.id())
         .send_notes_script(&send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(assetless_note.clone())])
+        .expected_output_notes(vec![RawOutputNote::Full(assetless_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -271,10 +270,9 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     )?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(sender_fungible_faucet_account.id())
         .send_notes_script(&send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])
+        .expected_output_note(RawOutputNote::Full(note.clone()))
         .build()?
         .execute()
         .await?;
@@ -334,9 +332,9 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
     let script = SendNotesTransactionScript::new(&sender_account.code_interface(), &notes)?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])?
+        .build_transaction(sender_account.id())
         .send_notes_script(&script)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(note_a.clone()),
             RawOutputNote::Full(note_b.clone()),
             RawOutputNote::Full(note_c.clone()),
@@ -386,10 +384,10 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
     let tampered_args = Hasher::hash_elements(&payload);
 
     let result = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[])?
+        .build_transaction(faucet_account.id())
         .tx_script(script.tx_script().clone())
         .tx_script_args(tampered_args)
-        .extend_advice_map([(tampered_args, payload)])
+        .extend_advice_map(tampered_args, payload)
         .build()?
         .execute()
         .await;

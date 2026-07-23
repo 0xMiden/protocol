@@ -368,7 +368,8 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     // Add the note to the chain by consuming the SPAWN note. The note will hence be created as
     // part of block 2 and the note inclusion proof references that block.
     let tx = chain
-        .build_tx_context(account0.id(), &[spawn_note.id()], &[])?
+        .build_transaction(account0.id())
+        .authenticated_input_note(spawn_note.id())
         .build()?
         .execute()
         .await?;

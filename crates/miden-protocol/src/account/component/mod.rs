@@ -26,8 +26,8 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 // ACCOUNT COMPONENT
 // ================================================================================================
 
-/// An [`AccountComponent`] defines a [`Library`](crate::assembly::Library) of code and the initial
-/// value and types of the [`StorageSlot`]s it accesses.
+/// An [`AccountComponent`] defines a [`Package`] of code and the initial value and types of the
+/// [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
 /// [`AccountStorage`](crate::account::AccountStorage).
@@ -84,14 +84,12 @@ impl AccountComponent {
     ///
     /// # Arguments
     ///
-    /// * `package` - The package containing the [`Library`](crate::assembly::Library) and account
-    ///   component metadata
+    /// * `package` - The package containing the account component metadata
     /// * `init_storage_data` - The initialization data for storage slots
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain a library artifact
     /// - The package does not contain account component metadata
     /// - The metadata cannot be deserialized from the package
     /// - The storage initialization fails due to invalid or missing data
@@ -122,9 +120,6 @@ impl AccountComponent {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain a library artifact
-    /// - The package does not contain account component metadata
-    /// - The metadata cannot be deserialized from the package
     /// - The storage initialization fails due to invalid or missing data
     /// - The component creation fails
     pub fn from_library(
@@ -277,7 +272,7 @@ mod tests {
             .with_version(Version::new(1, 0, 0));
 
         // Test with empty init data - this tests the complete workflow:
-        // Library + Metadata -> AccountComponent
+        // Package + Metadata -> AccountComponent
         let init_data = InitStorageData::default();
         let component =
             AccountComponent::from_library(&component_code, &metadata, &init_data).unwrap();

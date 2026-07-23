@@ -60,13 +60,13 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let builder = CodeBuilder::with_mock_libraries();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_input_notes(vec![asset_note])
+        .input_note(asset_note)
         .with_source_manager(source_manager)
         .build()?;
-    let account = tx_context.account().clone();
-    let tx = tx_context.execute().await?;
+    let account = mock_tx.account().clone();
+    let tx = mock_tx.execute().await?;
 
     let mut account_vault = account.vault().clone();
     account_vault.add_asset(fungible_asset1.into())?;
@@ -137,14 +137,14 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
         crate::Auth::IncrNonce,
         [fungible_asset1, fungible_asset2].map(Asset::from),
     )?;
-    let tx_context = builder
+    let mock_tx = builder
         .build()?
-        .build_tx_context(account, &[], &[])?
+        .build_transaction(account)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
-    let account = tx_context.account().clone();
-    let tx = tx_context.execute().await?;
+    let account = mock_tx.account().clone();
+    let tx = mock_tx.execute().await?;
 
     let mut account_vault = account.vault().clone();
     account_vault.remove_asset(fungible_asset1.into())?;

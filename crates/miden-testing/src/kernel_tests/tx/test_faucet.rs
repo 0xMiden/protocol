@@ -377,7 +377,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
     let account = Account::mock_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1);
     let asset = FungibleAsset::new(account.id(), 100u64).unwrap().into();
     let note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), [asset]);
-    let tx_context = TestTransactionBuilder::new(account).extend_input_notes(vec![note]).build()?;
+    let tx_context = TestTransactionBuilder::new(account).input_note(note).build()?;
 
     let code = format!(
         r#"

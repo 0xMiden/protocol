@@ -159,7 +159,8 @@ async fn owner_freezes_then_gated_procedure_is_blocked() -> anyhow::Result<()> {
 
     // The owner's own pause call is now blocked because the surface is frozen.
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pause_note.id())
         .build()?
         .execute()
         .await;
@@ -185,7 +186,8 @@ async fn frozen_blocks_authority_gated_metadata_setter() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &freeze_note).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[set_max_supply_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_max_supply_note.id())
         .build()?
         .execute()
         .await;
@@ -207,7 +209,8 @@ async fn non_owner_cannot_freeze() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_freeze_note.id())
         .build()?
         .execute()
         .await;
@@ -284,7 +287,8 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
 
     // A PAUSER does not hold ADMIN, so cannot operate the emergency switch.
     let pauser_freeze_result = mock_chain
-        .build_tx_context(faucet.id(), &[pauser_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pauser_freeze_note.id())
         .build()?
         .execute()
         .await;
@@ -296,7 +300,8 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
 
     // Now even the PAUSER's role-authorized pause is blocked by the frozen flag.
     let pause_after_result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note_after.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pause_note_after.id())
         .build()?
         .execute()
         .await;
@@ -344,7 +349,8 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
     // `freeze` is mapped to FREEZER, so it does not fall back to ADMIN: the seeded admin, holding
     // only ADMIN, cannot freeze.
     let admin_freeze_result = mock_chain
-        .build_tx_context(faucet.id(), &[admin_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(admin_freeze_note.id())
         .build()?
         .execute()
         .await;

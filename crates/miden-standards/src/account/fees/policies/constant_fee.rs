@@ -10,14 +10,13 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
-    AccountId,
     AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, AssetId};
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -39,11 +38,6 @@ procedure_root!(
     ConstantFeePolicy::PROC_NAME,
     ConstantFeePolicy::code()
 );
-
-static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fees::policies::constant_fee::fee_asset_id")
-        .expect("storage slot name should be valid")
-});
 
 static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::fees::policies::constant_fee::fee_schedule")
@@ -70,20 +64,20 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
 /// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
-/// value words): the amount is looked up in the fee schedule under the note's script root, and
-/// note scripts without a schedule entry abort fee estimation. To make a note script free,
-/// schedule an explicit 0 fee for it via [`ConstantFeePolicy::with_fee`].
+/// value words): the amount is looked up in the fee schedule under the note's script root
+/// (recovered from the note's recipient via the advice provider), and note scripts without a
+/// schedule entry abort fee estimation. To make a note script free, schedule an explicit 0 fee
+/// for it via [`ConstantFeePolicy::with_fee`]. The remaining note parameters, including the
+/// timeframe and priority, are ignored by this policy. The fee asset ID is read from the
+/// manager's storage, so the fee is always charged in the asset the manager is configured with
+/// and the policy requires a manager component installed on the same account.
 ///
 /// ## Storage layout
 ///
-/// - [`Self::fee_asset_id_slot_name`] value slot: the [`AssetId`] word of the fungible asset the
-///   fee is charged in.
 /// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]`, where
 ///   the last element is a set-marker distinguishing scheduled entries from unset keys.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConstantFeePolicy {
-    /// The ID of the fungible asset the fee is charged in.
-    fee_asset_id: AssetId,
     /// The fee charged per note script root.
     fee_schedule: BTreeMap<NoteScriptRoot, AssetAmount>,
 }
@@ -106,12 +100,9 @@ impl ConstantFeePolicy {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new `constant_fee` fee policy with an empty fee schedule, charging fees in the
-    /// fungible asset issued by the given faucet.
-    pub fn new(fee_faucet_id: AccountId) -> Self {
-        Self {
-            fee_asset_id: AssetId::new_fungible(fee_faucet_id),
-            fee_schedule: BTreeMap::new(),
-        }
+    /// fungible asset its [`crate::account::fees::FeeManager`] is configured with.
+    pub fn new() -> Self {
+        Self { fee_schedule: BTreeMap::new() }
     }
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
@@ -137,19 +128,9 @@ impl ConstantFeePolicy {
         *CONSTANT_FEE_POLICY_ROOT
     }
 
-    /// Returns the [`StorageSlotName`] of the slot holding the fee asset ID.
-    pub fn fee_asset_id_slot_name() -> &'static StorageSlotName {
-        &FEE_ASSET_ID_SLOT_NAME
-    }
-
     /// Returns the [`StorageSlotName`] of the slot holding the fee schedule map.
     pub fn fee_schedule_slot_name() -> &'static StorageSlotName {
         &FEE_SCHEDULE_SLOT_NAME
-    }
-
-    /// Returns the [`AssetId`] of the fungible asset the fee is charged in.
-    pub fn fee_asset_id(&self) -> AssetId {
-        self.fee_asset_id
     }
 
     /// Returns the fee charged per note script root.
@@ -159,24 +140,14 @@ impl ConstantFeePolicy {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([
-            (
-                Self::fee_asset_id_slot_name().clone(),
-                StorageSlotSchema::value(
-                    "ID of the fungible asset the fee is charged in",
-                    SchemaType::native_word(),
-                ),
+        let storage_schema = StorageSchema::new([(
+            Self::fee_schedule_slot_name().clone(),
+            StorageSlotSchema::map(
+                "Fee charged per note script root",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
             ),
-            (
-                Self::fee_schedule_slot_name().clone(),
-                StorageSlotSchema::map(
-                    "Fee charged per note script root, as [fee_amount, 0, 0, 1] with a set-marker \
-                     as the last element",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-        ])
+        )])
         .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
@@ -187,11 +158,6 @@ impl ConstantFeePolicy {
 
 impl From<ConstantFeePolicy> for AccountComponent {
     fn from(policy: ConstantFeePolicy) -> Self {
-        let fee_asset_id_slot = StorageSlot::with_value(
-            ConstantFeePolicy::fee_asset_id_slot_name().clone(),
-            policy.fee_asset_id.to_word(),
-        );
-
         let entries = policy
             .fee_schedule
             .into_iter()
@@ -205,7 +171,7 @@ impl From<ConstantFeePolicy> for AccountComponent {
 
         AccountComponent::new(
             ConstantFeePolicy::code().clone(),
-            vec![fee_asset_id_slot, fee_schedule_slot],
+            vec![fee_schedule_slot],
             ConstantFeePolicy::component_metadata(),
         )
         .expect(
@@ -219,7 +185,7 @@ impl From<ConstantFeePolicy> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, AccountType, StorageSlotContent};
+    use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
@@ -231,28 +197,26 @@ mod tests {
             .expect("testing account ID should be valid")
     }
 
-    /// Check that the policy's storage slots contain the fee asset ID and the fee schedule
-    /// entries.
+    /// Check that the policy's storage slot contains the fee schedule entries.
     #[test]
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let fee = AssetAmount::new(500)?;
         let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
-        let policy = ConstantFeePolicy::new(fee_faucet_id())
+        let policy = ConstantFeePolicy::new()
             .with_fee(script_root, fee)
             .with_fee(free_script_root, AssetAmount::ZERO);
-        let fee_manager = FeeManager::builder().active_fee_policy(policy.into()).build();
+        let fee_manager = FeeManager::builder()
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(policy.into())
+            .build();
 
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
             .with_auth_component(NoAuth)
             .with_components(fee_manager)
             .build_existing()?;
-
-        let fee_asset_id_word =
-            account.storage().get_item(ConstantFeePolicy::fee_asset_id_slot_name())?;
-        assert_eq!(fee_asset_id_word, AssetId::new_fungible(fee_faucet_id()).to_word());
 
         let slot = account
             .storage()
