@@ -179,7 +179,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Inserts a single key-value pair into the advice inputs map.
     ///
     /// To add multiple entries, call this repeatedly or use [`Self::extend_advice_inputs`].
-    pub fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+    pub fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
         self.advice_inputs.map.insert(key, value);
         self
     }
@@ -326,7 +326,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(tx_inputs.account().code());
         for (account, _) in self.foreign_account_inputs.values() {
-            mast_store.insert(account.code().mast());
+            mast_store.load_account_code(account.code());
         }
 
         let source_manager =

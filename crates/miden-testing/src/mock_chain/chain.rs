@@ -37,8 +37,7 @@ use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializabl
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
-#[allow(deprecated)]
-use crate::{MockChainBuilder, MockTransactionBuilder, TransactionContextBuilder};
+use crate::{MockChainBuilder, MockTransactionBuilder};
 
 // MOCK CHAIN
 // ================================================================================================
@@ -612,53 +611,6 @@ impl MockChain {
     // TRANSACTION APIS
     // ----------------------------------------------------------------------------------------
 
-    /// Initializes a [`TransactionContextBuilder`] for executing against a specific block number.
-    ///
-    /// Depending on the provided `input`, the builder is initialized differently:
-    /// - [`MockTransactionInput::AccountId`]: Initialize the builder with [`TransactionInputs`]
-    ///   fetched from the chain for the public account identified by the ID.
-    /// - [`MockTransactionInput::Account`]: Initialize the builder with [`TransactionInputs`] where
-    ///   the account is passed as-is to the inputs.
-    ///
-    /// In all cases, if the chain contains authenticator for the account, they are added to the
-    /// builder.
-    ///
-    /// [`MockTransactionInput::Account`] can be used to build a chain of transactions against the
-    /// same account that build on top of each other. For example, transaction A modifies an
-    /// account from state 0 to 1, and transaction B modifies it from state 1 to 2.
-    #[deprecated(note = "use `MockChain::build_transaction` instead")]
-    #[allow(deprecated)]
-    pub fn build_tx_context_at(
-        &self,
-        reference_block: impl Into<BlockNumber>,
-        input: impl Into<MockTransactionInput>,
-        note_ids: &[NoteId],
-        unauthenticated_notes: &[Note],
-    ) -> anyhow::Result<TransactionContextBuilder> {
-        let input = input.into();
-        let reference_block = reference_block.into();
-
-        let authenticator = self.account_authenticator(input.id());
-
-        anyhow::ensure!(
-            reference_block.as_usize() < self.blocks.len(),
-            "reference block {reference_block} is out of range (latest {})",
-            self.latest_block_header().block_num()
-        );
-
-        let account = self.resolve_tx_account(input)?;
-
-        let tx_inputs = self
-            .get_transaction_inputs_at(reference_block, &account, note_ids, unauthenticated_notes)
-            .context("failed to gather transaction inputs")?;
-
-        let tx_context_builder = TransactionContextBuilder::new(account)
-            .authenticator(authenticator)
-            .tx_inputs(tx_inputs);
-
-        Ok(tx_context_builder)
-    }
-
     /// Returns a [`MockTransactionBuilder`] for executing a transaction against this chain.
     ///
     /// This is the public entry point for creating and executing transactions against a concrete
@@ -712,22 +664,6 @@ impl MockChain {
         self.account_authenticators
             .get(&account_id)
             .and_then(|authenticator| authenticator.authenticator().cloned())
-    }
-
-    /// Initializes a [`TransactionContextBuilder`] for executing against the last block header.
-    ///
-    /// This is a wrapper around [`Self::build_tx_context_at`] which uses the latest block as the
-    /// reference block. See that function's docs for details.
-    #[deprecated(note = "use `MockChain::build_transaction` instead")]
-    #[allow(deprecated)]
-    pub fn build_tx_context(
-        &self,
-        input: impl Into<MockTransactionInput>,
-        note_ids: &[NoteId],
-        unauthenticated_notes: &[Note],
-    ) -> anyhow::Result<TransactionContextBuilder> {
-        let reference_block = self.latest_block_header().block_num();
-        self.build_tx_context_at(reference_block, input, note_ids, unauthenticated_notes)
     }
 
     // INPUTS APIS

@@ -701,7 +701,7 @@ async fn test_field_setter_owner_succeeds(
     let mock_tx = mock_chain
         .build_transaction(faucet_account.id())
         .unauthenticated_input_note(note)
-        .extend_advice_map(hash, field_advice_map_value(&new_data))
+        .add_advice_map_entry(hash, field_advice_map_value(&new_data))
         .with_source_manager(source_manager)
         .build()?;
 

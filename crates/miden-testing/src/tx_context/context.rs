@@ -45,7 +45,7 @@ use crate::executor::CodeExecutor;
 use crate::mock_host::MockHost;
 use crate::tx_context::ExecError;
 
-// TRANSACTION CONTEXT
+// MOCK TRANSACTION
 // ================================================================================================
 
 /// Represents all needed data for executing a transaction, or arbitrary code.
@@ -80,6 +80,36 @@ impl MockTransaction {
     /// # Panics
     ///
     /// - If the provided `code` is not a valid program.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use anyhow::Result;
+    /// # use miden_protocol::Felt;
+    /// # use miden_testing::{Auth, MockChain};
+    /// #
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() -> Result<()> {
+    /// let mut builder = MockChain::builder();
+    /// let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    /// let mock_chain = builder.build()?;
+    /// let mock_tx = mock_chain.build_transaction(account.id()).build()?;
+    ///
+    /// let code = "
+    /// use miden::tx_kernel_core::prologue
+    ///
+    /// begin
+    ///     exec.prologue::prepare_transaction
+    ///     push.5
+    ///     swap drop
+    /// end
+    /// ";
+    ///
+    /// let exec_output = mock_tx.execute_code(code).await?;
+    /// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::from(5u32));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
         // Fetch all witnesses for note assets.
         let asset_ids = self
@@ -123,7 +153,7 @@ impl MockTransaction {
 
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
-        // TransactionContextBuilder.
+        // MockTransactionBuilder.
         self.mast_store.insert_package(&TransactionKernel::library());
         self.mast_store.insert_package(&program);
 

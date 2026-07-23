@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Removed the deprecated `TransactionContextBuilder` and the `MockChain::build_tx_context` / `build_tx_context_at` methods; use `MockChain::build_transaction` instead ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 
 ## v0.16.0-beta.1 (2026-07-20)

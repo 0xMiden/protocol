@@ -78,7 +78,7 @@ async fn execute_fee_paying_multisig_tx(
     let tx_context_builder = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value);
+        .add_advice_map_entry(args, advice_value);
 
     // execute once without signatures to obtain the transaction summary that must be signed
     let tx_summary = tx_context_builder
@@ -166,7 +166,7 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     let tx_context_builder = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value.clone());
+        .add_advice_map_entry(args, advice_value.clone());
 
     let tx_summary = tx_context_builder
         .clone()
@@ -201,7 +201,7 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     let mut replay_builder = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value);
+        .add_advice_map_entry(args, advice_value);
     for (pub_key_commitment, signature) in &signatures {
         replay_builder = replay_builder.add_signature(*pub_key_commitment, msg, signature.clone());
     }

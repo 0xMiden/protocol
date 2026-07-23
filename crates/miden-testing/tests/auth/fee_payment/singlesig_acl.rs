@@ -57,7 +57,7 @@ async fn singlesig_acl_pays_fee_note_on_signature_path() -> anyhow::Result<()> {
         .build_transaction(account.id())
         .authenticated_input_note(p2id_note.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value)
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;
@@ -127,7 +127,7 @@ async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
         .build_transaction(account.id())
         .tx_script(compile_call_set_item_script()?)
         .auth_args(args)
-        .extend_advice_map(args, advice_value)
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;

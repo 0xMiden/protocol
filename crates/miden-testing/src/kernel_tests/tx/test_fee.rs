@@ -232,7 +232,7 @@ async fn compute_fee_fails_on_exclude_notes_commitment_mismatch() -> anyhow::Res
     let (_, mismatching_elements) = build_exclude_notes_commitment(&[1, 2, 4]);
     let mock_tx = mock_chain
         .build_transaction(account)
-        .extend_advice_map(commitment, mismatching_elements)
+        .add_advice_map_entry(commitment, mismatching_elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), 0, 0);
@@ -268,7 +268,7 @@ async fn compute_fee_fails_on_invalid_exclude_notes(
     let (commitment, elements) = build_exclude_notes_commitment(&exclude_indices);
     let mock_tx = mock_chain
         .build_transaction(account)
-        .extend_advice_map(commitment, elements)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), 0, num_output_notes);
@@ -298,7 +298,7 @@ async fn compute_fee_accepts_sorted_in_bounds_exclude_notes(
     let (commitment, elements) = build_exclude_notes_commitment(&exclude_indices);
     let mock_tx = mock_chain
         .build_transaction(account)
-        .extend_advice_map(commitment, elements)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), u64::from(NUM_EXTRA_CYCLES), 6);

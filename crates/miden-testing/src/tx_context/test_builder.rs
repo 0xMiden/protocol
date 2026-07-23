@@ -98,7 +98,7 @@ impl TestTransactionBuilder {
     /// Inserts a single key-value pair into the advice inputs map.
     ///
     /// To add multiple entries, call this repeatedly.
-    pub(crate) fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+    pub(crate) fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
         self.advice_inputs.map.insert(key, value);
         self
     }

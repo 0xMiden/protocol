@@ -71,7 +71,7 @@ async fn execute_fee_paying_tx(
     let executed_transaction = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value)
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;
@@ -271,7 +271,7 @@ async fn execute_with_conversion_entry(
     let result = mock_chain
         .build_transaction(account.id())
         .auth_args(key)
-        .extend_advice_map(key, value)
+        .add_advice_map_entry(key, value)
         .build()?
         .execute()
         .await;
@@ -446,7 +446,7 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     let result = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map(args, advice_value)
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await;
@@ -565,7 +565,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
         .build_transaction(account.id())
         .tx_script(tx_script)
         .auth_args(args)
-        .extend_advice_map(args, advice_value)
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;
