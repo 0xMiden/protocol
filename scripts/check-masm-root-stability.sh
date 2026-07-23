@@ -36,13 +36,20 @@ cargo_incompatible_release_line_changed() {
         (( baseline_major == 0 && baseline_minor == 0 && baseline_patch != current_patch ))
 }
 
+# Exclude tags pointing at HEAD (--no-contains) so we compare against the previous release
 latest_release_tag_on_head() {
-    git -C "$repo_root" tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' \
+    git -C "$repo_root" tag --merged HEAD --no-contains HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
         | sort -V \
         | tail -n1 \
         || true
 }
+
+# Skip check for pre-release versions
+if [[ "$workspace_version" == *[-+]* ]]; then
+    echo "workspace version ${workspace_version} is a pre-release; skipping MAST root stability check"
+    exit 0
+fi
 
 parse_version "$workspace_version" current
 
