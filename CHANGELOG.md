@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.16.0-beta.2 (TBD)
+
+### Changes
+
+- [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
+
 ## v0.16.0-beta.1 (2026-07-20)
 
 ### Features

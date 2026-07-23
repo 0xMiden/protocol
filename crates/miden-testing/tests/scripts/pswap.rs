@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::slice;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultPatch};
@@ -177,13 +176,14 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
         None
     };
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(expected_output_notes)
+        .expected_output_notes(expected_output_notes)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // The consumer (Bob) provides all his ETH and receives his offered-asset share; for an
     // over-fill (fill >= requested) this is the whole offered side. Covers
@@ -282,11 +282,12 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     // This is the only path for private paybacks (no body on-chain) and works equally for
     // public ones.
 
-    let tx_context = mock_chain
-        .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
+    let mock_tx = mock_chain
+        .build_transaction(alice.id())
+        .unauthenticated_input_note(reconstructed_payback)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify Alice received the filled amount.
     let vault_patch = executed_transaction.account_patch().vault();
@@ -342,16 +343,17 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     let remainder_note =
         Note::from(remainder_pswap.expect("partial fill should produce remainder"));
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(p2id_note.clone()),
             RawOutputNote::Full(remainder_note.clone()),
         ])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 2, "expected P2ID + remainder");
 
@@ -506,8 +508,9 @@ async fn pswap_fill_test(
     }
 
     let mut tx_builder = mock_chain
-        .build_tx_context(consumer_id, &[pswap_note.id()], &[])?
-        .extend_expected_output_notes(expected_notes);
+        .build_transaction(consumer_id)
+        .authenticated_input_note(pswap_note.id())
+        .expected_output_notes(expected_notes);
 
     if !use_network_account {
         let mut note_args_map = BTreeMap::new();
@@ -515,8 +518,8 @@ async fn pswap_fill_test(
         tx_builder = tx_builder.extend_note_args(note_args_map);
     }
 
-    let tx_context = tx_builder.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = tx_builder.build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify output note count
     let output_notes = executed_transaction.output_notes();
@@ -602,16 +605,17 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     let (alice_p2id_note, _) = alice_pswap.execute(charlie.id(), None, Some(eth_25))?;
     let (bob_p2id_note, _) = bob_pswap.execute(charlie.id(), None, Some(usdc_50))?;
 
-    let tx_context = mock_chain
-        .build_tx_context(charlie.id(), &[alice_pswap_note.id(), bob_pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(charlie.id())
+        .authenticated_input_notes([alice_pswap_note.id(), bob_pswap_note.id()])
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(alice_p2id_note),
             RawOutputNote::Full(bob_p2id_note),
         ])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify: 2 P2ID notes, one carrying Alice's requested (25 ETH), one
     // carrying Bob's requested (50 USDC).
@@ -698,16 +702,17 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         bob_pswap.execute(charlie.id(), None, Some(bob_requested))?;
     assert!(bob_remainder.is_none(), "bob pswap is filled completely via note_fill");
 
-    let tx_context = mock_chain
-        .build_tx_context(charlie.id(), &[alice_pswap_note.id(), bob_pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(charlie.id())
+        .authenticated_input_notes([alice_pswap_note.id(), bob_pswap_note.id()])
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(alice_p2id_note),
             RawOutputNote::Full(bob_p2id_note),
         ])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Exactly 2 P2ID output notes, no remainder: Alice's (the full fill in ETH) + Bob's (USDC).
     let output_notes = executed_transaction.output_notes();
@@ -760,9 +765,12 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(alice.id(), &[pswap_note.id()], &[])?.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(pswap_note.id())
+        .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify: 0 output notes, Alice gets 50 USDC back
     let output_notes = executed_transaction.output_notes();
@@ -819,12 +827,13 @@ async fn pswap_note_invalid_input_test(
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(account_fill, note_fill)?);
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
         .extend_note_args(note_args_map)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
@@ -1011,16 +1020,17 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
         pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 25)?), None)?;
 
     // Consume spawn first so the PSWAP-created P2ID gets note_idx == 1.
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[spawn_note.id(), pswap_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_notes([spawn_note.id(), pswap_note.id()])
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(dummy_note.clone()),
             RawOutputNote::Full(expected_p2id),
         ])
         .build()?;
 
-    let executed = tx_context.execute().await?;
+    let executed = mock_tx.execute().await?;
 
     // Exactly 2 output notes: dummy (from spawn) at idx 0, P2ID (from pswap) at idx 1.
     let output_notes = executed.output_notes();
@@ -1102,13 +1112,14 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
         expected_notes.push(RawOutputNote::Full(Note::from(remainder)));
     }
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
-        .extend_expected_output_notes(expected_notes)
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
+        .expected_output_notes(expected_notes)
         .extend_note_args(note_args_map)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     let output_notes = executed_transaction.output_notes();
     let expected_count = if fill_amount < 25 { 2 } else { 1 };
@@ -1181,13 +1192,14 @@ async fn run_partial_fill_ratio_case(
         expected_notes.push(RawOutputNote::Full(remainder));
     }
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
-        .extend_expected_output_notes(expected_notes)
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
+        .expected_output_notes(expected_notes)
         .extend_note_args(note_args_map)
         .build()?;
 
-    let executed_tx = tx_context.execute().await?;
+    let executed_tx = mock_tx.execute().await?;
 
     let output_notes = executed_tx.output_notes();
     let expected_count = if remaining_requested > 0 { 2 } else { 1 };
@@ -1364,13 +1376,14 @@ async fn pswap_chained_partial_fills_test(
             expected_notes.push(RawOutputNote::Full(remainder));
         }
 
-        let tx_context = mock_chain
-            .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
-            .extend_expected_output_notes(expected_notes)
+        let mock_tx = mock_chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(pswap_note.id())
+            .expected_output_notes(expected_notes)
             .extend_note_args(note_args_map)
             .build()?;
 
-        let executed_tx = tx_context.execute().await.map_err(|e| {
+        let executed_tx = mock_tx.execute().await.map_err(|e| {
             anyhow::anyhow!(
                 "fill {} failed: {} (offered={}, requested={}, fill={})",
                 fill_index + 1,
@@ -1659,8 +1672,9 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
         note_args_map.insert(current_pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
         let bob_tx = mock_chain
-            .build_tx_context(bob.id(), &[current_pswap_note.id()], &[])?
-            .extend_expected_output_notes(expected_notes)
+            .build_transaction(bob.id())
+            .authenticated_input_note(current_pswap_note.id())
+            .expected_output_notes(expected_notes)
             .extend_note_args(note_args_map)
             .build()?
             .execute()
@@ -1717,7 +1731,8 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
 
         // --- Alice consumes the reconstructed payback (unauthenticated path) ---
         let alice_tx = mock_chain
-            .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
+            .build_transaction(alice.id())
+            .unauthenticated_input_note(reconstructed_payback)
             .build()?
             .execute()
             .await?;
@@ -1816,17 +1831,18 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
     let remainder_a_note = Note::from(remainder_a.expect("partial fill A produces remainder"));
     let remainder_b_note = Note::from(remainder_b.expect("partial fill B produces remainder"));
 
-    let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[note_a.id(), note_b.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_notes([note_a.id(), note_b.id()])
         .extend_note_args(note_args)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(payback_a.clone()),
             RawOutputNote::Full(remainder_a_note.clone()),
             RawOutputNote::Full(payback_b.clone()),
             RawOutputNote::Full(remainder_b_note.clone()),
         ])
         .build()?;
-    let executed_tx = tx_context.execute().await?;
+    let executed_tx = mock_tx.execute().await?;
 
     let outputs = executed_tx.output_notes();
     assert_eq!(outputs.num_notes(), 4, "expected 2 paybacks + 2 remainders in same tx");

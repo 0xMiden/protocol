@@ -309,7 +309,8 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[set_policy_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager)
         .build()?;
     let executed_transaction = tx_context.execute().await?;
@@ -333,7 +334,7 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(priced_root().as_word())
         .build()?
@@ -399,7 +400,8 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
-        .build_tx_context(account.id(), &[set_policy_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -479,7 +481,8 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
-        .build_tx_context(account.id(), &[set_policy_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -936,7 +939,7 @@ async fn create_sponsorships_funds_note_in_configured_fee_asset() -> anyhow::Res
     } = build_create_test(fee_faucet_id()?)?;
 
     let executed = mock_chain
-        .build_tx_context(sponsor.id(), &[], &[])?
+        .build_transaction(sponsor.id())
         .foreign_accounts([foreign_inputs])
         .tx_script(tx_script)
         .build()?
@@ -965,7 +968,7 @@ async fn create_sponsorships_reject_target_with_different_fee_asset() -> anyhow:
     } = build_create_test(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?)?;
 
     let result = mock_chain
-        .build_tx_context(sponsor.id(), &[], &[])?
+        .build_transaction(sponsor.id())
         .foreign_accounts([foreign_inputs])
         .tx_script(tx_script)
         .build()?

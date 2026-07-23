@@ -1,5 +1,3 @@
-use core::slice;
-
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_protocol::Word;
@@ -90,14 +88,14 @@ async fn test_singlesig_auth_uses_initial_public_key(
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
-    let tx_context = mock_chain
+    let mock_tx = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)
         .authenticator(authenticator)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .expect("singlesig auth should use initial public key, not the rotated one");
@@ -152,13 +150,14 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
-    let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .authenticator(Some(authenticator))
         .tx_script(tx_script)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
 
     match auth_scheme {
         AuthScheme::EcdsaK256Keccak => {

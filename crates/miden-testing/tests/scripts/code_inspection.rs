@@ -54,7 +54,7 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
         .compile_tx_script(tx_script_code)?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(proc_root)
         .build()?

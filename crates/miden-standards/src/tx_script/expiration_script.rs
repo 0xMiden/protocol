@@ -42,7 +42,7 @@ static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
 ///
 /// ```ignore
 /// let script = ExpirationTransactionScript::new(delta);
-/// let context = build_tx_context(/* .. */)
+/// let mock_tx = build_transaction(/* .. */)
 ///     .tx_script(script.into())
 ///     .tx_script_args(script.tx_script_args());
 /// ```

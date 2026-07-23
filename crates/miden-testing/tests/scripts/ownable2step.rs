@@ -170,7 +170,8 @@ async fn test_transfer_ownership_only_owner() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?;
     let result = tx.execute().await;
@@ -200,7 +201,8 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[transfer_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(Arc::clone(&source_manager))
         .build()?;
     let executed = tx.execute().await?;
@@ -221,7 +223,8 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     let accept_note = create_accept_note(new_owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
-        .build_tx_context(updated.clone(), &[], std::slice::from_ref(&accept_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(accept_note)
         .with_source_manager(source_manager)
         .build()?;
     let executed2 = tx2.execute().await?;
@@ -256,7 +259,8 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[transfer_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(Arc::clone(&source_manager))
         .build()?;
     let executed = tx.execute().await?;
@@ -273,7 +277,8 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     let accept_note = create_accept_note(wrong, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
-        .build_tx_context(updated.clone(), &[], std::slice::from_ref(&accept_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(accept_note)
         .with_source_manager(source_manager)
         .build()?;
     let result = tx2.execute().await;
@@ -299,7 +304,8 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[accept_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(accept_note.id())
         .with_source_manager(source_manager)
         .build()?;
     let result = tx.execute().await;
@@ -329,7 +335,8 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[transfer_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(Arc::clone(&source_manager))
         .build()?;
     let executed = tx.execute().await?;
@@ -346,7 +353,8 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     let cancel_note = create_cancel_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
-        .build_tx_context(updated.clone(), &[], std::slice::from_ref(&cancel_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(cancel_note)
         .with_source_manager(source_manager)
         .build()?;
     let executed2 = tx2.execute().await?;
@@ -378,7 +386,8 @@ async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?;
     let executed = tx.execute().await?;
@@ -409,7 +418,8 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[renounce_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(renounce_note.id())
         .with_source_manager(source_manager)
         .build()?;
     let executed = tx.execute().await?;
@@ -445,7 +455,8 @@ async fn test_renounce_ownership_clears_pending_nomination() -> anyhow::Result<(
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[transfer_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(Arc::clone(&source_manager))
         .build()?;
     let executed = tx.execute().await?;
@@ -462,7 +473,8 @@ async fn test_renounce_ownership_clears_pending_nomination() -> anyhow::Result<(
     let renounce_note = create_renounce_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
-        .build_tx_context(updated.clone(), &[], std::slice::from_ref(&renounce_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(renounce_note)
         .with_source_manager(source_manager)
         .build()?;
     let executed2 = tx2.execute().await?;
@@ -518,7 +530,8 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
     mock_chain.prove_next_block()?;
 
     let tx = mock_chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?;
     let result = tx.execute().await;

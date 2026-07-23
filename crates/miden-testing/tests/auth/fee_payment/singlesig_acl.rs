@@ -54,9 +54,10 @@ async fn singlesig_acl_pays_fee_note_on_signature_path() -> anyhow::Result<()> {
     );
 
     let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(p2id_note.id())
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .extend_advice_map(args, advice_value)
         .build()?
         .execute()
         .await?;
@@ -123,10 +124,10 @@ async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
     // no authenticator is registered, so a successful execution proves the exempt (no-signature)
     // branch ran
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(compile_call_set_item_script()?)
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .extend_advice_map(args, advice_value)
         .build()?
         .execute()
         .await?;

@@ -214,12 +214,13 @@ async fn test_guarded_multisig_signature_required(
     let mut mock_chain = mock_chain_builder.build().unwrap();
 
     let salt = Word::from([Felt::new_unchecked(777); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
         .auth_args(salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -237,7 +238,7 @@ async fn test_guarded_multisig_signature_required(
         .await?;
 
     // Missing guardian signature must fail.
-    let without_guardian_result = tx_context_builder
+    let without_guardian_result = mock_tx_builder
         .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
@@ -254,7 +255,7 @@ async fn test_guarded_multisig_signature_required(
         .await?;
 
     // With guardian signature the transaction should succeed.
-    let tx_context_execute = tx_context_builder
+    let mock_tx_execute = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
@@ -262,9 +263,9 @@ async fn test_guarded_multisig_signature_required(
         .execute()
         .await?;
 
-    multisig_account.apply_patch(tx_context_execute.account_patch())?;
+    multisig_account.apply_patch(mock_tx_execute.account_patch())?;
 
-    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
+    mock_chain.add_pending_executed_transaction(&mock_tx_execute)?;
     mock_chain.prove_next_block()?;
 
     assert_eq!(
@@ -335,12 +336,12 @@ async fn test_guarded_multisig_update_guardian_public_key(
         ))?;
 
     let update_salt = Word::from([Felt::new_unchecked(991); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)
         .auth_args(update_salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -358,7 +359,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .await?;
 
     // Guardian key rotation intentionally skips guardian signature for this update tx.
-    let update_guardian_tx = tx_context_builder
+    let update_guardian_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), update_msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), update_msg, sig_2)
         .build()?
@@ -386,15 +387,16 @@ async fn test_guarded_multisig_update_guardian_public_key(
     // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
     // this same transaction.
     let next_salt = Word::from([Felt::new_unchecked(992); 4]);
-    let tx_context_builder_next = mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[], &[])?
-        .auth_args(next_salt);
+    let mock_tx_builder_next =
+        mock_chain.build_transaction(updated_multisig_account.id()).auth_args(next_salt);
 
-    let tx_summary_next =
-        match tx_context_builder_next.clone().build()?.execute().await.unwrap_err() {
-            TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => anyhow::bail!("expected abort with tx effects: {error}"),
-        };
+    let tx_summary_next = mock_tx_builder_next
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
     let next_msg = tx_summary_next.as_ref().to_commitment();
     let tx_summary_next_signing = SigningInputs::TransactionSummary(tx_summary_next);
 
@@ -412,7 +414,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .await?;
 
     // Old guardian signature must fail after key update.
-    let with_old_guardian_result = tx_context_builder_next
+    let with_old_guardian_result = mock_tx_builder_next
         .clone()
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2.clone())
@@ -426,7 +428,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     ));
 
     // New guardian signature must pass.
-    tx_context_builder_next
+    mock_tx_builder_next
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1)
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2)
         .add_signature(new_guardian_public_key.to_commitment(), next_msg, new_guardian_sig_next)
@@ -508,12 +510,13 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let mock_chain = mock_chain_builder.build().unwrap();
 
     let salt = Word::from([Felt::new_unchecked(993); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(receive_asset_note.id())
         .tx_script(update_guardian_script)
         .auth_args(salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -530,7 +533,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let without_guardian_result = tx_context_builder
+    let without_guardian_result = mock_tx_builder
         .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
@@ -546,7 +549,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(old_guardian_public_key.to_commitment(), &tx_summary_signing)
         .await?;
 
-    let with_guardian_result = tx_context_builder
+    let with_guardian_result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(old_guardian_public_key.to_commitment(), msg, old_guardian_signature)
@@ -604,14 +607,14 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(994); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_output_script)
         .add_note_script(note_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .expected_output_note(RawOutputNote::Full(output_note))
         .auth_args(salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -628,7 +631,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let result = tx_context_builder
+    let result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?
@@ -676,12 +679,12 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(995); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_receive_script)
         .auth_args(salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -698,7 +701,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let result = tx_context_builder
+    let result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?
@@ -810,15 +813,15 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let salt = Word::from([Felt::new_unchecked(995); 4]);
 
     // Dry-run to obtain the tx summary the signers must sign.
-    let mut tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &input_ids, &[])?
+    let mut mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_notes(input_ids)
         .tx_script(update_guardian_script)
         .auth_args(salt);
     if let Some(out) = output_note {
-        tx_context_builder =
-            tx_context_builder.extend_expected_output_notes(vec![RawOutputNote::Full(out)]);
+        mock_tx_builder = mock_tx_builder.expected_output_note(RawOutputNote::Full(out));
     }
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -838,7 +841,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .get_signature(old_guardian_public_key.to_commitment(), &signing)
         .await?;
 
-    let result = tx_context_builder
+    let result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(old_guardian_public_key.to_commitment(), msg, guardian_sig)

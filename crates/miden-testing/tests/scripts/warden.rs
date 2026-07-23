@@ -145,7 +145,8 @@ async fn non_owner_cannot_set_warden() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_note.id())
         .build()?
         .execute()
         .await;
