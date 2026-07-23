@@ -381,14 +381,17 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // ├──────────────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
 // 0              4        8        12           16           20         24            28          32
 //
-// ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
-// │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
-// │ LENGTH  │ ASSETS │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
-// ┼─────────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 36        40       44      48              44 + 8n  48 + 8n
+// ┬─────────┬────────┬─────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ STORAGE │  NUM   │ NOTE ID │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ LENGTH  │ ASSETS │         │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼─────────┼────────┼─────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 36        40       44        48      52              48 + 8n  52 + 8n
 //
 // - NUM_STORAGE_ITEMS is encoded as [num_storage_items, 0, 0, 0].
 // - NUM_ASSETS is encoded as [num_assets, 0, 0, 0].
+// - NOTE ID is the ID of the note, computed and cached by the transaction prologue. It is derived
+//   from commitments written once during the prologue and stays valid for the whole transaction;
+//   in particular, asset removals only mutate the assets region and do not invalidate it.
 // - STORAGE_COMMITMENT is the key to look up note storage in the advice map.
 // - ASSETS_COMMITMENT is the key to look up note assets in the advice map.
 //
@@ -423,7 +426,8 @@ pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 28;
 pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 32;
 pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 36;
 pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 40;
-pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
+pub const INPUT_NOTE_ID_OFFSET: MemoryOffset = 44;
+pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 
 #[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]

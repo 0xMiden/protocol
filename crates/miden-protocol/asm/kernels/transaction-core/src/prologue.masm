@@ -805,8 +805,8 @@ end
 #! memory address.
 #!
 #! This procedure also computes the note's nullifier and ID. Stores the note's nullifier, metadata,
-#! args, assets, and note details commitment to memory, and returns the hasher state in the stack so
-#! that the input notes commitment can be extracted.
+#! args, assets, note details commitment, and note ID to memory, and returns the hasher state in the
+#! stack so that the input notes commitment can be extracted.
 #!
 #! Inputs:
 #!   Operand stack: [idx, CAPACITY]
@@ -891,16 +891,23 @@ proc process_input_note
     dup.4 exec.compute_input_note_details_commitment
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # save note details commitment to memory
-    movup.8 exec.memory::set_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
+    # save note details commitment to memory, keeping a copy of note_ptr for the note ID caching
+    dup.8 exec.memory::set_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # note authentication
+    # note id
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
     exec.poseidon2::merge
+    # => [NOTE_ID, note_ptr, NULLIFIER, CAPACITY]
+
+    # cache the note ID in the note's data segment
+    movup.4 exec.memory::set_input_note_id
     # => [NOTE_ID, NULLIFIER, CAPACITY]
+
+    # note authentication
+    # ---------------------------------------------------------------------------------------------
 
     adv_push
     # => [is_authenticated, NOTE_ID, NULLIFIER, CAPACITY]

@@ -2,6 +2,10 @@
 
 ## v0.16.0-beta.2 (TBD)
 
+### Features
+
+- [BREAKING] Cached each input note's `NoteId` in the transaction prologue at the new `INPUT_NOTE_ID_OFFSET` (44) of the note's kernel memory data segment, shifting `INPUT_NOTE_ASSETS_OFFSET` from 44 to 48 ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
+
 ### Changes
 
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).

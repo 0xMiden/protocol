@@ -264,7 +264,8 @@ const INPUT_NOTE_RECIPIENT_OFFSET = 28
 const INPUT_NOTE_ARGS_OFFSET = 32
 const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET = 36
 const INPUT_NOTE_NUM_ASSETS_OFFSET = 40
-const INPUT_NOTE_ASSETS_OFFSET = 44
+const INPUT_NOTE_ID_OFFSET = 44
+const INPUT_NOTE_ASSETS_OFFSET = 48
 
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
@@ -1468,6 +1469,19 @@ end
 #! - note_ptr is the memory address at which the input note data segment begins.
 #! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
 pub proc set_input_note_details_commitment
+    mem_storew_le
+end
+
+#! Sets the note ID of the input note.
+#!
+#! Inputs:  [note_ptr, NOTE_ID]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the input note data segment begins.
+#! - NOTE_ID is the ID of the input note.
+pub proc set_input_note_id
+    add.INPUT_NOTE_ID_OFFSET
     mem_storew_le
 end
 
