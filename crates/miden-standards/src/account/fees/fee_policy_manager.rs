@@ -23,17 +23,17 @@ use super::policies::FeePolicy;
 // ================================================================================================
 
 static ACTIVE_FEE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fees::fee_manager::active_fee_policy_proc_root")
+    StorageSlotName::new("miden::standards::auth::network_account::active_fee_policy_proc_root")
         .expect("storage slot name should be valid")
 });
 
 static ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fees::fee_manager::allowed_fee_policy_proc_roots")
+    StorageSlotName::new("miden::standards::auth::network_account::allowed_fee_policy_proc_roots")
         .expect("storage slot name should be valid")
 });
 
 static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fees::fee_manager::fee_asset_id")
+    StorageSlotName::new("miden::standards::auth::network_account::fee_asset_id")
         .expect("storage slot name should be valid")
 });
 

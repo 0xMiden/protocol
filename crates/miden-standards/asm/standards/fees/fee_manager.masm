@@ -28,13 +28,13 @@ use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::
 # =================================================================================================
 
 # Active fee policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::fees::fee_manager::active_fee_policy_proc_root")
+const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::auth::network_account::active_fee_policy_proc_root")
 
 # Allowlist map slot for fee policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
-const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_manager::allowed_fee_policy_proc_roots")
+const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::auth::network_account::allowed_fee_policy_proc_roots")
 
 # Slot holding the ID of the asset fees are charged in. Layout: [FEE_ASSET_ID]
-const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
+const FEE_ASSET_ID_SLOT = word("miden::standards::auth::network_account::fee_asset_id")
 
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR = 0
