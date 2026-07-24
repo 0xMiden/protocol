@@ -35,7 +35,7 @@ use rstest::rstest;
 use crate::scripts::fee_manager::{
     FEE_AMOUNT,
     build_fee_account_with_switching,
-    create_set_fee_policy_note_script,
+    create_fee_manager_note_script,
     custom_fee_amount_for,
     custom_fee_policy,
     estimate_note_fee_tx_script_code,
@@ -296,7 +296,7 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     let account = build_fee_account_with_switching(owner_account_id)?;
 
     let set_policy_note_script =
-        create_set_fee_policy_note_script(custom_fee_policy()?.root().as_word());
+        create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -387,7 +387,8 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
 
     // This root exists in the account code, but is not in the fee policy allowlist.
     let invalid_policy_root = AuthNetworkAccount::get_fee_policy_root().as_word();
-    let set_policy_note_script = create_set_fee_policy_note_script(invalid_policy_root);
+    let set_policy_note_script =
+        create_fee_manager_note_script("set_fee_policy", invalid_policy_root);
     let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -468,7 +469,7 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
     let account = build_fee_account_with_switching(owner_account_id)?;
 
     let set_policy_note_script =
-        create_set_fee_policy_note_script(custom_fee_policy()?.root().as_word());
+        create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
     let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
     let set_policy_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)

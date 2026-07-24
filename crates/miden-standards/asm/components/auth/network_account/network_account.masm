@@ -19,6 +19,8 @@ pub use {estimate_note_fee} from miden::standards::fees::fee_manager
 pub use {get_fee_asset_id} from miden::standards::fees::fee_manager
 pub use {get_fee_policy} from miden::standards::fees::fee_manager
 pub use {set_fee_policy} from miden::standards::fees::fee_manager
+pub use {add_allowed_fee_policy} from miden::standards::fees::fee_manager
+pub use {remove_allowed_fee_policy} from miden::standards::fees::fee_manager
 
 # Estimated upper bound on the number of cycles this auth procedure spends after pay_fee
 # returns: the account commitment comparison and the nonce increment.

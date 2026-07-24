@@ -84,6 +84,20 @@ procedure_root!(
     AuthNetworkAccount::code()
 );
 
+procedure_root!(
+    FEE_MANAGER_ADD_ALLOWED_FEE_POLICY,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::ADD_ALLOWED_FEE_POLICY_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
+procedure_root!(
+    FEE_MANAGER_REMOVE_ALLOWED_FEE_POLICY,
+    AuthNetworkAccount::NAME,
+    AuthNetworkAccount::REMOVE_ALLOWED_FEE_POLICY_PROC_NAME,
+    AuthNetworkAccount::code()
+);
+
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
 
@@ -167,6 +181,8 @@ impl AuthNetworkAccount {
     const SET_FEE_POLICY_PROC_NAME: &'static str = "set_fee_policy";
     const GET_FEE_POLICY_PROC_NAME: &'static str = "get_fee_policy";
     const GET_FEE_ASSET_ID_PROC_NAME: &'static str = "get_fee_asset_id";
+    const ADD_ALLOWED_FEE_POLICY_PROC_NAME: &'static str = "add_allowed_fee_policy";
+    const REMOVE_ALLOWED_FEE_POLICY_PROC_NAME: &'static str = "remove_allowed_fee_policy";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -280,6 +296,16 @@ impl AuthNetworkAccount {
     /// Returns the procedure root of the `get_fee_asset_id` procedure exposed by this component.
     pub fn get_fee_asset_id_root() -> AccountProcedureRoot {
         *NETWORK_ACCOUNT_GET_FEE_ASSET_ID
+    }
+
+    /// Returns the procedure root of the `add_allowed_fee_policy` account procedure.
+    pub fn add_allowed_fee_policy_root() -> AccountProcedureRoot {
+        *FEE_MANAGER_ADD_ALLOWED_FEE_POLICY
+    }
+
+    /// Returns the procedure root of the `remove_allowed_fee_policy` account procedure.
+    pub fn remove_allowed_fee_policy_root() -> AccountProcedureRoot {
+        *FEE_MANAGER_REMOVE_ALLOWED_FEE_POLICY
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
