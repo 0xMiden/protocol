@@ -61,16 +61,17 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 
 /// The `constant_fee` fee policy account component.
 ///
-/// Pair with a [`crate::account::fees::FeeManager`] whose allowed fee-policies map includes
-/// [`ConstantFeePolicy::root`]. When active, the manager's `estimate_note_fee` dispatches to this
+/// Register with a [`crate::account::fees::FeePolicyManager`], whose allowed fee-policies map then
+/// includes [`ConstantFeePolicy::root`]. When active, `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
 /// value words): the amount is looked up in the fee schedule under the note's script root
 /// (recovered from the note's recipient via the advice provider), and note scripts without a
 /// schedule entry abort fee estimation. To make a note script free, schedule an explicit 0 fee
 /// for it via [`ConstantFeePolicy::with_fee`]. The remaining note parameters, including the
 /// timeframe and priority, are ignored by this policy. The fee asset ID is read from the
-/// manager's storage, so the fee is always charged in the asset the manager is configured with
-/// and the policy requires a manager component installed on the same account.
+/// fee-policy storage, so the fee is always charged in the configured asset and the policy
+/// requires an [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] component on the
+/// same account.
 ///
 /// ## Storage layout
 ///
@@ -100,7 +101,7 @@ impl ConstantFeePolicy {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new `constant_fee` fee policy with an empty fee schedule, charging fees in the
-    /// fungible asset its [`crate::account::fees::FeeManager`] is configured with.
+    /// fungible asset its [`crate::account::fees::FeePolicyManager`] is configured with.
     pub fn new() -> Self {
         Self { fee_schedule: BTreeMap::new() }
     }
@@ -185,17 +186,9 @@ impl From<ConstantFeePolicy> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageSlotContent};
-    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use miden_protocol::account::StorageSlotContent;
 
     use super::*;
-    use crate::account::auth::NoAuth;
-    use crate::account::fees::FeeManager;
-
-    fn fee_faucet_id() -> AccountId {
-        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .expect("testing account ID should be valid")
-    }
 
     /// Check that the policy's storage slot contains the fee schedule entries.
     #[test]
@@ -207,21 +200,14 @@ mod tests {
         let policy = ConstantFeePolicy::new()
             .with_fee(script_root, fee)
             .with_fee(free_script_root, AssetAmount::ZERO);
-        let fee_manager = FeeManager::builder()
-            .fee_faucet_id(fee_faucet_id())
-            .active_fee_policy(policy.into())
-            .build();
 
-        let account = AccountBuilder::new([1; 32])
-            .account_type(AccountType::Public)
-            .with_auth_component(NoAuth)
-            .with_components(fee_manager)
-            .build_existing()?;
-
-        let slot = account
-            .storage()
-            .get(ConstantFeePolicy::fee_schedule_slot_name())
+        let component = AccountComponent::from(policy);
+        let slot = component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == ConstantFeePolicy::fee_schedule_slot_name())
             .expect("fee schedule slot should exist");
+
         let StorageSlotContent::Map(map) = slot.content() else {
             panic!("fee schedule slot must be a map");
         };

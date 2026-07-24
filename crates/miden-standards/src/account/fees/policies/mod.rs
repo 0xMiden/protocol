@@ -1,4 +1,4 @@
-//! Fee policy components and the fee policy descriptor used by [`super::FeeManager`].
+//! Fee policy components and the fee policy descriptor used by [`super::FeePolicyManager`].
 
 use alloc::vec::Vec;
 
@@ -24,13 +24,13 @@ pub enum FeePolicyError {
 // FEE POLICY
 // ================================================================================================
 
-/// Descriptor for a fee policy registered with a [`super::FeeManager`].
+/// Descriptor for a fee policy registered with a [`super::FeePolicyManager`].
 ///
 /// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
 /// Construct from a concrete policy (e.g. via `From<ConstantFeePolicy>`) or via
-/// [`Self::custom`]. Pass to the [`super::FeeManager`] builder via `active_fee_policy` or
+/// [`Self::custom`]. Pass to the [`super::FeePolicyManager`] builder via `active_fee_policy` or
 /// `allowed_fee_policy`.
 #[derive(Debug, Clone)]
 pub struct FeePolicy {

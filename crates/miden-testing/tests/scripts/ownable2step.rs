@@ -28,7 +28,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 pub(super) fn create_ownable_account(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(Ownable2Step::new(owner))
         .build_existing()?;
     Ok(account)

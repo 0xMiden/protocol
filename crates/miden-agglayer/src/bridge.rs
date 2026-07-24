@@ -19,7 +19,7 @@ use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
-use super::agglayer_bridge_component_library;
+use super::agglayer_bridge_component_package;
 use crate::utils::Keccak256Output;
 
 /// Removed-GER hash chain representation (32-byte Keccak256 hash)
@@ -137,7 +137,7 @@ static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
 /// The assembled bridge account component code, used to resolve the roots of the bridge's
 /// role-gated procedures.
 static BRIDGE_COMPONENT_CODE: LazyLock<AccountComponentCode> =
-    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_library()));
+    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_package()));
 
 procedure_root!(
     REGISTER_FAUCET_ROOT,
@@ -226,7 +226,7 @@ impl BridgeRoles {
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
 /// It reexports the procedures from `agglayer::bridge`. When linking against this
-/// component, the `agglayer` library must be available to the assembler.
+/// component, the `agglayer` package must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `deregister_faucet`, which clears a previously-registered faucet from both the faucet registry
@@ -284,7 +284,7 @@ impl AggLayerBridge {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Namespace of the assembled bridge account component library (the
+    /// Namespace of the assembled bridge account component package (the
     /// `asm/components/bridge/bridge.masm` wrapper). Procedure roots are resolved as
     /// `<namespace>::<proc_name>`.
     const COMPONENT_NAMESPACE: &'static str = "agglayer::components::bridge";
@@ -794,10 +794,10 @@ pub enum AgglayerBridgeError {
 
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_bridge_component_library();
+    let package = agglayer_bridge_component_package();
     let metadata = AccountComponentMetadata::new("agglayer::bridge")
         .with_description("Bridge component for AggLayer");
 
-    AccountComponent::new(library, storage_slots, metadata)
+    AccountComponent::new(package, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
 }

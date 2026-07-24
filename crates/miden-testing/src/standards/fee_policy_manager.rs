@@ -24,7 +24,7 @@ use crate::{Auth, TestTransactionBuilder};
 #[tokio::test]
 async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-    let tx_context = TestTransactionBuilder::new(account).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).build()?;
 
     let script_root = Word::from([11u32, 12, 13, 14]);
     let serial_num = Word::from([21u32, 22, 23, 24]);
@@ -67,7 +67,7 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
         tag = 0,
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), script_root, "recovered script root should match");
     // With zero storage items the storage commitment is the empty word.

@@ -168,9 +168,11 @@ pub enum NetworkAccountNoteAllowlistError {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::{AccountBuilder, StorageSlotContent};
+    use miden_protocol::asset::FungibleAsset;
 
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
+    use crate::account::fees::FeePolicyManager;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -232,9 +234,12 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b, root_c]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(original_roots.clone())
-                    .expect("non-empty allowlist should construct"),
+            .with_components(
+                AuthNetworkAccount::new(
+                    original_roots.clone(),
+                    FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+                )
+                .expect("non-empty allowlist should construct"),
             )
             .with_component(BasicWallet)
             .build()

@@ -33,9 +33,8 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_PRIV
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
-use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
@@ -55,7 +54,14 @@ use miden_standards::errors::standards::{
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
+use miden_standards::note::{
+    BurnNote,
+    MintNote,
+    MintNoteStorage,
+    NetworkAccountConfigNote,
+    P2idNote,
+    StandardNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -2406,17 +2412,19 @@ fn build_network_faucet_with_blocklist_transfer(
         .build();
 
     let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
-    let auth = AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())?;
 
     // the network-account auth procedure collects sponsored fees, which needs an active fee policy;
     // a constant policy aborts fee estimation for note scripts without a schedule entry, so
     // schedule an explicit 0 fee for every allowlisted note to keep this a no-op on this fee-free
     // chain
     let mut constant_fee_policy = ConstantFeePolicy::new();
-    for note_script in auth.allowed_notes().allowed_script_roots() {
+    for note_script in &allowed_script_roots {
         constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
-    let fee_manager = FeeManager::builder()
+    // `with_allowed_notes` always allowlists the config note, priced by the auth flow if consumed.
+    constant_fee_policy =
+        constant_fee_policy.with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    let fee_policy_manager = FeePolicyManager::builder()
         .active_fee_policy(constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build();
@@ -2428,13 +2436,13 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(Authority::OwnerControlled)
         .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused())
-        .with_components(fee_manager);
+        .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(
         Auth::NetworkAccount {
             allowed_script_roots,
             allowed_tx_script_roots: BTreeSet::new(),
+            fee_policy_manager,
         },
         account_builder,
         AccountState::Exists,

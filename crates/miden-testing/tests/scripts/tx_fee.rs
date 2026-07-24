@@ -126,13 +126,13 @@ async fn test_tx_fee_create_output_note_constructor() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    let tx_context = mock_chain
+    let mock_tx = mock_chain
         .build_transaction(sender_account.id())
         .expected_output_note(RawOutputNote::Full(expected_output_note))
         .tx_script(tx_script)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify that one note was created
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);

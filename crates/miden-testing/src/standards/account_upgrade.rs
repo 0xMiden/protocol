@@ -1,5 +1,6 @@
 use miden_processor::Word;
 use miden_protocol::account::{AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
@@ -9,6 +10,7 @@ use miden_protocol::transaction::memory::{
 };
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -32,9 +34,12 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
     // A network-style account: OwnerControlled authority (via Ownable2Step) + the UpgradeManager
     // procedure, plus the network-account auth component (unused by `execute_code`, but
     // representative).
+    // The auth component owns fee-policy storage that must be initialized from a fee policy
+    // manager; this test exercises `execute_code`, not the fee flow, so a mock manager suffices.
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(AuthNetworkAccount::with_allowed_notes(
+        .with_components(AuthNetworkAccount::new(
             [placeholder_script_root()].into_iter().collect(),
+            FeePolicyManager::mock(FungibleAsset::mock_issuer()),
         )?)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
@@ -44,7 +49,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
     // An active note whose sender is the owner, so the authority check in `upgrade` passes.
     let input_note = build_note(owner)?;
 
-    let tx_context = TestTransactionBuilder::new(account).input_notes(vec![input_note]).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).input_notes(vec![input_note]).build()?;
 
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
@@ -78,7 +83,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
         storage_upgrade_commitment = &storage_upgrade_commitment,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),

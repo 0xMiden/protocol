@@ -22,7 +22,7 @@ use miden_agglayer::{
     RemoveGerNote,
     SmtNode,
     UpdateGerNote,
-    agglayer_library,
+    agglayer_package,
     create_existing_agglayer_faucet,
     create_existing_agglayer_faucet_with_callbacks,
 };
@@ -199,7 +199,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .into_account_id();
 
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account.clone())?;
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
@@ -505,7 +505,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
-    let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    let dest = Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(dest)?;
 
     let sender_account_builder =
@@ -1180,7 +1180,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account.clone())?;
 
     // Sender of the CLAIM note (any wallet — just a note creator).
@@ -1461,7 +1461,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account)?;
 
     let claim_sender = {
@@ -1631,7 +1631,7 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
         let tx_script = CodeBuilder::new()
-            .with_statically_linked_library(&agglayer_library())?
+            .with_statically_linked_package(&agglayer_package())?
             .compile_tx_script(source)?;
 
         mock_chain

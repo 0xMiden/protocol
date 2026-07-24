@@ -34,10 +34,10 @@ fn setup_singlesig_with_mock_component(
     let mock_component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
-    let (auth_component, authenticator) = Auth::BasicAuth { auth_scheme }.build_component();
+    let (auth_components, authenticator) = Auth::BasicAuth { auth_scheme }.build_components();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_components)
         .with_component(mock_component)
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -87,7 +87,7 @@ async fn test_singlesig_auth_uses_initial_public_key(
         "#,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
     let mock_tx = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)
@@ -149,7 +149,7 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         new_pub_key = pub_key_b_commitment,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
     let mock_tx = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)

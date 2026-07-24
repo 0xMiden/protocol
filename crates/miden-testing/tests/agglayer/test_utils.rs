@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_agglayer::agglayer_library;
+use miden_agglayer::agglayer_package;
 pub use miden_agglayer::testing::{
     ClaimDataSource,
     LEAF_VALUE_VECTORS_JSON,
@@ -62,8 +62,8 @@ pub async fn execute_program_with_default_host(
 ) -> Result<ExecutionOutput, ExecutionError> {
     let mut host = DefaultHost::default();
 
-    let test_lib = TransactionKernel::library();
-    host.load_library(test_lib.mast_forest()).unwrap();
+    let kernel_core_package = TransactionKernel::core_package();
+    host.load_library(kernel_core_package.mast_forest()).unwrap();
 
     let std_lib = CoreLibrary::default();
     host.load_library(std_lib.mast_forest()).unwrap();
@@ -75,8 +75,8 @@ pub async fn execute_program_with_default_host(
     let protocol_lib = ProtocolLib::default();
     host.load_library(protocol_lib.mast_forest()).unwrap();
 
-    let agglayer_lib = agglayer_library();
-    host.load_library(agglayer_lib.mast_forest()).unwrap();
+    let agglayer_package = agglayer_package();
+    host.load_library(agglayer_package.mast_forest()).unwrap();
 
     let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = advice_inputs.unwrap_or_default();
@@ -89,12 +89,12 @@ pub async fn execute_program_with_default_host(
 
 /// Execute a MASM script with the default host
 pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
 
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
         .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_package(Arc::new(agglayer_lib), Linkage::Dynamic)
+        .with_package(Arc::new(agglayer_package), Linkage::Dynamic)
         .unwrap()
         .assemble_program("agglayer-test-script", script_code)
         .unwrap()

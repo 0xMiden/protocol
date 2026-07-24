@@ -724,11 +724,11 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("library does not contain a procedure with @note_script attribute")]
+    #[error("package does not contain a procedure with @note_script attribute")]
     NoteScriptNoProcedureWithAttribute,
-    #[error("library contains multiple procedures with @note_script attribute")]
+    #[error("package contains multiple procedures with @note_script attribute")]
     NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in library")]
+    #[error("procedure at path '{0}' not found in package")]
     NoteScriptProcedureNotFound(Box<str>),
     #[error("procedure at path '{0}' does not have @note_script attribute")]
     NoteScriptProcedureMissingAttribute(Box<str>),
@@ -877,11 +877,11 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
-    #[error("library does not contain a procedure with @transaction_script attribute")]
+    #[error("package does not contain a procedure with @transaction_script attribute")]
     NoProcedureWithAttribute,
-    #[error("library contains multiple procedures with @transaction_script attribute")]
+    #[error("package contains multiple procedures with @transaction_script attribute")]
     MultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in library")]
+    #[error("procedure at path '{0}' not found in package")]
     ProcedureNotFound(Box<str>),
     #[error("procedure at path '{0}' does not have @transaction_script attribute")]
     ProcedureMissingAttribute(Box<str>),
