@@ -107,7 +107,7 @@ impl AccountCode {
         })
     }
 
-    /// Creates a new [`AccountCode`] from the provided components' libraries.
+    /// Creates a new [`AccountCode`] from the provided components' packages.
     ///
     /// For testing use only.
     #[cfg(any(feature = "testing", test))]
@@ -115,7 +115,7 @@ impl AccountCode {
         Self::from_components_unchecked(components)
     }
 
-    /// Creates a new [`AccountCode`] from the provided components' libraries.
+    /// Creates a new [`AccountCode`] from the provided components' packages.
     ///
     /// # Warning
     ///
@@ -124,14 +124,14 @@ impl AccountCode {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of procedures in all merged libraries is 0 or exceeds
+    /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - The first component doesn't contain exactly one authentication procedure.
     /// - Other components contain authentication procedures.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of a component or of all
     ///   components exceeds 255.
-    /// - [`MastForest::merge`] fails on all libraries.
+    /// - [`MastForest::merge`] fails on all packages.
     pub(super) fn from_components_unchecked(
         components: &[AccountComponent],
     ) -> Result<Self, AccountError> {
@@ -483,7 +483,7 @@ mod tests {
     use crate::account::{AccountComponent, AccountProcedureRoot};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     #[test]
@@ -510,10 +510,10 @@ mod tests {
 
     #[test]
     fn test_account_code_no_auth_component() {
-        let library =
-            assemble_test_library("test-account-code-no-auth", "test::account_code", CODE);
+        let package =
+            assemble_test_package("test-account-code-no-auth", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::no_auth");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let err = AccountCode::from_components(&[component]).unwrap_err();
 
@@ -522,10 +522,10 @@ mod tests {
 
     #[test]
     fn test_account_code_preserves_component_debug_info() {
-        let library =
-            assemble_test_library("test-account-code-debug-info", "test::account_code", CODE);
+        let package =
+            assemble_test_package("test-account-code-debug-info", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::debug_info");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let code = AccountCode::from_components(&[NoopAuthComponent.into(), component]).unwrap();
 
@@ -555,13 +555,13 @@ mod tests {
             end
         ";
 
-        let library = assemble_test_library(
+        let package = assemble_test_package(
             "test-account-code-multiple-auth",
             "test::account_code_multiple_auth",
             code_with_multiple_auth,
         );
         let metadata = AccountComponentMetadata::new("test::multiple_auth");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let err = AccountCode::from_components(&[component]).unwrap_err();
 

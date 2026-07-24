@@ -85,7 +85,7 @@ fn main() -> Result<()> {
     let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
     // compile agglayer library (includes note scripts) and seed it into the registry
-    compile_agglayer_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
+    compile_agglayer_package(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
 
     // compile account components (thin wrappers per component) and return their packages
     let component_packages = compile_account_components(
@@ -134,7 +134,7 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
 
 /// Assembles the agglayer library project in "{source_dir}/agglayer" into a package, saves it to
 /// the `target_dir`, and seeds it into the `registry` so the account components can resolve it.
-fn compile_agglayer_lib(
+fn compile_agglayer_package(
     source_dir: &Path,
     target_dir: &Path,
     assembler: Assembler,

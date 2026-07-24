@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
-use core::slice;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
@@ -117,7 +116,8 @@ async fn execute_note_and_apply(
     note: &Note,
 ) -> anyhow::Result<Account> {
     let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(note))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note.clone())
         .build()?;
     let executed = tx.execute().await?;
 
@@ -380,7 +380,8 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
 
     let non_admin_grant_note = build_note(outsider, grant_pauser_to_member.clone())?;
     let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&non_admin_grant_note))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(non_admin_grant_note)
         .build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
@@ -395,7 +396,8 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
 
     let bad_revoke_note = build_note(admin, revoke_role_script(&pauser, member))?;
     let tx = mock_chain
-        .build_tx_context(renounced, &[], slice::from_ref(&bad_revoke_note))?
+        .build_transaction(renounced)
+        .unauthenticated_input_note(bad_revoke_note)
         .build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NOT_IN_ROLE);
@@ -521,7 +523,8 @@ async fn test_rbac_non_admin_cannot_revoke_role() -> anyhow::Result<()> {
 
     let revoke_note = build_note(outsider, revoke_role_script(&minter, member))?;
     let tx = mock_chain
-        .build_tx_context(granted, &[], slice::from_ref(&revoke_note))?
+        .build_transaction(granted)
+        .unauthenticated_input_note(revoke_note)
         .build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
@@ -540,7 +543,8 @@ async fn test_rbac_non_member_cannot_renounce_role() -> anyhow::Result<()> {
 
     let renounce_note = build_note(outsider, renounce_role_script(&pauser))?;
     let tx = mock_chain
-        .build_tx_context(account, &[], slice::from_ref(&renounce_note))?
+        .build_transaction(account)
+        .unauthenticated_input_note(renounce_note)
         .build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NOT_IN_ROLE);
@@ -671,7 +675,7 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
 
     // USER is undelegated, so its effective admin is ADMIN. The outsider is not an ADMIN member.
     let note = build_note(outsider, set_role_admin_script(&user_role, Some(&manager_role)))?;
-    let tx = mock_chain.build_tx_context(account, &[], slice::from_ref(&note))?.build()?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
 
@@ -687,7 +691,7 @@ async fn test_rbac_set_role_admin_rejects_zero_role_symbol() -> anyhow::Result<(
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
     let note = build_note(admin, set_role_admin_raw_script(Felt::ZERO, Felt::from(&manager_role)))?;
-    let tx = mock_chain.build_tx_context(account, &[], slice::from_ref(&note))?.build()?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_ROLE_SYMBOL_ZERO);
 
@@ -785,7 +789,8 @@ async fn test_rbac_delegation_locks_out_admin(
     // The ADMIN member (admin) can no longer perform it — MINTER is out of ADMIN's reach.
     let admin_note = build_note(admin, action_script.clone())?;
     let result = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&admin_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(admin_note)
         .build()?
         .execute()
         .await;
@@ -831,7 +836,8 @@ async fn test_rbac_admin_membership_can_be_handed_off() -> anyhow::Result<()> {
     // The former ADMIN can no longer administer roles.
     let admin_grant_note = build_note(admin, grant_role_script(&pauser, member))?;
     let result = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&admin_grant_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(admin_grant_note)
         .build()?
         .execute()
         .await;
@@ -902,7 +908,8 @@ async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
     // ADMIN is now unmanageable: granting an ADMIN-administered role fails for everyone.
     let orphan_grant_note = build_note(admin2, grant_role_script(&pauser, orphan))?;
     let result = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&orphan_grant_note))?
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(orphan_grant_note)
         .build()?
         .execute()
         .await;

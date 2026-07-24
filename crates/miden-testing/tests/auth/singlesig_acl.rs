@@ -1,4 +1,3 @@
-use core::slice;
 use std::collections::BTreeSet;
 
 use assert_matches::assert_matches;
@@ -69,7 +68,8 @@ async fn test_acl_non_exempt_procedures_require_auth(
 
     // Test 1: non-exempt `get_item` WITH authenticator (should succeed).
     let executed_tx_get_item_with_auth = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note.clone())
         .authenticator(authenticator.clone())
         .tx_script(tx_script_get_item.clone())
         .build()?
@@ -79,7 +79,8 @@ async fn test_acl_non_exempt_procedures_require_auth(
 
     // Test 2: non-exempt `set_item` WITH authenticator (should succeed).
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note.clone())
         .authenticator(authenticator)
         .tx_script(tx_script_set_item)
         .build()?
@@ -88,7 +89,8 @@ async fn test_acl_non_exempt_procedures_require_auth(
 
     // Test 3: non-exempt `get_item` WITHOUT authenticator (should fail).
     let result_no_auth = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(None)
         .tx_script(tx_script_get_item)
         .build()?
@@ -114,7 +116,8 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
         setup_acl_test(BTreeSet::from([get_item]), auth_scheme);
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(None)
         .tx_script(compile_call_get_item_script()?)
         .build()?
@@ -138,7 +141,8 @@ async fn test_acl_empty_exempt_list_default_denies_unsigned(
         setup_acl_test(BTreeSet::new(), auth_scheme);
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(None)
         .tx_script(compile_call_get_item_script()?)
         .build()?
@@ -191,11 +195,12 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
     );
 
     let tx_script_mixed_compiled =
-        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_mixed)?;
+        CodeBuilder::with_mock_packages().compile_tx_script(tx_script_mixed)?;
 
     // Without auth: must fail because `set_item` is not exempt.
     let result_no_auth = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note.clone())
         .authenticator(None)
         .tx_script(tx_script_mixed_compiled.clone())
         .build()?
@@ -205,7 +210,8 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
 
     // With auth: must succeed.
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(authenticator)
         .tx_script(tx_script_mixed_compiled)
         .build()?
@@ -255,9 +261,10 @@ async fn test_acl_auth_uses_initial_public_key(
     );
 
     let executed_tx = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(authenticator)
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await?;
@@ -310,9 +317,10 @@ async fn test_acl_auth_rejects_rotated_key_signature(
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(Some(authenticator))
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await;
@@ -397,7 +405,8 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(faucet_account.id(), &[burn_note.id()], &[])?
+        .build_transaction(faucet_account.id())
+        .authenticated_input_note(burn_note.id())
         .authenticator(None)
         .build()?
         .execute()
@@ -470,7 +479,8 @@ async fn test_acl_non_binary_exempt_marker_requires_auth_instead_of_bricking(
     // exempt", so authentication is required. Without an authenticator this surfaces as
     // MissingAuthenticator - not a mid-execution assertion abort from the marker check.
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&input_note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(input_note)
         .authenticator(None)
         .tx_script(compile_call_get_item_script()?)
         .build()?
@@ -572,7 +582,7 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }
 
 /// Compiles the canonical "call `mock::account::set_item` on `MOCK_VALUE_SLOT0` with a fixed
@@ -594,5 +604,5 @@ pub(super) fn compile_call_set_item_script() -> anyhow::Result<TransactionScript
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }

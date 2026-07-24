@@ -302,8 +302,8 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     // Execute the account-creating transaction.
     // --------------------------------------------------------------------------------------------
 
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
-    let tx = tx_context.execute().await.context("failed to execute account creating tx")?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+    let tx = mock_tx.execute().await.context("failed to execute account creating tx")?;
     let tx = LocalTransactionProver::default().prove_dummy(tx)?;
 
     let batch = mock_chain.create_batch(vec![tx])?;

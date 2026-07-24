@@ -65,11 +65,11 @@ fn create_multisig_smart_account(
     Ok(multisig_account)
 }
 
-/// Compiles a transaction script that links against the multisig smart library so it can `call.`
+/// Compiles a transaction script that links against the multisig smart package so it can `call.`
 /// the wrapper-exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisigSmart::code())?
+        .with_dynamically_linked_package(AuthMultisigSmart::code())?
         .compile_tx_script(script.as_ref())?)
 }
 
@@ -106,11 +106,12 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let mut mock_chain = mock_chain_builder.build()?;
 
     let salt = Word::from([Felt::new_unchecked(1); 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
         .auth_args(salt);
 
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -124,7 +125,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let tx_result = tx_context_builder
+    let tx_result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, one_signature)
         .build()?
         .execute()
@@ -179,7 +180,8 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
     let mock_chain = mock_chain_builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
         .auth_args(Word::from([Felt::new_unchecked(2); 4]))
         .build()?
         .execute()
@@ -255,8 +257,8 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .build_transaction(multisig_account.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
         .tx_script(send_note_script)
         .auth_args(Word::from([Felt::new_unchecked(2); 4]))
         .build()?
@@ -328,15 +330,15 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
-    let tx_context_builder = mock_chain
-        .build_tx_context(account_id, &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(account_id)
         .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
         .auth_args(salt);
 
     // Dry-run to obtain the tx summary that the current approvers must sign.
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -353,7 +355,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .get_signature(public_keys[1].to_commitment(), &signing_inputs)
         .await?;
 
-    let executed_tx = tx_context_builder
+    let executed_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -630,13 +632,14 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     let salt = Word::from([Felt::new_unchecked(42); 4]);
 
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
         .tx_script(set_policy_script)
         .auth_args(salt);
 
     // Dry-run to capture the tx summary.
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -658,7 +661,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 
     // With only 1 signature (matching the low receive_asset policy), the tx must fail because
     // the unpolicied set_procedure_policy call contributes `default_threshold = 3`.
-    let one_sig_result = tx_context_builder
+    let one_sig_result = mock_tx_builder
         .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .build()?
@@ -667,7 +670,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     one_sig_result.unwrap_err().unwrap_unauthorized_err();
 
     // With all 3 signatures the unpolicied default contribution is met and the tx succeeds.
-    let three_sig_result = tx_context_builder
+    let three_sig_result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)

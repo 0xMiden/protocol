@@ -352,9 +352,10 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     // tx1: A consumes the spawn note, creating the P2ID network note and sponsoring it
     let foreign_b = mock_chain.get_foreign_account_inputs(network_b.id())?;
     let spawn_tx = mock_chain
-        .build_tx_context(network_a.id(), &[spawn_note.id()], &[])?
+        .build_transaction(network_a.id())
+        .authenticated_input_note(spawn_note.id())
         .foreign_accounts([foreign_b])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(spawned_note.clone())])
+        .expected_output_notes(vec![RawOutputNote::Full(spawned_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -378,7 +379,8 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
 
     // tx2: B consumes the spawned feature note and its sponsorship, collecting the prepaid fee
     let collect_tx = mock_chain
-        .build_tx_context(network_b.id(), &[spawned_note.id(), sponsorship_id], &[])?
+        .build_transaction(network_b.id())
+        .authenticated_input_notes([spawned_note.id(), sponsorship_id])
         .build()?
         .execute()
         .await?;

@@ -15,11 +15,11 @@ use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{Auth, TestTransactionBuilder, TransactionContext};
+use crate::{Auth, MockTransaction, TestTransactionBuilder};
 
 /// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
 /// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
-fn two_note_tx() -> anyhow::Result<TransactionContext> {
+fn two_note_tx() -> anyhow::Result<MockTransaction> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
@@ -38,7 +38,7 @@ fn two_note_tx() -> anyhow::Result<TransactionContext> {
         .build()?;
 
     TestTransactionBuilder::new(account)
-        .extend_input_notes(vec![bare_note, rich_note])
+        .input_notes(vec![bare_note, rich_note])
         .build()
 }
 

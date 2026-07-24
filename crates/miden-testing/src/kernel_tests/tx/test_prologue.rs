@@ -86,11 +86,11 @@ use miden_tx::TransactionExecutorError;
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, TransactionContext, assert_execution_error};
+use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_transaction_prologue() -> anyhow::Result<()> {
-    let mut tx_context = {
+    let mut mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note_1 = create_public_p2any_note(
@@ -106,7 +106,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             [FungibleAsset::mock(111)],
         );
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2, input_note_3])
+            .input_notes(vec![input_note_1, input_note_2, input_note_3])
             .build()?
     };
 
@@ -129,28 +129,28 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
 
     // Input note 2 does not have any note args.
     let note_args_map = BTreeMap::from([
-        (tx_context.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
-        (tx_context.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
+        (mock_tx.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
+        (mock_tx.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
     ]);
 
-    let tx_args = TransactionArgs::new(tx_context.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().clone().map)
         .with_tx_script(tx_script)
         .with_note_args(note_args_map.clone());
 
-    tx_context.set_tx_args(tx_args);
-    let exec_output = &tx_context.execute_code(code).await?;
+    mock_tx.set_tx_args(tx_args);
+    let exec_output = &mock_tx.execute_code(code).await?;
 
-    global_input_memory_assertions(exec_output, &tx_context);
-    block_data_memory_assertions(exec_output, &tx_context);
-    partial_blockchain_memory_assertions(exec_output, &tx_context);
+    global_input_memory_assertions(exec_output, &mock_tx);
+    block_data_memory_assertions(exec_output, &mock_tx);
+    partial_blockchain_memory_assertions(exec_output, &mock_tx);
     kernel_data_memory_assertions(exec_output);
-    account_data_memory_assertions(exec_output, &tx_context);
-    input_notes_memory_assertions(exec_output, &tx_context, &note_args_map);
+    account_data_memory_assertions(exec_output, &mock_tx);
+    input_notes_memory_assertions(exec_output, &mock_tx, &note_args_map);
 
     Ok(())
 }
 
-fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -205,7 +205,7 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 }
 
-fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -305,7 +305,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
 fn partial_blockchain_memory_assertions(
     exec_output: &ExecutionOutput,
-    prepared_tx: &TransactionContext,
+    prepared_tx: &MockTransaction,
 ) {
     // update the partial blockchain to point to the block against which this transaction is being
     // executed
@@ -351,7 +351,7 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     }
 }
 
-fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     let header = AccountHeader::from(inputs.account());
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
@@ -423,7 +423,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 
 fn input_notes_memory_assertions(
     exec_output: &ExecutionOutput,
-    inputs: &TransactionContext,
+    inputs: &MockTransaction,
     note_args: &BTreeMap<NoteId, Word>,
 ) {
     assert_eq!(
@@ -529,7 +529,7 @@ fn input_notes_memory_assertions(
 // ================================================================================================
 
 /// Tests that a simple account can be created in a complete transaction execution (not using
-/// [`TransactionContext::execute_code`]).
+/// [`MockTransaction::execute_code`]).
 #[tokio::test]
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])
@@ -610,10 +610,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
-    let tx_context = mock_chain
-        .build_tx_context(account, &[], &[])?
-        .extend_advice_inputs(adv_inputs)
-        .build()?;
+    let mock_tx = mock_chain.build_transaction(account).extend_advice_inputs(adv_inputs).build()?;
 
     let code = "
       use miden::tx_kernel_core::prologue
@@ -623,7 +620,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
       end
       ";
 
-    let result = tx_context.execute_code(code).await;
+    let result = mock_tx.execute_code(code).await;
 
     assert_execution_error!(result, ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH);
 
@@ -632,7 +629,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_version() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
     use miden::tx_kernel_core::memory
     use miden::tx_kernel_core::prologue
@@ -646,11 +643,11 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        Felt::from(tx_context.tx_inputs().block_header().version())
+        Felt::from(mock_tx.tx_inputs().block_header().version())
     );
 
     Ok(())
@@ -658,7 +655,7 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_timestamp() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
     use miden::tx_kernel_core::memory
     use miden::tx_kernel_core::prologue
@@ -672,11 +669,11 @@ async fn test_get_blk_timestamp() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        Felt::from(tx_context.tx_inputs().block_header().timestamp())
+        Felt::from(mock_tx.tx_inputs().block_header().timestamp())
     );
 
     Ok(())

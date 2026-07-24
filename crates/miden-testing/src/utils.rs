@@ -193,7 +193,7 @@ pub fn create_p2any_note(
         .note_type(note_type)
         .serial_number(serial_number)
         .code(code)
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()
         .expect("generated note script should compile")
 }
@@ -230,7 +230,7 @@ where
     let note = NoteBuilder::new(sender_id, SmallRng::from_rng(&mut rand::rng()))
         .code(note_code)
         .advice_map(advice_map)
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()?;
 
     Ok(note)

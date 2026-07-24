@@ -17,7 +17,7 @@ use miden_standards::account::policies::TokenPolicyManager;
 use miden_standards::note::{BurnNote, MintNote};
 use thiserror::Error;
 
-use super::agglayer_faucet_component_library;
+use super::agglayer_faucet_component_package;
 pub use crate::{
     AggLayerBridge,
     B2AggNote,
@@ -47,7 +47,7 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
-/// It re-exports `mint_and_send` and `receive_and_burn` from the agglayer faucet library.
+/// It re-exports `mint_and_send` and `receive_and_burn` from the agglayer faucet package.
 /// Conversion metadata (origin address, origin network, scale, metadata hash) is held by the
 /// bridge, not the faucet — see
 /// [`AggLayerBridge`] and the `faucet_metadata_map` populated on registration.
@@ -305,11 +305,11 @@ pub enum AgglayerFaucetError {
 
 /// Creates an Agglayer Faucet component with the specified storage slots.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_faucet_component_library();
+    let package = agglayer_faucet_component_package();
     let metadata = AccountComponentMetadata::new("agglayer::faucet")
         .with_description("AggLayer faucet component");
 
-    AccountComponent::new(library, storage_slots, metadata).expect(
+    AccountComponent::new(package, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
     )
 }
