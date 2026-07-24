@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use std::collections::BTreeSet;
 
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
@@ -12,7 +13,7 @@ use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::{ConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
@@ -20,10 +21,12 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_POLICY_ROOT_IS_ACTIVE,
     ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
+    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
     ERR_SENDER_NOT_OWNER,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
+use miden_standards::note::{FeePolicyManagerConfig, FeePolicyManagerConfigNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -828,6 +831,238 @@ async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_IS_ACTIVE);
+
+    Ok(())
+}
+
+// FEE POLICY MANAGER CONFIG NOTE
+// ================================================================================================
+
+/// Builds a standardized `FeePolicyManagerConfigNote` triggering `action` on `account`, sent by
+/// `sender` and seeded from `serial_seed`.
+fn build_config_note(
+    sender: AccountId,
+    account: AccountId,
+    action: FeePolicyManagerConfig,
+    serial_seed: u32,
+) -> anyhow::Result<Note> {
+    let note = FeePolicyManagerConfigNote::builder()
+        .sender(sender)
+        .account(account)
+        .action(action)
+        .serial_number(Word::from([serial_seed, 0, 0, 0]))
+        .build()?;
+    Ok(Note::from(note))
+}
+
+/// The standardized `FeePolicyManagerConfigNote` drives `add_allowed_fee_policy`: after the owner
+/// consumes an `AddAllowedFeePolicy` note, `set_fee_policy` accepts the newly allowed root.
+#[tokio::test]
+async fn config_note_adds_allowed_fee_policy_root() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let account = build_fee_account_with_switching(owner_account_id)?;
+
+    // A procedure of the account that is not in the initial fee policy allowlist.
+    let new_root = AuthNetworkAccount::get_fee_policy_root();
+
+    let add_note = build_config_note(
+        owner_account_id,
+        account.id(),
+        FeePolicyManagerConfig::AddAllowedFeePolicy { policy_root: new_root },
+        800,
+    )?;
+    let set_note = build_sender_note(
+        owner_account_id,
+        801,
+        &create_fee_manager_note_script("set_fee_policy", new_root.as_word()),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Register the new root via the config note; the mutation takes effect from the next block.
+    consume_note(&mut mock_chain, account.id(), &add_note).await?;
+
+    // With the root now allowed, `set_fee_policy` accepts it.
+    consume_note(&mut mock_chain, account.id(), &set_note).await?;
+
+    Ok(())
+}
+
+/// The standardized `FeePolicyManagerConfigNote` drives `remove_allowed_fee_policy`: after the
+/// owner consumes a `RemoveAllowedFeePolicy` note, `set_fee_policy` rejects the removed root.
+#[tokio::test]
+async fn config_note_removes_allowed_fee_policy_root() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let account = build_fee_account_with_switching(owner_account_id)?;
+
+    // The custom policy root is registered in the allowlist at deployment by `fee_policy_manager`.
+    let allowed_root = custom_fee_policy()?.root();
+
+    let remove_note = build_config_note(
+        owner_account_id,
+        account.id(),
+        FeePolicyManagerConfig::RemoveAllowedFeePolicy { policy_root: allowed_root },
+        810,
+    )?;
+    let set_note = build_sender_note(
+        owner_account_id,
+        811,
+        &create_fee_manager_note_script("set_fee_policy", allowed_root.as_word()),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Remove the root via the config note; the mutation takes effect from the next block.
+    consume_note(&mut mock_chain, account.id(), &remove_note).await?;
+
+    // With the root no longer allowed, `set_fee_policy` rejects switching back to it.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_NOT_ALLOWED);
+
+    Ok(())
+}
+
+// FEE POLICY MANAGER CONFIG NOTE — AUTH NETWORK ACCOUNT
+// ================================================================================================
+
+/// A zero-fee `FeePolicyManager` scheduling every root in `scheduled_roots` at a 0 fee. A network
+/// account prices each note it consumes through its active fee policy, and a constant policy aborts
+/// fee estimation for note scripts without a schedule entry, so every consumable note root must be
+/// scheduled.
+fn zero_fee_policy_manager(
+    scheduled_roots: impl IntoIterator<Item = NoteScriptRoot>,
+) -> anyhow::Result<FeePolicyManager> {
+    let mut policy = ConstantFeePolicy::new();
+    for root in scheduled_roots {
+        policy = policy.with_fee(root, AssetAmount::ZERO);
+    }
+    Ok(FeePolicyManager::builder()
+        .fee_faucet_id(fee_faucet_id()?)
+        .active_fee_policy(policy.into())
+        .build())
+}
+
+/// Builds an `AuthNetworkAccount` carrying the fee policy manager, gated by `owner` via
+/// `AccessControl::Ownable2Step`. `allowed_note_roots` are added to the note-script allowlist (the
+/// component also auto-allowlists its own config-note root); every allowlisted root plus
+/// `fee_scheduled_roots` is scheduled at a 0 fee so those notes can be consumed.
+fn build_network_fee_account(
+    owner: AccountId,
+    allowed_note_roots: Vec<NoteScriptRoot>,
+    fee_scheduled_roots: Vec<NoteScriptRoot>,
+) -> anyhow::Result<Account> {
+    let note_roots: BTreeSet<NoteScriptRoot> = allowed_note_roots.into_iter().collect();
+    let scheduled: Vec<NoteScriptRoot> =
+        note_roots.iter().copied().chain(fee_scheduled_roots).collect();
+    let manager = zero_fee_policy_manager(scheduled)?;
+    let auth_component = AuthNetworkAccount::new(note_roots, manager)?;
+
+    Ok(AccountBuilder::new([7; 32])
+        .with_components(auth_component)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?)
+}
+
+/// An `AuthNetworkAccount` whose note-script allowlist includes the `FeePolicyManagerConfig` note
+/// root consumes an `AddAllowedFeePolicy` config note end-to-end: allowlist check, fee pricing, and
+/// the owner-authorized `add_allowed_fee_policy` call all pass.
+#[tokio::test]
+async fn network_account_consumes_add_fee_policy_config_note() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let new_root = AuthNetworkAccount::get_fee_policy_root();
+
+    let account = build_network_fee_account(
+        owner_account_id,
+        vec![FeePolicyManagerConfigNote::script_root()],
+        vec![],
+    )?;
+
+    let add_note = build_config_note(
+        owner_account_id,
+        account.id(),
+        FeePolicyManagerConfig::AddAllowedFeePolicy { policy_root: new_root },
+        830,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    consume_note(&mut mock_chain, account.id(), &add_note).await?;
+
+    Ok(())
+}
+
+/// An `AuthNetworkAccount` whose note-script allowlist does NOT include the
+/// `FeePolicyManagerConfig` note root rejects the config note at the allowlist check, even when its
+/// sender is the owner. The config note root is fee-scheduled here so the allowlist check - not fee
+/// estimation - is what rejects it.
+#[tokio::test]
+async fn network_account_rejects_config_note_when_not_allowlisted() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let new_root = AuthNetworkAccount::get_fee_policy_root();
+
+    // Allowlist an unrelated placeholder root, not the config note root.
+    let placeholder = NoteScriptRoot::from_array([1, 0, 0, 0]);
+    let account = build_network_fee_account(
+        owner_account_id,
+        vec![placeholder],
+        vec![FeePolicyManagerConfigNote::script_root()],
+    )?;
+
+    let add_note = build_config_note(
+        owner_account_id,
+        account.id(),
+        FeePolicyManagerConfig::AddAllowedFeePolicy { policy_root: new_root },
+        840,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(add_note.id())
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
 
     Ok(())
 }
