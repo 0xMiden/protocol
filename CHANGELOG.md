@@ -1,10 +1,10 @@
 # Changelog
 
-## v0.16.0-alpha.5 (TBD)
+## v0.16.0-alpha.5 (2026-07-24)
 
 ### Changes
 
-- [BREAKING] Made the AggLayer bridge's network ID a deployment setting: the ID is stored in the `agglayer::bridge::network_id` storage slot (written once at account creation and read at runtime via `bridge_config::load_network_id`) instead of being compiled in as the `MIDEN_NETWORK_ID` MASM constant, so all deployments share one bridge code commitment; `create_bridge_account` now takes a `network_id` argument ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
+- [BREAKING] Made the AggLayer bridge's network ID a deployment setting ([#3386](https://github.com/0xMiden/protocol/pull/3386)).
 
 ## v0.16.0-alpha.4 (2026-07-16)
 
