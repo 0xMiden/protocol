@@ -34,7 +34,7 @@ const NETWORK_ACCOUNT_CONFIG_SCRIPT_PATH: &str =
 static NETWORK_ACCOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(NETWORK_ACCOUNT_CONFIG_SCRIPT_PATH);
-    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+    NoteScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains NETWORK_ACCOUNT_CONFIG note script procedure")
 });
 

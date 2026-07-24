@@ -157,7 +157,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
     );
 
     let mock_tx_builder = TestTransactionBuilder::new(account);
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
     let mock_tx = mock_tx_builder.tx_script(tx_script).build()?;
 
     mock_tx
@@ -489,7 +489,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 async fn test_get_map_item() -> anyhow::Result<()> {
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
@@ -617,7 +617,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
                 call.account::get_item
             end
             "#;
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = chain
         .build_transaction(account_empty_storage)
@@ -754,7 +754,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
@@ -830,7 +830,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
@@ -1019,7 +1019,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([6; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             slot0.clone(),
             slot1.clone(),
@@ -1241,7 +1241,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_existing_source)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1292,7 +1292,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(add_new_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_new_source)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1388,7 +1388,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1481,7 +1481,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FINAL_ASSET = final_asset.to_value_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
     mock_chain
         .build_transaction(account.id())
@@ -1501,8 +1501,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
-    let account_code =
-        AccountCode::from_components(&[Auth::IncrNonce.into(), mock_component.into()]).unwrap();
+    let components: Vec<AccountComponent> =
+        Auth::IncrNonce.into_iter().chain([mock_component.into()]).collect();
+    let account_code = AccountCode::from_components(&components).unwrap();
 
     let tc_0 = *account_code.procedures()[1].mast_root();
     let tc_1 = *account_code.procedures()[2].mast_root();
@@ -1558,7 +1559,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
@@ -1603,7 +1604,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     );
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_code)?;
 
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
@@ -1616,15 +1617,15 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an account can call code in a custom library when loading that library into the
+/// Tests that an account can call code in a custom package when loading that package into the
 /// executor.
 ///
 /// The call chain and dependency graph in this test is:
-/// `tx script -> account code -> external library`
+/// `tx script -> account code -> external package`
 #[tokio::test]
-async fn transaction_executor_account_code_using_custom_library() -> anyhow::Result<()> {
+async fn transaction_executor_account_code_using_custom_package() -> anyhow::Result<()> {
     let slot_value = Word::from([2, 3, 4, 5u32]);
-    let external_library_code = format!(
+    let external_package_code = format!(
         r#"
       use miden::protocol::native_account
 
@@ -1640,7 +1641,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     );
 
     const ACCOUNT_COMPONENT_CODE: &str = "
-      use external_library::external_module
+      use external_package::external_module
 
       @account_procedure
       pub proc custom_setter
@@ -1649,28 +1650,28 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mut parser = ModuleParser::new(Some(ModuleKind::Library));
-    let external_library_root = parser
+    let external_package_root = parser
         .parse_str(
-            Some(Path::new("external_library::external_module")),
-            &external_library_code,
+            Some(Path::new("external_package::external_module")),
+            &external_package_code,
             source_manager.clone(),
         )
         .map_err(|err| {
-            anyhow::anyhow!("failed to parse library: {}", PrintDiagnostic::new(&err))
+            anyhow::anyhow!("failed to parse package: {}", PrintDiagnostic::new(&err))
         })?;
-    let external_library = TransactionKernel::assembler_with_source_manager(source_manager.clone())
-        .assemble_library("external-library", external_library_root, None::<&str>)
+    let external_package = TransactionKernel::assembler_with_source_manager(source_manager.clone())
+        .assemble_library("external-library", external_package_root, None::<&str>)
         .map_err(|err| {
-            anyhow::anyhow!("failed to assemble library: {}", PrintDiagnostic::new(&err))
+            anyhow::anyhow!("failed to assemble package: {}", PrintDiagnostic::new(&err))
         })?;
 
     let assembler: miden_protocol::assembly::Assembler =
-        CodeBuilder::with_mock_libraries_with_source_manager(source_manager.clone()).into();
+        CodeBuilder::with_mock_packages_with_source_manager(source_manager.clone()).into();
     let assembler =
         assembler
-            .with_package(Arc::from(external_library), Linkage::Static)
+            .with_package(Arc::from(external_package), Linkage::Static)
             .map_err(|err| {
-                anyhow::anyhow!("failed to link static library: {}", PrintDiagnostic::new(&err))
+                anyhow::anyhow!("failed to link static package: {}", PrintDiagnostic::new(&err))
             })?;
 
     let account_component_root = parser
@@ -1703,12 +1704,12 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     // Build an existing account with nonce 1.
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(account_component)
         .build_existing()?;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&account_component_lib)?
+        .with_dynamically_linked_package(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
     let mock_tx = TestTransactionBuilder::new(native_account.clone())
@@ -1754,7 +1755,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::faulty_auth"),
     )?;
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(faulty_auth_component)
+        .with_component(faulty_auth_component)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
@@ -1771,7 +1772,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
@@ -1806,7 +1807,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         "#;
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries()
+    let tx_script = CodeBuilder::with_mock_packages()
         .compile_tx_script(tx_script_code)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
@@ -1927,7 +1928,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
 async fn test_get_initial_map_item() -> anyhow::Result<()> {
     let map_slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![map_slot.clone()]))
         .build_existing()
         .unwrap();
@@ -2017,7 +2018,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         .collect();
 
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(slots.clone()))
         .build_existing()
         .unwrap();
@@ -2086,7 +2087,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 #[tokio::test]
 async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     let mut account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build_existing()
         .context("failed to build account")?;
@@ -2111,7 +2112,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         StorageSlotName::new("miden::slot::test").expect("storage slot name should be valid")
     });
 
-    static COMPONENT_1_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    static COMPONENT_1_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -2137,7 +2138,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
             .expect("mock account code should be valid")
     });
 
-    static COMPONENT_2_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+    static COMPONENT_2_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -2179,7 +2180,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent1> for AccountComponent {
         fn from(component: CustomComponent1) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_1_LIBRARY.clone(),
+                COMPONENT_1_PACKAGE.clone(),
                 vec![component.slot],
                 AccountComponentMetadata::mock("component1::interface"),
             )
@@ -2192,7 +2193,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent2> for AccountComponent {
         fn from(_component: CustomComponent2) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_2_LIBRARY.clone(),
+                COMPONENT_2_PACKAGE.clone(),
                 vec![],
                 AccountComponentMetadata::mock("component2::interface"),
             )
@@ -2204,7 +2205,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), slot_content1);
 
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(CustomComponent1 { slot: slot.clone() })
         .with_component(CustomComponent2)
         .build()
@@ -2231,8 +2232,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(COMPONENT_1_LIBRARY.clone())?
-        .with_dynamically_linked_library(COMPONENT_2_LIBRARY.clone())?
+        .with_dynamically_linked_package(COMPONENT_1_PACKAGE.clone())?
+        .with_dynamically_linked_package(COMPONENT_2_PACKAGE.clone())?
         .compile_tx_script(tx_script)?;
 
     TestTransactionBuilder::new(account)

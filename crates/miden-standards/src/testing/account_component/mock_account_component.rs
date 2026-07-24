@@ -10,11 +10,11 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 
 /// A mock account component for use in tests.
 ///
-/// It uses the [`MockAccountCodeExt::mock_account_library`][account_lib] and allows for an
+/// It uses the [`MockAccountCodeExt::mock_account_package`][account_lib] and allows for an
 /// arbitrary number of storage slots (within the overall limit) so anything can be set for testing
 /// purposes.
 ///
-/// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
+/// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_package
 pub struct MockAccountComponent {
     storage_slots: Vec<StorageSlot>,
 }
@@ -56,7 +56,7 @@ impl From<MockAccountComponent> for AccountComponent {
             .with_description("Mock account component for testing");
 
         AccountComponent::new(
-            AccountCode::mock_account_library(),
+            AccountCode::mock_account_package(),
             mock_component.storage_slots,
             metadata,
         )

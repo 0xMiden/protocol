@@ -484,7 +484,7 @@ mod tests {
 
         // Build account with multisig component
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -534,7 +534,7 @@ mod tests {
             .expect("multisig component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

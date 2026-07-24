@@ -126,11 +126,11 @@ end
 const ERR_ACCOUNT_BLOCKED: MasmError =
     MasmError::from_static_str("the account is blocked and cannot receive this asset");
 
-// Initialize the Basic Fungible Faucet library only once.
+// Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code(BlockList::NAME, BLOCK_LIST_MASM)
-        .expect("block list library should be valid")
+        .expect("block list component code should be valid")
 });
 
 static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -484,7 +484,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -597,7 +597,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 

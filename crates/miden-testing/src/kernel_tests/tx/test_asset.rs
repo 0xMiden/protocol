@@ -34,9 +34,9 @@ use crate::{TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
-    let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
+    let expected_asset = FungibleAsset::new(mock_tx.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
@@ -58,7 +58,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
         "
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), expected_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
@@ -68,7 +68,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
@@ -98,7 +98,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_DATA_HASH = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
