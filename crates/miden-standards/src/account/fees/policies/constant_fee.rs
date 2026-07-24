@@ -214,7 +214,7 @@ mod tests {
 
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_components(fee_manager)
             .build_existing()?;
 

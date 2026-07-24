@@ -68,7 +68,7 @@ impl MockTransaction {
     /// Executes arbitrary code within the context of a mocked transaction environment and returns
     /// the resulting [`ExecutionOutput`].
     ///
-    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_libraries`]
+    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_packages`]
     /// and executed with advice inputs constructed from the data stored in the context. The program
     /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
     /// by the transaction kernel, and also individual kernel functions (not normally exposed).
@@ -114,8 +114,7 @@ impl MockTransaction {
         );
 
         let assembler: Assembler =
-            CodeBuilder::with_mock_libraries_with_source_manager(self.source_manager.clone())
-                .into();
+            CodeBuilder::with_mock_packages_with_source_manager(self.source_manager.clone()).into();
 
         let program = assembler
             .assemble_program("tx-context-code", virtual_source_file)
@@ -124,7 +123,7 @@ impl MockTransaction {
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
         // TransactionContextBuilder.
-        self.mast_store.insert_package(&TransactionKernel::library());
+        self.mast_store.insert_package(&TransactionKernel::core_package());
         self.mast_store.insert_package(&program);
 
         let account_procedure_idx_map = AccountProcedureIndexMap::new(

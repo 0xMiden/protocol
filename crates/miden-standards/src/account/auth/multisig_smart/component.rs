@@ -299,7 +299,7 @@ mod tests {
             AuthMultisigSmart::new(config).expect("multisig smart component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(component)
+            .with_component(component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

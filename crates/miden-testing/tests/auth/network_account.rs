@@ -74,7 +74,7 @@ fn build_account_with_allowlists(
         zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
 
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .account_type(AccountType::Public)
@@ -374,7 +374,7 @@ fn build_owner_controlled_account(
     let fee_manager = zero_fee_manager(scheduled_roots)?;
 
     Ok(AccountBuilder::new([7; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(BasicWallet)
         .with_components(fee_manager)
@@ -707,7 +707,7 @@ fn build_upgradeable_network_account(
         zero_fee_manager(auth_component.allowed_notes().allowed_script_roots().iter().copied())?;
 
     Ok(AccountBuilder::new([7; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
         .with_component(BasicWallet)

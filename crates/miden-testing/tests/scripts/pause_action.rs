@@ -25,7 +25,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 fn create_pausable_account(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([43; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)

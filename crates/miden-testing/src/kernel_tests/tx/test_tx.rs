@@ -372,7 +372,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         num_attachment3_words = attachment3.content().num_words(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     // expected delta
     // --------------------------------------------------------------------------------------------
@@ -484,7 +484,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([42; 32])
         .account_type(AccountType::Private)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()
         .context("failed to build account")?;
@@ -596,7 +596,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let library = compile_test_library(
+    let package = compile_test_package(
         source_manager.clone(),
         "test-tx-view-script",
         "test::module_1",
@@ -616,7 +616,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&library)?
+        .with_statically_linked_package(&package)?
         .compile_tx_script(source)?;
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
@@ -638,7 +638,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn compile_test_library(
+fn compile_test_package(
     source_manager: Arc<DefaultSourceManager>,
     name: &str,
     path: &str,
@@ -898,7 +898,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         "#;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(component_code)?
+        .with_dynamically_linked_package(component_code)?
         .compile_tx_script(script)?;
 
     assert!(tx_script.mast().advice_map().get(&Word::try_from([1u64, 2, 3, 4])?).is_some());

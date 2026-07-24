@@ -119,7 +119,7 @@ fn network_account(fee_entry: Option<(NoteScriptRoot, AssetAmount)>) -> anyhow::
 
     Ok(AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .with_component(fee_collector_component()?)
@@ -199,7 +199,7 @@ fn collect_tx_script() -> anyhow::Result<TransactionScript> {
         "#;
 
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(&*FEE_COLLECTOR_CODE)?
+        .with_dynamically_linked_package(&*FEE_COLLECTOR_CODE)?
         .compile_tx_script(src)?)
 }
 
@@ -268,7 +268,7 @@ async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
         end
         "#;
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&*FEE_COLLECTOR_CODE)?
+        .with_dynamically_linked_package(&*FEE_COLLECTOR_CODE)?
         .compile_tx_script(src)?;
 
     let result = mock_chain
@@ -725,7 +725,7 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
     )?;
     let network_account = AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(
             FeeManager::builder()
@@ -863,7 +863,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .build();
     let sponsor = AccountBuilder::new([8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(sponsor_fee_manager)
         .with_component(sponsorship_creator_component()?)
@@ -878,7 +878,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .build();
     let target = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(target_fee_manager)
         .build_existing()?;
@@ -915,7 +915,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         serial_num = serial_num,
     );
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&*SPONSORSHIP_CREATOR_CODE)?
+        .with_dynamically_linked_package(&*SPONSORSHIP_CREATOR_CODE)?
         .compile_tx_script(tx_script_src)?;
 
     let foreign_inputs = mock_chain.get_foreign_account_inputs(target.id())?;

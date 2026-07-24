@@ -278,7 +278,7 @@ mod tests {
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a, root_b]))
                     .expect("non-empty allowlist should construct"),
             )
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn auth_network_account_with_empty_input_allowlists_only_config_note() {
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(BTreeSet::new())
                     .expect("config note root makes the allowlist non-empty"),
             )
@@ -332,7 +332,7 @@ mod tests {
     fn auth_network_account_always_allowlists_config_note() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a]))
                     .expect("config note root makes the allowlist non-empty"),
             )

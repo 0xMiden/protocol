@@ -4,7 +4,9 @@
 
 ### Changes
 
-- [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
+- [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
+- [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
+- [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
@@ -21,7 +23,6 @@
 - Added the `create_sponsorship_notes` procedure to the `FeeManager` to create sponsorship notes for all created network notes ([#3321](https://github.com/0xMiden/protocol/pull/3321)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
 - Integrated fee collection and sponsorship note creation into `AuthNetworkAccount` ([#3351](https://github.com/0xMiden/protocol/pull/3351)).
-- [BREAKING] Removed the `Package as Library` alias, so APIs use `Package` directly: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` now take `&Package`, and `AccountComponentCode::as_library` / `into_library` are now `as_package` / `into_package`. Also removed the `Program`-based constructors `NoteScript::new` and `TransactionScript::new`, and the redundant `NoteScript::from_package` ([#3357](https://github.com/0xMiden/protocol/pull/3357)).
 - Added post-deployment management of `AuthNetworkAccount` allowlists: authority-gated `add_allowed_note_script` / `remove_allowed_note_script` / `add_allowed_tx_script` / `remove_allowed_tx_script` procedures (composed with an `Authority` component in `OwnerControlled` or `RbacControlled` mode), a standardized `NetworkAccountConfigNote` to invoke them, and an `AuthNetworkAccount::with_allowlist_management` constructor that allowlists that note ([#3330](https://github.com/0xMiden/protocol/pull/3330)).
 - Made `AuthNetworkAccount` allowlist management enabled by default: every account now allowlists the standardized `NetworkAccountConfigNote` script root at construction (folded into `with_allowed_notes`), replacing the dedicated `with_allowlist_management` constructor ([#3355](https://github.com/0xMiden/protocol/pull/3355)).
 
