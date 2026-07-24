@@ -2,7 +2,7 @@
 #
 # Fee estimation reads the procedure root of the active fee policy and dispatches fee estimation
 # to it via `dyncall`. The actual fee computation logic lives in fee policy components (e.g.
-# `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
+# `miden::standards::fees::policies::basic_constant_fee`), and the active policy can be switched to any
 # allowlisted policy root through the authority-gated `set_fee_policy`. The policy returns the full
 # fee asset; the configured fee asset ID is read back and the policy's result is asserted to be
 # denominated in it, so a policy misconfigured with a different fee asset aborts fee estimation.

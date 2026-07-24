@@ -21,7 +21,7 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -251,7 +251,7 @@ fn generate_agglayer_constants(
         // allowed policies and fee asset initialize the fee-policy slots the auth component owns,
         // but those are storage (not code) and so do not affect the commitment either.
         let fee_policy_manager = FeePolicyManager::builder()
-            .active_fee_policy(ConstantFeePolicy::new().into())
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
             .fee_faucet_id(dummy_owner)
             .build();
 

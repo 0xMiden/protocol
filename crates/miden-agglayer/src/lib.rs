@@ -12,7 +12,7 @@ use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::NetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicy,
@@ -169,15 +169,16 @@ fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePo
     let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
         .expect("placeholder fee faucet id is valid");
 
-    // A constant fee policy aborts fee estimation for note scripts without a schedule entry, so
-    // enumerate the allowlist and schedule each as free.
-    let mut constant_fee_policy = ConstantFeePolicy::new();
+    // The basic constant fee policy aborts fee estimation for note scripts without a schedule
+    // entry, so enumerate the allowlist and schedule each as free.
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in allowed_notes {
-        constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
     FeePolicyManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(fee_faucet_id)
         .build()
 }
