@@ -393,7 +393,9 @@ end
 #! - SALT is a cryptographically random nonce folded into the signed message for replay
 #!   protection.
 #! - param0, param1 and param2 are user-defined inputs folded into the signed message, which can
-#!   be used to bind custom data to the transaction summary (e.g. a maximum fee).
+#!   be used to bind custom data to the transaction summary (e.g. a maximum fee). The params are
+#!   opaque: binding them does not enforce any meaning, so any semantics must be implemented by
+#!   the calling component.
 #!
 #! Locals:
 #! 0: policy_threshold

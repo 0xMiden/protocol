@@ -759,6 +759,19 @@ fn extract_tx_summary<'store, STORE>(
         })?;
     let salt = extract_word(commitments, 20);
 
+    // Validate the expiration delta against the kernel state so that a summary preimage
+    // carrying a fabricated delta is rejected rather than presented to the signer.
+    let expected_expiration_delta = process.get_expiration_block_delta()?;
+    if params.expiration_delta() != expected_expiration_delta {
+        return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+            format!(
+                "expected expiration delta to be {expected_expiration_delta} but was {}",
+                params.expiration_delta()
+            )
+            .into(),
+        ));
+    }
+
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,

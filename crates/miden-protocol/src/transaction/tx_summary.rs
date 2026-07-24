@@ -150,6 +150,10 @@ impl Deserializable for TransactionSummary {
 /// kernel when the summary is created, and three user-defined parameters which can be used to bind
 /// custom data to the summary (e.g. a maximum fee).
 ///
+/// The user-defined parameters are opaque: they are bound by the signature over the summary, but
+/// no meaning is enforced for them at the protocol level. Any semantics (such as enforcing a
+/// maximum fee) must be implemented by the account component that binds them.
+///
 /// The [`Word`] representation of these parameters is `[expiration_delta, param0, param1,
 /// param2]`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

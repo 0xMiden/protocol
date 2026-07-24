@@ -717,7 +717,9 @@ end
 #!   enforce replay protection; `auth_tx` itself records nothing, so a wrapper must call
 #!   `record_and_assert_new_tx` for replay protection to hold.
 #! - param0, param1 and param2 are user-defined inputs folded into the signed message, which can
-#!   be used to bind custom data to the transaction summary (e.g. a maximum fee).
+#!   be used to bind custom data to the transaction summary (e.g. a maximum fee). The params are
+#!   opaque: binding them does not enforce any meaning, so any semantics must be implemented by
+#!   the calling component.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
 #! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.

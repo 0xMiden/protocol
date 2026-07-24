@@ -659,6 +659,76 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
     Ok(())
 }
 
+/// Tests that the host rejects a transaction summary whose expiration delta does not match the
+/// kernel state of the transaction.
+#[tokio::test]
+async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
+
+          # Assemble the summary preimage manually with a forged PARAMS word claiming an
+          # expiration delta of 777 while the transaction never set one.
+          padw
+          # => [SALT, pad(16)]
+
+          push.0.0.0.777
+          # => [PARAMS, SALT, pad(16)]
+
+          exec.tx::get_block_commitment
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([45; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    let error_chain = format!("{:#}", anyhow::Error::from(error));
+    assert!(
+        error_chain.contains("expected expiration delta to be 0 but was 777"),
+        "unexpected error: {error_chain}"
+    );
+
+    Ok(())
+}
+
 /// Tests that a transaction consuming and creating one note with basic authentication correctly
 /// signs the transaction summary.
 #[rstest]
