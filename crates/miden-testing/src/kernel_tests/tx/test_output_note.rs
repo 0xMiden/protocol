@@ -1216,7 +1216,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let elements = elements.into_iter().map(Felt::from).collect();
     let commitment = Word::from([42, 43, 44, 45u32]);
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_advice_map(commitment, elements)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = format!(
@@ -1925,8 +1925,8 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     )?;
 
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_advice_map(attachment0.to_commitment(), attachment0.content().to_elements())
-        .extend_advice_map(attachment1.to_commitment(), attachment1.content().to_elements())
+        .add_advice_map_entry(attachment0.to_commitment(), attachment0.content().to_elements())
+        .add_advice_map_entry(attachment1.to_commitment(), attachment1.content().to_elements())
         .build()?;
 
     let code = format!(
