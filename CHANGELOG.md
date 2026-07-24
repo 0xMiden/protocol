@@ -2,6 +2,10 @@
 
 ## v0.16.0-beta.2 (TBD)
 
+### Features
+
+- Added the standardized `FeePolicyManagerConfigNote`, which adds or removes an allowed fee policy root via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures, enabling post-deployment management of the allowed fee policies ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
+
 ### Changes
 
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
