@@ -15,11 +15,14 @@ use crate::testing::account_component::{MockAccountComponent, MockFaucetComponen
 
 /// Extension trait for [`Account`]s that return mocked accounts.
 pub trait MockAccountExt {
-    /// Creates an existing mock account with the provided auth component.
-    fn mock(account_id: u128, auth: impl Into<AccountComponent>) -> Account {
+    /// Creates an existing mock account with the provided auth components.
+    fn mock(
+        account_id: u128,
+        auth: impl IntoIterator<Item = impl Into<AccountComponent>>,
+    ) -> Account {
         let account_id = AccountId::try_from(account_id).unwrap();
         let account = AccountBuilder::new([1; 32])
-            .with_component(auth)
+            .with_components(auth)
             .with_component(MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()))
             .with_assets(AssetVault::mock().assets())
             .build_existing()

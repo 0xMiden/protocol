@@ -10,7 +10,8 @@ use miden_protocol::note::{Note, NoteId, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
+use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{ConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -39,14 +40,15 @@ use crate::scripts::fee_manager::{
     custom_fee_policy,
     estimate_note_fee_tx_script_code,
     fee_faucet_id,
+    fee_policy_manager_with_storage,
     priced_root,
 };
 
 // COLLECT SPONSORED FEES
 // ================================================================================================
 
-/// Returns a fungible asset of `amount` units issued by the fee faucet (the asset the fee manager
-/// accepts fees in).
+/// Returns a fungible asset of `amount` units issued by the fee faucet (the asset the fee policy
+/// manager accepts fees in).
 fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
@@ -104,24 +106,24 @@ fn fee_collector_component() -> anyhow::Result<AccountComponent> {
     )?)
 }
 
-/// Builds a network account with a `BasicWallet`, a `FeeManager`, and the test fee-collector
-/// component. When `fee_entry` is provided, the fee manager schedules the given fee for that
+/// Builds a network account with a `BasicWallet`, a `FeePolicyManager`, and the test fee-collector
+/// component. When `fee_entry` is provided, the fee policy manager schedules the given fee for that
 /// note script root.
 fn network_account(fee_entry: Option<(NoteScriptRoot, AssetAmount)>) -> anyhow::Result<Account> {
     let mut policy = ConstantFeePolicy::new();
     if let Some((root, fee)) = fee_entry {
         policy = policy.with_fee(root, fee);
     }
-    let fee_manager = FeeManager::builder()
+    let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
         .active_fee_policy(policy.into())
         .build();
 
     Ok(AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
-        .with_components(fee_manager)
+        .with_components(fee_policy_manager_with_storage(fee_policy_manager)?)
         .with_component(fee_collector_component()?)
         .build_existing()?)
 }
@@ -249,9 +251,9 @@ async fn collects_sponsored_fee_for_a_pair(#[case] sponsored_amount: u64) -> any
     Ok(())
 }
 
-/// `collect_sponsored_fees` rejects an expected fee asset that differs from the fee manager's
-/// configured fee asset, so a caller cannot price fees in one asset while collecting sponsorship
-/// payments in another.
+/// `collect_sponsored_fees` rejects an expected fee asset that differs from the fee policy
+/// manager's configured fee asset, so a caller cannot price fees in one asset while collecting
+/// sponsorship payments in another.
 #[tokio::test]
 async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
     let Test { mock_chain, network_account, .. } = build_test(None, vec![])?;
@@ -384,7 +386,7 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let account = build_fee_account_with_switching(owner_account_id)?;
 
     // This root exists in the account code, but is not in the fee policy allowlist.
-    let invalid_policy_root = FeeManager::get_fee_policy_root().as_word();
+    let invalid_policy_root = AuthNetworkAccount::get_fee_policy_root().as_word();
     let set_policy_note_script =
         create_fee_manager_note_script("set_fee_policy", invalid_policy_root);
     let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
@@ -645,7 +647,7 @@ async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> 
 /// A custom fee policy charging [`FEE_AMOUNT`] in `fee_asset_id` for a note whose assets
 /// commitment matches `fee_asset_note_commitment`, and in `other_fee_asset_id` for any other
 /// note. This prices two feature notes in different fee assets within a single transaction,
-/// exercising the fee manager's fee asset consistency check during fee collection.
+/// exercising the fee policy manager's fee asset consistency check during fee collection.
 fn asset_commitment_fee_policy(
     fee_asset_note_commitment: Word,
     fee_asset_id: Word,
@@ -725,14 +727,14 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
     )?;
     let network_account = AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
-        .with_components(
-            FeeManager::builder()
+        .with_components(fee_policy_manager_with_storage(
+            FeePolicyManager::builder()
                 .fee_faucet_id(fee_faucet_id()?)
                 .active_fee_policy(policy)
                 .build(),
-        )
+        )?)
         .with_component(fee_collector_component()?)
         .build_existing()?;
 
@@ -843,8 +845,8 @@ fn sponsorship_creator_component() -> anyhow::Result<AccountComponent> {
 }
 
 /// A sponsor account (funded with [`FEE_AMOUNT`] of the fee asset) and a target network account
-/// whose fee manager charges [`FEE_AMOUNT`] in the asset of the given faucet, plus the script
-/// creating and sponsoring a network note targeted at it.
+/// whose fee policy manager charges [`FEE_AMOUNT`] in the asset of the given faucet, plus the
+/// script creating and sponsoring a network note targeted at it.
 struct CreateTest {
     mock_chain: MockChain,
     sponsor: Account,
@@ -857,30 +859,27 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
     let script_root = P2idNote::script_root();
     let serial_num = Word::from([21u32, 22, 23, 24]);
 
-    let sponsor_fee_manager = FeeManager::builder()
-        .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(ConstantFeePolicy::new().into())
-        .build();
+    let sponsor_fee_policy_manager = FeePolicyManager::mock(fee_faucet_id()?);
     let sponsor = AccountBuilder::new([8; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
-        .with_components(sponsor_fee_manager)
+        .with_components(fee_policy_manager_with_storage(sponsor_fee_policy_manager)?)
         .with_component(sponsorship_creator_component()?)
         .with_assets([fee_asset(FEE_AMOUNT)?])
         .build_existing()?;
 
     let target_policy =
         ConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
-    let target_fee_manager = FeeManager::builder()
+    let target_fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(target_fee_faucet)
         .active_fee_policy(target_policy.into())
         .build();
     let target = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
-        .with_components(target_fee_manager)
+        .with_components(fee_policy_manager_with_storage(target_fee_policy_manager)?)
         .build_existing()?;
 
     let mut builder = MockChain::builder();

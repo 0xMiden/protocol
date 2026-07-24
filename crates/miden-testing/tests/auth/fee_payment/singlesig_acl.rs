@@ -98,14 +98,14 @@ async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
     // (making the transaction valid without requiring a signature).
     let component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
-    let (auth_component, _authenticator) = Auth::Acl {
+    let (auth_components, _authenticator) = Auth::Acl {
         exempt_procedures: BTreeSet::from([set_item]),
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     }
-    .build_component();
+    .build_components();
 
     let account = AccountBuilder::new([0; 32])
-        .with_component(auth_component)
+        .with_components(auth_components)
         .with_component(component)
         .account_type(AccountType::Public)
         .with_assets([fee_asset.into()])

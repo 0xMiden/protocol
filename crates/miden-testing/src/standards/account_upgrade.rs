@@ -1,5 +1,6 @@
 use miden_processor::Word;
 use miden_protocol::account::{AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
@@ -9,6 +10,7 @@ use miden_protocol::transaction::memory::{
 };
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -32,9 +34,12 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
     // A network-style account: OwnerControlled authority (via Ownable2Step) + the UpgradeManager
     // procedure, plus the network-account auth component (unused by `execute_code`, but
     // representative).
+    // The auth component owns fee-policy storage that must be initialized from a fee policy
+    // manager; this test exercises `execute_code`, not the fee flow, so a mock manager suffices.
     let account = AccountBuilder::new([42; 32])
-        .with_component(AuthNetworkAccount::with_allowed_notes(
+        .with_components(AuthNetworkAccount::new(
             [placeholder_script_root()].into_iter().collect(),
+            FeePolicyManager::mock(FungibleAsset::mock_issuer()),
         )?)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)

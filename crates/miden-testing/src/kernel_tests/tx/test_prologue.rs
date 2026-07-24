@@ -534,7 +534,7 @@ fn input_notes_memory_assertions(
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
 
@@ -568,7 +568,7 @@ pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow:
 
     let account = AccountBuilder::new(rand::random())
         .account_type(account_type)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::mock(0),
             Word::from([255u32; WORD_SIZE]),
@@ -602,7 +602,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let account = AccountBuilder::new(rand::random())
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;
 
