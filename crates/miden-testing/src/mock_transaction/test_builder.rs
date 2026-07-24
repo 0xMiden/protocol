@@ -41,7 +41,6 @@ pub(crate) struct TestTransactionBuilder {
     tx_script_args: Word,
     auth_args: Word,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
-    is_lazy_loading_enabled: bool,
 }
 
 impl TestTransactionBuilder {
@@ -56,7 +55,6 @@ impl TestTransactionBuilder {
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
             note_scripts: BTreeMap::new(),
-            is_lazy_loading_enabled: true,
         }
     }
 
@@ -98,7 +96,7 @@ impl TestTransactionBuilder {
     /// Inserts a single key-value pair into the advice inputs map.
     ///
     /// To add multiple entries, call this repeatedly.
-    pub(crate) fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+    pub(crate) fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
         self.advice_inputs.map.insert(key, value);
         self
     }
@@ -135,15 +133,6 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Disables lazy loading.
-    ///
-    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
-    /// loading events.
-    pub(crate) fn disable_lazy_loading(mut self) -> Self {
-        self.is_lazy_loading_enabled = false;
-        self
-    }
-
     /// Adds a single expected output note that the transaction produces.
     pub(crate) fn expected_output_note(mut self, output_note: RawOutputNote) -> Self {
         self.expected_output_notes.push(output_note);
@@ -167,7 +156,7 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Add a note script to the context for testing.
+    /// Add a note script to the mock transaction for testing.
     pub(crate) fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
         self
@@ -208,9 +197,6 @@ impl TestTransactionBuilder {
 
         if let Some(tx_script) = self.tx_script {
             builder = builder.tx_script(tx_script);
-        }
-        if !self.is_lazy_loading_enabled {
-            builder = builder.disable_lazy_loading();
         }
         for script in self.note_scripts.into_values() {
             builder = builder.add_note_script(script);

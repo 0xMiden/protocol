@@ -49,7 +49,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
     // An active note whose sender is the owner, so the authority check in `upgrade` passes.
     let input_note = build_note(owner)?;
 
-    let tx_context = TestTransactionBuilder::new(account).input_notes(vec![input_note]).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).input_notes(vec![input_note]).build()?;
 
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
@@ -83,7 +83,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
         storage_upgrade_commitment = &storage_upgrade_commitment,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
