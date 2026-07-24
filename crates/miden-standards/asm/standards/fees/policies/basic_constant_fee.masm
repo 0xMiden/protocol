@@ -1,10 +1,12 @@
-# miden::standards::fees::policies::constant_fee
+# miden::standards::fees::policies::basic_constant_fee
 #
-# Constant fee policy: derives the fee from a fixed per-note-script fee schedule. Designed to be
-# registered as a fee policy of an `AuthNetworkAccount`, whose fee manager (see
-# `miden::standards::fees::fee_manager`) dispatches fee estimation to `compute_note_fee` via
-# `dyncall`. The fee is charged in the fee asset the network account is configured with, read from
-# its storage, so this component must be installed on an `AuthNetworkAccount`.
+# Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is the
+# simplest constant fee policy; more sophisticated policies can be derived from it by swapping the
+# lookup-key computation. Designed to be registered as a fee policy of an `AuthNetworkAccount`,
+# whose fee manager (see `miden::standards::fees::fee_manager`) dispatches fee estimation to
+# `compute_note_fee` via `dyncall`. The fee is charged in the fee asset the network account is
+# configured with, read from its storage, so this component must be installed on an
+# `AuthNetworkAccount`.
 #
 # Storage layout:
 # - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]. The last element is a
@@ -23,7 +25,7 @@ use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 
 # Slot holding the per-note-script fee schedule.
 # Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
-const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::constant_fee::fee_schedule")
+const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::basic_constant_fee::fee_schedule")
 
 # ERRORS
 # =================================================================================================

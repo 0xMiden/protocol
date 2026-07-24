@@ -11,7 +11,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -110,7 +110,7 @@ fn fee_collector_component() -> anyhow::Result<AccountComponent> {
 /// component. When `fee_entry` is provided, the fee policy manager schedules the given fee for that
 /// note script root.
 fn network_account(fee_entry: Option<(NoteScriptRoot, AssetAmount)>) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new();
+    let mut policy = BasicConstantFeePolicy::new();
     if let Some((root, fee)) = fee_entry {
         policy = policy.with_fee(root, fee);
     }
@@ -285,7 +285,7 @@ async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The owner switches the active fee policy from the constant fee policy to the user-defined
+/// The owner switches the active fee policy from the basic constant fee policy to the user-defined
 /// custom policy via `set_fee_policy`, after which `estimate_note_fee` prices the previously
 /// priced root with the custom policy's logic instead of the schedule.
 #[tokio::test]
@@ -870,7 +870,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .build_existing()?;
 
     let target_policy =
-        ConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
+        BasicConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
     let target_fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(target_fee_faucet)
         .active_fee_policy(target_policy.into())

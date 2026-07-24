@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -48,13 +48,14 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
 fn zero_fee_policy_manager(
     note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
 ) -> anyhow::Result<FeePolicyManager> {
-    let mut constant_fee_policy = ConstantFeePolicy::new();
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in note_script_roots {
-        constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
     Ok(FeePolicyManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build())
 }
@@ -352,7 +353,8 @@ fn owner_id() -> AccountId {
 ///
 /// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
 /// deployment, so a note whose root is added to the allowlist post-deployment can still be
-/// consumed: a constant fee policy aborts fee estimation for note scripts without a schedule entry.
+/// consumed: the basic constant fee policy aborts fee estimation for note scripts without a
+/// schedule entry.
 fn build_owner_controlled_account(
     extra_allowed_note_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
