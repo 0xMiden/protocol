@@ -119,7 +119,7 @@ fn network_account(fee_entry: Option<(NoteScriptRoot, AssetAmount)>) -> anyhow::
 
     Ok(AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .with_component(fee_collector_component()?)
@@ -724,7 +724,7 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
     )?;
     let network_account = AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(
             FeeManager::builder()
@@ -862,7 +862,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .build();
     let sponsor = AccountBuilder::new([8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(sponsor_fee_manager)
         .with_component(sponsorship_creator_component()?)
@@ -877,7 +877,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
         .build();
     let target = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(target_fee_manager)
         .build_existing()?;

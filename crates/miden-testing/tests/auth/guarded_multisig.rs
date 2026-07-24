@@ -155,7 +155,7 @@ fn create_guarded_multisig_account(
 
     let multisig_account = AccountBuilder::new([0; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(AuthGuardedMultisig::new(config)?)
+        .with_component(AuthGuardedMultisig::new(config)?)
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;

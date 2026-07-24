@@ -291,7 +291,7 @@ mod tests {
         let component = AuthSingleSigAcl::new(Approver::new(public_key, auth_scheme), acl_config);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(component)
+            .with_component(component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

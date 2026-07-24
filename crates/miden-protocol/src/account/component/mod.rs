@@ -183,6 +183,12 @@ impl AccountComponent {
     pub fn has_procedure(&self, root: AccountProcedureRoot) -> bool {
         self.procedures().any(|(proc_root, _)| proc_root == root)
     }
+
+    /// Returns `true` if this component exports an authentication procedure (a procedure marked
+    /// with the `@auth_script` attribute).
+    pub fn is_auth_component(&self) -> bool {
+        self.procedures().any(|(_, is_auth)| is_auth)
+    }
 }
 
 impl From<AccountComponent> for AccountComponentCode {

@@ -271,7 +271,7 @@ fn faucet_create_from_account() {
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .with_component(faucet)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -283,7 +283,7 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
             AuthScheme::Falcon512Poseidon2,
         )))

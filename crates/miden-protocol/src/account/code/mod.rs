@@ -141,14 +141,21 @@ impl AccountCode {
         let package_debug_info = merge_component_debug_info(components, &root_map)?;
 
         let mut builder = AccountProcedureBuilder::new();
-        let mut components_iter = components.iter();
+        let mut num_auth_components = 0;
 
-        let first_component =
-            components_iter.next().ok_or(AccountError::AccountCodeNoAuthComponent)?;
-        builder.add_auth_component(first_component)?;
+        for component in components {
+            if component.is_auth_component() {
+                num_auth_components += 1;
+                builder.add_auth_component(component)?
+            } else {
+                builder.add_component(component)?;
+            }
+        }
 
-        for component in components_iter {
-            builder.add_component(component)?;
+        if num_auth_components == 0 {
+            return Err(AccountError::AccountCodeNoAuthComponent);
+        } else if num_auth_components > 1 {
+            return Err(AccountError::AccountCodeMultipleAuthComponents);
         }
 
         let procedures = builder.build()?;

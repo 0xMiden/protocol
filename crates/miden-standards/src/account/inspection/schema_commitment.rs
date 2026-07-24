@@ -243,13 +243,13 @@ mod tests {
         let component_b = AccountSchemaCommitment::new(&[schema_b, schema_a]).unwrap();
 
         let account_a = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(component_a)
             .build()
             .unwrap();
 
         let account_b = AccountBuilder::new([2u8; 32])
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(component_b)
             .build()
             .unwrap();
@@ -276,7 +276,7 @@ mod tests {
         ));
 
         let account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(auth_component)
+            .with_component(auth_component)
             .build_with_schema_commitment()
             .unwrap();
 

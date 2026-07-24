@@ -860,7 +860,7 @@ mod tests {
     #[test]
     fn seed_validation() -> anyhow::Result<()> {
         let account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         let (id, vault, storage, code, _nonce, seed) = account.into_parts();
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn incrementing_nonce_should_remove_seed() -> anyhow::Result<()> {
         let mut account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         account.increment_nonce(Felt::ONE)?;

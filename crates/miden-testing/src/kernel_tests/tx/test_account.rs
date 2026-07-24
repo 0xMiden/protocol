@@ -489,7 +489,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 async fn test_get_map_item() -> anyhow::Result<()> {
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
@@ -754,7 +754,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
@@ -830,7 +830,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
@@ -1019,7 +1019,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([6; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             slot0.clone(),
             slot1.clone(),
@@ -1558,7 +1558,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
@@ -1703,7 +1703,7 @@ async fn transaction_executor_account_code_using_custom_package() -> anyhow::Res
 
     // Build an existing account with nonce 1.
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(account_component)
         .build_existing()?;
 
@@ -1754,7 +1754,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::faulty_auth"),
     )?;
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(faulty_auth_component)
+        .with_component(faulty_auth_component)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
@@ -1771,7 +1771,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
@@ -1927,7 +1927,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
 async fn test_get_initial_map_item() -> anyhow::Result<()> {
     let map_slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![map_slot.clone()]))
         .build_existing()
         .unwrap();
@@ -2017,7 +2017,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         .collect();
 
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(slots.clone()))
         .build_existing()
         .unwrap();
@@ -2086,7 +2086,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 #[tokio::test]
 async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     let mut account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build_existing()
         .context("failed to build account")?;
@@ -2204,7 +2204,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), slot_content1);
 
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(CustomComponent1 { slot: slot.clone() })
         .with_component(CustomComponent2)
         .build()

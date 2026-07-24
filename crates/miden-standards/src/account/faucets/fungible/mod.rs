@@ -573,7 +573,7 @@ pub fn create_singlesig_user_fungible_faucet(
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_asset_callbacks(asset_callbacks)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -593,7 +593,7 @@ pub fn create_multisig_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -613,7 +613,7 @@ pub fn create_guarded_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)

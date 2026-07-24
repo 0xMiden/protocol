@@ -19,7 +19,7 @@ pub trait MockAccountExt {
     fn mock(account_id: u128, auth: impl Into<AccountComponent>) -> Account {
         let account_id = AccountId::try_from(account_id).unwrap();
         let account = AccountBuilder::new([1; 32])
-            .with_auth_component(auth)
+            .with_component(auth)
             .with_component(MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()))
             .with_assets(AssetVault::mock().assets())
             .build_existing()
@@ -34,7 +34,7 @@ pub trait MockAccountExt {
         let account_id = AccountId::try_from(account_id).unwrap();
 
         let account = AccountBuilder::new([1; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(MockFaucetComponent)
             .build_existing()
             .expect("account should be valid");
@@ -48,7 +48,7 @@ pub trait MockAccountExt {
         let account_id = AccountId::try_from(account_id).unwrap();
 
         let account = AccountBuilder::new([1; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(MockFaucetComponent)
             .build_existing()
             .expect("account should be valid");

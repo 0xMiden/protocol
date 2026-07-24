@@ -14,7 +14,7 @@ use miden_testing::{Auth, MockChain};
 fn create_inspectable_account() -> anyhow::Result<Account> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_component(CodeInspection)
         .build_existing()?;

@@ -37,7 +37,7 @@ fn setup_singlesig_with_mock_component(
     let (auth_component, authenticator) = Auth::BasicAuth { auth_scheme }.build_component();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(mock_component)
         .account_type(AccountType::Public)
         .build_existing()?;

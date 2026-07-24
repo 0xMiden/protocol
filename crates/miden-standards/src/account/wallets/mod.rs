@@ -219,7 +219,7 @@ fn create_wallet(
 ) -> Result<Account, AccountError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .build()
 }

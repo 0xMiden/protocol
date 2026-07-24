@@ -484,7 +484,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([42; 32])
         .account_type(AccountType::Private)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()
         .context("failed to build account")?;

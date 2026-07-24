@@ -101,12 +101,12 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component)
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -372,17 +372,17 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     )?;
 
     let foreign_account_1 = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component_1)
         .build_existing()?;
 
     let foreign_account_2 = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component_2)
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -607,12 +607,12 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -795,13 +795,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .with_assets(vec![fungible_asset, non_fungible_asset])
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -941,7 +941,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     )?;
 
     let second_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(second_foreign_account_component)
         .build_existing()?;
 
@@ -1005,13 +1005,13 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     )?;
 
     let first_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(first_foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1137,7 +1137,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     )?;
 
     let second_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(second_foreign_account_component.clone())
         .build_existing()?;
 
@@ -1184,13 +1184,13 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     )?;
 
     let first_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(first_foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1312,7 +1312,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     .unwrap();
 
     let last_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(last_foreign_account_component)
         .build_existing()
         .unwrap();
@@ -1365,7 +1365,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
         .unwrap();
 
         let foreign_account = AccountBuilder::new(rand::random())
-            .with_auth_component(Auth::IncrNonce)
+            .with_component(Auth::IncrNonce)
             .with_component(foreign_account_component)
             .build_existing()
             .unwrap();
@@ -1375,7 +1375,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()
@@ -1481,13 +1481,13 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1581,12 +1581,12 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
     )?;
 
     let mut foreign_account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([4; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
         .build_existing()?;
 
@@ -1690,12 +1690,12 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1778,7 +1778,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1811,7 +1811,7 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 

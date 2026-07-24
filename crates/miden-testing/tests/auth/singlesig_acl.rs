@@ -381,7 +381,7 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
 
     let faucet_account = AccountBuilder::new([42u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(policy_manager)
@@ -464,7 +464,7 @@ async fn test_acl_non_binary_exempt_marker_requires_auth_instead_of_bricking(
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(mock_component)
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -537,7 +537,7 @@ fn setup_acl_test(
         Auth::Acl { exempt_procedures, auth_scheme }.build_component();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(component)
         .account_type(AccountType::Public)
         .build_existing()

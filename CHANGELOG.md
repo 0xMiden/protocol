@@ -4,7 +4,9 @@
 
 ### Changes
 
-- [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
+- [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
+- [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
+- [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
@@ -52,7 +54,6 @@
 - [BREAKING] Migrated the `miden-agglayer` library, components and note scripts to `miden-project.toml` projects ([#3306](https://github.com/0xMiden/protocol/pull/3306)). 
 - [BREAKING] Renamed the BATCH_FEE standard note to TX_FEE: `BatchFeeNote` is now `TxFeeNote`, `miden::standards::notes::batch_fee` is now `miden::standards::notes::tx_fee`, and `StandardNote::BATCH_FEE` is now `StandardNote::TX_FEE`. The `0xFEE` note tag value is unchanged ([#3314](https://github.com/0xMiden/protocol/pull/3314)).
 - [BREAKING] Network accounts (`AuthNetworkAccount`) and no-auth accounts (`NoAuth`) now pay the transaction fee in the native fee asset at rate 1/1, funded from the account's vault ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
-- [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
 
 ## v0.16.0-alpha.4 (2026-07-16)
 

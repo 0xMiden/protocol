@@ -106,7 +106,7 @@ impl NetworkAccount {
 
         Ok(AccountBuilder::new(init_seed)
             .account_type(AccountType::Public)
-            .with_auth_component(auth_component))
+            .with_component(auth_component))
     }
 
     /// Consumes `self` and returns the underlying [`Account`].
@@ -194,7 +194,7 @@ mod tests {
     fn build_account(account_type: AccountType, roots: BTreeSet<NoteScriptRoot>) -> Account {
         AccountBuilder::new([0; 32])
             .account_type(account_type)
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(roots)
                     .expect("non-empty allowlist")
                     .with_allowed_tx_scripts(
@@ -238,7 +238,7 @@ mod tests {
     fn public_account_without_allowlist_is_not_a_network_account() {
         let account = AccountBuilder::new([0; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(crate::account::auth::NoAuth)
+            .with_component(crate::account::auth::NoAuth)
             .with_component(BasicWallet)
             .build()
             .expect("account building should succeed");
@@ -257,7 +257,7 @@ mod tests {
         let note_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let account = AccountBuilder::new([0; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([note_root]))
                     .expect("non-empty allowlist"),
             )
