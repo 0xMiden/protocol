@@ -837,7 +837,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
         ]))
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let tx = TestTransactionBuilder::new(account.clone()).build()?.execute().await?;
@@ -885,7 +885,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
             StorageSlot::with_empty_map(slot_name0.clone()),
             StorageSlot::with_empty_map(slot_name1.clone()),
         ]))
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let map_key = StorageMapKey::from_array([1, 2, 3, 4u32]);

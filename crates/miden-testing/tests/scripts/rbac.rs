@@ -30,7 +30,7 @@ use rstest::rstest;
 fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() })
         .build_existing()?;
 
@@ -934,7 +934,7 @@ fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Resul
 
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(RoleBasedAccessControl::new(
             BTreeSet::from([admin]),
             BTreeMap::from([

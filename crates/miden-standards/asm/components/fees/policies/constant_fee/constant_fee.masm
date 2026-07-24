@@ -1,8 +1,8 @@
 # The MASM code of the `constant_fee` Fee Policy Account Component.
 #
 # Exposes the `compute_note_fee` procedure so its MAST root can be registered as the active
-# (or allowed) fee policy on a `FeeManager`. Owns the `fee_schedule` slot; the fee asset ID is
-# read from the `FeeManager` installed on the same account.
+# (or allowed) fee policy of an `AuthNetworkAccount`. Owns the `fee_schedule` slot; the fee asset
+# ID is read from the fee-policy storage of the `AuthNetworkAccount` this policy is installed on.
 #
 # See the `ConstantFeePolicy` Rust type's documentation for more details.
 

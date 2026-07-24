@@ -295,7 +295,7 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     );
     assert_eq!(account.initial_commitment(), Word::empty());
 
-    let existing_account = Account::mock(existing_id.into(), auth_component);
+    let existing_account = Account::mock(existing_id.into(), [auth_component]);
     builder.add_account(existing_account.clone())?;
     let mock_chain = builder.build()?;
 
@@ -354,7 +354,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
     // --------------------------------------------------------------------------------------------
     let mock_chain = MockChain::new();
     let account = AccountBuilder::new([5; 32])
-        .with_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::new("miden::test_slot")?,
             Word::from([5u32; 4]),

@@ -205,7 +205,7 @@ async fn test_block_procedures() -> anyhow::Result<()> {
 #[tokio::test]
 async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let executor_account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, IncrNonceAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [IncrNonceAuthComponent]);
     let account_id = executor_account.id();
 
     // removed assets

@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -22,6 +22,7 @@ use crate::account::auth::{
     GuardianConfig,
 };
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{
@@ -223,6 +224,7 @@ fn network_fungible_faucet_with_ownable2step() {
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
     )
     .expect("Ownable2Step network faucet should be accepted");
 }
@@ -240,6 +242,7 @@ fn network_fungible_faucet_allowlists_expiration_tx_script() {
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
     )
     .unwrap();
 

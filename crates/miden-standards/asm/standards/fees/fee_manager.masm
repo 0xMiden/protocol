@@ -1,17 +1,14 @@
 # miden::standards::fees::fee_manager
 #
-# Fee estimation structured like the token policy managers: the manager stores the procedure root
-# of the active fee policy and dispatches fee estimation to it via `dyncall`. The actual fee
-# computation logic lives in fee policy components (e.g.
+# Fee estimation reads the procedure root of the active fee policy and dispatches fee estimation
+# to it via `dyncall`. The actual fee computation logic lives in fee policy components (e.g.
 # `miden::standards::fees::policies::constant_fee`), and the active policy can be switched to any
-# allowlisted policy root through the authority-gated `set_fee_policy`. The policy returns the
-# full fee asset; the manager stores the ID of the asset fees are charged in and asserts the
-# policy's result is denominated in it, so a policy misconfigured with a different fee asset
-# aborts fee estimation.
+# allowlisted policy root through the authority-gated `set_fee_policy`. The policy returns the full
+# fee asset; the configured fee asset ID is read back and the policy's result is asserted to be
+# denominated in it, so a policy misconfigured with a different fee asset aborts fee estimation.
 #
-# Fee collection (`miden::standards::fees::collect_sponsored_fees`) tallies the fees prepaid by the
-# FEE_SPONSORSHIP notes among the transaction's input notes, pricing each feature note through the
-# same active fee policy via `estimate_note_fee_internal`.
+# Fee collection tallies the fees prepaid by the FEE_SPONSORSHIP notes among the transaction's
+# input notes, pricing each feature note through the active fee policy.
 
 use miden::core::word
 
@@ -21,23 +18,30 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 
 use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # DEPENDENCY NOTE
 # `set_fee_policy` consults the account-wide [`Authority`] component (installed separately) via
-# `exec.authority::assert_authorized`. The manager itself is authority-agnostic and stores no
+# `exec.authority::assert_authorized`. This module itself is authority-agnostic and stores no
 # authority discriminator.
 
 # CONSTANTS
 # =================================================================================================
 
 # Active fee policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::fees::fee_manager::active_fee_policy_proc_root")
+const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::auth::network_account::active_fee_policy_proc_root")
 
 # Allowlist map slot for fee policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
-const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::fees::fee_manager::allowed_fee_policy_proc_roots")
+const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::auth::network_account::allowed_fee_policy_proc_roots")
 
 # Slot holding the ID of the asset fees are charged in. Layout: [FEE_ASSET_ID]
-const FEE_ASSET_ID_SLOT = word("miden::standards::fees::fee_manager::fee_asset_id")
+const FEE_ASSET_ID_SLOT = word("miden::standards::auth::network_account::fee_asset_id")
+
+# Map entry value marking a fee policy root as allowed.
+const ALLOWED_FLAG = ONE_WORD
+
+# Map entry value marking a fee policy root as not allowed.
+const EMPTY_WORD = ZERO_WORD
 
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR = 0
@@ -49,6 +53,7 @@ const ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 = "timeframe and priority must be u32 va
 const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
 const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
+const ERR_FEE_POLICY_ROOT_IS_ACTIVE = "the active fee policy root cannot be removed from the allowed roots map"
 const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
 const ERR_FEE_POLICY_FEE_ASSET_MISMATCH = "fee policy returned a fee asset that does not match the fee asset configured in the fee manager"
@@ -156,6 +161,80 @@ pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
     # => [pad(16)]
 end
 
+#! Adds a fee policy root to the allowed fee policy roots map.
+#!
+#! Registers `FEE_POLICY_ROOT` as an allowed alternative that `set_fee_policy` may later activate.
+#! Adding a root that is already allowed is a no-op. This only mutates the allowlist gate; the root
+#! must additionally be a procedure of this account for `set_fee_policy` to accept it.
+#!
+#! Inputs:  [FEE_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_allowed_fee_policy(policy_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    push.ALLOWED_FLAG swapw
+    # => [FEE_POLICY_ROOT, ALLOWED_FLAG, pad(12)]
+
+    push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, ALLOWED_FLAG, pad(12)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Removes a fee policy root from the allowed fee policy roots map.
+#!
+#! Writes the empty word for `FEE_POLICY_ROOT`, which `set_fee_policy` treats as not allowed.
+#! Removing a root that is not currently allowed is a no-op. The active fee policy's root cannot be
+#! removed from the allowlist; attempting to remove it aborts, so the active policy always remains a
+#! valid switch target.
+#!
+#! Inputs:  [FEE_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - `FEE_POLICY_ROOT` is the active fee policy root.
+#!
+#! Invocation: call
+@account_procedure
+pub proc remove_allowed_fee_policy(policy_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    # the active fee policy root may not be removed from the allowlist
+    exec.get_fee_policy_root
+    # => [ACTIVE_FEE_POLICY_ROOT, FEE_POLICY_ROOT, pad(12)]
+
+    dupw.1 exec.word::eq
+    # => [is_active, FEE_POLICY_ROOT, pad(12)]
+
+    assertz.err=ERR_FEE_POLICY_ROOT_IS_ACTIVE
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    push.EMPTY_WORD swapw
+    # => [FEE_POLICY_ROOT, EMPTY_WORD, pad(12)]
+
+    push.ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, FEE_POLICY_ROOT, EMPTY_WORD, pad(12)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -198,9 +277,8 @@ end
 #! Executes the active fee policy by dynamic invocation.
 #!
 #! All note parameters are forwarded to the active fee policy (via `dyncall`), which derives the
-#! fee asset from them; the returned fee asset ID is asserted to match the fee asset ID stored in
-#! this component's storage, so the policy cannot charge in an asset the manager is not
-#! configured with.
+#! fee asset from them; the returned fee asset ID is asserted to match the fee asset ID in the
+#! fee-policy storage, so the policy cannot charge in an asset the account is not configured with.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]

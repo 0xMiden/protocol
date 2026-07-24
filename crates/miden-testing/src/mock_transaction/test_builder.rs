@@ -70,7 +70,7 @@ impl TestTransactionBuilder {
     pub(crate) fn with_existing_mock_account() -> Self {
         Self::new(Account::mock(
             ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-            IncrNonceAuthComponent,
+            [IncrNonceAuthComponent],
         ))
     }
 
@@ -79,7 +79,7 @@ impl TestTransactionBuilder {
     pub(crate) fn with_noop_auth_account() -> Self {
         Self::new(Account::mock(
             ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-            NoopAuthComponent,
+            [NoopAuthComponent],
         ))
     }
 
