@@ -1,11 +1,10 @@
 use core::num::NonZeroU16;
 
-use miden_protocol::assembly::Path;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::StandardsLib;
+use crate::tx_script::transaction_script;
 
 // CONSTANTS
 // ================================================================================================
@@ -17,12 +16,8 @@ const EXPIRATION_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::expirat
 // EXPIRATION TRANSACTION SCRIPT
 // ================================================================================================
 
-static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    let standards_lib = StandardsLib::default();
-    let path = Path::new(EXPIRATION_TX_SCRIPT_PATH);
-    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("standards library should contain the expiration tx script procedure")
-});
+static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> =
+    LazyLock::new(|| transaction_script(EXPIRATION_TX_SCRIPT_PATH));
 
 /// The canonical transaction script that sets the transaction's expiration delta to the value
 /// supplied in the first element of `TX_SCRIPT_ARGS`.
@@ -42,9 +37,8 @@ static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
 ///
 /// ```ignore
 /// let script = ExpirationTransactionScript::new(delta);
-/// let mock_tx = build_transaction(/* .. */)
-///     .tx_script(script.into())
-///     .tx_script_args(script.tx_script_args());
+/// let tx_args = TransactionArgs::new(AdviceMap::default())
+///     .with_tx_script_and_args(script.into(), script.tx_script_args());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpirationTransactionScript {

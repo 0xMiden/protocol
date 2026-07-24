@@ -3,13 +3,13 @@
 #
 # The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
 # parameters (the payload) from the advice map, so a single script root covers every possible
-# set of output notes. See `send_notes_common` for the payload layout.
+# set of output notes. See the parent `send_notes` module for the payload layout.
 
 use miden::protocol::output_note
 use miden::standards::note::note_creator
-use miden::standards::tx_scripts::send_notes_common
+use miden::standards::tx_scripts::send_notes
 use miden::standards::wallets::basic
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes_common
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes
 
 # CONSTANTS
 # =================================================================================================
@@ -46,7 +46,7 @@ const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment co
 #! Invocation: call
 @transaction_script
 pub proc main
-    exec.send_notes_common::load_payload
+    exec.send_notes::load_payload
     # => [pad(16)]
 
     exec.process_notes

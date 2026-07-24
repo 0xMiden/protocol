@@ -1,4 +1,5 @@
-# Shared payload handling for the canonical `send_notes` transaction scripts.
+# Shared payload handling for the canonical `send_notes` transaction scripts, which live in the
+# [`send_notes::wallet`] and [`send_notes::faucet`] submodules.
 #
 # The `send_notes` scripts receive a commitment to their parameters as `TX_SCRIPT_ARGS` and load
 # the actual parameters (the payload) from the advice map, so a single script root covers every
@@ -18,40 +19,34 @@
 use miden::core::mem
 use miden::protocol::tx
 
+pub mod faucet
+pub mod wallet
+
 # CONSTANTS
 # =================================================================================================
 
-# Number of elements in a word.
+# The number of field elements in a word. Mirrors `miden::protocol::constants::WORD_NUM_ELEMENTS`,
+# which cannot be used here: the assembler resolves imported constants only in instruction
+# immediates, so the offset chain below cannot be derived from one.
 pub const WORD_NUM_ELEMENTS = 4
 
-# Memory address at which the payload is stored.
+# Memory addresses of the payload and of the two header elements it starts with.
 pub const PAYLOAD_ADDR = 0
-
-# Memory address of the number of notes in the payload (header element 0).
 pub const NUM_NOTES_ADDR = PAYLOAD_ADDR
-
-# Memory address of the expiration delta in the payload (header element 1).
 pub const EXPIRATION_DELTA_ADDR = PAYLOAD_ADDR + 1
 
-# Memory address of the first note record (right after the header word).
+# Memory address of the first note record, which starts right after the header word.
 pub const NOTES_START_ADDR = PAYLOAD_ADDR + WORD_NUM_ELEMENTS
 
-# Element offset of the tag within a note record (element 0 of the record's second word).
+# Element offsets of the fields in a note record's second word, relative to the record start.
 pub const TAG_OFFSET = WORD_NUM_ELEMENTS
-
-# Element offset of the note type within a note record.
 pub const NOTE_TYPE_OFFSET = TAG_OFFSET + 1
-
-# Element offset of the asset count within a note record.
 pub const NUM_ASSETS_OFFSET = TAG_OFFSET + 2
-
-# Element offset of the attachment count within a note record.
 pub const NUM_ATTACHMENTS_OFFSET = TAG_OFFSET + 3
 
-# Element offset of the first asset or attachment item within a note record.
+# Element offset of the first asset or attachment item within a note record, and the number of
+# elements a single such item occupies (two words).
 pub const ITEMS_OFFSET = NUM_ATTACHMENTS_OFFSET + 1
-
-# Number of elements occupied by a single asset or attachment item (two words).
 pub const ITEM_NUM_ELEMENTS = WORD_NUM_ELEMENTS + WORD_NUM_ELEMENTS
 
 # ERRORS

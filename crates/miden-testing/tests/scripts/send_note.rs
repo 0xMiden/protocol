@@ -27,16 +27,6 @@ use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactio
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-// These constants describe the `send_notes` payload layout and must be kept in sync with the
-// layout defined by `encode_payload` in `miden-standards`' `send_notes_script.rs`.
-
-/// Number of elements in the payload header word: `[num_notes, expiration_delta, 0, 0]`.
-const PAYLOAD_HEADER_NUM_ELEMENTS: usize = 4;
-
-/// Element offset of the asset count within a note record, after the RECIPIENT word and the
-/// `tag` and `note_type` elements.
-const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
-
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
 ///
@@ -467,7 +457,8 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
     // commitment so the payload passes the advice validation and reaches the script's own
     // assertion.
     let (_, mut payload) = script.advice_entries()[0].clone();
-    payload[PAYLOAD_HEADER_NUM_ELEMENTS + NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
+    payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
+        + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
     let tampered_args = Hasher::hash_elements(&payload);
 
     let result = mock_chain

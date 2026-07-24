@@ -2,51 +2,39 @@ use alloc::vec::Vec;
 use core::num::NonZeroU16;
 
 use miden_protocol::account::{AccountCodeInterface, AccountId};
-use miden_protocol::assembly::Path;
 use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word, ZERO};
 use thiserror::Error;
 
-use crate::StandardsLib;
 use crate::account::access::Ownable2Step;
 use crate::account::faucets::FungibleFaucet;
 use crate::account::wallets::BasicWallet;
+use crate::tx_script::transaction_script;
 
 // CONSTANTS
 // ================================================================================================
 
 /// Path to the `send_notes` wallet transaction script procedure in the standards library.
 const SEND_NOTES_WALLET_TX_SCRIPT_PATH: &str =
-    "::miden::standards::tx_scripts::send_notes_wallet::main";
+    "::miden::standards::tx_scripts::send_notes::wallet::main";
 
 /// Path to the `send_notes` faucet transaction script procedure in the standards library.
 const SEND_NOTES_FAUCET_TX_SCRIPT_PATH: &str =
-    "::miden::standards::tx_scripts::send_notes_faucet::main";
+    "::miden::standards::tx_scripts::send_notes::faucet::main";
 
 // SEND NOTES TRANSACTION SCRIPT
 // ================================================================================================
 
-static SEND_NOTES_WALLET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    let standards_lib = StandardsLib::default();
-    let path = Path::new(SEND_NOTES_WALLET_TX_SCRIPT_PATH);
-    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("standards library should contain the send_notes wallet tx script procedure")
-});
+static SEND_NOTES_WALLET_TX_SCRIPT: LazyLock<TransactionScript> =
+    LazyLock::new(|| transaction_script(SEND_NOTES_WALLET_TX_SCRIPT_PATH));
 
-static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    let standards_lib = StandardsLib::default();
-    let path = Path::new(SEND_NOTES_FAUCET_TX_SCRIPT_PATH);
-    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
-        .expect("standards library should contain the send_notes faucet tx script procedure")
-});
+static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> =
+    LazyLock::new(|| transaction_script(SEND_NOTES_FAUCET_TX_SCRIPT_PATH));
 
 /// A [`TransactionScript`] that sends the specified notes from an account whose code interface
 /// exposes either the [`BasicWallet`] or [`FungibleFaucet`] procedures.
-///
-/// Callers must pass [`Self::tx_script_args`] as the transaction script argument and extend
-/// the transaction's advice map with [`Self::advice_entries`].
 ///
 /// Provided `expiration_delta` specifies how close to the transaction's reference block the
 /// transaction must be included into the chain. For example, with a reference block of 100 and a
@@ -58,14 +46,19 @@ static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(
 /// exclusively via MINT notes, so the standard `send_note` flow is rejected at script-build time
 /// to avoid runtime failures under the OwnerOnly mint policy.
 ///
+/// All three parts of the script must reach the transaction: the script itself
+/// ([`Self::tx_script`]), the payload commitment it reads its parameters from
+/// ([`Self::tx_script_args`]), and the payload and attachment contents keyed by their commitments
+/// ([`Self::advice_entries`]). The script fails at execution if the advice entries are missing.
+///
 /// # Example
 ///
 /// ```ignore
 /// let script = SendNotesTransactionScript::new(&interface, &notes)?;
-/// let context = build_tx_context(/* .. */)
-///     .tx_script(script.tx_script().clone())
-///     .tx_script_args(script.tx_script_args())
-///     .extend_advice_map(script.advice_entries().to_vec());
+///
+/// let mut tx_args = TransactionArgs::new(AdviceMap::default())
+///     .with_tx_script_and_args(script.tx_script().clone(), script.tx_script_args());
+/// tx_args.extend_advice_map(script.advice_entries().to_vec());
 /// ```
 #[derive(Debug, Clone)]
 pub struct SendNotesTransactionScript {
@@ -75,6 +68,23 @@ pub struct SendNotesTransactionScript {
 }
 
 impl SendNotesTransactionScript {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Number of elements in the payload header word: `[num_notes, expiration_delta, 0, 0]`.
+    ///
+    /// See `encode_payload` for the full payload layout.
+    pub const PAYLOAD_HEADER_NUM_ELEMENTS: usize = 4;
+
+    /// Element offset of the asset count within a note record, after the RECIPIENT word and the
+    /// `tag` and `note_type` elements.
+    ///
+    /// See `encode_payload` for the full payload layout.
+    pub const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Builds a `send_notes` transaction script for the account described by `interface`,
     /// without an expiration delta.
     ///
@@ -252,14 +262,25 @@ fn encode_payload(notes: &[PartialNote], expiration_delta: u16) -> Vec<Felt> {
     let num_notes = u32::try_from(notes.len()).expect("note count should fit in a u32");
 
     let mut payload = alloc::vec![Felt::from(num_notes), Felt::from(expiration_delta), ZERO, ZERO];
+    debug_assert_eq!(
+        payload.len(),
+        SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS,
+        "header size should match the advertised constant"
+    );
 
     for note in notes {
         let num_assets =
             u32::try_from(note.assets().num_assets()).expect("asset count should fit in a u32");
 
+        let record_start = payload.len();
         payload.extend(note.recipient_digest().iter());
         payload.push(Felt::from(note.metadata().tag()));
         payload.push(Felt::from(note.metadata().note_type()));
+        debug_assert_eq!(
+            payload.len() - record_start,
+            SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET,
+            "asset count should sit at the advertised record offset"
+        );
         payload.push(Felt::from(num_assets));
         payload.push(Felt::from(note.attachments().num_attachments()));
 
