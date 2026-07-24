@@ -1,8 +1,8 @@
 use alloc::boxed::Box;
 
-use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
+    DefaultHost,
     ExecutionError,
     ExecutionOptions,
     ExecutionOutput,
