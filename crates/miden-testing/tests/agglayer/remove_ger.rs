@@ -15,6 +15,8 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
+use super::test_utils::MIDEN_NETWORK_ID;
+
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -41,6 +43,7 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Acco
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
