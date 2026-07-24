@@ -84,7 +84,6 @@ pub struct MockTransactionBuilder<'chain> {
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
-    is_lazy_loading_enabled: bool,
 }
 
 impl<'chain> MockTransactionBuilder<'chain> {
@@ -115,7 +114,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             source_manager: None,
-            is_lazy_loading_enabled: true,
         }
     }
 
@@ -268,15 +266,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Disables lazy loading.
-    ///
-    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
-    /// loading events.
-    pub fn disable_lazy_loading(mut self) -> Self {
-        self.is_lazy_loading_enabled = false;
-        self
-    }
-
     /// Builds the [`MockTransaction`].
     ///
     /// The configured account and input notes are resolved into [`TransactionInputs`] against the
@@ -341,7 +330,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             authenticator: self.authenticator,
             source_manager,
             note_scripts: self.note_scripts,
-            is_lazy_loading_enabled: self.is_lazy_loading_enabled,
         })
     }
 }

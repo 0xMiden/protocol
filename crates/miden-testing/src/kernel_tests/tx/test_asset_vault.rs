@@ -118,11 +118,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
-    // Disable lazy loading otherwise the handler will return an error before the transaction kernel
-    // can abort, which is what we want to test.
-    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .disable_lazy_loading()
-        .build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
     let non_fungible_asset =
@@ -141,7 +137,9 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
-    let exec_result = mock_tx.execute_code(&code).await;
+    // Execute without lazy loading, otherwise the handler will return an error before the
+    // transaction kernel can abort, which is what we want to test.
+    let exec_result = mock_tx.execute_code_without_lazy_loading(&code).await;
 
     assert_execution_error!(
         exec_result,

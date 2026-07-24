@@ -1,9 +1,10 @@
-use alloc::borrow::ToOwned;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{ExecutionOutput, FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
+#[cfg(test)]
+use miden_processor::ExecutionOutput;
+use miden_processor::{FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -12,9 +13,8 @@ use miden_protocol::account::{
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
-use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetId, AssetWitness};
+use miden_protocol::assembly::SourceManagerSync;
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -26,23 +26,17 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     TransactionArgs,
     TransactionInputs,
-    TransactionKernel,
 };
-use miden_standards::code_builder::CodeBuilder;
-use miden_tx::auth::{BasicAuthenticator, UnreachableAuth};
+use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
-    AccountProcedureIndexMap,
     DataStore,
     DataStoreError,
-    ScriptMastForestStore,
     TransactionExecutor,
     TransactionExecutorError,
-    TransactionExecutorHost,
     TransactionMastStore,
 };
 
-use crate::executor::CodeExecutor;
-use crate::mock_host::MockHost;
+#[cfg(test)]
 use crate::mock_transaction::ExecError;
 
 // MOCK TRANSACTION
@@ -61,17 +55,77 @@ pub struct MockTransaction {
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
-    pub(super) is_lazy_loading_enabled: bool,
 }
 
+impl MockTransaction {
+    /// Executes the transaction through a [TransactionExecutor]
+    pub async fn execute(self) -> Result<ExecutedTransaction, TransactionExecutorError> {
+        let account_id = self.account().id();
+        let block_num = self.tx_inputs().block_header().block_num();
+        let notes = self.tx_inputs().input_notes().clone();
+        let tx_args = self.tx_args().clone();
+
+        let mut tx_executor =
+            TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
+
+        if let Some(authenticator) = self.authenticator() {
+            tx_executor = tx_executor.with_authenticator(authenticator);
+        }
+
+        tx_executor.execute_transaction(account_id, block_num, notes, tx_args).await
+    }
+
+    pub fn account(&self) -> &Account {
+        &self.account
+    }
+
+    pub fn expected_output_notes(&self) -> &[Note] {
+        &self.expected_output_notes
+    }
+
+    pub fn tx_args(&self) -> &TransactionArgs {
+        self.tx_inputs.tx_args()
+    }
+
+    pub fn input_notes(&self) -> &InputNotes<InputNote> {
+        self.tx_inputs.input_notes()
+    }
+
+    pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
+        self.tx_inputs.set_tx_args(tx_args);
+    }
+
+    pub fn tx_inputs(&self) -> &TransactionInputs {
+        &self.tx_inputs
+    }
+
+    pub fn authenticator(&self) -> Option<&BasicAuthenticator> {
+        self.authenticator.as_ref()
+    }
+
+    /// Returns the source manager used in the assembler of the mock transaction.
+    pub fn source_manager(&self) -> Arc<dyn SourceManagerSync> {
+        Arc::clone(&self.source_manager)
+    }
+}
+
+// CODE EXECUTION
+// ================================================================================================
+
+#[cfg(test)]
 impl MockTransaction {
     /// Executes arbitrary code within the context of a mocked transaction environment and returns
     /// the resulting [`ExecutionOutput`].
     ///
-    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_packages`]
-    /// and executed with advice inputs constructed from the data stored in the context. The program
+    /// The code is compiled with the assembler built by
+    /// [`CodeBuilder::with_mock_packages_with_source_manager`] and executed with advice inputs
+    /// constructed from the data stored in the context. The program
     /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
     /// by the transaction kernel, and also individual kernel functions (not normally exposed).
+    ///
+    /// This executes in the memory context of the transaction kernel and requires invoking internal
+    /// kernel APIs to be used correctly, so it is restricted to this crate's tests. Use
+    /// [`MockTransaction::execute`] to execute a transaction.
     ///
     /// # Errors
     ///
@@ -80,37 +134,37 @@ impl MockTransaction {
     /// # Panics
     ///
     /// - If the provided `code` is not a valid program.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use anyhow::Result;
-    /// # use miden_protocol::Felt;
-    /// # use miden_testing::{Auth, MockChain};
-    /// #
-    /// # #[tokio::main(flavor = "current_thread")]
-    /// # async fn main() -> Result<()> {
-    /// let mut builder = MockChain::builder();
-    /// let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    /// let mock_chain = builder.build()?;
-    /// let mock_tx = mock_chain.build_transaction(account.id()).build()?;
-    ///
-    /// let code = "
-    /// use miden::tx_kernel_core::prologue
-    ///
-    /// begin
-    ///     exec.prologue::prepare_transaction
-    ///     push.5
-    ///     swap drop
-    /// end
-    /// ";
-    ///
-    /// let exec_output = mock_tx.execute_code(code).await?;
-    /// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::from(5u32));
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
+    pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
+    /// loading events, which lets a kernel procedure be tested in isolation from them.
+    pub(crate) async fn execute_code_without_lazy_loading(
+        &self,
+        code: &str,
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, false).await
+    }
+
+    async fn execute_code_inner(
+        &self,
+        code: &str,
+        is_lazy_loading_enabled: bool,
+    ) -> Result<ExecutionOutput, ExecError> {
+        use alloc::borrow::ToOwned;
+
+        use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
+        use miden_protocol::assembly::{Assembler, SourceManager};
+        use miden_protocol::asset::Asset;
+        use miden_protocol::transaction::TransactionKernel;
+        use miden_standards::code_builder::CodeBuilder;
+        use miden_tx::auth::UnreachableAuth;
+        use miden_tx::{AccountProcedureIndexMap, ScriptMastForestStore, TransactionExecutorHost};
+
+        use crate::executor::CodeExecutor;
+        use crate::mock_host::MockHost;
+
         // Fetch all witnesses for note assets.
         let asset_ids = self
             .tx_inputs
@@ -179,7 +233,7 @@ impl MockTransaction {
         let advice_inputs = advice_inputs.into_advice_inputs();
 
         let mut mock_host = MockHost::new(exec_host);
-        if self.is_lazy_loading_enabled {
+        if is_lazy_loading_enabled {
             mock_host.enable_lazy_loading()
         }
 
@@ -188,56 +242,6 @@ impl MockTransaction {
             .extend_advice_inputs(advice_inputs)
             .execute_package(program)
             .await
-    }
-
-    /// Executes the transaction through a [TransactionExecutor]
-    pub async fn execute(self) -> Result<ExecutedTransaction, TransactionExecutorError> {
-        let account_id = self.account().id();
-        let block_num = self.tx_inputs().block_header().block_num();
-        let notes = self.tx_inputs().input_notes().clone();
-        let tx_args = self.tx_args().clone();
-
-        let mut tx_executor =
-            TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
-
-        if let Some(authenticator) = self.authenticator() {
-            tx_executor = tx_executor.with_authenticator(authenticator);
-        }
-
-        tx_executor.execute_transaction(account_id, block_num, notes, tx_args).await
-    }
-
-    pub fn account(&self) -> &Account {
-        &self.account
-    }
-
-    pub fn expected_output_notes(&self) -> &[Note] {
-        &self.expected_output_notes
-    }
-
-    pub fn tx_args(&self) -> &TransactionArgs {
-        self.tx_inputs.tx_args()
-    }
-
-    pub fn input_notes(&self) -> &InputNotes<InputNote> {
-        self.tx_inputs.input_notes()
-    }
-
-    pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
-        self.tx_inputs.set_tx_args(tx_args);
-    }
-
-    pub fn tx_inputs(&self) -> &TransactionInputs {
-        &self.tx_inputs
-    }
-
-    pub fn authenticator(&self) -> Option<&BasicAuthenticator> {
-        self.authenticator.as_ref()
-    }
-
-    /// Returns the source manager used in the assembler of the mock transaction.
-    pub fn source_manager(&self) -> Arc<dyn SourceManagerSync> {
-        Arc::clone(&self.source_manager)
     }
 }
 

@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 
-#[cfg(test)]
 use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -12,7 +11,6 @@ use miden_processor::{
     Program,
     StackInputs,
 };
-#[cfg(test)]
 use miden_protocol::assembly::Assembler;
 use miden_protocol::vm::{DebugSourceNodeId, Package, PackageDebugInfo};
 
@@ -52,14 +50,12 @@ impl<H: Host> CodeExecutor<H> {
     }
 
     /// Overrides the [`ExecutionOptions`] used to run the program (e.g. to cap `max_cycles`).
-    #[cfg(test)]
     pub fn execution_options(mut self, options: ExecutionOptions) -> Self {
         self.execution_options = Some(options);
         self
     }
 
     /// Compiles and runs the desired code in the host and returns the [`Process`] state.
-    #[cfg(test)]
     pub async fn run(self, code: &str) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
         use alloc::sync::Arc;
@@ -146,7 +142,6 @@ impl<H: Host> CodeExecutor<H> {
     }
 }
 
-#[cfg(test)]
 impl CodeExecutor<DefaultHost> {
     pub fn with_default_host() -> Self {
         use miden_core_lib::CoreLibrary;
