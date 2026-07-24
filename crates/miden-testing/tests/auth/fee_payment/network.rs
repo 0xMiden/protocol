@@ -50,7 +50,7 @@ async fn execute_network_account_tx(
         .build();
 
     let account = AccountBuilder::new([9; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .with_assets(assets)

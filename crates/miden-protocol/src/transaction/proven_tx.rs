@@ -630,7 +630,7 @@ mod tests {
         // A small account's delta does not exceed the limit.
         let account = Account::builder([9; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
         let patch = AccountPatch::try_from(account.clone())?;
@@ -697,7 +697,7 @@ mod tests {
     fn account_update_id_mismatch_between_account_id_and_patch() -> anyhow::Result<()> {
         let patch_account = Account::builder([9; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
         let patch = AccountPatch::try_from(patch_account.clone())?;

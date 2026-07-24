@@ -232,7 +232,7 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b, root_c]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
+            .with_component(
                 AuthNetworkAccount::with_allowed_notes(original_roots.clone())
                     .expect("non-empty allowlist should construct"),
             )

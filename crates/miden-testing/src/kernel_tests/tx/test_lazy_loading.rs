@@ -57,7 +57,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
         FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
@@ -128,7 +128,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
         FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -205,7 +205,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -269,7 +269,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 

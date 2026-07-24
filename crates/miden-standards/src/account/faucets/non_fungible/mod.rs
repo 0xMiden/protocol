@@ -493,7 +493,7 @@ pub fn create_user_non_fungible_faucet(
 ) -> Result<Account, NonFungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)

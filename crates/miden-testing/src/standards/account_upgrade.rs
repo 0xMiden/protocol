@@ -33,7 +33,7 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
     // procedure, plus the network-account auth component (unused by `execute_code`, but
     // representative).
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(AuthNetworkAccount::with_allowed_notes(
+        .with_component(AuthNetworkAccount::with_allowed_notes(
             [placeholder_script_root()].into_iter().collect(),
         )?)
         .with_components(AccessControl::Ownable2Step { owner })

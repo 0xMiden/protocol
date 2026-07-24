@@ -33,7 +33,7 @@ use crate::{EthAddress, MetadataHash, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer library.
+/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer package.
 const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::notes::config_agg_bridge::main";
 
 // Initialize the CONFIG_AGG_BRIDGE note script only once

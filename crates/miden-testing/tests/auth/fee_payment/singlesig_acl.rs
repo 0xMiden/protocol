@@ -105,7 +105,7 @@ async fn acl_exempt_branch_pays_native_fee_note() -> anyhow::Result<()> {
     .build_component();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(component)
         .account_type(AccountType::Public)
         .with_assets([fee_asset.into()])

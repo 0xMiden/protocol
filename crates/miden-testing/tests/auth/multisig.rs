@@ -124,7 +124,7 @@ fn create_multisig_account(
     let approver_set = ApproverSet::new(approvers, threshold)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::Multisig { approver_set, proc_threshold_map })
+        .with_component(Auth::Multisig { approver_set, proc_threshold_map })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
@@ -488,7 +488,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -737,7 +737,7 @@ async fn test_multisig_update_signers_remove_owner(
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -927,7 +927,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -989,7 +989,7 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(
         "
         @transaction_script
@@ -1059,7 +1059,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     // SECTION 2: Prepare a signer update transaction with new approvers
     // ================================================================================
 
-    // Get the multisig library
+    // Get the multisig package
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();
@@ -1087,7 +1087,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -1359,7 +1359,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let set_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(set_script_code)?;
 
     // 1) Set override to 1 (requires default 2 signatures).
@@ -1440,7 +1440,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let clear_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(clear_script_code)?;
     let clear_salt = Word::from([Felt::new_unchecked(52); 4]);
 
@@ -1540,7 +1540,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
@@ -1619,7 +1619,7 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
@@ -1669,7 +1669,7 @@ where
 
     let script_code = build_script(&public_keys);
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(&script_code)?;
 
     let salt = Word::from([Felt::from_u8(77); 4]);

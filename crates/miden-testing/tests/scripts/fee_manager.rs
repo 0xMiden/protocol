@@ -160,7 +160,7 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
 pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -259,7 +259,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager()?)
         .build_existing()?;
@@ -301,7 +301,7 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager()?)
         .build_existing()?;
@@ -348,7 +348,7 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
 async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager()?)
         .build_existing()?;
@@ -394,14 +394,14 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -498,14 +498,14 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Result<()> {
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_components(fee_manager()?)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build_existing()?;
 
