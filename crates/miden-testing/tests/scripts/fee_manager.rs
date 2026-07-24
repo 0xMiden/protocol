@@ -17,6 +17,7 @@ use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_POLICY_ROOT_IS_ACTIVE,
     ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
     ERR_SENDER_NOT_OWNER,
@@ -704,12 +705,11 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Removing the active fee policy's root from the allowed-policies map does not disable it for fee
-/// estimation: `estimate_note_fee` reads the active policy root directly from its slot, not the
-/// allowlist, so estimation still returns the scheduled fee after the active root is removed.
-/// (Removal only prevents switching *back* to the root via `set_fee_policy`.)
+/// The active fee policy's root cannot be removed from the allowed-policies map:
+/// `remove_allowed_fee_policy` aborts with `ERR_FEE_POLICY_ROOT_IS_ACTIVE`, so the active policy's
+/// root always stays allowlisted.
 #[tokio::test]
-async fn removing_active_policy_root_does_not_disable_estimation() -> anyhow::Result<()> {
+async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
@@ -731,28 +731,17 @@ async fn removing_active_policy_root_does_not_disable_estimation() -> anyhow::Re
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Remove the active policy's root from the allowlist; the mutation takes effect from the next
-    // block.
-    consume_note(&mut mock_chain, account.id(), &remove_note).await?;
-
-    // Estimation still returns the scheduled fee for `priced_root`: the active policy remains in
-    // use for fee estimation even though its root is no longer allowlisted.
-    let tx_script_code = estimate_note_fee_tx_script_code(
-        Word::empty(),
-        11,
-        7,
-        AssetId::new_fungible(fee_faucet_id()?).to_word(),
-        AssetAmount::new(FEE_AMOUNT)?.to_word(),
-    );
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    mock_chain
+    // Consuming the note that tries to remove the active policy's root aborts.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
         .build_transaction(account.id())
-        .tx_script(tx_script)
-        .tx_script_args(priced_root().as_word())
+        .authenticated_input_note(remove_note.id())
+        .with_source_manager(source_manager)
         .build()?
         .execute()
-        .await?;
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_IS_ACTIVE);
 
     Ok(())
 }

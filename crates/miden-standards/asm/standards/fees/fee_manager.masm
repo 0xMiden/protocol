@@ -56,6 +56,7 @@ const ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 = "timeframe and priority must be u32 va
 const ERR_FEE_POLICY_ROOT_IS_ZERO = "fee policy root is zero"
 const ERR_FEE_POLICY_ROOT_NOT_IN_ACCOUNT = "fee policy root is not a procedure of this account"
 const ERR_FEE_POLICY_ROOT_NOT_ALLOWED = "fee policy root is not allowed"
+const ERR_FEE_POLICY_ROOT_IS_ACTIVE = "the active fee policy root cannot be removed from the allowed roots map"
 const ERR_ACTIVE_FEE_POLICY_NOT_SET = "active fee policy is not set"
 
 const ERR_FEE_POLICY_FEE_ASSET_MISMATCH = "fee policy returned a fee asset that does not match the fee asset configured in the fee manager"
@@ -197,20 +198,31 @@ end
 #! Removes a fee policy root from the allowed fee policy roots map.
 #!
 #! Writes the empty word for `FEE_POLICY_ROOT`, which `set_fee_policy` treats as not allowed.
-#! Removing a root that is not currently allowed is a no-op. Removing the currently active policy's
-#! root does not stop it from being used for fee estimation (that reads the active root directly);
-#! it only prevents switching back to it.
+#! Removing a root that is not currently allowed is a no-op. The active fee policy's root cannot be
+#! removed from the allowlist; attempting to remove it aborts, so the active policy always remains a
+#! valid switch target.
 #!
 #! Inputs:  [FEE_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed [`Authority`].
+#! - `FEE_POLICY_ROOT` is the active fee policy root.
 #!
 #! Invocation: call
 @account_procedure
 pub proc remove_allowed_fee_policy(policy_root: AccountProcedureRoot)
     exec.authority::assert_authorized
+    # => [FEE_POLICY_ROOT, pad(12)]
+
+    # the active fee policy root may not be removed from the allowlist
+    exec.get_fee_policy_root
+    # => [ACTIVE_FEE_POLICY_ROOT, FEE_POLICY_ROOT, pad(12)]
+
+    dupw.1 exec.word::eq
+    # => [is_active, FEE_POLICY_ROOT, pad(12)]
+
+    assertz.err=ERR_FEE_POLICY_ROOT_IS_ACTIVE
     # => [FEE_POLICY_ROOT, pad(12)]
 
     push.EMPTY_WORD swapw
