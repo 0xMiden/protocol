@@ -63,7 +63,9 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 ///
 /// This is a simple baseline constant fee policy: the fee depends only on the note's script root.
 /// More sophisticated constant fee policies can be derived from it by swapping the lookup-key
-/// computation of its `compute_note_fee` procedure, which yields a policy with a new root.
+/// computation of its `compute_note_fee` procedure, which yields a policy with a new root. A
+/// derived policy must also rename its `fee_schedule` storage slot, since two components
+/// installed on the same account cannot share a slot name.
 ///
 /// Register with a [`crate::account::fees::FeePolicyManager`], whose allowed fee-policies map then
 /// includes [`BasicConstantFeePolicy::root`]. When active, `estimate_note_fee` dispatches to this
