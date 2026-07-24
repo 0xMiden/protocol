@@ -1,8 +1,8 @@
 # miden::standards::fees::policies::basic_constant_fee
 #
-# Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is the
-# simplest constant fee policy; more sophisticated policies can be derived from it by swapping the
-# lookup-key computation. Designed to be registered as a fee policy of an `AuthNetworkAccount`,
+# Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is a
+# minimal baseline; more sophisticated constant fee policies can be derived from it by swapping
+# the lookup-key computation. Designed to be registered as a fee policy of an `AuthNetworkAccount`,
 # whose fee manager (see `miden::standards::fees::fee_manager`) dispatches fee estimation to
 # `compute_note_fee` via `dyncall`. The fee is charged in the fee asset the network account is
 # configured with, read from its storage, so this component must be installed on an
