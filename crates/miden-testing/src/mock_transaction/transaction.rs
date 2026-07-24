@@ -43,7 +43,7 @@ use miden_tx::{
 
 use crate::executor::CodeExecutor;
 use crate::mock_host::MockHost;
-use crate::tx_context::ExecError;
+use crate::mock_transaction::ExecError;
 
 // MOCK TRANSACTION
 // ================================================================================================
@@ -139,7 +139,7 @@ impl MockTransaction {
         // Virtual file name should be unique.
         let virtual_source_file = self.source_manager.load(
             SourceLanguage::Masm,
-            Uri::new("_tx_context_code"),
+            Uri::new("_mock_tx_code"),
             code.to_owned(),
         );
 
@@ -148,7 +148,7 @@ impl MockTransaction {
                 .into();
 
         let program = assembler
-            .assemble_program("tx-context-code", virtual_source_file)
+            .assemble_program("mock-tx-code", virtual_source_file)
             .expect("code was not well formed");
 
         // Load transaction kernel and the program into the mast forest in self.
@@ -236,7 +236,7 @@ impl MockTransaction {
         self.authenticator.as_ref()
     }
 
-    /// Returns the source manager used in the assembler of the transaction context builder.
+    /// Returns the source manager used in the assembler of the mock transaction.
     pub fn source_manager(&self) -> Arc<dyn SourceManagerSync> {
         Arc::clone(&self.source_manager)
     }
@@ -436,12 +436,12 @@ mod tests {
             .expect("failed to assemble note script 2");
         let script_root2 = note_script2.root();
 
-        // Build a transaction context with both note scripts
+        // Build a mock transaction with both note scripts
         let mock_tx = TestTransactionBuilder::with_existing_mock_account()
             .add_note_script(note_script1.clone())
             .add_note_script(note_script2.clone())
             .build()
-            .expect("failed to build transaction context");
+            .expect("failed to build mock transaction");
 
         // Assert that fetching both note scripts works
         let retrieved_script1 = mock_tx

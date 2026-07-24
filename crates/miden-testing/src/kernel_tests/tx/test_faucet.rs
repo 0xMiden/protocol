@@ -125,9 +125,8 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
-    let tx_context =
-        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
-            .build()?;
+    let mock_tx = TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
+        .build()?;
 
     let asset = FungibleAsset::mock(5);
     let code = format!(
@@ -146,7 +145,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
         ASSET_VALUE = asset.to_value_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
@@ -230,7 +229,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
 
 #[tokio::test]
 async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
     let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
@@ -268,14 +267,14 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1)
             .build()?;
     let non_fungible_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
@@ -296,7 +295,7 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
         asset_value = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
@@ -377,7 +376,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
     let account = Account::mock_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1);
     let asset = FungibleAsset::new(account.id(), 100u64).unwrap().into();
     let note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), [asset]);
-    let tx_context = TestTransactionBuilder::new(account).input_note(note).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).input_note(note).build()?;
 
     let code = format!(
         r#"
@@ -417,7 +416,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
         final_input_vault_asset_amount = CONSUMED_ASSET_1_AMOUNT - FUNGIBLE_ASSET_AMOUNT,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -456,7 +455,7 @@ async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
@@ -478,7 +477,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
         FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())
@@ -486,9 +485,8 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<()> {
-    let tx_context =
-        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
-            .build()?;
+    let mock_tx = TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
+        .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, CONSUMED_ASSET_1_AMOUNT + 1)?;
@@ -509,7 +507,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
         FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(
         exec_output,
@@ -523,7 +521,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
 #[tokio::test]
 async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
     let non_fungible_asset_burnt = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
@@ -572,13 +570,13 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
@@ -601,7 +599,7 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
         NON_FUNGIBLE_ASSET_ID = non_fungible_asset_burnt.to_id_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND);
     Ok(())
@@ -644,7 +642,7 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
     let non_fungible_asset_burnt = NonFungibleAsset::mock(&[1, 2, 3]);
 
     // Run code from a different non-fungible asset issuer
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1)
             .build()?;
 
@@ -665,7 +663,7 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
         NON_FUNGIBLE_ASSET_ID = non_fungible_asset_burnt.to_id_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
     Ok(())

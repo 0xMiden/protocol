@@ -253,7 +253,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Adds a note script to the context for testing.
+    /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
         self

@@ -167,7 +167,7 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Add a note script to the context for testing.
+    /// Add a note script to the mock transaction for testing.
     pub(crate) fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
         self

@@ -647,7 +647,7 @@ impl MockChain {
             MockTransactionInput::AccountId(account_id) => {
                 anyhow::ensure!(
                     !account_id.is_private(),
-                    "transaction contexts for private accounts should be created with MockTransactionInput::Account"
+                    "mock transactions for private accounts should be created with MockTransactionInput::Account"
                 );
 
                 self.committed_account(account_id).cloned()

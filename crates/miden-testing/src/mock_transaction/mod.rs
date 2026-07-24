@@ -1,11 +1,11 @@
-mod context;
+mod builder;
 mod errors;
-mod mock_transaction_builder;
 #[cfg(test)]
 mod test_builder;
+mod transaction;
 
-pub use context::MockTransaction;
+pub use builder::MockTransactionBuilder;
 pub use errors::ExecError;
-pub use mock_transaction_builder::MockTransactionBuilder;
 #[cfg(test)]
 pub(crate) use test_builder::TestTransactionBuilder;
+pub use transaction::MockTransaction;

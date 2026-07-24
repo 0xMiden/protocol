@@ -74,7 +74,7 @@ impl<H: Host> CodeExecutor<H> {
         // Virtual file name should be unique.
         let virtual_source_file =
             source_manager.load(SourceLanguage::Masm, Uri::new("_user_code"), code.to_owned());
-        let package = assembler.assemble_program("tx-context-code", virtual_source_file).unwrap();
+        let package = assembler.assemble_program("mock-tx-code", virtual_source_file).unwrap();
 
         self.execute_package(package).await
     }

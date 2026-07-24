@@ -83,9 +83,9 @@ fn compute_fee_code(
 #[tokio::test]
 async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_transaction(account).build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -101,7 +101,7 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
             exec.sys::truncate_stack
         end
     ";
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
     assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());
@@ -115,9 +115,9 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
 #[tokio::test]
 async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_transaction(account).build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -132,7 +132,7 @@ async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyho
             exec.sys::truncate_stack
         end
     ";
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
     assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());

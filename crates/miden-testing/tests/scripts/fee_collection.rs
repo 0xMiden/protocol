@@ -308,12 +308,12 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_context = mock_chain
+    let mock_tx = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager)
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
