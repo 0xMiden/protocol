@@ -36,13 +36,13 @@ lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-agglayer     = { default-features = false, path = "crates/miden-agglayer", version = "0.16.0-alpha.5" }
-miden-block-prover = { default-features = false, path = "crates/miden-block-prover", version = "0.16.0-alpha.5" }
-miden-protocol     = { default-features = false, path = "crates/miden-protocol", version = "0.16.0-alpha.5" }
-miden-standards    = { default-features = false, path = "crates/miden-standards", version = "0.16.0-alpha.5" }
-miden-testing      = { default-features = false, path = "crates/miden-testing", version = "0.16.0-alpha.5" }
-miden-tx           = { default-features = false, path = "crates/miden-tx", version = "0.16.0-alpha.5" }
-miden-tx-batch     = { default-features = false, path = "crates/miden-tx-batch", version = "0.16.0-alpha.5" }
+miden-agglayer     = { default-features = false, path = "crates/miden-agglayer", version = "=0.16.0-alpha.5" }
+miden-block-prover = { default-features = false, path = "crates/miden-block-prover", version = "=0.16.0-alpha.5" }
+miden-protocol     = { default-features = false, path = "crates/miden-protocol", version = "=0.16.0-alpha.5" }
+miden-standards    = { default-features = false, path = "crates/miden-standards", version = "=0.16.0-alpha.5" }
+miden-testing      = { default-features = false, path = "crates/miden-testing", version = "=0.16.0-alpha.5" }
+miden-tx           = { default-features = false, path = "crates/miden-tx", version = "=0.16.0-alpha.5" }
+miden-tx-batch     = { default-features = false, path = "crates/miden-tx-batch", version = "=0.16.0-alpha.5" }
 
 # Miden dependencies
 miden-assembly         = { default-features = false, version = "0.25" }
