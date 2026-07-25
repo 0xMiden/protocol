@@ -59,7 +59,7 @@ pub use table::*;
 pub trait NoteConsumptionCost {
     /// Worst-case cycles of the canonical network-account transaction consuming this note
     /// (maximum across the benchmarked execution paths).
-    fn consumption_cycles() -> u64;
+    fn consumption_cycles() -> u32;
 
     /// Script roots of the notes created when this note is consumed.
     ///
@@ -76,19 +76,19 @@ pub trait NoteConsumptionCost {
 }
 
 impl NoteConsumptionCost for P2idNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         P2ID_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for P2ideNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         P2IDE_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for SwapNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         SWAP_CONSUMPTION_CYCLES
     }
 
@@ -99,7 +99,7 @@ impl NoteConsumptionCost for SwapNote {
 }
 
 impl NoteConsumptionCost for PswapNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         PSWAP_CONSUMPTION_CYCLES
     }
 
@@ -111,7 +111,7 @@ impl NoteConsumptionCost for PswapNote {
 }
 
 impl NoteConsumptionCost for MintNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         MINT_CONSUMPTION_CYCLES
     }
 
@@ -122,43 +122,43 @@ impl NoteConsumptionCost for MintNote {
 }
 
 impl NoteConsumptionCost for BurnNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         BURN_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for FaucetPolicyActionNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for PauseActionNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         PAUSE_ACTION_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for OwnerActionNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         OWNER_ACTION_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for RbacActionNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         RBAC_ACTION_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for NetworkAccountConfigNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for FeeSponsorshipNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         FEE_SPONSORSHIP_CONSUMPTION_CYCLES
     }
 }
@@ -169,14 +169,14 @@ impl NoteConsumptionCost for FeeSponsorshipNote {
 /// A note's benchmarked consumption cost together with the notes its consumption creates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteCost {
-    cycles: u64,
+    cycles: u32,
     created_notes: Vec<NoteScriptRoot>,
 }
 
 impl NoteCost {
     /// Returns a new [`NoteCost`] from a note's consumption cycles and the script roots of the
     /// notes its consumption creates.
-    pub fn new(cycles: u64, created_notes: Vec<NoteScriptRoot>) -> Self {
+    pub fn new(cycles: u32, created_notes: Vec<NoteScriptRoot>) -> Self {
         Self { cycles, created_notes }
     }
 
@@ -186,7 +186,7 @@ impl NoteCost {
     }
 
     /// Worst-case cycles of the canonical network-account transaction consuming the note.
-    pub fn cycles(&self) -> u64 {
+    pub fn cycles(&self) -> u32 {
         self.cycles
     }
 
@@ -245,6 +245,9 @@ pub enum NotePricingError {
     UnknownNoteScriptRoot(NoteScriptRoot),
 }
 
+/// The lookup resolving a note script root to its benchmarked consumption cost.
+pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
+
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
@@ -267,13 +270,13 @@ pub struct NetworkNotePricer {
     safety_margin_verification_cycles: u32,
     /// The cost lookup used to resolve note script roots.
     #[builder(default = StandardNote::note_cost)]
-    lookup: fn(NoteScriptRoot) -> Option<NoteCost>,
+    lookup: CostLookupFn,
 }
 
 impl NetworkNotePricer {
     /// Returns the fee charged for a network transaction of the given cycle count, including
     /// the configured safety margin.
-    pub fn fee_for_cycles(&self, cycles: u64) -> Result<AssetAmount, NotePricingError> {
+    pub fn fee_for_cycles(&self, cycles: u32) -> Result<AssetAmount, NotePricingError> {
         let fee = self.fee_for_cycles_raw(cycles)?;
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
     }
@@ -298,11 +301,11 @@ impl NetworkNotePricer {
     }
 
     /// Returns the fee for the given cycle count as a raw `u64`.
-    fn fee_for_cycles_raw(&self, cycles: u64) -> Result<u64, NotePricingError> {
+    fn fee_for_cycles_raw(&self, cycles: u32) -> Result<u64, NotePricingError> {
         if cycles == 0 {
             return Err(NotePricingError::ZeroCycles);
         }
-        // ilog2(cycles) is at most 63 and the margin at most u32::MAX, so the addition cannot
+        // ilog2(cycles) is at most 31 and the margin at most u32::MAX, so the addition cannot
         // overflow a u64.
         let verification_cycles =
             u64::from(cycles.ilog2()) + 1 + u64::from(self.safety_margin_verification_cycles);
@@ -378,9 +381,9 @@ mod tests {
 
     #[test]
     fn overflowing_fee_is_rejected() {
-        // u32::MAX * (63 + 1 + u32::MAX) overflows a u64.
+        // u32::MAX * (31 + 1 + u32::MAX) overflows a u64.
         assert!(matches!(
-            pricer(u32::MAX, u32::MAX).fee_for_cycles(u64::MAX),
+            pricer(u32::MAX, u32::MAX).fee_for_cycles(u32::MAX),
             Err(NotePricingError::FeeOverflow)
         ));
     }
@@ -411,7 +414,7 @@ mod tests {
         }
     }
 
-    fn custom_pricer(lookup: fn(NoteScriptRoot) -> Option<NoteCost>) -> NetworkNotePricer {
+    fn custom_pricer(lookup: CostLookupFn) -> NetworkNotePricer {
         NetworkNotePricer::builder()
             .verification_base_fee(500)
             .safety_margin_verification_cycles(0)

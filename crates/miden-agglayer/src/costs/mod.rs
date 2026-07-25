@@ -37,7 +37,7 @@ pub use table::*;
 // ================================================================================================
 
 impl NoteConsumptionCost for ClaimNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         CLAIM_CONSUMPTION_CYCLES
     }
 
@@ -49,7 +49,7 @@ impl NoteConsumptionCost for ClaimNote {
 }
 
 impl NoteConsumptionCost for B2AggNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         B2AGG_CONSUMPTION_CYCLES
     }
 
@@ -61,25 +61,25 @@ impl NoteConsumptionCost for B2AggNote {
 }
 
 impl NoteConsumptionCost for ConfigAggBridgeNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for DeregisterAggFaucetNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for UpdateGerNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         UPDATE_GER_CONSUMPTION_CYCLES
     }
 }
 
 impl NoteConsumptionCost for RemoveGerNote {
-    fn consumption_cycles() -> u64 {
+    fn consumption_cycles() -> u32 {
         REMOVE_GER_CONSUMPTION_CYCLES
     }
 }
