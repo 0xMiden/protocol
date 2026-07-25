@@ -17,12 +17,9 @@ pub enum TransactionFeeError {
 /// `compute_fee` procedure.
 ///
 /// This is the single Rust implementation of the kernel fee formula: keep it in sync with
-/// `compute_fee` in `asm/kernels/transaction-core/src/tx.masm`. The kernel formula also
-/// contains an output-notes fee term, which the kernel currently hardcodes to zero and this
-/// type therefore omits. The kernel tests in `miden-testing` pin that zero behaviorally
-/// (`compute_fee_accepts_sorted_in_bounds_exclude_notes` executes `compute_fee` with output
-/// notes and asserts the fee is verification-only), so implementing the term fails that test -
-/// grow this type along with it.
+/// `compute_fee` in `asm/kernels/transaction-core/src/tx.masm`. The kernel's output-notes fee
+/// term is currently hardcoded to zero and omitted here; the miden-testing kernel test
+/// `compute_fee_accepts_sorted_in_bounds_exclude_notes` pins that zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransactionFee {
     verification_cycles: u32,
