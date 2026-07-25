@@ -33,14 +33,8 @@ use miden_standards::note::{
 };
 use miden_testing::{Auth, MockTransaction};
 
-/// The number of assets carried by the asset-count-heavy benchmark scenarios.
-///
-/// This is the PLANNED protocol maximum for note assets - the reduction from the current
-/// [`miden_protocol::MAX_ASSETS_PER_NOTE`] (64) to 16, raised in the review of
-/// <https://github.com/0xMiden/protocol/pull/3354>, has not landed yet - so until it does a
-/// maximally packed note costs more than these scenarios measure (see the caveat in
-/// `miden_standards::note::costs`). Benchmarking at the planned maximum avoids regenerating the
-/// tables twice.
+/// The number of assets carried by the asset-count-heavy benchmark scenarios: the P2ID/P2IDE
+/// asset cap, planned as 16 per <https://github.com/0xMiden/protocol/issues/3381>.
 const MAX_NOTE_ASSETS: usize = 16;
 
 // Pins the protocol maximum this module's docs (and the costs-module caveat) describe: when the
