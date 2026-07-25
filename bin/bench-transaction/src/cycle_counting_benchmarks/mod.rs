@@ -225,13 +225,8 @@ mod tests {
     /// The last declared [`ExecutionBenchmark`] variant; keep in sync when appending variants.
     const LAST_VARIANT: ExecutionBenchmark = ExecutionBenchmark::ConsumeRemoveGerWithFee;
 
-    /// Guards the hand-maintained [`ExecutionBenchmark::all`] slice. Discriminants are assigned
-    /// in declaration order, so a variant missing from the list leaves a gap below the list's
-    /// own maximum discriminant (or drops [`LAST_VARIANT`]), and a duplicate entry breaks the
-    /// uniqueness count. A variant appended without updating [`LAST_VARIANT`] escapes this
-    /// test, but not the exhaustive `Display`/dispatch matches or the missing-measurement
-    /// failure in `update_cost_tables`. Display strings double as `bench-tx.json` keys, so
-    /// they must be unique too.
+    /// Guards the hand-maintained [`ExecutionBenchmark::all`] slice against duplicate or
+    /// missing variants, and Display strings (the `bench-tx.json` keys) against collisions.
     #[test]
     fn all_lists_every_variant_once() {
         let benches = ExecutionBenchmark::all();
