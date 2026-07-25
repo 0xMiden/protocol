@@ -417,6 +417,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "check-workspace-pins"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

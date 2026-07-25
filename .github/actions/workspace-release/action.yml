@@ -68,6 +68,14 @@ runs:
     - name: Cleanup large tools for build space
       uses: ./.github/actions/cleanup-runner
 
+    # Publishing with unpinned intra-workspace deps can resolve siblings to a
+    # newer already-published version (e.g. a newer pre-release line), and a
+    # mis-pinned publish to crates.io is irreversible. Run this before the
+    # expensive MSRV/publish steps so a mis-pin fails fast.
+    - name: Check intra-workspace dependency pins
+      shell: bash
+      run: cargo run --locked -p check-workspace-pins
+
     # Install cargo-msrv for MSRV checks
     # Using binstall with --force to avoid stale cached binaries (see PR #2234)
     # Keep this on a released install-action commit with an explicit tool; shortcut tags can

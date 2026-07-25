@@ -18,9 +18,12 @@ clippy: ## Runs Clippy with configs
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 
+# The std-only check-workspace-pins helper is excluded from all no_std targets so its
+# serde_json/std dependency does not join workspace feature unification there and mask
+# std leaks in the published no-std crates.
 .PHONY: clippy-no-std
 clippy-no-std: ## Runs Clippy with configs
-	cargo clippy --no-default-features --target wasm32-unknown-unknown --workspace --lib -- -D warnings
+	cargo clippy --no-default-features --target wasm32-unknown-unknown --workspace --exclude check-workspace-pins --lib -- -D warnings
 
 
 .PHONY: fix
@@ -124,7 +127,7 @@ check: ## Check all targets and features for errors without code generation
 
 .PHONY: check-no-std
 check-no-std: ## Check the no-std target without any features for errors without code generation
-	cargo check --no-default-features --target wasm32-unknown-unknown --workspace --lib
+	cargo check --no-default-features --target wasm32-unknown-unknown --workspace --exclude check-workspace-pins --lib
 
 
 .PHONY: check-features
@@ -140,12 +143,12 @@ build: ## By default we should build in release mode
 
 .PHONY: build-no-std
 build-no-std: ## Build without the standard library
-	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --lib
+	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude check-workspace-pins --lib
 
 
 .PHONY: build-no-std-testing
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
-	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
+	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --exclude check-workspace-pins --features testing
 
 # --- test vectors --------------------------------------------------------------------------------
 
