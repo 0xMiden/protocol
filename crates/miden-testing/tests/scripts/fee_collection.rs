@@ -15,7 +15,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -120,7 +120,7 @@ fn network_account(
     fee_entry: Option<(NoteScriptRoot, AssetAmount)>,
     allowed_note_roots: BTreeSet<NoteScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new();
+    let mut policy = BasicConstantFeePolicy::new();
     if let Some((root, fee)) = fee_entry {
         policy = policy.with_fee(root, fee);
     }
@@ -298,13 +298,13 @@ async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The owner switches the active fee policy from the constant fee policy to the user-defined custom
-/// policy via `set_fee_policy`. Under the network auth procedure the same transaction then prices
-/// the consumed `set_fee_policy` note through the just-activated custom policy, so it must be
-/// paired with a FEE_SPONSORSHIP note funded with exactly that custom fee. The transaction
-/// succeeding proves the switch took effect and that the custom policy - not the constant fee
-/// schedule - priced the note: had the switch not happened, the constant policy prices the note at
-/// 0 and the sponsorship note would be rejected as unpaired.
+/// The owner switches the active fee policy from the basic constant fee policy to the user-defined
+/// custom policy via `set_fee_policy`. Under the network auth procedure the same transaction then
+/// prices the consumed `set_fee_policy` note through the just-activated custom policy, so it must
+/// be paired with a FEE_SPONSORSHIP note funded with exactly that custom fee. The transaction
+/// succeeding proves the switch took effect and that the custom policy - not the basic constant fee
+/// schedule - priced the note: had the switch not happened, the basic constant policy prices the
+/// note at 0 and the sponsorship note would be rejected as unpaired.
 #[tokio::test]
 async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     let owner_account_id =
@@ -839,7 +839,7 @@ fn build_create_test(target_fee_faucet: AccountId) -> anyhow::Result<CreateTest>
     // allowlists can stay empty. It is built first because its ID is embedded in the creator tx
     // script, whose root the sponsor must in turn allowlist.
     let target_policy =
-        ConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
+        BasicConstantFeePolicy::new().with_fee(script_root, AssetAmount::new(FEE_AMOUNT)?);
     let target_fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(target_fee_faucet)
         .active_fee_policy(target_policy.into())

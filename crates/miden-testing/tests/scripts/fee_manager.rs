@@ -15,7 +15,7 @@ use miden_protocol::transaction::{RawOutputNote, TransactionScriptRoot};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -40,35 +40,36 @@ pub(super) fn fee_faucet_id() -> anyhow::Result<AccountId> {
     Ok(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)
 }
 
-/// The note script root priced in the fee schedule of the constant fee policy.
+/// The note script root priced in the fee schedule of the basic constant fee policy.
 pub(super) fn priced_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([1, 2, 3, 4])
 }
 
-/// The note script root scheduled with an explicit 0 fee in the constant fee policy.
+/// The note script root scheduled with an explicit 0 fee in the basic constant fee policy.
 fn free_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([5, 6, 7, 8])
 }
 
-/// Builds a `FeePolicyManager` whose active policy is a `ConstantFeePolicy` charging [`FEE_AMOUNT`]
-/// (in the test faucet's asset) for notes with the [`priced_root`] script root and an explicit
-/// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
+/// Builds a `FeePolicyManager` whose active policy is a `BasicConstantFeePolicy` charging
+/// [`FEE_AMOUNT`] (in the test faucet's asset) for notes with the [`priced_root`] script root and
+/// an explicit 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
 /// registers the user-defined [`custom_fee_policy`] for runtime switching.
 ///
 /// Each root in `zero_fee_note_roots` is additionally scheduled at a 0 fee.
 fn fee_policy_manager(
     zero_fee_note_roots: &BTreeSet<NoteScriptRoot>,
 ) -> anyhow::Result<FeePolicyManager> {
-    let mut constant_fee_policy = ConstantFeePolicy::new()
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new()
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
     for note_root in zero_fee_note_roots {
-        constant_fee_policy = constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
     }
 
     Ok(FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .allowed_fee_policy(custom_fee_policy()?)
         .build())
 }
@@ -320,7 +321,7 @@ fn build_sender_note(sender: AccountId, seed: u32, note_script: &str) -> anyhow:
 // ================================================================================================
 
 /// `FeePolicyManager::estimate_note_fee`, invoked via `call` from a transaction script, dispatches
-/// to the active `ConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
+/// to the active `BasicConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
 /// scheduled for the queried note script root. Roots scheduled with an explicit 0 fee estimate
 /// to an amount of 0.
 #[rstest]
@@ -331,7 +332,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
     #[case] queried_root: NoteScriptRoot,
     #[case] expected_amount: u64,
 ) -> anyhow::Result<()> {
-    // The constant fee policy ignores the storage commitment, timeframe, and priority, so an
+    // The basic constant fee policy ignores the storage commitment, timeframe, and priority, so an
     // all-zero commitment and arbitrary non-zero timeframe and priority are passed.
     let tx_script_code = estimate_note_fee_tx_script_code(
         Word::empty(),
@@ -433,7 +434,7 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
 }
 
 /// `estimate_note_fee` aborts when the queried note script root has no entry in the active
-/// `ConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
+/// `BasicConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
 /// of 0.
 #[tokio::test]
 async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
@@ -594,9 +595,9 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
-    // The active policy is the constant fee policy the manager is built with.
+    // The active policy is the basic constant fee policy the manager is built with.
     let get_policy_note_script =
-        create_get_fee_policy_note_script(ConstantFeePolicy::root().as_word());
+        create_get_fee_policy_note_script(BasicConstantFeePolicy::root().as_word());
     let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
     let get_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -708,16 +709,17 @@ fn build_mutation_test_account(
     allowed_note_roots: BTreeSet<NoteScriptRoot>,
     custom_policy_allowed: bool,
 ) -> anyhow::Result<Account> {
-    let mut constant_fee_policy = ConstantFeePolicy::new()
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new()
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
     for note_root in &allowed_note_roots {
-        constant_fee_policy = constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
     }
 
     let mut manager_builder = FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(constant_fee_policy.into());
+        .active_fee_policy(basic_constant_fee_policy.into());
     if custom_policy_allowed {
         manager_builder = manager_builder.allowed_fee_policy(custom_fee_policy()?);
     }
@@ -913,9 +915,9 @@ async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
-    // The active policy is the `ConstantFeePolicy`; its root is registered in the allowlist at
+    // The active policy is the `BasicConstantFeePolicy`; its root is registered in the allowlist at
     // deployment.
-    let active_root = ConstantFeePolicy::root().as_word();
+    let active_root = BasicConstantFeePolicy::root().as_word();
 
     let remove_note = build_sender_note(
         owner_account_id,

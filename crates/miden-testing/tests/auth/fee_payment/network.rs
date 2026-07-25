@@ -7,7 +7,7 @@ use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{NetworkAccountConfigNote, TxFeeNote};
 use miden_standards::testing::note::NoteBuilder;
@@ -40,15 +40,16 @@ async fn execute_network_account_tx(
     // collect_sponsored_fees requires; a constant policy aborts fee estimation for note scripts
     // without a schedule entry, so schedule an explicit 0 fee for every allowlisted note to keep
     // collection a no-op here
-    let mut constant_fee_policy = ConstantFeePolicy::new();
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in &allowed_notes {
-        constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
     // `with_allowed_notes` always allowlists the config note, priced by the auth flow if consumed.
-    constant_fee_policy =
-        constant_fee_policy.with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    basic_constant_fee_policy = basic_constant_fee_policy
+        .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
     let fee_policy_manager = FeePolicyManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build();
 
