@@ -1,11 +1,11 @@
 [package]
-name              = "miden-standards-fees-policies-constant-fee"
+name              = "miden-standards-fees-policies-basic-constant-fee"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::fees::policies::constant_fee"
-path      = "constant_fee.masm"
+namespace = "miden::standards::components::fees::policies::basic_constant_fee"
+path      = "basic_constant_fee.masm"
 
 [dependencies]
 miden-core.workspace      = true

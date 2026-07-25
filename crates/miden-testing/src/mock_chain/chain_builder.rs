@@ -57,7 +57,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -378,17 +378,18 @@ impl MockChainBuilder {
         // answers sponsorship fee estimates; both require an active fee policy. A constant policy
         // aborts fee estimation for note scripts without a schedule entry, so schedule an explicit
         // 0 fee for every allowlisted note; this keeps fees a no-op on fee-free chains.
-        let mut constant_fee_policy = ConstantFeePolicy::new();
+        let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
         for note_script in &allowed_script_roots {
-            constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+            basic_constant_fee_policy =
+                basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
         }
         // `with_allowed_notes` always allowlists the config note, which the network auth flow
         // prices if it is ever consumed, so schedule it too.
-        constant_fee_policy = constant_fee_policy
+        basic_constant_fee_policy = basic_constant_fee_policy
             .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
 
         let fee_policy_manager = FeePolicyManager::builder()
-            .active_fee_policy(constant_fee_policy.into())
+            .active_fee_policy(basic_constant_fee_policy.into())
             .fee_faucet_id(self.fee_faucet_id)
             .build();
 

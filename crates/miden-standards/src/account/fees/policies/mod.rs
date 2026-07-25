@@ -5,9 +5,9 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use thiserror::Error;
 
-mod constant_fee;
+mod basic_constant_fee;
 
-pub use constant_fee::ConstantFeePolicy;
+pub use basic_constant_fee::BasicConstantFeePolicy;
 
 // FEE POLICY ERROR
 // ================================================================================================
@@ -29,7 +29,7 @@ pub enum FeePolicyError {
 /// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct from a concrete policy (e.g. via `From<ConstantFeePolicy>`) or via
+/// Construct from a concrete policy (e.g. via `From<BasicConstantFeePolicy>`) or via
 /// [`Self::custom`]. Pass to the [`super::FeePolicyManager`] builder via `active_fee_policy` or
 /// `allowed_fee_policy`.
 #[derive(Debug, Clone)]
@@ -64,11 +64,11 @@ impl FeePolicy {
     }
 }
 
-impl From<ConstantFeePolicy> for FeePolicy {
+impl From<BasicConstantFeePolicy> for FeePolicy {
     /// Returns a fee policy charging the constant fee scheduled for the note's script root.
-    fn from(policy: ConstantFeePolicy) -> Self {
+    fn from(policy: BasicConstantFeePolicy) -> Self {
         Self {
-            root: ConstantFeePolicy::root(),
+            root: BasicConstantFeePolicy::root(),
             components: vec![policy.into()],
         }
     }
