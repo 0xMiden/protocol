@@ -139,7 +139,7 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
 
             # drop the script root and reduce the storage commitment to the low 32 bits of the sum
             # of its elements. The commitment's raw sum could exceed a valid asset amount so we
-            # take the the low 32 bits.
+            # take the low 32 bits.
             dropw add add add u32split swap drop
             # => [storage_commitment_term, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
             #     priority, pad(2)]

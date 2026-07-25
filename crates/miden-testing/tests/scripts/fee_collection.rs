@@ -311,7 +311,7 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
     let set_policy_note_script =
-        &create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
+        create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
     let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
