@@ -436,7 +436,7 @@ mod tests {
     async fn created_notes_cover_executed_output_notes() -> Result<()> {
         for &note in PricedNote::all() {
             let declared: BTreeSet<NoteScriptRoot> =
-                miden_agglayer::costs::note_cost(priced_note_root(note))
+                miden_agglayer::AgglayerNote::note_cost(priced_note_root(note))
                     .expect("every priced note must have a cost")
                     .created_notes()
                     .iter()
