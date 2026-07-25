@@ -385,17 +385,16 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [SALT, param0, param1, param2]
+#!   Operand stack: [param0, param1, param2, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
+#! - param0, param1 and param2 are user-defined inputs folded into the signed message. They are
+#!   currently unused: the components calling this procedure zero them. They exist so that future
+#!   components can bind custom data to the transaction summary (e.g. a maximum fee).
 #! - SALT is a cryptographically random nonce folded into the signed message for replay
 #!   protection.
-#! - param0, param1 and param2 are user-defined inputs folded into the signed message, which can
-#!   be used to bind custom data to the transaction summary (e.g. a maximum fee). The params are
-#!   opaque: binding them does not enforce any meaning, so any semantics must be implemented by
-#!   the calling component.
 #!
 #! Locals:
 #! 0: policy_threshold
@@ -415,9 +414,9 @@ end
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
 @locals(2)
-pub proc auth_tx(salt: word, param0: felt, param1: felt, param2: felt)
+pub proc auth_tx(param0: felt, param1: felt, param2: felt, salt: word)
     exec.native_account::incr_nonce drop
-    # => [SALT, param0, param1, param2]
+    # => [param0, param1, param2, SALT]
 
     # ------ Computing transaction summary ------
     exec.auth::create_tx_summary

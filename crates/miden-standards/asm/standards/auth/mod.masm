@@ -28,14 +28,14 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
-#! Inputs:  [SALT, param0, param1, param2]
+#! Inputs:  [param0, param1, param2, SALT]
 #! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
 #!           BLOCK_COMMITMENT, PARAMS, SALT]
 #!
 #! Where:
-#! - SALT is a user-defined input recommended to use as replay protection.
 #! - param0, param1 and param2 are user-defined inputs which can be used to bind custom data to
 #!   the transaction summary (e.g. a maximum fee).
+#! - SALT is a user-defined input recommended to use as replay protection.
 #! - PARAMS is the word [expiration_delta, param0, param1, param2].
 #! - expiration_delta is the transaction's expiration block delta, or 0 if it has not been set.
 #! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
@@ -44,11 +44,8 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 #!
 #! Invocation: exec
-pub proc create_tx_summary(salt: word, param0: felt, param1: felt, param2: felt)
+pub proc create_tx_summary(param0: felt, param1: felt, param2: felt, salt: word)
     exec.tx::get_expiration_block_delta
-    # => [expiration_delta, SALT, param0, param1, param2]
-
-    movdn.4 swapw
     # => [PARAMS, SALT]
 
     exec.tx::get_block_commitment

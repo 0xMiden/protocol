@@ -701,7 +701,7 @@ end
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
 #! Inputs:
-#!   Operand stack: [SALT, param0, param1, param2]
+#!   Operand stack: [param0, param1, param2, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -711,15 +711,14 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
+#! - param0, param1 and param2 are user-defined inputs folded into the signed message. They are
+#!   currently unused: the components calling this procedure zero them. They exist so that future
+#!   components can bind custom data to the transaction summary (e.g. a maximum fee).
 #! - SALT is a cryptographically random nonce folded into the signed message, and thus into the
 #!   TX_SUMMARY_COMMITMENT, so that otherwise-identical transactions produce distinct commitments and
 #!   can run concurrently. That commitment's uniqueness is what `record_and_assert_new_tx` records and checks to
 #!   enforce replay protection; `auth_tx` itself records nothing, so a wrapper must call
 #!   `record_and_assert_new_tx` for replay protection to hold.
-#! - param0, param1 and param2 are user-defined inputs folded into the signed message, which can
-#!   be used to bind custom data to the transaction summary (e.g. a maximum fee). The params are
-#!   opaque: binding them does not enforce any meaning, so any semantics must be implemented by
-#!   the calling component.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
 #! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
@@ -728,9 +727,9 @@ end
 #! - insufficient number of valid signatures (below threshold).
 #!
 #! Invocation: exec
-pub proc auth_tx(salt: word, param0: felt, param1: felt, param2: felt)
+pub proc auth_tx(param0: felt, param1: felt, param2: felt, salt: word)
     exec.native_account::incr_nonce drop
-    # => [SALT, param0, param1, param2]
+    # => [param0, param1, param2, SALT]
 
     # ------ Computing transaction summary ------
 

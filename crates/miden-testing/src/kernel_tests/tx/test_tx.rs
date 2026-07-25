@@ -455,9 +455,9 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           exec.::miden::protocol::native_account::incr_nonce
           # => [final_nonce, pad(16)]
 
-          # build SALT = [0, 0, 0, final_nonce] on top of the zeroed user params
-          push.0.0.0.0.0.0 movup.6 movdn.3
-          # => [SALT, param0, param1, param2, pad(16)]
+          # build SALT = [0, 0, 0, final_nonce] below the zeroed user params
+          push.0.0.0.0.0.0
+          # => [param0, param1, param2, SALT, pad(16)]
 
           exec.auth::create_tx_summary
           # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(16)]
@@ -547,9 +547,9 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           exec.::miden::protocol::native_account::incr_nonce
           # => [final_nonce, pad(16)]
 
-          # build SALT = [0, 0, 0, final_nonce] on top of the user params [7, 8, 9]
-          push.9.8.7 movup.3 push.0.0.0
-          # => [SALT, param0, param1, param2, pad(16)]
+          # build SALT = [0, 0, 0, final_nonce] below the user params [7, 8, 9]
+          push.0.0.0.9.8.7
+          # => [param0, param1, param2, SALT, pad(16)]
 
           exec.auth::create_tx_summary
           # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(16)]
@@ -610,9 +610,9 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           exec.::miden::protocol::native_account::incr_nonce
           # => [final_nonce, pad(16)]
 
-          # build SALT = [0, 0, 0, final_nonce] on top of the zeroed user params
-          push.0.0.0.0.0.0 movup.6 movdn.3
-          # => [SALT, param0, param1, param2, pad(16)]
+          # build SALT = [0, 0, 0, final_nonce] below the zeroed user params
+          push.0.0.0.0.0.0
+          # => [param0, param1, param2, SALT, pad(16)]
 
           exec.auth::create_tx_summary
           # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(16)]
