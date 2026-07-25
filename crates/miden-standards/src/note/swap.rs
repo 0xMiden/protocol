@@ -22,7 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word};
 
 use crate::StandardsLib;
-use crate::note::P2idNoteStorage;
+use crate::note::costs::{NoteConsumptionCost, SWAP_CONSUMPTION_CYCLES};
+use crate::note::{P2idNote, P2idNoteStorage};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -397,6 +398,20 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
 pub fn payback_serial_from_swap(swap_serial: Word) -> Word {
     let elements = swap_serial.as_elements();
     Word::new([elements[0] + ONE, elements[1], elements[2], elements[3]])
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for SwapNote {
+    fn consumption_cycles() -> u32 {
+        SWAP_CONSUMPTION_CYCLES
+    }
+
+    /// Filling a SWAP note creates the P2ID payback note for the swap creator.
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![P2idNote::script_root()]
+    }
 }
 
 // TESTS

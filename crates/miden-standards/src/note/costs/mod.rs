@@ -23,7 +23,6 @@
 //! one (small drift from unrelated changes is tolerated - the pricing safety margin dwarfs
 //! it).
 
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::asset::AssetAmount;
@@ -74,94 +73,6 @@ pub trait NoteConsumptionCost {
     /// cycles.
     fn created_notes() -> Vec<NoteScriptRoot> {
         Vec::new()
-    }
-}
-
-impl NoteConsumptionCost for P2idNote {
-    fn consumption_cycles() -> u32 {
-        P2ID_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for P2ideNote {
-    fn consumption_cycles() -> u32 {
-        P2IDE_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for SwapNote {
-    fn consumption_cycles() -> u32 {
-        SWAP_CONSUMPTION_CYCLES
-    }
-
-    /// Filling a SWAP note creates the P2ID payback note for the swap creator.
-    fn created_notes() -> Vec<NoteScriptRoot> {
-        vec![P2idNote::script_root()]
-    }
-}
-
-impl NoteConsumptionCost for PswapNote {
-    fn consumption_cycles() -> u32 {
-        PSWAP_CONSUMPTION_CYCLES
-    }
-
-    /// Filling a PSWAP note creates the P2ID payback note for the swap creator and, on a
-    /// partial fill, the residual PSWAP note carrying the unfilled remainder.
-    fn created_notes() -> Vec<NoteScriptRoot> {
-        vec![P2idNote::script_root(), PswapNote::script_root()]
-    }
-}
-
-impl NoteConsumptionCost for MintNote {
-    fn consumption_cycles() -> u32 {
-        MINT_CONSUMPTION_CYCLES
-    }
-
-    /// Consuming a MINT note creates the P2ID note delivering the minted asset.
-    fn created_notes() -> Vec<NoteScriptRoot> {
-        vec![P2idNote::script_root()]
-    }
-}
-
-impl NoteConsumptionCost for BurnNote {
-    fn consumption_cycles() -> u32 {
-        BURN_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for FaucetPolicyActionNote {
-    fn consumption_cycles() -> u32 {
-        FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for PauseActionNote {
-    fn consumption_cycles() -> u32 {
-        PAUSE_ACTION_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for OwnerActionNote {
-    fn consumption_cycles() -> u32 {
-        OWNER_ACTION_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for RbacActionNote {
-    fn consumption_cycles() -> u32 {
-        RBAC_ACTION_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for NetworkAccountConfigNote {
-    fn consumption_cycles() -> u32 {
-        NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES
-    }
-}
-
-impl NoteConsumptionCost for FeeSponsorshipNote {
-    fn consumption_cycles() -> u32 {
-        FEE_SPONSORSHIP_CONSUMPTION_CYCLES
     }
 }
 
@@ -469,24 +380,30 @@ mod tests {
         ));
     }
 
+    /// Pins each priced standard note's cost to its own table constant: a swap between two
+    /// note types' impls could otherwise hide inside the bench snapshot tests' 5% drift
+    /// tolerance (several constants differ by less than that).
     #[test]
-    fn note_cost_resolves_every_priced_standard_note() {
-        for root in [
-            P2idNote::script_root(),
-            P2ideNote::script_root(),
-            SwapNote::script_root(),
-            PswapNote::script_root(),
-            MintNote::script_root(),
-            BurnNote::script_root(),
-            FaucetPolicyActionNote::script_root(),
-            PauseActionNote::script_root(),
-            OwnerActionNote::script_root(),
-            RbacActionNote::script_root(),
-            NetworkAccountConfigNote::script_root(),
-            FeeSponsorshipNote::script_root(),
+    fn note_cost_pins_every_priced_standard_note_to_its_table_constant() {
+        for (root, expected_cycles) in [
+            (P2idNote::script_root(), P2ID_CONSUMPTION_CYCLES),
+            (P2ideNote::script_root(), P2IDE_CONSUMPTION_CYCLES),
+            (SwapNote::script_root(), SWAP_CONSUMPTION_CYCLES),
+            (PswapNote::script_root(), PSWAP_CONSUMPTION_CYCLES),
+            (MintNote::script_root(), MINT_CONSUMPTION_CYCLES),
+            (BurnNote::script_root(), BURN_CONSUMPTION_CYCLES),
+            (FaucetPolicyActionNote::script_root(), FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES),
+            (PauseActionNote::script_root(), PAUSE_ACTION_CONSUMPTION_CYCLES),
+            (OwnerActionNote::script_root(), OWNER_ACTION_CONSUMPTION_CYCLES),
+            (RbacActionNote::script_root(), RBAC_ACTION_CONSUMPTION_CYCLES),
+            (
+                NetworkAccountConfigNote::script_root(),
+                NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES,
+            ),
+            (FeeSponsorshipNote::script_root(), FEE_SPONSORSHIP_CONSUMPTION_CYCLES),
         ] {
             let cost = StandardNote::note_cost(root).expect("standard note should have a cost");
-            assert!(cost.cycles() > 0);
+            assert_eq!(cost.cycles(), expected_cycles);
         }
 
         assert!(StandardNote::note_cost(TxFeeNote::script_root()).is_none());

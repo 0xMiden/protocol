@@ -22,6 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 
 use crate::StandardsLib;
+use crate::note::P2idNote;
+use crate::note::costs::{MINT_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -355,6 +357,21 @@ impl From<MintNoteStorage> for NoteStorage {
                     .expect("number of storage items should not exceed max storage items")
             },
         }
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for MintNote {
+    fn consumption_cycles() -> u32 {
+        MINT_CONSUMPTION_CYCLES
+    }
+
+    /// Consuming a MINT note typically creates the P2ID note delivering the minted asset
+    /// (the recipient digest may encode any script; P2ID is the standard flow).
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![P2idNote::script_root()]
     }
 }
 
