@@ -21,18 +21,18 @@ These scenarios measure what consuming each note in `miden-standards` and `miden
 
 Covered scenarios, with one variant per distinct execution path:
 
-- standards, consumed by a network basic wallet: P2ID; P2IDE (claim vs reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note vs reclaimed by the sponsor)
+- standards, consumed by a network basic wallet: P2ID (1 vs 16 assets); P2IDE (claim, claim with 16 assets, reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note; the sponsor-side reclaim path is benchmarked separately on a regular wallet, since a network account cannot consume a lone sponsorship note)
 - standards, consumed by a network faucet: MINT (fungible vs non-fungible faucet); BURN
 - standards, consumed by a network account with the matching management components: FAUCET_POLICY_ACTION, PAUSE_ACTION, OWNER_ACTION, RBAC_ACTION, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path)
 - agglayer, consumed by the bridge account (a network account): CLAIM (L1 vs L2 origin, with fee payment), B2AGG (empty vs `2^31 - 1`-leaf frontier, with fee payment), CONFIG_AGG_BRIDGE, DEREGISTER_AGG_FAUCET, UPDATE_GER, REMOVE_GER
 
 The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for continuity; the `with fee payment` variants are the network-account pricing baseline.
 
-Note: the network-account auth procedure does not yet collect FEE_SPONSORSHIP notes or create sponsorships for emitted network notes. When that integration lands, the measured costs change and the scenarios must be regenerated.
+The network-account auth procedure collects sponsored fees and answers sponsorship fee estimates natively, so every fee-paying network-account scenario's cost includes the fee-collection scan and TX_FEE creation.
 
 ### Note Consumption Cost Tables
 
-The network-account scenarios feed two checked-in, generated cost tables: `crates/miden-standards/src/note/costs/table.rs` and `crates/miden-agglayer/src/costs/table.rs`. Each table entry is the note's consumption cost in VM cycles - the total cycle count of the canonical network-account transaction consuming it, taken as the maximum across the note's execution paths.
+The network-account scenarios feed two checked-in, generated cost tables: `crates/miden-standards/src/note/costs/table.rs` and `crates/miden-agglayer/src/costs/table.rs`. Each table entry is the note's consumption cost in VM cycles - the total cycle count of the canonical network-account transaction consuming it, taken as the maximum across the note's benchmarked execution paths. The values are estimates, not guaranteed worst cases - see the caveats in `miden_standards::note::costs` (e.g. asset counts are benchmarked at the planned, not current, protocol maximum).
 
 Regenerate the tables (and `bench-tx.json`) with:
 

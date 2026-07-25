@@ -144,8 +144,14 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
             tx_consume_b2agg_note(Some((1u32 << 31) - 1), false).await
         },
         ExecutionBenchmark::ConsumeP2idNetwork => network_wallet::tx_consume_p2id_note_network(),
+        ExecutionBenchmark::ConsumeP2idMaxAssetsNetwork => {
+            network_wallet::tx_consume_p2id_note_max_assets_network()
+        },
         ExecutionBenchmark::ConsumeP2ideClaimNetwork => {
             network_wallet::tx_consume_p2ide_note_network(false)
+        },
+        ExecutionBenchmark::ConsumeP2ideMaxAssetsNetwork => {
+            network_wallet::tx_consume_p2ide_note_max_assets_network()
         },
         ExecutionBenchmark::ConsumeP2ideReclaimNetwork => {
             network_wallet::tx_consume_p2ide_note_network(true)

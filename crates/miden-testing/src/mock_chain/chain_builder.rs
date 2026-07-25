@@ -373,6 +373,7 @@ impl MockChainBuilder {
         account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
+        assets: Vec<Asset>,
     ) -> anyhow::Result<Account> {
         // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
         // answers sponsorship fee estimates; both require an active fee policy. A constant policy
@@ -402,7 +403,8 @@ impl MockChainBuilder {
             ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
-            .with_component(PausableManager);
+            .with_component(PausableManager)
+            .with_assets(assets);
 
         let auth = Auth::NetworkAccount {
             allowed_script_roots,
@@ -480,6 +482,30 @@ impl MockChainBuilder {
         mint_policy: MintPolicy,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
+        self.add_existing_network_faucet_with_assets(
+            token_symbol,
+            max_supply,
+            owner_account_id,
+            token_supply,
+            mint_policy,
+            allowed_script_roots,
+            [],
+        )
+    }
+
+    /// Same as [`Self::add_existing_network_faucet`], but the faucet's vault additionally holds
+    /// `assets` (e.g. the native fee asset, so the faucet can pay transaction fees).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_existing_network_faucet_with_assets(
+        &mut self,
+        token_symbol: &str,
+        max_supply: u64,
+        owner_account_id: AccountId,
+        token_supply: Option<u64>,
+        mint_policy: MintPolicy,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+        assets: impl IntoIterator<Item = Asset>,
+    ) -> anyhow::Result<Account> {
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
@@ -513,6 +539,7 @@ impl MockChainBuilder {
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
+            assets.into_iter().collect(),
         )
     }
 
@@ -546,6 +573,7 @@ impl MockChainBuilder {
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
+            Vec::new(),
         )
     }
 

@@ -4,7 +4,7 @@ pub mod trace_capture;
 pub mod utils;
 
 /// Indicates the type of the transaction execution benchmark
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ExecutionBenchmark {
     ConsumeSingleP2IDFalcon,
     ConsumeSingleP2IDEcdsa,
@@ -18,7 +18,9 @@ pub enum ExecutionBenchmark {
     ConsumeB2AggNotePopulated2p31,
     ConsumeB2AggNotePopulated2p31m1,
     ConsumeP2idNetwork,
+    ConsumeP2idMaxAssetsNetwork,
     ConsumeP2ideClaimNetwork,
+    ConsumeP2ideMaxAssetsNetwork,
     ConsumeP2ideReclaimNetwork,
     ConsumeSwapPublicPaybackNetwork,
     ConsumeSwapPrivatePaybackNetwork,
@@ -60,7 +62,9 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
             ExecutionBenchmark::ConsumeP2idNetwork,
+            ExecutionBenchmark::ConsumeP2idMaxAssetsNetwork,
             ExecutionBenchmark::ConsumeP2ideClaimNetwork,
+            ExecutionBenchmark::ConsumeP2ideMaxAssetsNetwork,
             ExecutionBenchmark::ConsumeP2ideReclaimNetwork,
             ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork,
             ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork,
@@ -127,8 +131,14 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeP2idNetwork => {
                 write!(f, "consume P2ID note (network account)")
             },
+            ExecutionBenchmark::ConsumeP2idMaxAssetsNetwork => {
+                write!(f, "consume P2ID note (16 assets, network account)")
+            },
             ExecutionBenchmark::ConsumeP2ideClaimNetwork => {
                 write!(f, "consume P2IDE note (claim, network account)")
+            },
+            ExecutionBenchmark::ConsumeP2ideMaxAssetsNetwork => {
+                write!(f, "consume P2IDE note (claim, 16 assets, network account)")
             },
             ExecutionBenchmark::ConsumeP2ideReclaimNetwork => {
                 write!(f, "consume P2IDE note (reclaim, network account)")
@@ -200,5 +210,52 @@ impl fmt::Display for ExecutionBenchmark {
                 write!(f, "consume REMOVE_GER note (with fee payment)")
             },
         }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::ExecutionBenchmark;
+
+    /// The last declared [`ExecutionBenchmark`] variant; keep in sync when appending variants.
+    const LAST_VARIANT: ExecutionBenchmark = ExecutionBenchmark::ConsumeRemoveGerWithFee;
+
+    /// Guards the hand-maintained [`ExecutionBenchmark::all`] slice. Discriminants are assigned
+    /// in declaration order, so a variant missing from the list leaves a gap below the list's
+    /// own maximum discriminant (or drops [`LAST_VARIANT`]), and a duplicate entry breaks the
+    /// uniqueness count. A variant appended without updating [`LAST_VARIANT`] escapes this
+    /// test, but not the exhaustive `Display`/dispatch matches or the missing-measurement
+    /// failure in `update_cost_tables`. Display strings double as `bench-tx.json` keys, so
+    /// they must be unique too.
+    #[test]
+    fn all_lists_every_variant_once() {
+        let benches = ExecutionBenchmark::all();
+
+        let discriminants: BTreeSet<usize> = benches.iter().map(|&bench| bench as usize).collect();
+        assert_eq!(discriminants.len(), benches.len(), "`all()` lists a variant twice");
+
+        let max_discriminant = discriminants.last().copied().expect("`all()` should not be empty");
+        assert_eq!(
+            max_discriminant + 1,
+            benches.len(),
+            "`all()` skips a variant declared before its last entry",
+        );
+        assert!(
+            benches.contains(&LAST_VARIANT),
+            "`all()` is missing the last declared variant (update LAST_VARIANT when appending)",
+        );
+
+        let display_keys: BTreeSet<String> =
+            benches.iter().map(|bench| bench.to_string()).collect();
+        assert_eq!(
+            display_keys.len(),
+            benches.len(),
+            "two variants share a Display string, which would collide in bench-tx.json",
+        );
     }
 }

@@ -285,6 +285,30 @@
       }
     }
   },
+  "consume P2ID note (16 assets, network account)": {
+    "prologue": 12195,
+    "notes_processing": 29792,
+    "note_execution": {
+      "0x2e356f4ddf273e2df75bf64c33a4db4645f699eb696b32b77ac05d435d9ee10a": 29750
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 14512,
+      "auth_procedure": 9355
+    },
+    "trace": {
+      "core_rows": 56585,
+      "chiplets_rows": 74069,
+      "range_rows": 3533,
+      "chiplets_shape": {
+        "hasher_rows": 65600,
+        "bitwise_rows": 5560,
+        "memory_rows": 2847,
+        "kernel_rom_rows": 61,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume P2IDE note (claim, network account)": {
     "prologue": 3600,
     "notes_processing": 2273,
@@ -304,6 +328,30 @@
         "hasher_rows": 30864,
         "bitwise_rows": 880,
         "memory_rows": 1066,
+        "kernel_rom_rows": 61,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume P2IDE note (claim, 16 assets, network account)": {
+    "prologue": 12195,
+    "notes_processing": 29917,
+    "note_execution": {
+      "0x61e23673d5d510db682c10a64a08d2c47f94e7ed74d98d40ae55bc406a43c412": 29875
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 14512,
+      "auth_procedure": 9355
+    },
+    "trace": {
+      "core_rows": 56710,
+      "chiplets_rows": 74201,
+      "range_rows": 3527,
+      "chiplets_shape": {
+        "hasher_rows": 65728,
+        "bitwise_rows": 5560,
+        "memory_rows": 2851,
         "kernel_rom_rows": 61,
         "ace_rows": 0
       }

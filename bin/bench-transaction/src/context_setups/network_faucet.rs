@@ -9,14 +9,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
-use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
 use miden_standards::account::access::{AccessControl, Pausable, PausableManager};
-use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
+use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -32,9 +32,6 @@ use rand::RngExt;
 
 /// Token symbol of the benchmarked faucets.
 const TOKEN_SYMBOL: &str = "NET";
-
-/// Number of decimals of the fungible benchmark faucet (the default used by testing faucets).
-const FAUCET_DECIMALS: u8 = 10;
 
 /// Maximum supply of the fungible benchmark faucet.
 const MAX_SUPPLY: u64 = 1_000;
@@ -61,44 +58,20 @@ fn owner_account_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
 }
 
-/// Adds an existing network fungible faucet whose vault holds the native fee asset.
-///
-/// Mirrors the component stack of [`MockChainBuilder::add_existing_network_faucet`] (with the
-/// MINT and BURN note script roots allowlisted by the network auth), adding the fee asset to the
-/// faucet's vault so the auth procedure can pay the transaction fee.
+/// Adds an existing network fungible faucet whose vault holds the native fee asset, so the
+/// faucet's auth procedure can pay the transaction fee.
 fn add_fee_funded_network_fungible_faucet(
     builder: &mut MockChainBuilder,
     owner_account_id: AccountId,
 ) -> Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new(TOKEN_SYMBOL)?)
-        .symbol(TokenSymbol::new(TOKEN_SYMBOL)?)
-        .decimals(FAUCET_DECIMALS)
-        .max_supply(AssetAmount::new(MAX_SUPPLY)?)
-        .token_supply(AssetAmount::new(TOKEN_SUPPLY)?)
-        .build()?;
-
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build();
-
-    let account_builder = AccountBuilder::new(builder.rng_mut().random())
-        .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
-        .with_component(faucet)
-        .with_components(AccessControl::Ownable2Step { owner: owner_account_id })
-        .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused())
-        .with_component(PausableManager)
-        .with_assets([super::fee_funding_asset()?]);
-
-    builder.add_account_from_builder(
-        super::network_auth([MintNote::script_root(), BurnNote::script_root()])?,
-        account_builder,
-        AccountState::Exists,
+    builder.add_existing_network_faucet_with_assets(
+        TOKEN_SYMBOL,
+        MAX_SUPPLY,
+        owner_account_id,
+        Some(TOKEN_SUPPLY),
+        MintPolicy::owner_only(),
+        [],
+        vec![super::fee_funding_asset()?],
     )
 }
 

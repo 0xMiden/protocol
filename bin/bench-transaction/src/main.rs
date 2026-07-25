@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -13,14 +14,16 @@ use bench_transaction::cycle_counting_benchmarks::utils::{
 
 async fn run_scenario(
     bench: ExecutionBenchmark,
-) -> Result<(ExecutionBenchmark, MeasurementsPrinter)> {
+) -> Result<(ExecutionBenchmark, MeasurementsPrinter, u32)> {
     let mock_tx = build_benchmark_context(bench)
         .await
         .with_context(|| format!("failed to build mock transaction for `{bench}`"))?;
     let (measurements, trace) = capture_measurements_and_trace_summary(mock_tx)
         .await
         .with_context(|| format!("failed to capture measurements for `{bench}`"))?;
-    Ok((bench, MeasurementsPrinter::from_parts(measurements, trace)))
+    let total_cycles = u32::try_from(measurements.total_cycles())
+        .context("total cycle count does not fit into u32")?;
+    Ok((bench, MeasurementsPrinter::from_parts(measurements, trace), total_cycles))
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -37,15 +40,18 @@ async fn main() -> Result<()> {
     file.write_all(b"{}").context("failed to write to file")?;
 
     let mut benchmark_results = Vec::new();
+    let mut measured_cycles = BTreeMap::new();
     for &bench in ExecutionBenchmark::all() {
-        benchmark_results.push(run_scenario(bench).await?);
+        let (bench, printer, total_cycles) = run_scenario(bench).await?;
+        measured_cycles.insert(bench, total_cycles);
+        benchmark_results.push((bench, printer));
     }
 
     // store benchmark results in the JSON file
     write_bench_results_to_json(path, benchmark_results)?;
 
     if update_costs {
-        bench_transaction::note_costs::update_cost_tables().await?;
+        bench_transaction::note_costs::update_cost_tables(&measured_cycles)?;
     }
 
     Ok(())

@@ -33,13 +33,50 @@ use miden_standards::note::{
 };
 use miden_testing::{Auth, MockTransaction};
 
+/// The number of assets carried by the asset-count-heavy benchmark scenarios.
+///
+/// This is the PLANNED protocol maximum for note assets - the reduction from the current
+/// [`miden_protocol::MAX_ASSETS_PER_NOTE`] (64) to 16, raised in the review of
+/// <https://github.com/0xMiden/protocol/pull/3354>, has not landed yet - so until it does a
+/// maximally packed note costs more than these scenarios measure (see the caveat in
+/// `miden_standards::note::costs`). Benchmarking at the planned maximum avoids regenerating the
+/// tables twice.
+const MAX_NOTE_ASSETS: usize = 16;
+
+// Pins the protocol maximum this module's docs (and the costs-module caveat) describe: when the
+// planned reduction lands, this breaks the build so the constant and both doc blocks are
+// revisited together.
+const _: () = assert!(miden_protocol::MAX_ASSETS_PER_NOTE == 64);
+
+/// Returns [`MAX_NOTE_ASSETS`] distinct assets: one fungible asset plus distinct non-fungible
+/// assets.
+fn max_note_assets() -> Vec<Asset> {
+    let mut assets = vec![FungibleAsset::mock(123)];
+    for index in 0..MAX_NOTE_ASSETS - 1 {
+        // the byte values are arbitrary discriminators; only distinctness matters
+        let index = u8::try_from(index).expect("MAX_NOTE_ASSETS fits in u8");
+        assets.push(NonFungibleAsset::mock(&[index, 100]));
+    }
+    assets
+}
+
 // P2ID NOTE SETUPS
 // ================================================================================================
 
 /// Returns the transaction context in which a network account consumes a single P2ID note.
 pub fn tx_consume_p2id_note_network() -> Result<MockTransaction> {
-    let fungible_asset: Asset = FungibleAsset::mock(123);
+    tx_consume_p2id_note_with_assets(&[FungibleAsset::mock(123)])
+}
 
+/// Returns the transaction context in which a network account consumes a single P2ID note
+/// carrying [`MAX_NOTE_ASSETS`] assets.
+pub fn tx_consume_p2id_note_max_assets_network() -> Result<MockTransaction> {
+    tx_consume_p2id_note_with_assets(&max_note_assets())
+}
+
+/// Returns the transaction context in which a network account consumes a single P2ID note
+/// carrying `assets`.
+fn tx_consume_p2id_note_with_assets(assets: &[Asset]) -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     let target_account = builder.add_existing_wallet_with_assets(
@@ -50,7 +87,7 @@ pub fn tx_consume_p2id_note_network() -> Result<MockTransaction> {
     let note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         target_account.id(),
-        &[fungible_asset],
+        assets,
         NoteType::Public,
     )?;
 
@@ -65,65 +102,78 @@ pub fn tx_consume_p2id_note_network() -> Result<MockTransaction> {
 // P2IDE NOTE SETUPS
 // ================================================================================================
 
+/// Returns the transaction context in which a network account consumes a P2IDE note via the
+/// target's claim path, carrying [`MAX_NOTE_ASSETS`] assets.
+pub fn tx_consume_p2ide_note_max_assets_network() -> Result<MockTransaction> {
+    tx_consume_p2ide_note_claim_with_assets(&max_note_assets())
+}
+
+/// Returns the transaction context in which a network account consumes a P2IDE note via the
+/// target's claim path, carrying `assets`.
+fn tx_consume_p2ide_note_claim_with_assets(assets: &[Asset]) -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    let target_account = builder.add_existing_wallet_with_assets(
+        super::network_auth([P2ideNote::script_root()])?,
+        [super::fee_funding_asset()?],
+    )?;
+
+    let note = builder.add_p2ide_note(
+        ACCOUNT_ID_SENDER.try_into()?,
+        target_account.id(),
+        None,
+        assets,
+        NoteType::Public,
+        None,
+        None,
+    )?;
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
 /// Returns the transaction context in which a network account consumes a P2IDE note, either via the
 /// target's claim path or, when `reclaim` is set, via the sender's reclaim path.
 pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<MockTransaction> {
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
-    let mut builder = super::chain_builder(true);
-
-    if reclaim {
-        // Reclaim path: the network account is the note's sender (and thus its default reclaimer)
-        // and reclaims the note once the reclaim height has passed.
-        let reclaim_height = BlockNumber::from(2u32);
-
-        let sender_account = builder.add_existing_wallet_with_assets(
-            super::network_auth([P2ideNote::script_root()])?,
-            [super::fee_funding_asset()?],
-        )?;
-        let target_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
-
-        let note = builder.add_p2ide_note(
-            sender_account.id(),
-            target_account.id(),
-            None,
-            &[fungible_asset],
-            NoteType::Public,
-            Some(reclaim_height),
-            None,
-        )?;
-
-        let mut mock_chain = builder.build()?;
-        mock_chain.prove_until_block(reclaim_height + 1)?;
-
-        mock_chain
-            .build_transaction(sender_account.id())
-            .authenticated_input_note(note.id())
-            .build()
-    } else {
+    if !reclaim {
         // Claim path: the network account is the note's target and consumes it directly.
-        let target_account = builder.add_existing_wallet_with_assets(
-            super::network_auth([P2ideNote::script_root()])?,
-            [super::fee_funding_asset()?],
-        )?;
-
-        let note = builder.add_p2ide_note(
-            ACCOUNT_ID_SENDER.try_into()?,
-            target_account.id(),
-            None,
-            &[fungible_asset],
-            NoteType::Public,
-            None,
-            None,
-        )?;
-
-        let mock_chain = builder.build()?;
-
-        mock_chain
-            .build_transaction(target_account.id())
-            .authenticated_input_note(note.id())
-            .build()
+        return tx_consume_p2ide_note_claim_with_assets(&[fungible_asset]);
     }
+
+    // Reclaim path: the network account is the note's sender (and thus its default reclaimer)
+    // and reclaims the note once the reclaim height has passed.
+    let mut builder = super::chain_builder(true);
+    let reclaim_height = BlockNumber::from(2u32);
+
+    let sender_account = builder.add_existing_wallet_with_assets(
+        super::network_auth([P2ideNote::script_root()])?,
+        [super::fee_funding_asset()?],
+    )?;
+    let target_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+
+    let note = builder.add_p2ide_note(
+        sender_account.id(),
+        target_account.id(),
+        None,
+        &[fungible_asset],
+        NoteType::Public,
+        Some(reclaim_height),
+        None,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_until_block(reclaim_height + 1)?;
+
+    mock_chain
+        .build_transaction(sender_account.id())
+        .authenticated_input_note(note.id())
+        .build()
 }
 
 // SWAP NOTE SETUPS
