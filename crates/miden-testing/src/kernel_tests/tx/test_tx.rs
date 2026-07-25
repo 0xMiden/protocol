@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -76,6 +77,7 @@ use miden_tx::{
     LocalTransactionProver,
     TransactionExecutor,
     TransactionExecutorError,
+    TransactionKernelError,
     TransactionProverError,
 };
 use rstest::rstest;
@@ -650,10 +652,15 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
 
     let error = mock_tx.execute().await.unwrap_err();
 
-    let error_chain = format!("{:#}", anyhow::Error::from(error));
-    assert!(
-        error_chain.contains("expected block commitment to be"),
-        "unexpected error: {error_chain}"
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryCommitmentMismatch(inner))
+                if inner.to_string().contains("block commitment")
+        )
     );
 
     Ok(())
@@ -720,10 +727,17 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 
     let error = mock_tx.execute().await.unwrap_err();
 
-    let error_chain = format!("{:#}", anyhow::Error::from(error));
-    assert!(
-        error_chain.contains("expected expiration delta to be 0 but was 777"),
-        "unexpected error: {error_chain}"
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+                expected: 0,
+                actual: 777,
+            })
+        )
     );
 
     Ok(())
