@@ -282,10 +282,6 @@ async fn compute_fee_fails_on_invalid_exclude_notes(
 /// The transaction creates six output notes, so the excluded indices below are all in bounds. The
 /// cases cover zero, one and multiple excluded notes, to exercise all branches of the sorting and
 /// uniqueness validation.
-///
-/// The fee assertion also pins the kernel's output-notes fee term at zero: when the kernel
-/// starts charging for output notes, this fails and `TransactionFee` in `miden-protocol` (which
-/// omits the term) must grow it too.
 #[rstest]
 // No excluded notes.
 #[case::none(vec![])]
