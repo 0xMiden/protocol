@@ -9,8 +9,6 @@
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
-use core::slice;
-
 use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_agglayer_faucet};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
@@ -24,7 +22,7 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::create_existing_bridge_account_with_roles;
+use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
 
 /// Attack note script: trivial body whose root falls outside the bridge's allowlist.
 const ATTACK_NOTE_CODE: &str = "\
@@ -58,6 +56,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -76,7 +75,8 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], slice::from_ref(&update_ger_note))?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(update_ger_note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -110,6 +110,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -123,7 +124,8 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], slice::from_ref(&attack_note))?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(attack_note)
         .build()?
         .execute()
         .await;
@@ -165,7 +167,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -210,7 +212,8 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&attack_note))?
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(attack_note)
         .build()?
         .execute()
         .await;

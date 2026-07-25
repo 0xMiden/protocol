@@ -228,7 +228,7 @@ mod tests {
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
             padded_core_side: 65_536,
-            padded_chiplets: 65_536,
+            padded_chiplets: 131_072,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",

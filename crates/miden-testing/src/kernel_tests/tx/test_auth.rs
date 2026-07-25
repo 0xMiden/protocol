@@ -25,7 +25,7 @@ pub const ERR_WRONG_ARGS: MasmError = MasmError::from_static_str(ERR_WRONG_ARGS_
 #[tokio::test]
 async fn test_auth_procedure_args() -> anyhow::Result<()> {
     let account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [ConditionalAuthComponent]);
 
     let auth_args = [
         Felt::new_unchecked(97),
@@ -34,9 +34,9 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
         ONE, // incr_nonce = true
     ];
 
-    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
-    tx_context.execute().await.context("failed to execute transaction")?;
+    mock_tx.execute().await.context("failed to execute transaction")?;
 
     Ok(())
 }
@@ -49,7 +49,7 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
     let account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [ConditionalAuthComponent]);
 
     // The auth script expects [99, 98, 97, nonce_increment_flag]
     let auth_args = [
@@ -59,9 +59,9 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
         Felt::new_unchecked(101),
     ];
 
-    let tx_context = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).auth_args(auth_args.into()).build()?;
 
-    let execution_result = tx_context.execute().await;
+    let execution_result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(execution_result, ERR_WRONG_ARGS);
 
@@ -71,10 +71,11 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
 /// Tests that attempting to call the auth procedure manually from user code fails.
 #[tokio::test]
 async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
-    let (auth_component, _) = Auth::IncrNonce.build_component();
+    let (auth_components, _) = Auth::IncrNonce.build_components();
+    let auth_component = auth_components.into_iter().next().expect("auth component is yielded");
 
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(auth_component.clone())
+        .with_component(auth_component.clone())
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -87,12 +88,12 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(auth_component.component_code())?
+        .with_dynamically_linked_package(auth_component.component_code())?
         .compile_tx_script(tx_script_source)?;
 
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    let execution_result = tx_context.execute().await;
+    let execution_result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(
         execution_result,
@@ -155,7 +156,7 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
 
     let execution_result = chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .add_signature(pub_key_commitment, message, signature)
         .build()?
@@ -194,7 +195,7 @@ async fn test_privileged_event_from_script_is_rejected() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script_source)?;
 
     let execution_result = chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()

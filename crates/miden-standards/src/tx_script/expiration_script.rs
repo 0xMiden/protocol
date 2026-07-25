@@ -20,7 +20,7 @@ const EXPIRATION_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::expirat
 static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(EXPIRATION_TX_SCRIPT_PATH);
-    TransactionScript::from_library_reference(standards_lib.as_ref(), path)
+    TransactionScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("standards library should contain the expiration tx script procedure")
 });
 
@@ -42,7 +42,7 @@ static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
 ///
 /// ```ignore
 /// let script = ExpirationTransactionScript::new(delta);
-/// let context = build_tx_context(/* .. */)
+/// let mock_tx = build_transaction(/* .. */)
 ///     .tx_script(script.into())
 ///     .tx_script_args(script.tx_script_args());
 /// ```

@@ -94,10 +94,9 @@ impl PricedNote {
             PricedNote::NetworkAccountConfig => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
             },
-            PricedNote::FeeSponsorship => &[
-                ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
-                ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork,
-            ],
+            PricedNote::FeeSponsorship => {
+                &[ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork]
+            },
             PricedNote::Claim => &[
                 ExecutionBenchmark::ConsumeClaimL1WithFee,
                 ExecutionBenchmark::ConsumeClaimL2WithFee,
@@ -229,7 +228,7 @@ fn path_label(bench: ExecutionBenchmark) -> &'static str {
         ExecutionBenchmark::ConsumeMintFungibleNetwork => "fungible faucet",
         ExecutionBenchmark::ConsumeMintNonFungibleNetwork => "non-fungible faucet",
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => "with feature note",
-        ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => "reclaim",
+        ExecutionBenchmark::ConsumeFeeSponsorshipReclaim => "reclaim",
         ExecutionBenchmark::ConsumeClaimL1WithFee => "L1 origin",
         ExecutionBenchmark::ConsumeClaimL2WithFee => "L2 origin",
         ExecutionBenchmark::ConsumeB2AggWithFee => "empty frontier",
@@ -405,8 +404,9 @@ mod tests {
             .filter(|bench| !priced_scenarios.contains(bench))
             .collect();
 
-        // The signature-auth wallet scenarios and the zero-fee agglayer scenarios do not price
-        // any note; everything else must.
+        // The signature-auth wallet scenarios (including the sponsor-side FEE_SPONSORSHIP
+        // reclaim) and the zero-fee agglayer scenarios do not price any note; everything else
+        // must.
         let expected_unpriced = [
             ExecutionBenchmark::ConsumeSingleP2IDFalcon,
             ExecutionBenchmark::ConsumeSingleP2IDEcdsa,
@@ -419,6 +419,7 @@ mod tests {
             ExecutionBenchmark::ConsumeB2AggNote,
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
             ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            ExecutionBenchmark::ConsumeFeeSponsorshipReclaim,
         ];
         assert_eq!(unpriced, expected_unpriced, "unexpected unpriced benchmark scenarios");
 

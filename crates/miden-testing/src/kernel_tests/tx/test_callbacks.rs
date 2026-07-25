@@ -126,11 +126,11 @@ end
 const ERR_ACCOUNT_BLOCKED: MasmError =
     MasmError::from_static_str("the account is blocked and cannot receive this asset");
 
-// Initialize the Basic Fungible Faucet library only once.
+// Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code(BlockList::NAME, BLOCK_LIST_MASM)
-        .expect("block list library should be valid")
+        .expect("block list component code should be valid")
 });
 
 static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -291,7 +291,8 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // Consuming the note should succeed: the callback is gracefully skipped because the
     // faucet does not define the callback storage slot.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -369,7 +370,8 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 
     // Execute the transaction - should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -413,7 +415,8 @@ async fn test_blocked_account_cannot_receive_asset(
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -481,12 +484,12 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[], &[])?
+        .build_transaction(target_account.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -594,14 +597,15 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     // Execute the transaction: consume the P2ID note (asset enters vault), then move the asset
     // to output note 1. Should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -681,7 +685,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -742,7 +746,7 @@ fn add_faucet_with_callbacks(
     if account_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_account");
         let proc_root = callback_code
-            .as_library()
+            .as_package()
             .get_procedure_root_by_path(path.as_str())
             .expect("account callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_account(proc_root);
@@ -751,7 +755,7 @@ fn add_faucet_with_callbacks(
     if note_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_note");
         let proc_root = callback_code
-            .as_library()
+            .as_package()
             .get_procedure_root_by_path(path.as_str())
             .expect("note callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);

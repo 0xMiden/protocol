@@ -158,7 +158,8 @@ async fn consume_admin_note(
 ) -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[note.id()], &[])?
+        .build_transaction(faucet_id)
+        .authenticated_input_note(note.id())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -192,7 +193,8 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -227,7 +229,8 @@ async fn block_receive_asset_fails_when_account_pre_blocked() -> anyhow::Result<
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -264,7 +267,8 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -319,12 +323,12 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         asset_id = Asset::Fungible(asset).to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[], &[])?
+        .build_transaction(target_account.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -366,7 +370,8 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -446,7 +451,8 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(other_account.id(), &[p2id_note.id()], &[])?
+        .build_transaction(other_account.id())
+        .authenticated_input_note(p2id_note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -500,7 +506,7 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
     let executed = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -605,7 +611,8 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     // Blocked → receiving the asset fails.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_block.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_block.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -618,7 +625,8 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     // Unblocked → receiving the asset now succeeds.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     mock_chain
-        .build_tx_context(target_account.id(), &[p2id_after_unblock.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_after_unblock.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -644,7 +652,8 @@ async fn rbac_block_fails_when_sender_lacks_role() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[block.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(block.id())
         .build()?
         .execute()
         .await;

@@ -57,6 +57,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -64,7 +65,15 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
-use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
+use miden_standards::note::{
+    BurnNote,
+    MintNote,
+    NetworkAccountConfigNote,
+    P2idNote,
+    P2ideNote,
+    SwapNote,
+    TxFeeNote,
+};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -152,7 +161,7 @@ impl MockChainBuilder {
     /// Initializes a new mock chain builder with the provided accounts.
     ///
     /// This method only adds the accounts and cannot not register any authenticators for them.
-    /// Calling [`MockChain::build_tx_context`] on accounts added in this way will not work if the
+    /// Calling [`MockChain::build_transaction`] on accounts added in this way will not work if the
     /// account needs an authenticator.
     ///
     /// Due to these limitations, prefer using other methods to add accounts to the chain, e.g.
@@ -312,7 +321,7 @@ impl MockChainBuilder {
     /// it.
     ///
     /// This does not add the account to the chain state, but it can still be used to call
-    /// [`MockChain::build_tx_context`] to automatically add the authenticator.
+    /// [`MockChain::build_transaction`] to automatically add the authenticator.
     pub fn create_new_wallet(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
@@ -359,12 +368,31 @@ impl MockChainBuilder {
     /// Bundles [`PausableManager`] to match the `create_network_fungible_faucet` factory.
     fn add_existing_network_fungible_faucet(
         &mut self,
-        auth_method: Auth,
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
         faucet: FungibleFaucet,
         account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
+        // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
+        // answers sponsorship fee estimates; both require an active fee policy. A constant policy
+        // aborts fee estimation for note scripts without a schedule entry, so schedule an explicit
+        // 0 fee for every allowlisted note; this keeps fees a no-op on fee-free chains.
+        let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+        for note_script in &allowed_script_roots {
+            basic_constant_fee_policy =
+                basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+        }
+        // `with_allowed_notes` always allowlists the config note, which the network auth flow
+        // prices if it is ever consumed, so schedule it too.
+        basic_constant_fee_policy = basic_constant_fee_policy
+            .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+
+        let fee_policy_manager = FeePolicyManager::builder()
+            .active_fee_policy(basic_constant_fee_policy.into())
+            .fee_faucet_id(self.fee_faucet_id)
+            .build();
+
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)
             .with_component(faucet)
@@ -376,7 +404,13 @@ impl MockChainBuilder {
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
 
-        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+        let auth = Auth::NetworkAccount {
+            allowed_script_roots,
+            allowed_tx_script_roots: BTreeSet::new(),
+            fee_policy_manager,
+        };
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
@@ -474,10 +508,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            allowed_script_roots,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -510,10 +541,7 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots,
-                allowed_tx_script_roots: BTreeSet::new(),
-            },
+            allowed_script_roots,
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -619,7 +647,7 @@ impl MockChainBuilder {
     ///   validate its seed.
     /// - If [`AccountState::New`] is given the account is built as a new account and is **not**
     ///   added to the chain. Its authenticator is registered (if present). Its first transaction
-    ///   will be its creation transaction. [`MockChain::build_tx_context`] can be called with the
+    ///   will be its creation transaction. [`MockChain::build_transaction`] can be called with the
     ///   account to automatically add the authenticator.
     pub fn add_account_from_builder(
         &mut self,
@@ -627,8 +655,8 @@ impl MockChainBuilder {
         mut account_builder: AccountBuilder,
         account_state: AccountState,
     ) -> anyhow::Result<Account> {
-        let (auth_component, authenticator) = auth_method.build_component();
-        account_builder = account_builder.with_auth_component(auth_component);
+        let (auth_components, authenticator) = auth_method.build_components();
+        account_builder = account_builder.with_components(auth_components);
 
         let account = if let AccountState::New = account_state {
             account_builder.build().context("failed to build account from builder")?
@@ -665,7 +693,7 @@ impl MockChainBuilder {
     /// Adds the provided account to the list of genesis accounts.
     ///
     /// This method only adds the account and does not store its account authenticator for it.
-    /// Calling [`MockChain::build_tx_context`] on accounts added in this way will not work if
+    /// Calling [`MockChain::build_transaction`] on accounts added in this way will not work if
     /// the account needs an authenticator.
     ///
     /// Due to these limitations, prefer using other methods to add accounts to the chain, e.g.

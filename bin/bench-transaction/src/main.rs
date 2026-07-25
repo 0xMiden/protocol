@@ -14,10 +14,10 @@ use bench_transaction::cycle_counting_benchmarks::utils::{
 async fn run_scenario(
     bench: ExecutionBenchmark,
 ) -> Result<(ExecutionBenchmark, MeasurementsPrinter)> {
-    let context = build_benchmark_context(bench)
+    let mock_tx = build_benchmark_context(bench)
         .await
-        .with_context(|| format!("failed to build context for `{bench}`"))?;
-    let (measurements, trace) = capture_measurements_and_trace_summary(context)
+        .with_context(|| format!("failed to build mock transaction for `{bench}`"))?;
+    let (measurements, trace) = capture_measurements_and_trace_summary(mock_tx)
         .await
         .with_context(|| format!("failed to capture measurements for `{bench}`"))?;
     Ok((bench, MeasurementsPrinter::from_parts(measurements, trace)))

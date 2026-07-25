@@ -48,6 +48,7 @@
 - Avoid excessive bold formatting. Use it sparingly for emphasis, not for every label or term.
 - Use simple dashes "-" instead of em dashes "—".
 - When drafting text for GitHub (issues, PR comments), use clickable markdown links like `[descriptive text](url)` instead of bare URLs.
+- When linking to code on GitHub, use commit-pinned permalinks (`/blob/<full-commit-sha>/path#L123`), not branch refs like `/blob/next/` or `/blob/main/`. Branch refs move, so their line numbers rot; resolve the branch to its current commit SHA first (e.g. `git rev-parse origin/next`) and verify the cited line still matches at that SHA. This applies to links into other repos (e.g. `0xMiden/node`) as well as this one.
 - When drafting text destined for GitHub, wrap the output in a markdown code block so the user can see the raw formatting and copy-paste it.
 
 ## Core Principles

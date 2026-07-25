@@ -14,7 +14,6 @@ use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_INFO_MISSING,
     ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
-    ERR_FEE_CONVERSION_RATE_NOT_U32,
     ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
     ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
 };
@@ -70,9 +69,9 @@ async fn execute_fee_paying_tx(
     });
 
     let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;
@@ -185,7 +184,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
     assert_eq!(paid_asset.faucet_id(), payment_faucet_id);
     assert!(paid_asset.amount().as_u64() >= 2 * executed_transaction.compute_fee().as_u64());
 
-    // the converted path (advice load, commitment check, u64 rate math) must also stay within
+    // the converted path (advice load, commitment check, u128 rate math) must also stay within
     // the pay_fee cycle margin
     let measurements = executed_transaction.measurements();
     let auth_estimate = FALCON_512_POSEIDON2_AUTH_CYCLES + PAY_FEE_CYCLES;
@@ -270,9 +269,9 @@ async fn execute_with_conversion_entry(
 
     let (key, value) = entry;
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(key)
-        .extend_advice_map([(key, value)])
+        .add_advice_map_entry(key, value)
         .build()?
         .execute()
         .await;
@@ -331,47 +330,78 @@ async fn zero_conversion_rate_aborts(
     Ok(())
 }
 
-/// A conversion rate exceeding u32 is rejected by the in-VM rate validation. The check fires as
-/// a u32 assertion, so assert on the specific error message rather than the assertion code.
+/// A conversion rate scaling between decimal conventions (10^16 / 10^4, a net factor of 10^12
+/// as for an 18-decimals vs 6-decimals asset pair) is applied exactly, even though the rate
+/// numerator exceeds a u32 and the intermediate product `fee_amount * rate_num` exceeds a u64.
+///
+/// The native amount is obtained from an identical transaction in native mode, which executes
+/// the same instruction stream up to the fee computation and therefore computes the same in-VM
+/// fee.
 #[tokio::test]
-async fn non_u32_conversion_rate_aborts() -> anyhow::Result<()> {
-    let conversion_word = conversion_word_with_rate(Felt::new_unchecked(1 << 40), 1u32.into())?;
-    let entry = raw_conversion_entry(conversion_word, Word::from([5u32, 6, 7, 8]));
+async fn large_conversion_rate_converts_exactly() -> anyhow::Result<()> {
+    const RATE_NUM: u64 = 10u64.pow(16);
+    const RATE_DEN: u64 = 10u64.pow(4);
 
-    let result = execute_with_conversion_entry(entry).await?;
+    let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
+    let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10u64.pow(17))?.into();
 
-    let err = result.expect_err("a non-u32 conversion rate must abort the transaction");
-    let err_chain = format!("{:#}", anyhow::Error::new(err));
+    // reference run in native mode to learn the in-VM computed fee amount
+    let (native_tx, _) =
+        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[payment_asset], None).await?;
+    let native_assets = native_tx.output_notes().get_note(0).assets();
+    let Asset::Fungible(native_paid) =
+        native_assets.iter().next().expect("fee note should carry an asset")
+    else {
+        panic!("fee note asset should be fungible");
+    };
+    let native_amount = native_paid.amount().as_u64();
+
+    // the intermediate product must exceed a u64 for this test to exercise the 128-bit math
     assert!(
-        err_chain.contains(ERR_FEE_CONVERSION_RATE_NOT_U32.message()),
-        "expected the u32 rate assertion error, got: {err_chain}"
+        u128::from(native_amount) * u128::from(RATE_NUM) > u128::from(u64::MAX),
+        "test setup should overflow the intermediate u64 product"
     );
+
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, RATE_NUM, RATE_DEN)?;
+    let salt = Word::from([5u32, 6, 7, 8]);
+
+    let (converted_tx, _) = execute_fee_paying_tx(
+        AuthScheme::Falcon512Poseidon2,
+        &[payment_asset],
+        Some(commit_fee_conversion_info(conversion_info, salt)),
+    )
+    .await?;
+
+    assert_eq!(converted_tx.output_notes().num_notes(), 1);
+    let converted_assets = converted_tx.output_notes().get_note(0).assets();
+    let Asset::Fungible(converted_paid) =
+        converted_assets.iter().next().expect("fee note should carry an asset")
+    else {
+        panic!("fee note asset should be fungible");
+    };
+
+    // 10^4 divides 10^16, so the conversion is exact: native_amount * 10^12
+    assert_eq!(converted_paid.faucet_id(), payment_faucet_id);
+    assert_eq!(converted_paid.amount().as_u64(), native_amount * (RATE_NUM / RATE_DEN));
 
     Ok(())
 }
 
-/// A conversion whose product overflows a u64 aborts instead of wrapping.
+/// A conversion whose quotient does not fit into a fungible asset amount aborts instead of
+/// wrapping: with rate_den 1 and the ~8500 native fee of these chains, rate_num 2^62 pushes the
+/// quotient beyond a u64 and rate_num 2^50 lands it in [2^63, 2^64), exercising both overflow
+/// asserts.
+#[rstest]
+#[case::quotient_exceeds_u64(1u64 << 62)]
+#[case::quotient_exceeds_max_amount(1u64 << 50)]
 #[tokio::test]
-async fn converted_amount_overflow_aborts() -> anyhow::Result<()> {
+async fn converted_amount_overflow_aborts(#[case] rate_num: u64) -> anyhow::Result<()> {
     let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    // a maximum base fee times a maximum u32 rate overflows the u64 product
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, u32::MAX, 1)?;
+    let conversion_info = FeeConversionInfo::new(payment_faucet_id, rate_num, 1)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
-    let mut builder = MockChain::builder().verification_base_fee(u32::MAX);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let mock_chain = builder.build()?;
-
-    let (key, value) = commit_fee_conversion_info(conversion_info, salt);
-    let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .auth_args(key)
-        .extend_advice_map([(key, value)])
-        .build()?
-        .execute()
-        .await;
+    let entry = commit_fee_conversion_info(conversion_info, salt);
+    let result = execute_with_conversion_entry(entry).await?;
 
     assert_transaction_executor_error!(result, ERR_FEE_CONVERTED_AMOUNT_OVERFLOW);
 
@@ -389,7 +419,7 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let executed_transaction =
-        mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await?;
+        mock_chain.build_transaction(account.id()).build()?.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
 
@@ -414,9 +444,9 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await;
@@ -443,7 +473,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let result = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await;
+    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_MISSING);
 
@@ -532,10 +562,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     );
 
     let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;

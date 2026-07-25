@@ -90,7 +90,7 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // must be available in the registry for project dependency resolution to succeed.
     for package in [
         CoreLibrary::default().package(),
-        Arc::new(Package::from(ProtocolLib::default())),
+        ProtocolLib::default().package(),
         TransactionKernel::package(),
     ] {
         registry.cache_package(package).into_diagnostic()?;

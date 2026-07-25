@@ -19,15 +19,16 @@ use miden_agglayer::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::StandardNote;
-use miden_testing::{Auth, MockChain, MockChainBuilder, TransactionContext};
+use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
+use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
 use crate::cycle_counting_benchmarks::ExecutionBenchmark;
@@ -35,6 +36,10 @@ use crate::cycle_counting_benchmarks::ExecutionBenchmark;
 mod network_action;
 mod network_faucet;
 mod network_wallet;
+
+/// AggLayer network ID encoded in the bundled claim test vectors. Bridges in these benchmark
+/// setups are created with this value so vector-based claims validate against the configured ID.
+const MIDEN_NETWORK_ID: u32 = 77;
 
 // SHARED NETWORK-ACCOUNT SCENARIO HELPERS
 // ================================================================================================
@@ -57,12 +62,50 @@ fn fee_funding_asset() -> Result<Asset> {
 }
 
 /// Returns network-account authentication allowlisting the given note script roots (and no
-/// transaction scripts).
-fn network_auth(allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>) -> Auth {
-    Auth::NetworkAccount {
-        allowed_script_roots: allowed_script_roots.into_iter().collect(),
+/// transaction scripts), with a fee policy manager pricing each `(root, amount)` in `priced`
+/// through a [`BasicConstantFeePolicy`] and every other allowlisted root at an explicit 0 fee.
+fn network_auth_with_fees(
+    allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    priced: &[(NoteScriptRoot, u64)],
+) -> Result<Auth> {
+    let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots.into_iter().collect();
+    let fee_policy_manager = fee_policy_manager(allowed_script_roots.iter().copied(), priced)?;
+    Ok(Auth::NetworkAccount {
+        allowed_script_roots,
         allowed_tx_script_roots: BTreeSet::new(),
+        fee_policy_manager,
+    })
+}
+
+/// Returns network-account authentication allowlisting the given note script roots, pricing
+/// them all at an explicit 0 fee.
+fn network_auth(allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>) -> Result<Auth> {
+    network_auth_with_fees(allowed_script_roots, &[])
+}
+
+/// Returns a fee policy manager charging fees in the native fee asset through a
+/// [`BasicConstantFeePolicy`].
+///
+/// The network account's auth procedure estimates every input note's fee through the active
+/// policy during fee collection, and a constant policy aborts for unscheduled roots - so every
+/// `zero_fee_root` (and the auto-allowlisted NETWORK_ACCOUNT_CONFIG note) is scheduled at an
+/// explicit 0 fee, and each `(root, amount)` in `priced` at its amount.
+fn fee_policy_manager(
+    zero_fee_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    priced: &[(NoteScriptRoot, u64)],
+) -> Result<FeePolicyManager> {
+    let mut policy = BasicConstantFeePolicy::new()
+        .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    for root in zero_fee_roots {
+        policy = policy.with_fee(root, AssetAmount::ZERO);
     }
+    for (root, amount) in priced {
+        policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
+    }
+    Ok(FeePolicyManager::builder()
+        .active_fee_policy(policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build())
 }
 
 /// Returns a chain builder which charges [`NETWORK_VERIFICATION_BASE_FEE`] when `with_fee` is
@@ -79,7 +122,7 @@ fn chain_builder(with_fee: bool) -> MockChainBuilder {
 // ================================================================================================
 
 /// Builds the transaction context for the given benchmark scenario.
-pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<TransactionContext> {
+pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTransaction> {
     match bench {
         ExecutionBenchmark::ConsumeSingleP2IDFalcon => tx_consume_single_p2id_note_falcon(),
         ExecutionBenchmark::ConsumeSingleP2IDEcdsa => tx_consume_single_p2id_note_ecdsa(),
@@ -144,7 +187,7 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<Transa
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)
         },
-        ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => {
+        ExecutionBenchmark::ConsumeFeeSponsorshipReclaim => {
             network_wallet::tx_consume_fee_sponsorship_note_network(true)
         },
         ExecutionBenchmark::ConsumeClaimL1WithFee => {
@@ -171,17 +214,17 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<Transa
 // P2ID NOTE SETUPS
 // ================================================================================================
 
-pub fn tx_create_single_p2id_note_falcon() -> Result<TransactionContext> {
+pub fn tx_create_single_p2id_note_falcon() -> Result<MockTransaction> {
     tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_create_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+pub fn tx_create_single_p2id_note_ecdsa() -> Result<MockTransaction> {
     tx_create_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
-/// Returns the transaction context which could be used to run the transaction which creates a
+/// Returns the mock transaction which could be used to run the transaction which creates a
 /// single P2ID note.
-fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
     let account = builder
@@ -238,25 +281,25 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Trans
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_note_creation_script)?;
 
-    // construct the transaction context
+    // construct the mock transaction
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .build_transaction(account.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
         .tx_script(tx_script)
         .build()
 }
 
-pub fn tx_consume_single_p2id_note_falcon() -> Result<TransactionContext> {
+pub fn tx_consume_single_p2id_note_falcon() -> Result<MockTransaction> {
     tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_consume_single_p2id_note_ecdsa() -> Result<TransactionContext> {
+pub fn tx_consume_single_p2id_note_ecdsa() -> Result<MockTransaction> {
     tx_consume_single_p2id_note_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
-/// Returns the transaction context which could be used to run the transaction which consumes a
+/// Returns the mock transaction which could be used to run the transaction which consumes a
 /// single P2ID note into a new basic wallet.
-fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     // Create assets
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
@@ -277,21 +320,24 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Tran
 
     let mock_chain = builder.build()?;
 
-    // construct the transaction context
-    mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
+    // construct the mock transaction
+    mock_chain
+        .build_transaction(target_account.clone())
+        .authenticated_input_note(note.id())
+        .build()
 }
 
-pub fn tx_consume_two_p2id_notes_falcon() -> Result<TransactionContext> {
+pub fn tx_consume_two_p2id_notes_falcon() -> Result<MockTransaction> {
     tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
 }
 
-pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<TransactionContext> {
+pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<MockTransaction> {
     tx_consume_two_p2id_notes_with_auth(AuthScheme::EcdsaK256Keccak)
 }
 
-/// Returns the transaction context which could be used to run the transaction which consumes two
+/// Returns the mock transaction which could be used to run the transaction which consumes two
 /// P2ID notes into an existing basic wallet.
-fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<TransactionContext> {
+fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<MockTransaction> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme })?;
@@ -313,9 +359,10 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<Transa
 
     let mock_chain = builder.build()?;
 
-    // construct the transaction context
+    // construct the mock transaction
     mock_chain
-        .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_notes([note_1.id(), note_2.id()])
         .build()
 }
 
@@ -365,6 +412,7 @@ fn setup_bridge_fixture(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
 
     if let Some(num_leaves) = pre_populate_leaves {
@@ -401,7 +449,7 @@ fn setup_bridge_fixture(
 pub async fn tx_consume_claim_note(
     data_source: ClaimDataSource,
     with_fee: bool,
-) -> Result<TransactionContext> {
+) -> Result<MockTransaction> {
     let mut builder = chain_builder(with_fee);
 
     let BridgeFixture {
@@ -491,31 +539,34 @@ pub async fn tx_consume_claim_note(
     let mut mock_chain = builder.build()?;
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
-    let config_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+    let config_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
-    let config_executed = config_tx_context.execute().await?;
+    let config_executed = config_mock_tx.execute().await?;
 
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX1: EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
-    let update_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_ger_executed = update_ger_tx_context.execute().await?;
+    let update_ger_executed = update_ger_mock_tx.execute().await?;
 
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX2: BUILD CLAIM NOTE TRANSACTION CONTEXT (ready to execute)
+    // TX2: BUILD CLAIM NOTE MOCK TRANSACTION (ready to execute)
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+    let claim_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 
-    Ok(claim_tx_context)
+    Ok(claim_mock_tx)
 }
 
 // B2AGG NOTE SETUPS
@@ -586,15 +637,15 @@ fn populate_let_frontier(bridge: &mut Account, num_leaves: u32) {
         .expect("should set LET root hi");
 }
 
-/// Sets up and returns the transaction context for executing a B2AGG (bridge-out) note against
+/// Sets up and returns the mock transaction for executing a B2AGG (bridge-out) note against
 /// the bridge account.
 ///
 /// This requires executing a prerequisite CONFIG_AGG_BRIDGE transaction during setup to register
-/// the faucet in the bridge. Only the returned B2AGG transaction context is benchmarked — the
+/// the faucet in the bridge. Only the returned B2AGG mock transaction is benchmarked — the
 /// prerequisite CONFIG_AGG_BRIDGE transaction is not included in cycle/time measurements.
 ///
 /// When `pre_populate_leaves` is `Some(n)`, the bridge account's LET frontier is pre-populated
-/// with dummy values for `n` leaves before building the B2AGG transaction context. This allows
+/// with dummy values for `n` leaves before building the B2AGG mock transaction. This allows
 /// benchmarking with different frontier occupancy levels.
 ///
 /// The setup uses the first entry from the MTF (Merkle Tree Frontier) test vectors for destination
@@ -602,7 +653,7 @@ fn populate_let_frontier(bridge: &mut Account, num_leaves: u32) {
 pub async fn tx_consume_b2agg_note(
     pre_populate_leaves: Option<u32>,
     with_fee: bool,
-) -> Result<TransactionContext> {
+) -> Result<MockTransaction> {
     let vectors = &*miden_agglayer::testing::SOLIDITY_MTF_VECTORS;
 
     let mut builder = chain_builder(with_fee);
@@ -665,23 +716,25 @@ pub async fn tx_consume_b2agg_note(
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: BUILD B2AGG NOTE TRANSACTION CONTEXT (ready to execute)
+    // TX1: BUILD B2AGG NOTE MOCK TRANSACTION (ready to execute)
     let burn_note_script = StandardNote::BURN.script();
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-    let b2agg_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+    let b2agg_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(b2agg_note.id())
         .add_note_script(burn_note_script)
         .foreign_accounts(vec![foreign_account_inputs])
         .build()?;
 
-    Ok(b2agg_tx_context)
+    Ok(b2agg_mock_tx)
 }
 
 // AGGLAYER MANAGEMENT NOTE SETUPS
@@ -729,7 +782,7 @@ fn setup_faucet_registration(
 
 /// Returns the transaction context for the fee-funded bridge account consuming a
 /// CONFIG_AGG_BRIDGE note.
-pub async fn tx_consume_config_agg_bridge_note() -> Result<TransactionContext> {
+pub async fn tx_consume_config_agg_bridge_note() -> Result<MockTransaction> {
     let mut builder = chain_builder(true);
 
     let BridgeFixture { faucet_manager, bridge_account, .. } =
@@ -741,14 +794,15 @@ pub async fn tx_consume_config_agg_bridge_note() -> Result<TransactionContext> {
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()
 }
 
 /// Returns the transaction context for the fee-funded bridge account consuming a
 /// DEREGISTER_AGG_FAUCET note, after a prerequisite CONFIG_AGG_BRIDGE transaction registered the
 /// faucet.
-pub async fn tx_consume_deregister_agg_faucet_note() -> Result<TransactionContext> {
+pub async fn tx_consume_deregister_agg_faucet_note() -> Result<MockTransaction> {
     let mut builder = chain_builder(true);
 
     let BridgeFixture { faucet_manager, bridge_account, .. } =
@@ -769,7 +823,8 @@ pub async fn tx_consume_deregister_agg_faucet_note() -> Result<TransactionContex
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER THE FAUCET IN THE BRIDGE
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
@@ -778,13 +833,14 @@ pub async fn tx_consume_deregister_agg_faucet_note() -> Result<TransactionContex
 
     // TX1: BUILD DEREGISTER_AGG_FAUCET NOTE TRANSACTION CONTEXT (ready to execute)
     mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()
 }
 
 /// Returns the transaction context for the fee-funded bridge account consuming an UPDATE_GER
 /// note.
-pub async fn tx_consume_update_ger_note() -> Result<TransactionContext> {
+pub async fn tx_consume_update_ger_note() -> Result<MockTransaction> {
     let mut builder = chain_builder(true);
 
     let BridgeFixture { ger_injector, bridge_account, .. } =
@@ -798,13 +854,14 @@ pub async fn tx_consume_update_ger_note() -> Result<TransactionContext> {
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()
 }
 
 /// Returns the transaction context for the fee-funded bridge account consuming a REMOVE_GER
 /// note, after a prerequisite UPDATE_GER transaction stored the GER.
-pub async fn tx_consume_remove_ger_note() -> Result<TransactionContext> {
+pub async fn tx_consume_remove_ger_note() -> Result<MockTransaction> {
     let mut builder = chain_builder(true);
 
     let BridgeFixture {
@@ -827,7 +884,8 @@ pub async fn tx_consume_remove_ger_note() -> Result<TransactionContext> {
 
     // TX0: EXECUTE UPDATE_GER NOTE TO STORE THE GER IN THE BRIDGE ACCOUNT
     let update_ger_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await?;
@@ -836,6 +894,7 @@ pub async fn tx_consume_remove_ger_note() -> Result<TransactionContext> {
 
     // TX1: BUILD REMOVE_GER NOTE TRANSACTION CONTEXT (ready to execute)
     mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()
 }

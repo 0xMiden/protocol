@@ -7,9 +7,10 @@
 //! [`super::NETWORK_VERIFICATION_BASE_FEE`], so the auth procedure pays the transaction fee by
 //! creating a TX_FEE note funded from the account's vault.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
+use miden_protocol::Word;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
@@ -20,8 +21,8 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
-use miden_standards::code_builder::CodeBuilder;
+use miden_protocol::transaction::RawOutputNote;
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::note::{
     FeeSponsorshipNote,
     P2idNote,
@@ -30,19 +31,19 @@ use miden_standards::note::{
     PswapNoteStorage,
     SwapNote,
 };
-use miden_testing::{Auth, TransactionContext};
+use miden_testing::{Auth, MockTransaction};
 
 // P2ID NOTE SETUPS
 // ================================================================================================
 
 /// Returns the transaction context in which a network account consumes a single P2ID note.
-pub fn tx_consume_p2id_note_network() -> Result<TransactionContext> {
+pub fn tx_consume_p2id_note_network() -> Result<MockTransaction> {
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
     let mut builder = super::chain_builder(true);
 
     let target_account = builder.add_existing_wallet_with_assets(
-        super::network_auth([P2idNote::script_root()]),
+        super::network_auth([P2idNote::script_root()])?,
         [super::fee_funding_asset()?],
     )?;
 
@@ -55,7 +56,10 @@ pub fn tx_consume_p2id_note_network() -> Result<TransactionContext> {
 
     let mock_chain = builder.build()?;
 
-    mock_chain.build_tx_context(target_account.id(), &[note.id()], &[])?.build()
+    mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
+        .build()
 }
 
 // P2IDE NOTE SETUPS
@@ -63,7 +67,7 @@ pub fn tx_consume_p2id_note_network() -> Result<TransactionContext> {
 
 /// Returns the transaction context in which a network account consumes a P2IDE note, either via the
 /// target's claim path or, when `reclaim` is set, via the sender's reclaim path.
-pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext> {
+pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<MockTransaction> {
     let fungible_asset: Asset = FungibleAsset::mock(123);
 
     let mut builder = super::chain_builder(true);
@@ -74,7 +78,7 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
         let reclaim_height = BlockNumber::from(2u32);
 
         let sender_account = builder.add_existing_wallet_with_assets(
-            super::network_auth([P2ideNote::script_root()]),
+            super::network_auth([P2ideNote::script_root()])?,
             [super::fee_funding_asset()?],
         )?;
         let target_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
@@ -92,11 +96,14 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
         let mut mock_chain = builder.build()?;
         mock_chain.prove_until_block(reclaim_height + 1)?;
 
-        mock_chain.build_tx_context(sender_account.id(), &[note.id()], &[])?.build()
+        mock_chain
+            .build_transaction(sender_account.id())
+            .authenticated_input_note(note.id())
+            .build()
     } else {
         // Claim path: the network account is the note's target and consumes it directly.
         let target_account = builder.add_existing_wallet_with_assets(
-            super::network_auth([P2ideNote::script_root()]),
+            super::network_auth([P2ideNote::script_root()])?,
             [super::fee_funding_asset()?],
         )?;
 
@@ -112,7 +119,10 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
 
         let mock_chain = builder.build()?;
 
-        mock_chain.build_tx_context(target_account.id(), &[note.id()], &[])?.build()
+        mock_chain
+            .build_transaction(target_account.id())
+            .authenticated_input_note(note.id())
+            .build()
     }
 }
 
@@ -121,7 +131,7 @@ pub fn tx_consume_p2ide_note_network(reclaim: bool) -> Result<TransactionContext
 
 /// Returns the transaction context in which a network account fills a SWAP note whose payback note
 /// has the given note type.
-pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<TransactionContext> {
+pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<MockTransaction> {
     let offered_asset: Asset = FungibleAsset::mock(2000);
     let requested_asset: Asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
@@ -130,7 +140,7 @@ pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<Trans
     let sender_account =
         builder.add_existing_wallet_with_assets(Auth::basic_ecdsa(), [offered_asset])?;
     let target_account = builder.add_existing_wallet_with_assets(
-        super::network_auth([SwapNote::script_root()]),
+        super::network_auth([SwapNote::script_root()])?,
         [requested_asset, super::fee_funding_asset()?],
     )?;
 
@@ -144,7 +154,8 @@ pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<Trans
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
         .build()
 }
 
@@ -156,7 +167,7 @@ pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<Trans
 ///
 /// A partial fill delivers half of the requested amount (the note sets no `min_fill_step` floor)
 /// and re-creates a residual PSWAP note carrying the unfilled remainder.
-pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<TransactionContext> {
+pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<MockTransaction> {
     const OFFERED_AMOUNT: u64 = 100;
     const REQUESTED_AMOUNT: u64 = 50;
 
@@ -178,7 +189,7 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<TransactionConte
     let creator_account =
         builder.add_existing_wallet_with_assets(Auth::basic_ecdsa(), [offered_asset.into()])?;
     let consumer_account = builder.add_existing_wallet_with_assets(
-        super::network_auth([PswapNote::script_root()]),
+        super::network_auth([PswapNote::script_root()])?,
         [fill_asset.into(), super::fee_funding_asset()?],
     )?;
 
@@ -208,12 +219,13 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<TransactionConte
     }
 
     mock_chain
-        .build_tx_context(consumer_account.id(), &[pswap_note.id()], &[])?
+        .build_transaction(consumer_account.id())
+        .authenticated_input_note(pswap_note.id())
         .extend_note_args(BTreeMap::from([(
             pswap_note.id(),
             PswapNote::create_args(fill_amount, 0)?,
         )]))
-        .extend_expected_output_notes(expected_output_notes)
+        .expected_output_notes(expected_output_notes)
         .build()
 }
 
@@ -223,60 +235,29 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<TransactionConte
 /// Amount of the native fee asset carried by the benchmarked FEE_SPONSORSHIP note.
 const SPONSORED_FEE_AMOUNT: u64 = 500;
 
-/// Compiles a transaction script that moves `fee_asset` into the executing account's vault.
-///
-/// On the sponsorship path the note script leaves the sponsored assets in place, so the consuming
-/// transaction has to collect them itself. Mirrors the fee-collection script used by the
-/// FEE_SPONSORSHIP note tests.
-fn collect_fee_tx_script(fee_asset: Asset) -> Result<TransactionScript> {
-    let src = format!(
-        "
-        use miden::standards::wallets::basic as wallet
-
-        @transaction_script
-        pub proc main
-            push.{asset_value}
-            push.{asset_id}
-            # => [ASSET_ID, ASSET_VALUE]
-
-            padw padw swapdw
-            # => [ASSET_ID, ASSET_VALUE, pad(8)]
-
-            call.wallet::receive_asset
-            # => [pad(16)]
-
-            dropw dropw dropw dropw
-        end
-        ",
-        asset_value = fee_asset.to_value_word(),
-        asset_id = fee_asset.to_id_word(),
-    );
-    Ok(CodeBuilder::default().compile_tx_script(src)?)
-}
-
 /// Returns the transaction context in which a network account consumes a FEE_SPONSORSHIP note,
 /// either together with its sponsored feature note or, when `reclaim` is set, via the sponsor's
 /// reclaim path.
 ///
-/// On the sponsorship path the note script leaves the sponsored fee asset in the note, so the
-/// consuming account collects it with an allowlisted fee-collection transaction script. On the
+/// On the sponsorship path the network account's auth procedure collects the sponsored fee
+/// natively while consuming the feature note directly followed by its sponsorship note. On the
 /// reclaim path the note script moves the asset into the sponsor's vault itself, so the
-/// sponsorship note is consumed alone and without a transaction script.
-pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<TransactionContext> {
+/// sponsorship note is consumed alone.
+pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<MockTransaction> {
     let sponsored_asset: Asset =
         FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, SPONSORED_FEE_AMOUNT)?.into();
 
     let mut builder = super::chain_builder(true);
 
     if reclaim {
-        // Reclaim path: the network account is the sponsor (and thus the default reclaimer) and
-        // reclaims the sponsorship note once the reclaim height has passed.
+        // Reclaim path: the sponsor reclaims the sponsorship note once the reclaim height has
+        // passed. A network account cannot consume a lone sponsorship note (its auth's fee
+        // collection requires the paired feature note), so the sponsor is a regular wallet
+        // paying its own fee at the native 1/1 rate.
         let reclaim_height = BlockNumber::from(1u32);
 
-        let sponsor = builder.add_existing_wallet_with_assets(
-            super::network_auth([FeeSponsorshipNote::script_root()]),
-            [super::fee_funding_asset()?],
-        )?;
+        let sponsor = builder
+            .add_existing_wallet_with_assets(Auth::basic_ecdsa(), [super::fee_funding_asset()?])?;
         let network_target = builder.add_existing_wallet(Auth::basic_ecdsa())?;
         let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
@@ -296,27 +277,30 @@ pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<Transact
         // Advance past genesis so the reclaim height counts as reached.
         mock_chain.prove_next_block()?;
 
+        let (auth_args, advice_value) = commit_fee_conversion_info(
+            FeeConversionInfo::one_to_one(ACCOUNT_ID_FEE_FAUCET.try_into()?),
+            Word::from([9u32, 10, 11, 12]),
+        );
         mock_chain
-            .build_tx_context(sponsor.id(), &[sponsorship_note.id()], &[])?
+            .build_transaction(sponsor.id())
+            .authenticated_input_note(sponsorship_note.id())
+            .auth_args(auth_args)
+            .add_advice_map_entry(auth_args, advice_value)
             .build()
     } else {
-        // Sponsorship path: the network account consumes the fee-unaware feature note together
-        // with the FEE_SPONSORSHIP note paying for it, collecting the sponsored fee via an
-        // allowlisted transaction script.
-        let collect_script = collect_fee_tx_script(sponsored_asset)?;
-
+        // Sponsorship path: the network account consumes the fee-unaware feature note directly
+        // followed by the FEE_SPONSORSHIP note prepaying its fee (the order
+        // collect_sponsored_fees requires); the auth procedure collects the sponsored fee
+        // natively. The account's fee policy prices the feature note at the sponsored amount.
         let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
         // The feature note is completely fee-unaware; P2ANY stands in for a real network note.
         let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
         let network_account = builder.add_existing_wallet_with_assets(
-            Auth::NetworkAccount {
-                allowed_script_roots: BTreeSet::from([
-                    feature_note.script().root(),
-                    FeeSponsorshipNote::script_root(),
-                ]),
-                allowed_tx_script_roots: BTreeSet::from([collect_script.root()]),
-            },
+            super::network_auth_with_fees(
+                [feature_note.script().root(), FeeSponsorshipNote::script_root()],
+                &[(feature_note.script().root(), SPONSORED_FEE_AMOUNT)],
+            )?,
             [super::fee_funding_asset()?],
         )?;
 
@@ -334,12 +318,9 @@ pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<Transact
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(
-                network_account.id(),
-                &[sponsorship_note.id(), feature_note.id()],
-                &[],
-            )?
-            .tx_script(collect_script)
+            .build_transaction(network_account.id())
+            .authenticated_input_note(feature_note.id())
+            .authenticated_input_note(sponsorship_note.id())
             .build()
     }
 }

@@ -57,14 +57,14 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         "#,
     );
 
-    // Build the wrapper component by linking against the array library
-    let wrapper_library = CodeBuilder::default()
+    // Build the wrapper component by linking against the array package
+    let wrapper_package = CodeBuilder::default()
         .compile_component_code("wrapper::component", wrapper_component_code)?;
 
     // Create the wrapper account component with a storage map to hold the array data
     let initial_value = Word::from([42u32, 42, 42, 42]);
     let wrapper_component = AccountComponent::new(
-        wrapper_library.clone(),
+        wrapper_package.clone(),
         vec![StorageSlot::with_map(
             slot_name.clone(),
             StorageMap::with_entries([(StorageMapKey::empty(), initial_value)])?,
@@ -74,7 +74,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
 
     // Build an account with the wrapper component that uses the array utility
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 
@@ -125,15 +125,15 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         end
         "#;
 
-    // Compile the transaction script with the wrapper library linked
+    // Compile the transaction script with the wrapper package linked
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    // Create transaction context and execute
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -176,13 +176,13 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         "#,
     );
 
-    let wrapper_library = CodeBuilder::default()
+    let wrapper_package = CodeBuilder::default()
         .compile_component_code("wrapper::component", wrapper_component_code)?;
 
     let initial_value_0 = Word::from([1u32, 2, 3, 4]);
     let initial_value_1 = Word::from([5u32, 6, 7, 8]);
     let wrapper_component = AccountComponent::new(
-        wrapper_library.clone(),
+        wrapper_package.clone(),
         vec![StorageSlot::with_map(
             slot_name.clone(),
             StorageMap::with_entries([
@@ -194,7 +194,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     )?;
 
     let account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 
@@ -247,12 +247,12 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

@@ -33,7 +33,7 @@ pub enum ExecutionBenchmark {
     ConsumeRbacActionNetwork,
     ConsumeNetworkAccountConfigNetwork,
     ConsumeFeeSponsorshipWithFeatureNetwork,
-    ConsumeFeeSponsorshipReclaimNetwork,
+    ConsumeFeeSponsorshipReclaim,
     ConsumeClaimL1WithFee,
     ConsumeClaimL2WithFee,
     ConsumeB2AggWithFee,
@@ -75,7 +75,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeRbacActionNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
-            ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork,
+            ExecutionBenchmark::ConsumeFeeSponsorshipReclaim,
             ExecutionBenchmark::ConsumeClaimL1WithFee,
             ExecutionBenchmark::ConsumeClaimL2WithFee,
             ExecutionBenchmark::ConsumeB2AggWithFee,
@@ -172,8 +172,8 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
                 write!(f, "consume FEE_SPONSORSHIP note with feature note (network account)")
             },
-            ExecutionBenchmark::ConsumeFeeSponsorshipReclaimNetwork => {
-                write!(f, "consume FEE_SPONSORSHIP note (reclaim, network account)")
+            ExecutionBenchmark::ConsumeFeeSponsorshipReclaim => {
+                write!(f, "consume FEE_SPONSORSHIP note (reclaim)")
             },
             ExecutionBenchmark::ConsumeClaimL1WithFee => {
                 write!(f, "consume CLAIM note (L1 to Miden, with fee payment)")

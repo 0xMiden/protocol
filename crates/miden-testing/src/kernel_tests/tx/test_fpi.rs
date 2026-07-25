@@ -101,12 +101,12 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component)
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -120,9 +120,8 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         .get_foreign_account_inputs(foreign_account.id())
         .expect("failed to get foreign account inputs");
 
-    let tx_context = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+    let mock_tx = mock_chain
+        .build_transaction(native_account.id())
         .foreign_accounts(vec![fpi_inputs])
         .with_source_manager(source_manager)
         .build()?;
@@ -173,7 +172,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         foreign_suffix = foreign_account.id().suffix(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
@@ -232,7 +231,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         map_key = STORAGE_LEAVES_2[0].0,
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
@@ -307,7 +306,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         get_item_foreign_hash = foreign_account.code().procedures()[1].mast_root(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     // Check that the second invocation of the foreign procedure from the same account does not load
     // the account data again: already loaded data should be reused.
@@ -373,17 +372,17 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     )?;
 
     let foreign_account_1 = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component_1)
         .build_existing()?;
 
     let foreign_account_2 = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component_2)
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -403,8 +402,8 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         .get_foreign_account_inputs(foreign_account_2.id())
         .expect("failed to get foreign account inputs");
 
-    let tx_context = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(native_account.id())
         .foreign_accounts(vec![foreign_account_inputs_1, foreign_account_inputs_2])
         .build()?;
 
@@ -497,7 +496,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         foreign_2_suffix = foreign_account_2.id().suffix(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     // Check the correctness of the memory layout after multiple foreign procedure invocations from
     // different foreign accounts
@@ -601,19 +600,19 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -724,7 +723,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -732,8 +731,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         .expect("failed to get foreign account inputs");
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .with_source_manager(source_manager)
@@ -797,13 +795,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .with_assets(vec![fungible_asset, non_fungible_asset])
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -849,13 +847,13 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .with_source_manager(source_manager)
@@ -934,7 +932,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let second_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone()).compile_component_code(
+        CodeBuilder::with_kernel_core_package(source_manager.clone()).compile_component_code(
             "test::second_foreign_account",
             second_foreign_account_code_source,
         )?,
@@ -943,7 +941,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     )?;
 
     let second_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(second_foreign_account_component)
         .build_existing()?;
 
@@ -1000,20 +998,20 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     );
 
     let first_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("first_foreign_account", first_foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_value_slot1.clone()],
         AccountComponentMetadata::mock("first_foreign_account"),
     )?;
 
     let first_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(first_foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1089,12 +1087,11 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
+        .with_dynamically_linked_package(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(native_account.id())
         .foreign_accounts(foreign_account_inputs)
         .extend_advice_inputs(advice_inputs)
         .tx_script(tx_script)
@@ -1133,14 +1130,14 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let second_foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_kernel_core_package(source_manager.clone())
             .compile_component_code("foreign_account", second_foreign_account_code_source)?,
         vec![],
         AccountComponentMetadata::mock("foreign_account"),
     )?;
 
     let second_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(second_foreign_account_component.clone())
         .build_existing()?;
 
@@ -1177,8 +1174,8 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     );
 
     // Link against the second foreign account.
-    let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
-        .with_dynamically_linked_library(second_foreign_account_component.component_code())?
+    let first_foreign_account_code = CodeBuilder::with_kernel_core_package(source_manager.clone())
+        .with_dynamically_linked_package(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
     let first_foreign_account_component = AccountComponent::new(
         first_foreign_account_code,
@@ -1187,13 +1184,13 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     )?;
 
     let first_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(first_foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1250,12 +1247,11 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
+        .with_dynamically_linked_package(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(native_account.id())
         .foreign_accounts(foreign_account_inputs)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
@@ -1316,7 +1312,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     .unwrap();
 
     let last_foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(last_foreign_account_component)
         .build_existing()
         .unwrap();
@@ -1369,7 +1365,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
         .unwrap();
 
         let foreign_account = AccountBuilder::new(rand::random())
-            .with_auth_component(Auth::IncrNonce)
+            .with_components(Auth::IncrNonce)
             .with_component(foreign_account_component)
             .build_existing()
             .unwrap();
@@ -1379,7 +1375,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()
@@ -1436,13 +1432,13 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(code).unwrap();
 
-    let tx_context = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(native_account.id())
         .foreign_accounts(foreign_accounts)
         .tx_script(tx_script)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED);
     Ok(())
@@ -1485,13 +1481,13 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     // ------ NATIVE ACCOUNT ---------------------------------------------------------------
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1532,7 +1528,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1548,8 +1544,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
         .extend([native_account.id().prefix().as_felt(), native_account.id().suffix()]);
 
     let result = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(native_account.id())
         .foreign_accounts(vec![foreign_account_inputs])
         .extend_advice_inputs(advice_inputs)
         .tx_script(tx_script)
@@ -1586,12 +1581,12 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
     )?;
 
     let mut foreign_account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([4; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
         .build_existing()?;
 
@@ -1620,8 +1615,8 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
     // The account tree from which the transaction inputs are fetched here has the state from the
     // original unmodified foreign account. This should result in the foreign account's proof to be
     // invalid for this account tree root.
-    let tx_context = mock_chain
-        .build_tx_context(native_account, &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(native_account)
         .foreign_accounts(vec![(foreign_account.clone(), foreign_account_witness)])
         .build()?;
 
@@ -1657,7 +1652,7 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
         foreign_suffix = foreign_account.id().suffix(),
     );
 
-    let result = tx_context.execute_code(&code).await.map(|_| ());
+    let result = mock_tx.execute_code(&code).await.map(|_| ());
     assert_execution_error!(result, ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT);
 
     Ok(())
@@ -1695,12 +1690,12 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1759,7 +1754,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1767,8 +1762,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
         .expect("failed to get foreign account inputs");
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(native_account.id())
         .foreign_accounts(vec![foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
@@ -1784,7 +1778,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -1817,7 +1811,7 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
     )?;
 
     let foreign_account = AccountBuilder::new(rand::random())
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component.clone())
         .build_existing()?;
 
@@ -1848,12 +1842,12 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
         foreign_account_id_suffix = foreign_account.id().suffix(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries()
-        .with_dynamically_linked_library(foreign_account_component.component_code())?
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let result = mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts(vec![foreign_account_inputs])
         .tx_script(tx_script)
         .build()?

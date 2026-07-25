@@ -1,14 +1,15 @@
 use core::num::NonZeroU16;
-use core::slice;
 use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteScriptRoot};
-use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -39,19 +40,43 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     build_account_with_allowlists(allowed_script_roots, Vec::new())
 }
 
+/// A zero-fee `FeePolicyManager` giving a network account an active fee policy for
+/// `collect_sponsored_fees`. A constant policy aborts fee estimation for note scripts without a
+/// schedule entry, so every note the account can consume must be scheduled; each root in
+/// `note_script_roots` is scheduled with an explicit 0 fee, keeping collection a no-op on these
+/// fee-free chains.
+fn zero_fee_policy_manager(
+    note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+) -> anyhow::Result<FeePolicyManager> {
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+    for note_script in note_script_roots {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+
+    Ok(FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build())
+}
+
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
 /// note-script and tx-script allowlists.
 fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
-    )?
-    .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+    let fee_policy_manager = zero_fee_policy_manager(
+        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
+    )?;
+
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
 
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_component)
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .build_existing()?)
@@ -101,7 +126,7 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
         CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -135,7 +160,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -171,7 +197,8 @@ async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist(
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -202,7 +229,7 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(other_script)
         .build()?
         .execute()
@@ -241,7 +268,8 @@ async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -294,7 +322,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_arg
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(script.into())
         .tx_script_args(script.tx_script_args())
         .build()?
@@ -321,19 +350,35 @@ fn owner_id() -> AccountId {
 /// Builds a network account that opts into allowlist management (its note allowlist includes the
 /// standardized action-note root plus `extra_allowed_note_roots`) and whose admin procedures are
 /// gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
+///
+/// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
+/// deployment, so a note whose root is added to the allowlist post-deployment can still be
+/// consumed: the basic constant fee policy aborts fee estimation for note scripts without a
+/// schedule entry.
 fn build_owner_controlled_account(
     extra_allowed_note_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
     owner: AccountId,
+    fee_scheduled_note_roots: Vec<NoteScriptRoot>,
 ) -> anyhow::Result<Account> {
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_roots)?
+    // The config note is always allowlisted by `with_allowed_notes` and may be consumed to update
+    // the allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
+    // entry too.
+    let scheduled_roots = note_roots
+        .iter()
+        .copied()
+        .chain(fee_scheduled_note_roots)
+        .chain([NetworkAccountConfigNote::script_root()]);
+    let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
+
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
         .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
@@ -366,7 +411,8 @@ async fn consume_note(
     note: &Note,
 ) -> anyhow::Result<()> {
     let executed = mock_chain
-        .build_tx_context(account_id, &[note.id()], &[])?
+        .build_transaction(account_id)
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -386,8 +432,9 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`.
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`, but
+    // fee-schedule `new_root` so the note is consumable once it is added to the allowlist.
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![new_root])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -423,7 +470,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         stranger,
         account.id(),
@@ -438,7 +485,8 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[admin_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(admin_note.id())
         .build()?
         .execute()
         .await;
@@ -459,7 +507,7 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
     let target_root = target_note.script().root();
 
     // Deploy with the target note allowlisted (plus the config note via allowlist management).
-    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -479,7 +527,8 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
 
     // Consuming `target_note` now fails.
     let result = mock_chain
-        .build_tx_context(account.id(), &[target_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(target_note.id())
         .build()?
         .execute()
         .await;
@@ -500,7 +549,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     let new_note = build_input_note()?;
     let new_root = new_note.script().root();
 
-    let account = build_owner_controlled_account(vec![], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -516,7 +565,8 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[admin_note.id(), new_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_notes([admin_note.id(), new_note.id()])
         .build()?
         .execute()
         .await;
@@ -541,7 +591,7 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
     let plain_root = plain_note.script().root();
 
     // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
-    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner)?;
+    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner, vec![])?;
     let admin_note = build_action_note(
         owner,
         account.id(),
@@ -562,7 +612,8 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
     // The tx script, now allowlisted, runs in a subsequent transaction; it would have been rejected
     // against the deployed allowlist.
     mock_chain
-        .build_tx_context(account.id(), &[plain_note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(plain_note.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -607,7 +658,8 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
 
     let input_notes = [note_allowed, note_disallowed];
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &input_notes)?
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(input_notes)
         .build()?
         .execute()
         .await;
@@ -630,7 +682,8 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -649,12 +702,16 @@ fn build_upgradeable_network_account(
     owner: AccountId,
     allowed_note_script_roots: Vec<Word>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+    let fee_policy_manager = zero_fee_policy_manager(
+        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
     )?;
 
+    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?;
+
     Ok(AccountBuilder::new([7; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_component)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(UpgradeManager)
         .with_component(BasicWallet)

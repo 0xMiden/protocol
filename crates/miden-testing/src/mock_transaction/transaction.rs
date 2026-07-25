@@ -1,9 +1,10 @@
-use alloc::borrow::ToOwned;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{ExecutionOutput, FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
+#[cfg(test)]
+use miden_processor::ExecutionOutput;
+use miden_processor::{FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -12,9 +13,8 @@ use miden_protocol::account::{
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
-use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetId, AssetWitness};
+use miden_protocol::assembly::SourceManagerSync;
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -26,33 +26,27 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     TransactionArgs,
     TransactionInputs,
-    TransactionKernel,
 };
-use miden_standards::code_builder::CodeBuilder;
-use miden_tx::auth::{BasicAuthenticator, UnreachableAuth};
+use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
-    AccountProcedureIndexMap,
     DataStore,
     DataStoreError,
-    ScriptMastForestStore,
     TransactionExecutor,
     TransactionExecutorError,
-    TransactionExecutorHost,
     TransactionMastStore,
 };
 
-use crate::executor::CodeExecutor;
-use crate::mock_host::MockHost;
-use crate::tx_context::ExecError;
+#[cfg(test)]
+use crate::mock_transaction::ExecError;
 
-// TRANSACTION CONTEXT
+// MOCK TRANSACTION
 // ================================================================================================
 
 /// Represents all needed data for executing a transaction, or arbitrary code.
 ///
 /// It implements [`DataStore`], so transactions may be executed with
 /// [TransactionExecutor](miden_tx::TransactionExecutor)
-pub struct TransactionContext {
+pub struct MockTransaction {
     pub(super) account: Account,
     pub(super) expected_output_notes: Vec<Note>,
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
@@ -61,106 +55,9 @@ pub struct TransactionContext {
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
-    pub(super) is_lazy_loading_enabled: bool,
 }
 
-impl TransactionContext {
-    /// Executes arbitrary code within the context of a mocked transaction environment and returns
-    /// the resulting [`ExecutionOutput`].
-    ///
-    /// The code is compiled with the assembler built by [`CodeBuilder::with_mock_libraries`]
-    /// and executed with advice inputs constructed from the data stored in the context. The program
-    /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
-    /// by the transaction kernel, and also individual kernel functions (not normally exposed).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the assembly or execution of the provided code fails.
-    ///
-    /// # Panics
-    ///
-    /// - If the provided `code` is not a valid program.
-    pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        // Fetch all witnesses for note assets.
-        let asset_ids = self
-            .tx_inputs
-            .input_notes()
-            .iter()
-            .flat_map(|note| note.note().assets().iter().map(Asset::id))
-            .collect::<BTreeSet<_>>();
-
-        let (account, _block_header, _blockchain) = self
-            .get_transaction_inputs(
-                self.tx_inputs.account().id(),
-                BTreeSet::from_iter([self.tx_inputs.block_header().block_num()]),
-            )
-            .await
-            .expect("failed to fetch transaction inputs");
-
-        // Fetch the witnesses for all asset IDs.
-        let asset_witnesses = self
-            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_ids)
-            .await
-            .expect("failed to fetch asset witnesses");
-
-        let tx_inputs = self.tx_inputs.clone().with_asset_witnesses(asset_witnesses);
-        let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
-
-        // Virtual file name should be unique.
-        let virtual_source_file = self.source_manager.load(
-            SourceLanguage::Masm,
-            Uri::new("_tx_context_code"),
-            code.to_owned(),
-        );
-
-        let assembler: Assembler =
-            CodeBuilder::with_mock_libraries_with_source_manager(self.source_manager.clone())
-                .into();
-
-        let program = assembler
-            .assemble_program("tx-context-code", virtual_source_file)
-            .expect("code was not well formed");
-
-        // Load transaction kernel and the program into the mast forest in self.
-        // Note that native and foreign account's code are already loaded by the
-        // TransactionContextBuilder.
-        self.mast_store.insert_package(&TransactionKernel::library());
-        self.mast_store.insert_package(&program);
-
-        let account_procedure_idx_map = AccountProcedureIndexMap::new(
-            [tx_inputs.account().code()]
-                .into_iter()
-                .chain(self.foreign_account_inputs.values().map(|(account, _)| account.code())),
-        );
-
-        // The ref block is unimportant when using execute_code so we can set it to any value.
-        let ref_block = tx_inputs.block_header().block_num();
-
-        let exec_host = TransactionExecutorHost::<'_, '_, _, UnreachableAuth>::new(
-            &PartialAccount::from(self.account()),
-            tx_inputs.input_notes().clone(),
-            self,
-            ScriptMastForestStore::default(),
-            account_procedure_idx_map,
-            None,
-            ref_block,
-            self.source_manager(),
-        );
-
-        let advice_inputs = advice_inputs.into_advice_inputs();
-
-        let mut mock_host = MockHost::new(exec_host);
-        if self.is_lazy_loading_enabled {
-            mock_host.enable_lazy_loading()
-        }
-
-        CodeExecutor::new(mock_host)
-            .stack_inputs(stack_inputs)
-            .extend_advice_inputs(advice_inputs)
-            .execute_package(program)
-            .await
-    }
-
+impl MockTransaction {
     /// Executes the transaction through a [TransactionExecutor]
     pub async fn execute(self) -> Result<ExecutedTransaction, TransactionExecutorError> {
         let account_id = self.account().id();
@@ -206,13 +103,149 @@ impl TransactionContext {
         self.authenticator.as_ref()
     }
 
-    /// Returns the source manager used in the assembler of the transaction context builder.
+    /// Returns the source manager used in the assembler of the mock transaction.
     pub fn source_manager(&self) -> Arc<dyn SourceManagerSync> {
         Arc::clone(&self.source_manager)
     }
 }
 
-impl DataStore for TransactionContext {
+// CODE EXECUTION
+// ================================================================================================
+
+#[cfg(test)]
+impl MockTransaction {
+    /// Executes arbitrary code within the context of a mocked transaction environment and returns
+    /// the resulting [`ExecutionOutput`].
+    ///
+    /// The code is compiled with the assembler built by
+    /// [`CodeBuilder::with_mock_packages_with_source_manager`] and executed with advice inputs
+    /// constructed from the data stored in the context. The program
+    /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
+    /// by the transaction kernel, and also individual kernel functions (not normally exposed).
+    ///
+    /// This executes in the memory context of the transaction kernel and requires invoking internal
+    /// kernel APIs to be used correctly, so it is restricted to this crate's tests. Use
+    /// [`MockTransaction::execute`] to execute a transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the assembly or execution of the provided code fails.
+    ///
+    /// # Panics
+    ///
+    /// - If the provided `code` is not a valid program.
+    pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
+    /// loading events, which lets a kernel procedure be tested in isolation from them.
+    pub(crate) async fn execute_code_without_lazy_loading(
+        &self,
+        code: &str,
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, false).await
+    }
+
+    async fn execute_code_inner(
+        &self,
+        code: &str,
+        is_lazy_loading_enabled: bool,
+    ) -> Result<ExecutionOutput, ExecError> {
+        use alloc::borrow::ToOwned;
+
+        use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
+        use miden_protocol::assembly::{Assembler, SourceManager};
+        use miden_protocol::asset::Asset;
+        use miden_protocol::transaction::TransactionKernel;
+        use miden_standards::code_builder::CodeBuilder;
+        use miden_tx::auth::UnreachableAuth;
+        use miden_tx::{AccountProcedureIndexMap, ScriptMastForestStore, TransactionExecutorHost};
+
+        use crate::executor::CodeExecutor;
+        use crate::mock_host::MockHost;
+
+        // Fetch all witnesses for note assets.
+        let asset_ids = self
+            .tx_inputs
+            .input_notes()
+            .iter()
+            .flat_map(|note| note.note().assets().iter().map(Asset::id))
+            .collect::<BTreeSet<_>>();
+
+        let (account, _block_header, _blockchain) = self
+            .get_transaction_inputs(
+                self.tx_inputs.account().id(),
+                BTreeSet::from_iter([self.tx_inputs.block_header().block_num()]),
+            )
+            .await
+            .expect("failed to fetch transaction inputs");
+
+        // Fetch the witnesses for all asset IDs.
+        let asset_witnesses = self
+            .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_ids)
+            .await
+            .expect("failed to fetch asset witnesses");
+
+        let tx_inputs = self.tx_inputs.clone().with_asset_witnesses(asset_witnesses);
+        let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
+
+        // Virtual file name should be unique.
+        let virtual_source_file = self.source_manager.load(
+            SourceLanguage::Masm,
+            Uri::new("_mock_tx_code"),
+            code.to_owned(),
+        );
+
+        let assembler: Assembler =
+            CodeBuilder::with_mock_packages_with_source_manager(self.source_manager.clone()).into();
+
+        let program = assembler
+            .assemble_program("mock-tx-code", virtual_source_file)
+            .expect("code was not well formed");
+
+        // Load transaction kernel and the program into the mast forest in self.
+        // Note that native and foreign account's code are already loaded by the
+        // MockTransactionBuilder.
+        self.mast_store.insert_package(&TransactionKernel::core_package());
+        self.mast_store.insert_package(&program);
+
+        let account_procedure_idx_map = AccountProcedureIndexMap::new(
+            [tx_inputs.account().code()]
+                .into_iter()
+                .chain(self.foreign_account_inputs.values().map(|(account, _)| account.code())),
+        );
+
+        // The ref block is unimportant when using execute_code so we can set it to any value.
+        let ref_block = tx_inputs.block_header().block_num();
+
+        let exec_host = TransactionExecutorHost::<'_, '_, _, UnreachableAuth>::new(
+            &PartialAccount::from(self.account()),
+            tx_inputs.input_notes().clone(),
+            self,
+            ScriptMastForestStore::default(),
+            account_procedure_idx_map,
+            None,
+            ref_block,
+            self.source_manager(),
+        );
+
+        let advice_inputs = advice_inputs.into_advice_inputs();
+
+        let mut mock_host = MockHost::new(exec_host);
+        if is_lazy_loading_enabled {
+            mock_host.enable_lazy_loading()
+        }
+
+        CodeExecutor::new(mock_host)
+            .stack_inputs(stack_inputs)
+            .extend_advice_inputs(advice_inputs)
+            .execute_package(program)
+            .await
+    }
+}
+
+impl DataStore for MockTransaction {
     fn get_transaction_inputs(
         &self,
         account_id: AccountId,
@@ -372,7 +405,7 @@ impl DataStore for TransactionContext {
     }
 }
 
-impl MastForestStore for TransactionContext {
+impl MastForestStore for MockTransaction {
     fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
@@ -406,22 +439,22 @@ mod tests {
             .expect("failed to assemble note script 2");
         let script_root2 = note_script2.root();
 
-        // Build a transaction context with both note scripts
-        let tx_context = TestTransactionBuilder::with_existing_mock_account()
+        // Build a mock transaction with both note scripts
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account()
             .add_note_script(note_script1.clone())
             .add_note_script(note_script2.clone())
             .build()
-            .expect("failed to build transaction context");
+            .expect("failed to build mock transaction");
 
         // Assert that fetching both note scripts works
-        let retrieved_script1 = tx_context
+        let retrieved_script1 = mock_tx
             .get_note_script(script_root1)
             .await
             .expect("failed to get note script 1")
             .expect("note script 1 should exist");
         assert_eq!(retrieved_script1, note_script1);
 
-        let retrieved_script2 = tx_context
+        let retrieved_script2 = mock_tx
             .get_note_script(script_root2)
             .await
             .expect("failed to get note script 2")
@@ -430,7 +463,7 @@ mod tests {
 
         // Fetching a non-existent one returns None
         let non_existent_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let result = tx_context.get_note_script(non_existent_root).await;
+        let result = mock_tx.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
     }
 
@@ -443,7 +476,7 @@ mod tests {
         let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
         let mock_chain = builder.build()?;
 
-        let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+        let mock_tx = mock_chain.build_transaction(account).build()?;
 
         // A value that exceeds u32::MAX triggers the `u32assert` inside `compute_fee`.
         let code = format!(
@@ -461,7 +494,7 @@ mod tests {
             num_extra_cycles = u64::from(u32::MAX) + 1
         );
 
-        let Err(error) = tx_context.execute_code(&code).await else {
+        let Err(error) = mock_tx.execute_code(&code).await else {
             anyhow::bail!("execution should fail on non-u32 extra cycles");
         };
 

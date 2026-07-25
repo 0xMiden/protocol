@@ -24,7 +24,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote};
-use miden_testing::{AccountState, Auth, MockChainBuilder, TransactionContext};
+use miden_testing::{AccountState, Auth, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
 // CONSTANTS
@@ -96,7 +96,7 @@ fn add_fee_funded_network_fungible_faucet(
         .with_assets([super::fee_funding_asset()?]);
 
     builder.add_account_from_builder(
-        super::network_auth([MintNote::script_root(), BurnNote::script_root()]),
+        super::network_auth([MintNote::script_root(), BurnNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )
@@ -134,7 +134,7 @@ fn add_fee_funded_network_non_fungible_faucet(
         .with_assets([super::fee_funding_asset()?]);
 
     builder.add_account_from_builder(
-        super::network_auth([MintNote::script_root(), BurnNote::script_root()]),
+        super::network_auth([MintNote::script_root(), BurnNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )
@@ -171,7 +171,7 @@ fn minted_asset_witness(faucet: &Account, asset_id: AssetId) -> AdviceInputs {
 ///
 /// The owner-sent MINT note instructs the fee-funded faucet to mint [`MINT_AMOUNT`] tokens into a
 /// private P2ID output note addressed to an existing wallet.
-pub fn tx_consume_mint_note_fungible_network() -> Result<TransactionContext> {
+pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     let owner_account_id = owner_account_id();
@@ -206,7 +206,8 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<TransactionContext> {
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(faucet.id(), &[mint_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(mint_note.id())
         .extend_advice_inputs(minted_asset_witness(&faucet, mint_asset.id()))
         .build()
 }
@@ -215,7 +216,7 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<TransactionContext> {
 ///
 /// The owner-sent MINT note instructs the fee-funded faucet to mint an NFT into a private P2ID
 /// output note addressed to an existing wallet.
-pub fn tx_consume_mint_note_non_fungible_network() -> Result<TransactionContext> {
+pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     let owner_account_id = owner_account_id();
@@ -254,7 +255,8 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<TransactionContext>
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(faucet.id(), &[mint_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(mint_note.id())
         .extend_advice_inputs(minted_asset_witness(&faucet, mint_asset.id()))
         .build()
 }
@@ -266,7 +268,7 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<TransactionContext>
 ///
 /// The BURN note carries [`BURN_AMOUNT`] of the fee-funded faucet's own (previously issued)
 /// asset, which the faucet burns.
-pub fn tx_consume_burn_note_network() -> Result<TransactionContext> {
+pub fn tx_consume_burn_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     let owner_account_id = owner_account_id();
@@ -283,5 +285,8 @@ pub fn tx_consume_burn_note_network() -> Result<TransactionContext> {
 
     let mock_chain = builder.build()?;
 
-    mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()
+    mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()
 }
