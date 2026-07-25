@@ -27,8 +27,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::transaction::TransactionFee;
 
 use crate::note::{
     BurnNote,
@@ -251,20 +253,26 @@ pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
-/// Implements the kernel fee formula `verification_base_fee * (ilog2(cycles) + 1)` plus a
-/// safety margin expressed in extra verification cycles. The default margin of one
-/// (verification cycle) prices a note as-if it consumed at twice its measured cycles.
+/// The fee formula lives in [`TransactionFee`] (the Rust mirror of the transaction kernel's
+/// `compute_fee`); this pricer adds a safety margin expressed in extra verification cycles on
+/// top. The default margin of one (verification cycle) prices a note as-if it consumed at
+/// twice its measured cycles.
 ///
-/// The `verification_base_fee` should come from the chain's current
-/// [`FeeParameters`](miden_protocol::block::FeeParameters). The cost lookup resolves script
-/// roots to their benchmarked costs and defaults to the standard-note lookup
+/// The chain's current [`FeeParameters`] provide the verification base fee. The cost lookup
+/// resolves script roots to their benchmarked costs and defaults to the standard-note lookup
 /// ([`StandardNote::note_cost`]); build the `NetworkNotePricer` with
-/// `miden_agglayer::costs::note_cost` to price agglayer and standard notes through the same
-/// pricer.
+/// `miden_agglayer::costs::note_cost` to price agglayer and standard notes through the
+/// same pricer.
+///
+/// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
+/// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
+/// fees only into a policy whose
+/// [`FeePolicyManager`](crate::account::fees::FeePolicyManager) charges in that same asset;
+/// [`Self::fee_parameters`] exposes the parameters for that check.
 #[derive(Debug, Clone, bon::Builder)]
 pub struct NetworkNotePricer {
-    /// The chain's verification base fee.
-    verification_base_fee: u32,
+    /// The chain's fee parameters, providing the verification base fee.
+    fee_parameters: FeeParameters,
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
@@ -274,6 +282,12 @@ pub struct NetworkNotePricer {
 }
 
 impl NetworkNotePricer {
+    /// Returns the chain fee parameters the pricer computes fees under; the fees are
+    /// denominated in the asset of the parameters' fee faucet.
+    pub fn fee_parameters(&self) -> &FeeParameters {
+        &self.fee_parameters
+    }
+
     /// Returns the fee charged for a network transaction of the given cycle count, including
     /// the configured safety margin.
     pub fn fee_for_cycles(&self, cycles: u32) -> Result<AssetAmount, NotePricingError> {
@@ -302,14 +316,13 @@ impl NetworkNotePricer {
 
     /// Returns the fee for the given cycle count as a raw `u64`.
     fn fee_for_cycles_raw(&self, cycles: u32) -> Result<u64, NotePricingError> {
-        if cycles == 0 {
-            return Err(NotePricingError::ZeroCycles);
-        }
-        // ilog2(cycles) is at most 31 and the margin at most u32::MAX, so the addition cannot
-        // overflow a u64.
-        let verification_cycles =
-            u64::from(cycles.ilog2()) + 1 + u64::from(self.safety_margin_verification_cycles);
-        u64::from(self.verification_base_fee)
+        let fee =
+            TransactionFee::new(cycles).map_err(|_zero_cycles| NotePricingError::ZeroCycles)?;
+        // The kernel formula lives in TransactionFee; the margin is added on top. The
+        // verification cycles are at most 32 + u32::MAX, so the addition cannot overflow a u64.
+        let verification_cycles = u64::from(fee.verification_cycles())
+            + u64::from(self.safety_margin_verification_cycles);
+        u64::from(self.fee_parameters.verification_base_fee())
             .checked_mul(verification_cycles)
             .ok_or(NotePricingError::FeeOverflow)
     }
@@ -345,12 +358,21 @@ impl NetworkNotePricer {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::AccountId;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+
     use super::*;
     use crate::note::TxFeeNote;
 
+    fn fee_parameters(base_fee: u32) -> FeeParameters {
+        let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
+            .expect("testing faucet ID should be valid");
+        FeeParameters::new(fee_faucet_id, base_fee)
+    }
+
     fn pricer(base_fee: u32, margin: u32) -> NetworkNotePricer {
         NetworkNotePricer::builder()
-            .verification_base_fee(base_fee)
+            .fee_parameters(fee_parameters(base_fee))
             .safety_margin_verification_cycles(margin)
             .build()
     }
@@ -370,7 +392,8 @@ mod tests {
 
     #[test]
     fn default_safety_margin_adds_one_verification_cycle() {
-        let default_margin = NetworkNotePricer::builder().verification_base_fee(500).build();
+        let default_margin =
+            NetworkNotePricer::builder().fee_parameters(fee_parameters(500)).build();
         assert_eq!(default_margin.fee_for_cycles(1 << 16).unwrap().as_u64(), 500 * 18);
     }
 
@@ -416,7 +439,7 @@ mod tests {
 
     fn custom_pricer(lookup: CostLookupFn) -> NetworkNotePricer {
         NetworkNotePricer::builder()
-            .verification_base_fee(500)
+            .fee_parameters(fee_parameters(500))
             .safety_margin_verification_cycles(0)
             .lookup(lookup)
             .build()

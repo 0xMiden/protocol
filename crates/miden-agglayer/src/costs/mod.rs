@@ -118,6 +118,9 @@ pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::AccountId;
+    use miden_protocol::block::FeeParameters;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
     use miden_standards::note::P2idNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
@@ -128,8 +131,10 @@ mod tests {
     use super::*;
 
     fn pricer() -> NetworkNotePricer {
+        let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
+            .expect("testing faucet ID should be valid");
         NetworkNotePricer::builder()
-            .verification_base_fee(500)
+            .fee_parameters(FeeParameters::new(fee_faucet_id, 500))
             .safety_margin_verification_cycles(0)
             .lookup(note_cost)
             .build()

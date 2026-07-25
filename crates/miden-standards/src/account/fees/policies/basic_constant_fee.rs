@@ -115,6 +115,10 @@ impl BasicConstantFeePolicy {
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
     ///
+    /// The schedule stores bare amounts: the fee must be denominated in the fee asset of the
+    /// [`FeePolicyManager`](crate::account::fees::FeePolicyManager) this policy is registered
+    /// with, which is the asset the policy charges it in.
+    ///
     /// Scheduling an explicit fee of 0 makes notes with this script root free; script roots
     /// without a schedule entry abort fee estimation.
     #[must_use]
@@ -124,7 +128,7 @@ impl BasicConstantFeePolicy {
     }
 
     /// Extends the fee schedule with the given `(script_root, fee)` entries, replacing any
-    /// previous entries.
+    /// previous entries. See [`Self::with_fee`] for the fee denomination requirement.
     #[must_use]
     pub fn with_fees(
         mut self,
