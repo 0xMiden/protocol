@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.16.0-beta.2 (TBD)
+## v0.16.0 (TBD)
 
 ### Features
 
