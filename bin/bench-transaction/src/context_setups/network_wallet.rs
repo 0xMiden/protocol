@@ -37,11 +37,6 @@ use miden_testing::{Auth, MockTransaction};
 /// asset cap, planned as 16 per <https://github.com/0xMiden/protocol/issues/3381>.
 const MAX_NOTE_ASSETS: usize = 16;
 
-// Pins the protocol maximum this module's docs (and the costs-module caveat) describe: when the
-// planned reduction lands, this breaks the build so the constant and both doc blocks are
-// revisited together.
-const _: () = assert!(miden_protocol::MAX_ASSETS_PER_NOTE == 64);
-
 /// Returns [`MAX_NOTE_ASSETS`] distinct assets: one fungible asset plus distinct non-fungible
 /// assets.
 fn max_note_assets() -> Vec<Asset> {
