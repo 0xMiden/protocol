@@ -12,7 +12,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED,
     ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32,
 };
-use miden_protocol::testing::tx::TransactionFee;
+use miden_protocol::transaction::TransactionFee;
 use miden_protocol::{Felt, Hasher, MAX_OUTPUT_NOTES_PER_TX, Word};
 use rstest::rstest;
 
@@ -191,7 +191,7 @@ async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
     let actual_fee = exec_output.get_stack_element(0).as_canonical_u64();
     let captured_clk = u32::try_from(exec_output.get_stack_element(1).as_canonical_u64())?;
 
-    let expected_fee = TransactionFee::new(captured_clk.next_power_of_two())
+    let expected_fee = TransactionFee::new(captured_clk)?
         .compute_fee(mock_tx.tx_inputs().block_header().fee_parameters());
 
     // This assertion is somewhat brittle. If it fails, it is likely because log2(captured clock)
@@ -282,6 +282,10 @@ async fn compute_fee_fails_on_invalid_exclude_notes(
 /// The transaction creates six output notes, so the excluded indices below are all in bounds. The
 /// cases cover zero, one and multiple excluded notes, to exercise all branches of the sorting and
 /// uniqueness validation.
+///
+/// The fee assertion also pins the kernel's output-notes fee term at zero: when the kernel
+/// starts charging for output notes, this fails and `TransactionFee` in `miden-protocol` (which
+/// omits the term) must grow it too.
 #[rstest]
 // No excluded notes.
 #[case::none(vec![])]
