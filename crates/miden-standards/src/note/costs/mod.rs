@@ -8,15 +8,18 @@
 //!
 //! The values are denominated in cycles rather than fee units, since the fee
 //! (`verification_base_fee * (ilog2(cycles) + 1)`) depends on a block-header parameter. Use
-//! [`NetworkNotePricer`] to turn cycle costs into concrete [`AssetAmount`] fees and populate a fee
-//! schedule via
-//! [`ConstantFeePolicy::with_fees`](crate::account::fees::ConstantFeePolicy::with_fees).
+//! [`NetworkNotePricer`] to turn cycle costs into concrete [`AssetAmount`] fees and populate a
+//! fee schedule via
+//! [`BasicConstantFeePolicy::with_fees`](crate::account::fees::BasicConstantFeePolicy::with_fees).
 //!
 //! The values are estimates from canonical scenarios, not worst cases: asset-scaling paths
 //! carry 16 callback-free assets (the P2ID/P2IDE cap planned in
 //! <https://github.com/0xMiden/protocol/issues/3381>) and action notes run one selector, so
 //! callback-carrying or maximally packed notes can exceed the values - do not treat them as
 //! guaranteed fee upper bounds.
+//!
+//! Terminology: a note's *cost* is its measured cycle count; its *price* is the fee derived
+//! from that cost (and from the costs of the notes its consumption creates).
 //!
 //! The table is regenerated with `make update-note-costs`; a snapshot test in
 //! `bench-transaction` fails CI when a checked-in value drifts more than 5% from the measured
@@ -58,19 +61,23 @@ pub use table::*;
 /// Implemented by every priced note type in `miden-standards` and `miden-agglayer`; the values
 /// come from the generated cost tables (see the module docs).
 pub trait NoteConsumptionCost {
-    /// Worst-case cycles of the canonical network-account transaction consuming this note
-    /// (maximum across the benchmarked execution paths).
+    /// Cycles of the canonical network-account transaction consuming this note
+    /// (maximum across the benchmarked execution paths - an estimate, not a worst case).
     fn consumption_cycles() -> u32;
 
-    /// Script roots of the notes created when this note is consumed.
+    /// Script roots of all the notes this note's consumption is expected to create.
     ///
+    /// Every root listed here must resolve through the pricer's cost lookup. The TX_FEE note
+    /// created by fee payment is excluded: its creation is part of the measured consumption
+    /// cycles (and TX_FEE has no cost of its own).
+    ///
+    /// Where a note's outputs are chosen by its creator rather than fixed by the script (e.g. a
+    /// MINT note's recipient digest may encode any script), the list covers the typical case.
     /// Whether a created note actually requires sponsorship depends on the concrete note: only
     /// notes carrying a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment
     /// are network-targeted (see
-    /// [`NetworkNoteExt::is_network_note`](crate::note::NetworkNoteExt::is_network_note)). This
-    /// static list is the superset used when only the script root is known. The TX_FEE note
-    /// created by fee payment is excluded: its creation is part of the measured consumption
-    /// cycles.
+    /// [`NetworkNoteExt::is_network_note`](crate::note::NetworkNoteExt::is_network_note)); this
+    /// static list is the superset used when only the script root is known.
     fn created_notes() -> Vec<NoteScriptRoot> {
         Vec::new()
     }
@@ -98,7 +105,8 @@ impl NoteCost {
         Self::new(N::consumption_cycles(), N::created_notes())
     }
 
-    /// Worst-case cycles of the canonical network-account transaction consuming the note.
+    /// Cycles of the canonical network-account transaction consuming the note (maximum across
+    /// the benchmarked execution paths - an estimate, not a worst case).
     pub fn cycles(&self) -> u32 {
         self.cycles
     }
@@ -216,10 +224,11 @@ impl NetworkNotePricer {
     /// ```
     ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
-    /// EVERY created note is priced in, making this an upper bound suited for root-keyed fee
-    /// schedules. A root that is already being priced further up the recursion contributes its
-    /// own consumption fee only (a PSWAP partial fill re-creates a PSWAP note, which would
-    /// otherwise recurse forever).
+    /// EVERY created note is priced in, suiting root-keyed fee schedules - though like the
+    /// underlying costs, the result is an estimate, not a guaranteed upper bound (see the
+    /// module docs). To avoid infinite recursion, a root already being priced further up the
+    /// recursion contributes only its own consumption fee: a partially filled PSWAP is priced
+    /// for one fill level, and the paybacks of any further partial fills are not covered.
     pub fn price(&self, root: NoteScriptRoot) -> Result<AssetAmount, NotePricingError> {
         let fee = self.price_recursive(root, &mut Vec::new())?;
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
