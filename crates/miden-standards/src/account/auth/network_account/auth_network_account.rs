@@ -23,7 +23,7 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
-use crate::note::NetworkAccountConfigNote;
+use crate::note::{FeeSponsorshipNote, NetworkAccountConfigNote};
 use crate::procedure_root;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
@@ -135,7 +135,11 @@ procedure_root!(
 /// allowlist exists to constrain.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
-/// off-chain services can identify a network account by checking for this slot.
+/// off-chain services can identify a network account by checking for this slot. [`Self::new`] seeds
+/// it with [`Self::default_note_script_roots`], the standardized roots a network account needs to
+/// reconfigure itself and to collect fees. That is a property of the constructor, not of the slot:
+/// `remove_allowed_note_script` can drop them, and [`NetworkAccountNoteAllowlist`] can be built
+/// directly without them, so readers must inspect the slot rather than assume its contents.
 ///
 /// Both allowlists can be updated after deployment via the `add_allowed_note_script` /
 /// `remove_allowed_note_script` and `add_allowed_tx_script` / `remove_allowed_tx_script` account
@@ -187,6 +191,37 @@ impl AuthNetworkAccount {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the standardized note script roots that [`Self::new`] adds to every allowlist,
+    /// regardless of what the caller passed.
+    ///
+    /// This is the single source of truth for those defaults.
+    /// [`BasicConstantFeePolicy::new`](crate::account::fees::BasicConstantFeePolicy::new) schedules
+    /// each of them at a 0 fee.
+    ///
+    /// # The active policy must price these roots
+    ///
+    /// `collect_sponsored_fees` prices every input note the account consumes, and a policy that
+    /// aborts on an unscheduled root makes such a note unconsumable. For
+    /// [`NetworkAccountConfigNote`] that is close to a one-way door: it is the only *note* that can
+    /// reconfigure the account, so an active policy without an entry for it freezes both allowlists
+    /// unless the account has some other route to the mutators (see [`Self::new`]).
+    ///
+    /// Nothing enforces this at the API boundary. A caller passing a custom
+    /// [`FeePolicy`](crate::account::fees::FeePolicy) to [`Self::new`], and an operator switching
+    /// the active policy post-deployment via `set_fee_policy`, must both ensure the policy prices
+    /// these roots.
+    ///
+    /// [`FeeSponsorshipNote`] is exempt from the freeze risk: `collect_sponsored_fees` skips a
+    /// paired sponsorship note and rejects an unpaired one, in both cases without pricing it. Its
+    /// schedule entry is reachable only off the standard paths - see
+    /// [`BasicConstantFeePolicy::new`](crate::account::fees::BasicConstantFeePolicy::new).
+    pub fn default_note_script_roots() -> BTreeSet<NoteScriptRoot> {
+        BTreeSet::from_iter([
+            NetworkAccountConfigNote::script_root(),
+            FeeSponsorshipNote::script_root(),
+        ])
+    }
+
     /// Creates a new [`AuthNetworkAccount`] component that allows the provided input-note script
     /// roots and pays fees per the given [`FeePolicyManager`].
     ///
@@ -202,11 +237,31 @@ impl AuthNetworkAccount {
     /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
     /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode: the note sender
     /// is checked against it.
+    ///
+    /// The standardized [`FeeSponsorshipNote`] script root is likewise always added. Fee collection
+    /// requires a note charged a non-zero fee to be paired with a `FEE_SPONSORSHIP` note at the
+    /// next input-note index, and the auth procedure rejects any input note whose root is not
+    /// allowlisted, so without this entry no account could ever collect a fee.
+    ///
+    /// On an account whose policy prices everything at 0 the entry buys nothing and costs
+    /// something: a 0-fee note never pairs, so any sponsorship note reaching such an account is
+    /// rejected as unpaired and aborts the whole transaction it was included in. Since the
+    /// allowlist is also what off-chain services filter candidate notes by, such notes are no
+    /// longer screened out before being routed. Accounts that never charge a fee may therefore want
+    /// to drop this root; see <https://github.com/0xMiden/protocol/issues/3401>.
+    ///
+    /// See [`Self::default_note_script_roots`] for the full set. Both defaults are ordinary
+    /// allowlist entries that `remove_allowed_note_script` can drop, but doing so is close to a
+    /// one-way door: removing the config note root leaves no admissible *note* to re-add anything,
+    /// so recovery needs an already-allowlisted tx script (or upgrade path) that calls the mutators
+    /// directly - which the accounts from
+    /// [`NetworkAccount::builder`](super::NetworkAccount::builder) do not have. Removing the
+    /// sponsorship root makes every priced note on a fee-charging account unconsumable.
     pub fn new(
         mut allowed_script_roots: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
-        allowed_script_roots.insert(NetworkAccountConfigNote::script_root());
+        allowed_script_roots.extend(Self::default_note_script_roots());
         Ok(Self {
             allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
             allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
@@ -388,7 +443,6 @@ mod tests {
 
     use super::*;
     use crate::account::wallets::BasicWallet;
-    use crate::note::NetworkAccountConfigNote;
 
     #[test]
     fn auth_network_account_component_builds() {
@@ -408,15 +462,28 @@ mod tests {
             .expect("account building with AuthNetworkAccount failed");
     }
 
+    /// Pins the contents of the default set at its source, so the assertions elsewhere in this
+    /// module that compare against `default_note_script_roots` are not self-referential.
     #[test]
-    fn auth_network_account_with_empty_input_allowlists_only_config_note() {
+    fn default_note_script_roots_are_the_config_and_sponsorship_notes() {
+        assert_eq!(
+            AuthNetworkAccount::default_note_script_roots(),
+            BTreeSet::from_iter([
+                NetworkAccountConfigNote::script_root(),
+                FeeSponsorshipNote::script_root(),
+            ]),
+        );
+    }
+
+    #[test]
+    fn auth_network_account_with_empty_input_allowlists_only_standardized_notes() {
         let account = AccountBuilder::new([0; 32])
             .with_components(
                 AuthNetworkAccount::new(
                     BTreeSet::new(),
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
-                .expect("config note root makes the allowlist non-empty"),
+                .expect("standardized roots make the allowlist non-empty"),
             )
             .with_component(BasicWallet)
             .build()
@@ -427,8 +494,8 @@ mod tests {
 
         assert_eq!(
             allowlist.allowed_script_roots(),
-            &BTreeSet::from_iter([NetworkAccountConfigNote::script_root()]),
-            "an empty input should yield an allowlist containing only the config note root",
+            &AuthNetworkAccount::default_note_script_roots(),
+            "an empty input should yield an allowlist containing only the standardized roots",
         );
     }
 
@@ -463,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn auth_network_account_always_allowlists_config_note() {
+    fn auth_network_account_always_allowlists_standardized_notes() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let account = AccountBuilder::new([0; 32])
             .with_components(
@@ -471,7 +538,7 @@ mod tests {
                     BTreeSet::from_iter([root_a]),
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
-                .expect("config note root makes the allowlist non-empty"),
+                .expect("standardized roots make the allowlist non-empty"),
             )
             .with_component(BasicWallet)
             .build()
@@ -483,8 +550,8 @@ mod tests {
         assert!(
             allowlist
                 .allowed_script_roots()
-                .contains(&NetworkAccountConfigNote::script_root()),
-            "new should always allowlist the config note root",
+                .is_superset(&AuthNetworkAccount::default_note_script_roots()),
+            "new should always allowlist the config and fee sponsorship note roots",
         );
         assert!(
             allowlist.allowed_script_roots().contains(&root_a),

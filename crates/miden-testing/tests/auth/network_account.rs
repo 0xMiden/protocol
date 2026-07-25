@@ -3,7 +3,8 @@ use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
@@ -14,11 +15,12 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
-use miden_standards::note::{NetworkAccountConfig, NetworkAccountConfigNote};
+use miden_standards::note::{FeeSponsorshipNote, NetworkAccountConfig, NetworkAccountConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -29,7 +31,8 @@ use rstest::rstest;
 
 /// A placeholder note script root used when a test needs an [`AuthNetworkAccount`] account whose
 /// allowlist contents are not material to the test logic (e.g. an account that never consumes a
-/// note). The constructor rejects empty allowlists, so tests must supply at least one root.
+/// note). Passing a root keeps such tests explicit about what the account admits, rather than
+/// leaning on the standardized defaults `AuthNetworkAccount::new` adds.
 fn placeholder_script_root() -> Word {
     NoteScriptRoot::from_array([1, 0, 0, 0]).into()
 }
@@ -44,7 +47,8 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
 /// `collect_sponsored_fees`. A constant policy aborts fee estimation for note scripts without a
 /// schedule entry, so every note the account can consume must be scheduled; each root in
 /// `note_script_roots` is scheduled with an explicit 0 fee, keeping collection a no-op on these
-/// fee-free chains.
+/// fee-free chains. The standardized roots `AuthNetworkAccount` allowlists by default are already
+/// scheduled by `BasicConstantFeePolicy::new`.
 fn zero_fee_policy_manager(
     note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
 ) -> anyhow::Result<FeePolicyManager> {
@@ -68,9 +72,7 @@ fn build_account_with_allowlists(
 ) -> anyhow::Result<Account> {
     let note_roots: BTreeSet<NoteScriptRoot> =
         allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
-    let fee_policy_manager = zero_fee_policy_manager(
-        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
-    )?;
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
 
     let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
         .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
@@ -202,6 +204,51 @@ async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// `AuthNetworkAccount::new` allowlists the FEE_SPONSORSHIP root on every account, including ones
+/// that price every note at 0 and can therefore never pair a sponsorship note. Such a note now
+/// reaches fee collection instead of being turned away by the allowlist, and aborts the whole
+/// transaction with `ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE`.
+///
+/// Asserting the fee-collection error rather than `ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED` is
+/// the point: it pins where the note is stopped. The note names the target as its reclaimer with an
+/// already-reached reclaim height, which is what it takes to get past the note script's own reclaim
+/// guard - a default sponsorship note aborts earlier, in the script. See
+/// <https://github.com/0xMiden/protocol/issues/3401>, which tracks keeping these notes from being
+/// routed to zero-fee accounts in the first place - landing that should flip this test.
+#[tokio::test]
+async fn test_auth_network_account_admits_unpairable_sponsorship_note() -> anyhow::Result<()> {
+    let account = build_allowlist_account(vec![placeholder_script_root()])?;
+
+    let sponsorship_note = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(ACCOUNT_ID_SENDER.try_into()?)
+            .target_account(account.id())
+            .feature_note_id(build_input_note()?.id())
+            .asset(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1)?)
+            .reclaimer(account.id())
+            .reclaim_height(BlockNumber::from(1u32))
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE);
 
     Ok(())
 }
@@ -347,9 +394,9 @@ fn owner_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
 }
 
-/// Builds a network account that opts into allowlist management (its note allowlist includes the
-/// standardized action-note root plus `extra_allowed_note_roots`) and whose admin procedures are
-/// gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
+/// Builds a network account that opts into allowlist management (its note allowlist includes
+/// `AuthNetworkAccount`'s standardized default roots plus `extra_allowed_note_roots`) and whose
+/// admin procedures are gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
 ///
 /// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
 /// deployment, so a note whose root is added to the allowlist post-deployment can still be
@@ -364,14 +411,7 @@ fn build_owner_controlled_account(
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    // The config note is always allowlisted by `with_allowed_notes` and may be consumed to update
-    // the allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
-    // entry too.
-    let scheduled_roots = note_roots
-        .iter()
-        .copied()
-        .chain(fee_scheduled_note_roots)
-        .chain([NetworkAccountConfigNote::script_root()]);
+    let scheduled_roots = note_roots.iter().copied().chain(fee_scheduled_note_roots);
     let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
 
     let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
@@ -704,9 +744,7 @@ fn build_upgradeable_network_account(
 ) -> anyhow::Result<Account> {
     let note_roots: BTreeSet<NoteScriptRoot> =
         allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
-    let fee_policy_manager = zero_fee_policy_manager(
-        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
-    )?;
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
 
     let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?;
 

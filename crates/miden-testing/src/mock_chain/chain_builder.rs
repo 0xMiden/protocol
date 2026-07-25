@@ -65,15 +65,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
-use miden_standards::note::{
-    BurnNote,
-    MintNote,
-    NetworkAccountConfigNote,
-    P2idNote,
-    P2ideNote,
-    SwapNote,
-    TxFeeNote,
-};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -377,16 +369,14 @@ impl MockChainBuilder {
         // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
         // answers sponsorship fee estimates; both require an active fee policy. A constant policy
         // aborts fee estimation for note scripts without a schedule entry, so schedule an explicit
-        // 0 fee for every allowlisted note; this keeps fees a no-op on fee-free chains.
+        // 0 fee for every allowlisted note; this keeps fees a no-op on fee-free chains. The
+        // standardized roots `AuthNetworkAccount` allowlists by default are already scheduled by
+        // `BasicConstantFeePolicy::new`.
         let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
         for note_script in &allowed_script_roots {
             basic_constant_fee_policy =
                 basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
         }
-        // `with_allowed_notes` always allowlists the config note, which the network auth flow
-        // prices if it is ever consumed, so schedule it too.
-        basic_constant_fee_policy = basic_constant_fee_policy
-            .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
 
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(basic_constant_fee_policy.into())

@@ -40,6 +40,15 @@ const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::Z
 ///
 /// The slot is a [`StorageMap`] keyed by note script root; any non-empty value marks a root as
 /// allowed.
+///
+/// A root being present means the auth procedure will not reject the note - not that consuming it
+/// can succeed. A note can still abort later, in its own script or in fee collection, and some
+/// always do: an unauthorized `NETWORK_ACCOUNT_CONFIG` note on any account, and a `FEE_SPONSORSHIP`
+/// note on an account whose fee policy prices everything at 0, since such a note can never pair.
+/// Both roots are allowlisted on every account by
+/// [`AuthNetworkAccount::new`](super::AuthNetworkAccount::new), so a service filtering candidate
+/// notes by this slot must tolerate notes that fail. See
+/// <https://github.com/0xMiden/protocol/issues/3401>.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkAccountNoteAllowlist {
     allowed_script_roots: BTreeSet<NoteScriptRoot>,
@@ -250,7 +259,7 @@ mod tests {
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
         let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
-        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.extend(AuthNetworkAccount::default_note_script_roots());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 

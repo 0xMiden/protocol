@@ -51,6 +51,9 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 /// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` +
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
 /// through its active `BasicConstantFeePolicy`, and holds `assets` in its vault.
+///
+/// `AuthNetworkAccount::new` additionally allowlists its standardized defaults, so callers do not
+/// pass the FEE_SPONSORSHIP root even though the sponsorship notes below are consumed.
 fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
@@ -128,7 +131,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     // the target network account prices the P2ID script root at FEE_AMOUNT
     let target = network_account(
         [2; 32],
-        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
+        [P2idNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [],
     )?;
@@ -220,7 +223,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     )?;
     let network = network_account(
         [2; 32],
-        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
+        [P2idNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [fee_asset(NETWORK_INITIAL_FEE_BALANCE)?],
     )?;
@@ -320,7 +323,7 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     // downstream network account B, whose policy prices the spawned P2ID note
     let network_b = network_account(
         [3; 32],
-        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
+        [P2idNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [fee_asset(B_INITIAL_FEE_BALANCE)?],
     )?;
@@ -336,7 +339,7 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     // consumes, since a constant policy aborts fee estimation for unscheduled note scripts
     let network_a = network_account(
         [2; 32],
-        [spawn_note.script().root(), FeeSponsorshipNote::script_root()],
+        [spawn_note.script().root()],
         &[(spawn_note.script().root(), 0)],
         [fee_asset(1_000_000)?, payload_asset],
     )?;

@@ -158,6 +158,8 @@ fn create_agglayer_faucet_component(
 /// policy schedules an explicit 0 fee for every note script in `auth`'s allowlist, so it charges
 /// and collects nothing while still letting fee estimation resolve every note the account can
 /// consume; a real fee faucet and schedule are configured when fees are enabled on these accounts.
+/// The standardized roots `AuthNetworkAccount` allowlists on top of that set come pre-scheduled
+/// from `BasicConstantFeePolicy::new`.
 ///
 /// Because every scheduled fee is 0, the fee asset (and hence the placeholder faucet id below)
 /// never funds a transfer; only the components' procedure code contributes to the account code

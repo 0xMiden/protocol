@@ -83,8 +83,11 @@ pub enum Auth {
     Conditional,
 
     /// Network-account authentication that restricts the account to consuming only notes whose
-    /// script roots appear in `allowed_script_roots` (must be non-empty), and to executing only
-    /// transaction scripts whose roots appear in `allowed_tx_script_roots` (may be empty).
+    /// script roots appear in `allowed_script_roots`, and to executing only transaction scripts
+    /// whose roots appear in `allowed_tx_script_roots` (may be empty).
+    ///
+    /// `allowed_script_roots` may be empty: `AuthNetworkAccount::new` always adds its standardized
+    /// default roots, so the resulting allowlist is never empty.
     ///
     /// The `fee_policy_manager` initializes the fee-policy storage the auth component owns and
     /// contributes the components making its fee policies dispatchable.

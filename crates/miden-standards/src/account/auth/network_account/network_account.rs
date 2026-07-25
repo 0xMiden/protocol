@@ -97,10 +97,15 @@ impl NetworkAccount {
     /// Accounts that need to allowlist additional transaction scripts should construct the
     /// [`AuthNetworkAccount`] component manually instead.
     ///
+    /// `fee_policy_manager`'s active policy must price every root in
+    /// [`AuthNetworkAccount::default_note_script_roots`], which are allowlisted regardless of
+    /// `allowed_notes`. Nothing here validates that; see that method for what breaks otherwise.
+    ///
     /// # Errors
     ///
-    /// Returns an error if `allowed_notes` is empty since the account could not consume any
-    /// notes.
+    /// Returns an error if the allowlist is empty. This cannot happen today, since the standardized
+    /// roots are always added, but the fallible signature is kept so the invariant stays enforced
+    /// at the [`NetworkAccountNoteAllowlist`] boundary.
     pub fn builder(
         init_seed: [u8; 32],
         allowed_notes: BTreeSet<NoteScriptRoot>,
@@ -228,7 +233,7 @@ mod tests {
             network_account.allowed_notes().allowed_script_roots().iter().copied().collect();
 
         let mut expected = roots;
-        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.extend(AuthNetworkAccount::default_note_script_roots());
         assert_eq!(actual, expected);
     }
 

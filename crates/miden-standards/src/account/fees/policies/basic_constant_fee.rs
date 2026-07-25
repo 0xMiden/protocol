@@ -22,6 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
+use crate::account::auth::AuthNetworkAccount;
 use crate::procedure_root;
 
 // BASIC CONSTANT FEE POLICY
@@ -76,17 +77,29 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 /// for it via [`BasicConstantFeePolicy::with_fee`]. The remaining note parameters, including the
 /// timeframe and priority, are ignored by this policy. The fee asset ID is read from the
 /// fee-policy storage, so the fee is always charged in the configured asset and the policy
-/// requires an [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] component on the
-/// same account.
+/// requires an [`AuthNetworkAccount`] component on the same account.
+///
+/// The schedule is therefore fail-closed apart from one carve-out: [`Self::new`] pre-schedules
+/// every root in [`AuthNetworkAccount::default_note_script_roots`] at a 0 fee, since those are
+/// allowlisted on every network account.
 ///
 /// ## Storage layout
 ///
 /// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]`, where
-///   the last element is a set-marker distinguishing scheduled entries from unset keys.
-#[derive(Debug, Clone, Default)]
+///   the last element is a set-marker distinguishing scheduled entries from unset keys. A policy
+///   from [`Self::new`] starts with one entry per standardized root rather than empty.
+#[derive(Debug, Clone)]
 pub struct BasicConstantFeePolicy {
     /// The fee charged per note script root.
     fee_schedule: BTreeMap<NoteScriptRoot, AssetAmount>,
+}
+
+impl Default for BasicConstantFeePolicy {
+    /// Equivalent to [`BasicConstantFeePolicy::new`]. Note that the resulting schedule is not
+    /// empty: it prices the standardized network-account note scripts at 0.
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BasicConstantFeePolicy {
@@ -107,10 +120,37 @@ impl BasicConstantFeePolicy {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new `basic_constant_fee` fee policy with an empty fee schedule, charging fees in
-    /// the fungible asset its [`crate::account::fees::FeePolicyManager`] is configured with.
+    /// Creates a new `basic_constant_fee` fee policy charging fees in the fungible asset its
+    /// [`crate::account::fees::FeePolicyManager`] is configured with.
+    ///
+    /// The schedule starts with an explicit 0 fee for every root in
+    /// [`AuthNetworkAccount::default_note_script_roots`], the note scripts allowlisted on every
+    /// network account.
+    ///
+    /// This is load-bearing for the
+    /// [`NetworkAccountConfigNote`](crate::note::NetworkAccountConfigNote): fee collection prices
+    /// it like any other consumed note, so without an entry the only note that can reconfigure a
+    /// freshly deployed account would abort on the unscheduled root. Use [`Self::with_fee`] to
+    /// charge for it instead.
+    ///
+    /// The [`FeeSponsorshipNote`](crate::note::FeeSponsorshipNote) entry is uniformity only, kept
+    /// so the schedule matches the default allowlist. No standard path reads it:
+    /// `collect_sponsored_fees` skips a paired sponsorship input note and rejects an unpaired one
+    /// without pricing either, and sponsorship creation prices only output notes carrying a
+    /// `NetworkAccountTarget` attachment, which the sponsorship notes it emits do not have.
+    ///
+    /// It is reachable for a hand-crafted output note carrying this script *and* that attachment,
+    /// which is priced against the target's entry for this root. The entry flips that case from
+    /// aborting the creating transaction to creating an unsponsored note; raising the fee with
+    /// [`Self::with_fee`] would instead make the creating account fund a sponsorship note for a
+    /// sponsorship note, so leave it at 0 absent a specific reason.
     pub fn new() -> Self {
-        Self { fee_schedule: BTreeMap::new() }
+        Self {
+            fee_schedule: AuthNetworkAccount::default_note_script_roots()
+                .into_iter()
+                .map(|root| (root, AssetAmount::ZERO))
+                .collect(),
+        }
     }
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
@@ -230,6 +270,50 @@ mod tests {
             Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
             "an explicit 0-fee entry should survive as a non-zero word"
         );
+
+        Ok(())
+    }
+
+    /// The two defaults are kept in step: a root added to `default_note_script_roots` must also be
+    /// scheduled here. That is a requirement for any default root fee collection prices - today the
+    /// config note, which would otherwise be unconsumable - and a uniformity choice for the rest.
+    #[test]
+    fn new_schedules_every_default_allowlisted_note_root_for_free() {
+        let policy = BasicConstantFeePolicy::new();
+        let default_roots = AuthNetworkAccount::default_note_script_roots();
+
+        for root in &default_roots {
+            assert_eq!(
+                policy.fee_schedule().get(root),
+                Some(&AssetAmount::ZERO),
+                "the default-allowlisted note root {root} should be scheduled at a 0 fee",
+            );
+        }
+
+        // Also pins that `new` schedules nothing beyond the defaults, and keeps the loop above from
+        // passing vacuously should the default set ever become empty.
+        assert_eq!(
+            policy.fee_schedule().len(),
+            default_roots.len(),
+            "a fresh policy should schedule the default roots and nothing else",
+        );
+    }
+
+    /// The standardized entries are ordinary schedule entries that `with_fee` overrides rather than
+    /// pinned defaults. See [`BasicConstantFeePolicy::new`] for which paths read each one.
+    #[test]
+    fn standardized_note_roots_can_be_repriced() -> anyhow::Result<()> {
+        let fee = AssetAmount::new(500)?;
+
+        for root in AuthNetworkAccount::default_note_script_roots() {
+            let policy = BasicConstantFeePolicy::new().with_fee(root, fee);
+
+            assert_eq!(
+                policy.fee_schedule().get(&root),
+                Some(&fee),
+                "with_fee should override the default 0 fee for {root}",
+            );
+        }
 
         Ok(())
     }
