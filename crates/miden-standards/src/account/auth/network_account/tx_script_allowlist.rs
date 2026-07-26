@@ -85,6 +85,14 @@ impl NetworkAccountTxScriptAllowlist {
         )
     }
 
+    /// Extends the set of allowed tx script roots.
+    pub(super) fn extend_script_roots(
+        &mut self,
+        allowed_tx_script_roots: impl IntoIterator<Item = TransactionScriptRoot>,
+    ) {
+        self.allowed_script_roots.extend(allowed_tx_script_roots);
+    }
+
     /// Consumes this allowlist and returns the [`StorageSlot`] suitable for inclusion in an
     /// [`AccountComponent`](miden_protocol::account::AccountComponent)'s storage layout.
     pub fn into_storage_slot(self) -> StorageSlot {
@@ -209,7 +217,7 @@ mod tests {
 
         let account = AccountBuilder::new([0; 32])
             .with_components(
-                AuthNetworkAccount::new(
+                AuthNetworkAccount::custom(
                     BTreeSet::from_iter([NoteScriptRoot::from_array([9, 9, 9, 9])]),
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
