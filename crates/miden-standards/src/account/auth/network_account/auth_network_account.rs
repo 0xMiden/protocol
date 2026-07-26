@@ -23,8 +23,9 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
-use crate::note::NetworkAccountConfigNote;
+use crate::note::{FeeSponsorshipNote, NetworkAccountConfigNote};
 use crate::procedure_root;
+use crate::tx_script::ExpirationTransactionScript;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
 
@@ -187,47 +188,63 @@ impl AuthNetworkAccount {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AuthNetworkAccount`] component that allows the provided input-note script
-    /// roots and pays fees per the given [`FeePolicyManager`].
+    /// Creates a new [`AuthNetworkAccount`] component configured with the standard network-account
+    /// defaults on top of the provided input-note script roots, paying fees per the given
+    /// [`FeePolicyManager`].
+    ///
+    /// On top of `allowed_notes`, the following default configuration is always applied (use
+    /// [`custom`](Self::custom) for a variant that applies none of it):
+    /// - The standardized [`NetworkAccountConfigNote`] script root is added to the note allowlist,
+    ///   so the account's allowlists can be updated after deployment by sending that note.
+    /// - The [`FeeSponsorshipNote`] script root is added to the note allowlist. A network account
+    ///   collects prepaid fees by consuming these notes, so without it, fees could not be
+    ///   collected. Allowlisting it is safe: an unpaired sponsorship note is rejected during fee
+    ///   collection.
+    /// - The tx-script allowlist contains the [`ExpirationTransactionScript`] root, which the
+    ///   network transaction builder attaches to every network transaction, so the account is
+    ///   serviceable by the network.
     ///
     /// The active policy, allowed policies and fee asset of `fee_policy_manager` initialize the
     /// three fee-policy storage slots this component owns. The manager is carried by the component
     /// and the components of its registered policies are emitted alongside it when the component is
     /// expanded (see the [`IntoIterator`] impl), so the caller does not install them separately.
-    ///
-    /// The standardized [`NetworkAccountConfigNote`] script root is always added to the allowlist,
-    /// so the account's allowlists can be updated after deployment by sending that note. To
-    /// authorize those updates, the account must also install an
-    /// [`Authority`](crate::account::access::Authority) component in
-    /// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
-    /// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode: the note sender
-    /// is checked against it.
     pub fn new(
-        mut allowed_script_roots: BTreeSet<NoteScriptRoot>,
+        mut allowed_notes: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
-        allowed_script_roots.insert(NetworkAccountConfigNote::script_root());
+        allowed_notes.insert(NetworkAccountConfigNote::script_root());
+        allowed_notes.insert(FeeSponsorshipNote::script_root());
+        Ok(Self::custom(allowed_notes, fee_policy_manager)?
+            .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]))
+    }
+
+    /// Creates a raw [`AuthNetworkAccount`] component from the given note-script allowlist, with an
+    /// empty tx-script allowlist and without any default configuration.
+    ///
+    /// Most callers should use [`Self::new`] to include the defaults.
+    pub fn custom(
+        allowed_notes: BTreeSet<NoteScriptRoot>,
+        fee_policy_manager: FeePolicyManager,
+    ) -> Result<Self, NetworkAccountNoteAllowlistError> {
         Ok(Self {
-            allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
+            allowed_notes: NetworkAccountNoteAllowlist::new(allowed_notes)?,
             allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
             policy_manager: fee_policy_manager,
         })
     }
 
-    /// Sets the allowlist of transaction script roots this account will execute, replacing any
-    /// previously configured tx-script allowlist.
+    /// Extends the tx-script allowlist with the given transaction script roots, keeping any that
+    /// are already allowlisted.
     ///
-    /// An empty set (the default) means the account permits no transaction scripts.
-    ///
-    /// Only scripts whose effect is safe for every possible input should be allowlisted: a root
-    /// pins the script's code but not its `TX_SCRIPT_ARGS` or advice inputs, which the
-    /// (arbitrary) transaction submitter controls. See the [`AuthNetworkAccount`] type docs for
-    /// the full rationale.
+    /// Only tx scripts whose effect is safe for every possible input should be allowlisted: a root
+    /// pins the script's code but not its `TX_SCRIPT_ARGS` or advice inputs, which the (arbitrary)
+    /// transaction submitter controls. See the [`AuthNetworkAccount`] type docs for the full
+    /// rationale.
     pub fn with_allowed_tx_scripts(
         mut self,
-        allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
+        allowed_tx_script_roots: impl IntoIterator<Item = TransactionScriptRoot>,
     ) -> Self {
-        self.allowed_tx_scripts = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
+        self.allowed_tx_scripts.extend_script_roots(allowed_tx_script_roots);
         self
     }
 
@@ -409,14 +426,14 @@ mod tests {
     }
 
     #[test]
-    fn auth_network_account_with_empty_input_allowlists_only_config_note() {
+    fn auth_network_account_with_empty_input_allowlists_default_notes() {
         let account = AccountBuilder::new([0; 32])
             .with_components(
                 AuthNetworkAccount::new(
                     BTreeSet::new(),
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
-                .expect("config note root makes the allowlist non-empty"),
+                .expect("the default note roots make the allowlist non-empty"),
             )
             .with_component(BasicWallet)
             .build()
@@ -427,8 +444,11 @@ mod tests {
 
         assert_eq!(
             allowlist.allowed_script_roots(),
-            &BTreeSet::from_iter([NetworkAccountConfigNote::script_root()]),
-            "an empty input should yield an allowlist containing only the config note root",
+            &BTreeSet::from_iter([
+                NetworkAccountConfigNote::script_root(),
+                FeeSponsorshipNote::script_root(),
+            ]),
+            "an empty input should yield an allowlist containing only the default note roots",
         );
     }
 
