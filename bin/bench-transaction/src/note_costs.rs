@@ -373,11 +373,9 @@ mod tests {
     }
 
     /// Ties the hand-maintained created-notes metadata backing recursive pricing to actual
-    /// execution: every priced scenario is executed, and each full output note other than the
-    /// TX_FEE note must have its script root declared in the consumed note's
-    /// `created_notes`. For all notes except MINT the declared set must also be exactly
-    /// what execution produced, so over-declaration is caught too; MINT's created P2ID note is
-    /// private in its scenarios (not a full output note), so only the subset direction applies.
+    /// execution: every priced scenario is executed, and the script roots of the full output
+    /// notes other than the TX_FEE note must be exactly the consumed note's declared
+    /// `created_notes`, so both under- and over-declaration are caught.
     #[tokio::test]
     async fn created_notes_cover_executed_output_notes() -> Result<()> {
         for &note in PricedNote::all() {
@@ -407,12 +405,7 @@ mod tests {
                 }
             }
 
-            if note != PricedNote::Standard(StandardNote::MINT) {
-                assert_eq!(
-                    observed, declared,
-                    "declared created notes were not observed for {note:?}",
-                );
-            }
+            assert_eq!(observed, declared, "declared created notes were not observed for {note:?}");
         }
         Ok(())
     }
