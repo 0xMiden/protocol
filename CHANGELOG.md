@@ -1,6 +1,10 @@
 # Changelog
 
-## v0.16.0-beta.2 (TBD)
+## v0.16.0 (TBD)
+
+### Features
+
+- Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
 
 ### Changes
 
