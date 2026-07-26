@@ -67,17 +67,8 @@ pub trait NoteConsumptionCost {
 
     /// Script roots of all the notes this note's consumption is expected to create.
     ///
-    /// Every root listed here must resolve through the pricer's cost lookup. The TX_FEE note
-    /// created by fee payment is excluded: its creation is part of the measured consumption
-    /// cycles (and TX_FEE has no cost of its own).
-    ///
     /// Where a note's outputs are chosen by its creator rather than fixed by the script (e.g. a
     /// MINT note's recipient digest may encode any script), the list covers the typical case.
-    /// Whether a created note actually requires sponsorship depends on the concrete note: only
-    /// notes carrying a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment
-    /// are network-targeted (see
-    /// [`NetworkNoteExt::is_network_note`](crate::note::NetworkNoteExt::is_network_note)); this
-    /// static list is the superset used when only the script root is known.
     fn created_notes() -> Vec<NoteScriptRoot> {
         Vec::new()
     }
