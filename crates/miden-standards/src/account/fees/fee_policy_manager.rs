@@ -44,7 +44,7 @@ static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// notes, which policies it may be switched to, and the asset that fees are charged in.
 ///
 /// The actual fee computation logic is defined by a fee policy (e.g.
-/// [`ConstantFeePolicy`](crate::account::fees::ConstantFeePolicy)).
+/// [`BasicConstantFeePolicy`](crate::account::fees::BasicConstantFeePolicy)).
 ///
 /// The [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component carries the
 /// manager and adds the components of every registered policy when installed, so they do not
@@ -214,7 +214,7 @@ mod tests {
 
     use super::*;
     use crate::account::auth::AuthNetworkAccount;
-    use crate::account::fees::ConstantFeePolicy;
+    use crate::account::fees::BasicConstantFeePolicy;
     use crate::code_builder::CodeBuilder;
 
     fn fee_faucet_id() -> AccountId {
@@ -251,7 +251,7 @@ mod tests {
     fn manager_expands_into_policy_components_only() {
         let fee_policy_manager = FeePolicyManager::builder()
             .fee_faucet_id(fee_faucet_id())
-            .active_fee_policy(ConstantFeePolicy::new().into())
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
             .allowed_fee_policy(custom_fee_policy())
             .build();
 

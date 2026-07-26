@@ -11,6 +11,7 @@
 - [BREAKING] Removed the deprecated `TransactionContextBuilder` and the `MockChain::build_tx_context` / `build_tx_context_at` methods; use `MockChain::build_transaction` instead ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Made `MockTransaction::execute_code` and the `executor` module test-only, and removed `MockTransactionBuilder::disable_lazy_loading` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Renamed the `FeeManager` component to `FeePolicyManager` and turned it from an account component into the fee-policy configuration of the `AuthNetworkAccount` component ([#3353](https://github.com/0xMiden/protocol/pull/3353)).
+- [BREAKING] Renamed `ConstantFeePolicy` to `BasicConstantFeePolicy` ([#3391](https://github.com/0xMiden/protocol/issues/3391)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
