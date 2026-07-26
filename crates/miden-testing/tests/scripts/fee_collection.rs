@@ -14,7 +14,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::code_builder::CodeBuilder;
@@ -113,9 +113,10 @@ fn fee_collector_component() -> anyhow::Result<AccountComponent> {
     )?)
 }
 
-/// Builds an `AuthNetworkAccount`-authenticated network account with a `BasicWallet` and a
-/// `FeePolicyManager`. When `fee_entry` is provided, the fee policy manager schedules the
-/// given fee for that note script root; `allowed_note_roots` seeds the note-script allowlist.
+/// Builds a network account with a `BasicWallet` and a `FeePolicyManager`. When `fee_entry` is
+/// provided, the fee policy manager schedules the given fee for that note script root;
+/// `allowed_note_roots` seeds the note-script allowlist (the FEE_SPONSORSHIP root is added by
+/// [`NetworkAccount::builder`]).
 fn network_account(
     fee_entry: Option<(NoteScriptRoot, AssetAmount)>,
     allowed_note_roots: BTreeSet<NoteScriptRoot>,
@@ -129,13 +130,7 @@ fn network_account(
         .active_fee_policy(policy.into())
         .build();
 
-    Ok(AccountBuilder::new([7; 32])
-        .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: allowed_note_roots,
-            allowed_tx_script_roots: BTreeSet::new(),
-            fee_policy_manager,
-        })
+    Ok(NetworkAccount::builder([7; 32], allowed_note_roots, fee_policy_manager)?
         .with_component(BasicWallet)
         .build_existing()?)
 }
@@ -169,9 +164,8 @@ fn build_test(
 
     let fee_entry = feature_note_fee.map(|fee| (feature_notes[0].script().root(), fee));
 
-    // The account consumes the feature notes (all sharing one P2ANY root) and their FEE_SPONSORSHIP
-    // notes, so both roots must be allowlisted for the auth procedure to reach fee collection.
-    let mut allowed_note_roots = BTreeSet::from([FeeSponsorshipNote::script_root()]);
+    // The account consumes the feature notes (all sharing one P2ANY root), so allowlist that root.
+    let mut allowed_note_roots = BTreeSet::new();
     if let Some(feature_note) = feature_notes.first() {
         allowed_note_roots.insert(feature_note.script().root());
     }
@@ -324,11 +318,11 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     let custom_fee =
         custom_fee_amount_for(set_policy_note.recipient().storage().commitment(), 0, 0);
 
-    // Allowlist both the set_fee_policy note and the FEE_SPONSORSHIP note that pays its fee.
+    // Allowlist the set_fee_policy note; `build_fee_account_with_switching` allowlists the
+    // FEE_SPONSORSHIP note that pays its fee.
     let account = build_fee_account_with_switching(
         owner_account_id,
-        BTreeSet::from([set_policy_note.script().root(), FeeSponsorshipNote::script_root()]),
-        BTreeSet::new(),
+        BTreeSet::from([set_policy_note.script().root()]),
     )?;
 
     let sponsorship_note = Note::from(
@@ -400,9 +394,8 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
 
     // The set_fee_policy note aborts inside its note script, before the auth allowlist check runs,
-    // so the allowlists can stay empty.
-    let account =
-        build_fee_account_with_switching(owner_account_id, BTreeSet::new(), BTreeSet::new())?;
+    // so the allowlist can stay empty.
+    let account = build_fee_account_with_switching(owner_account_id, BTreeSet::new())?;
 
     // This root exists in the account code, but is not in the fee policy allowlist.
     let invalid_policy_root = AuthNetworkAccount::get_fee_policy_root().as_word();
@@ -485,9 +478,8 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
 
     // The set_fee_policy note aborts inside its note script, before the auth allowlist check runs,
-    // so the allowlists can stay empty.
-    let account =
-        build_fee_account_with_switching(owner_account_id, BTreeSet::new(), BTreeSet::new())?;
+    // so the allowlist can stay empty.
+    let account = build_fee_account_with_switching(owner_account_id, BTreeSet::new())?;
 
     let set_policy_note_script =
         create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
@@ -624,11 +616,10 @@ async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> 
     let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
     let other_feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
 
-    // Both feature notes are P2ANY notes and so share one script root; allowlist it and the
-    // FEE_SPONSORSHIP root.
+    // Both feature notes are P2ANY notes and so share one script root; allowlist it.
     let network_account = network_account(
         Some((feature_note.script().root(), AssetAmount::new(FEE_AMOUNT)?)),
-        BTreeSet::from([feature_note.script().root(), FeeSponsorshipNote::script_root()]),
+        BTreeSet::from([feature_note.script().root()]),
     )?;
     builder.add_account(network_account.clone())?;
 
@@ -747,23 +738,17 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
         other_fee_asset_id,
     )?;
 
-    // Both feature notes are P2ID notes sharing one script root; allowlist it and the
-    // FEE_SPONSORSHIP root.
-    let network_account = AccountBuilder::new([7; 32])
-        .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::from([
-                P2idNote::script_root(),
-                FeeSponsorshipNote::script_root(),
-            ]),
-            allowed_tx_script_roots: BTreeSet::new(),
-            fee_policy_manager: FeePolicyManager::builder()
-                .fee_faucet_id(fee_faucet_id()?)
-                .active_fee_policy(policy)
-                .build(),
-        })
-        .with_component(BasicWallet)
-        .build_existing()?;
+    // Both feature notes are P2ID notes sharing one script root; allowlist it.
+    let network_account = NetworkAccount::builder(
+        [7; 32],
+        BTreeSet::from([P2idNote::script_root()]),
+        FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id()?)
+            .active_fee_policy(policy)
+            .build(),
+    )?
+    .with_component(BasicWallet)
+    .build_existing()?;
 
     builder.add_account(network_account.clone())?;
 

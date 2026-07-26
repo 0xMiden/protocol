@@ -73,8 +73,8 @@ impl ExpirationTransactionScript {
         Word::from([Felt::from(self.delta.get()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
-    /// The [`TransactionScriptRoot`] of the canonical script, to be allowlisted on a network
-    /// account via `AuthNetworkAccount::with_allowed_tx_scripts`.
+    /// The [`TransactionScriptRoot`] of the canonical script, allowlisted on a network account by
+    /// default via `AuthNetworkAccount::new`.
     pub fn script_root() -> TransactionScriptRoot {
         EXPIRATION_TX_SCRIPT.root()
     }

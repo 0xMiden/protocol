@@ -1440,6 +1440,30 @@ pub proc get_item_patch
     # => [INITIAL_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix]
 end
 
+#! Gets the slot ID of the storage slot at the provided index from the native account.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [slot_id_suffix, slot_id_prefix]
+#!
+#! Where:
+#! - index is the index of the slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+pub proc get_native_slot_id
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    exec.memory::get_native_account_active_storage_slots_ptr
+    add
+    # => [slot_ptr]
+
+    exec.get_slot_id_inner
+    # => [slot_id_suffix, slot_id_prefix]
+end
+
 #! Gets the slot ID of the storage slot at the provided index.
 #!
 #! WARNING: The index must be in bounds.
@@ -1460,6 +1484,23 @@ pub proc get_slot_id
     add
     # => [slot_ptr]
 
+    exec.get_slot_id_inner
+    # => [slot_id_suffix, slot_id_prefix]
+end
+
+
+#! Gets the slot ID of the storage slot pointed at by slot_ptr.
+#!
+#! WARNING: The slot_ptr must be valid.
+#!
+#! Inputs:  [slot_ptr]
+#! Outputs: [slot_id_suffix, slot_id_prefix]
+#!
+#! Where:
+#! - slot_ptr is the pointer to a slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+proc get_slot_id_inner
     dup add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
     # => [slot_id_prefix, slot_ptr]
 

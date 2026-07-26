@@ -85,10 +85,7 @@ impl TransactionEventId {
     ///
     /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged = matches!(
-            self,
-            Self::AuthRequest | Self::Unauthorized | Self::LinkMapSet | Self::LinkMapGet
-        );
+        let is_unprivileged = matches!(self, Self::AuthRequest | Self::Unauthorized);
         !is_unprivileged
     }
 

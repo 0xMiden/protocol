@@ -66,14 +66,17 @@ fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let note_roots: BTreeSet<NoteScriptRoot> =
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
-    let fee_policy_manager = zero_fee_policy_manager(
-        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
-    )?;
+    // Add the config note to the allowlist (it may be consumed to update the allowlists, and the
+    // auth flow needs a price for the config note, too).
+    let note_roots: BTreeSet<NoteScriptRoot> = allowed_note_script_roots
+        .into_iter()
+        .map(NoteScriptRoot::from_raw)
+        .chain([NetworkAccountConfigNote::script_root()])
+        .collect();
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
 
-    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
-        .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(allowed_tx_script_roots);
 
     Ok(AccountBuilder::new([0; 32])
         .with_components(auth_component)
@@ -364,8 +367,8 @@ fn build_owner_controlled_account(
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    // The config note is always allowlisted by `with_allowed_notes` and may be consumed to update
-    // the allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
+    // The config note is allowlisted explicitly below and may be consumed to update the
+    // allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
     // entry too.
     let scheduled_roots = note_roots
         .iter()
@@ -374,8 +377,15 @@ fn build_owner_controlled_account(
         .chain([NetworkAccountConfigNote::script_root()]);
     let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
 
-    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
-        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
+    let auth_component = AuthNetworkAccount::custom(
+        note_roots
+            .iter()
+            .copied()
+            .chain([NetworkAccountConfigNote::script_root()])
+            .collect(),
+        fee_policy_manager,
+    )?
+    .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
         .with_components(auth_component)
