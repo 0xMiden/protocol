@@ -365,7 +365,7 @@ proc commit_map_slot_patch
     push.0 loc_store.4
     # => [slot_idx, RATE0, RATE1, CAPACITY]
 
-    dup exec.account::get_slot_id
+    dup exec.account::get_native_slot_id
     # => [slot_id_suffix, slot_id_prefix, slot_idx, RATE0, RATE1, CAPACITY]
 
     loc_store.0 loc_store.1
@@ -764,7 +764,7 @@ pub proc was_nonce_incremented
     exec.memory::get_init_nonce
     # => [init_nonce]
 
-    exec.memory::get_account_nonce
+    exec.memory::get_native_account_nonce
     # => [current_nonce, init_nonce]
 
     neq
