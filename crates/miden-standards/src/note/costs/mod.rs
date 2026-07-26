@@ -198,10 +198,15 @@ impl NetworkNotePricer {
         &self.fee_parameters
     }
 
-    /// Returns the fee charged for a network transaction of the given cycle count, including
+    /// Returns the fee charged for a network transaction with the given fee inputs, including
     /// the configured safety margin.
-    pub fn fee_for_cycles(&self, cycles: u32) -> Result<AssetAmount, NotePricingError> {
-        let fee = self.fee_for_cycles_raw(cycles)?;
+    ///
+    /// The kernel fee is computed entirely by [`TransactionFee::compute_fee`] under the
+    /// pricer's [`FeeParameters`], so fee terms added to the kernel formula in the future flow
+    /// through without changes here; the safety margin is charged on top as
+    /// `verification_base_fee * safety_margin_verification_cycles`.
+    pub fn fee(&self, fee_inputs: TransactionFee) -> Result<AssetAmount, NotePricingError> {
+        let fee = self.fee_raw(fee_inputs)?;
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
     }
 
@@ -211,7 +216,7 @@ impl NetworkNotePricer {
     /// consumption creates:
     ///
     /// ```text
-    /// price(N) = fee_for_cycles(cycles(N)) + sum(price(M) for M created by consuming N)
+    /// price(N) = fee(cycles(N)) + sum(price(M) for M created by consuming N)
     /// ```
     ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
@@ -225,17 +230,13 @@ impl NetworkNotePricer {
         AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
     }
 
-    /// Returns the fee for the given cycle count as a raw `u64`.
-    fn fee_for_cycles_raw(&self, cycles: u32) -> Result<u64, NotePricingError> {
-        let fee =
-            TransactionFee::new(cycles).map_err(|_zero_cycles| NotePricingError::ZeroCycles)?;
-        // The kernel formula lives in TransactionFee; the margin is added on top. The
-        // verification cycles are at most 32 + u32::MAX, so the addition cannot overflow a u64.
-        let verification_cycles = u64::from(fee.verification_cycles())
-            + u64::from(self.safety_margin_verification_cycles);
-        u64::from(self.fee_parameters.verification_base_fee())
-            .checked_mul(verification_cycles)
-            .ok_or(NotePricingError::FeeOverflow)
+    /// Returns the fee for the given fee inputs as a raw `u64`.
+    fn fee_raw(&self, fee_inputs: TransactionFee) -> Result<u64, NotePricingError> {
+        let kernel_fee = fee_inputs.compute_fee(&self.fee_parameters).as_u64();
+        // A u32 * u32 product widened to u64 cannot overflow; the sum with the kernel fee can.
+        let margin_fee = u64::from(self.fee_parameters.verification_base_fee())
+            * u64::from(self.safety_margin_verification_cycles);
+        kernel_fee.checked_add(margin_fee).ok_or(NotePricingError::FeeOverflow)
     }
 
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
@@ -246,7 +247,11 @@ impl NetworkNotePricer {
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
         let cost = (self.lookup)(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
-        let own_fee = self.fee_for_cycles_raw(cost.cycles())?;
+        // Cycle counts enter the fee computation only here, where the looked-up cost is
+        // converted into the kernel's fee inputs.
+        let fee_inputs = TransactionFee::new(cost.cycles())
+            .map_err(|_zero_cycles| NotePricingError::ZeroCycles)?;
+        let own_fee = self.fee_raw(fee_inputs)?;
 
         if pricing_stack.contains(&root) {
             return Ok(own_fee);
@@ -288,36 +293,49 @@ mod tests {
             .build()
     }
 
+    fn fee_inputs(cycles: u32) -> TransactionFee {
+        TransactionFee::new(cycles).expect("test cycle counts are non-zero")
+    }
+
     #[test]
-    fn fee_for_cycles_implements_the_kernel_formula() {
+    fn fee_implements_the_kernel_formula() {
         let no_margin = pricer(500, 0);
 
         // ilog2(2^16) = 16 -> 17 verification cycles.
-        assert_eq!(no_margin.fee_for_cycles(1 << 16).unwrap().as_u64(), 500 * 17);
+        assert_eq!(no_margin.fee(fee_inputs(1 << 16)).unwrap().as_u64(), 500 * 17);
         // The fee only changes at the next power of two.
-        assert_eq!(no_margin.fee_for_cycles((1 << 17) - 1).unwrap().as_u64(), 500 * 17);
-        assert_eq!(no_margin.fee_for_cycles(1 << 17).unwrap().as_u64(), 500 * 18);
+        assert_eq!(no_margin.fee(fee_inputs((1 << 17) - 1)).unwrap().as_u64(), 500 * 17);
+        assert_eq!(no_margin.fee(fee_inputs(1 << 17)).unwrap().as_u64(), 500 * 18);
         // The smallest non-zero cycle count is charged one verification cycle.
-        assert_eq!(no_margin.fee_for_cycles(1).unwrap().as_u64(), 500);
+        assert_eq!(no_margin.fee(fee_inputs(1)).unwrap().as_u64(), 500);
     }
 
     #[test]
     fn default_safety_margin_adds_one_verification_cycle() {
         let default_margin =
             NetworkNotePricer::builder().fee_parameters(fee_parameters(500)).build();
-        assert_eq!(default_margin.fee_for_cycles(1 << 16).unwrap().as_u64(), 500 * 18);
+        assert_eq!(default_margin.fee(fee_inputs(1 << 16)).unwrap().as_u64(), 500 * 18);
+    }
+
+    /// Fabricated broken lookup returning a zero-cycle cost, which the real tables never
+    /// contain.
+    fn zero_cost_lookup(_root: NoteScriptRoot) -> Option<NoteCost> {
+        Some(NoteCost::new(0, Vec::new()))
     }
 
     #[test]
-    fn zero_cycles_cannot_be_priced() {
-        assert!(matches!(pricer(500, 0).fee_for_cycles(0), Err(NotePricingError::ZeroCycles)));
+    fn zero_cycle_costs_cannot_be_priced() {
+        let broken = custom_pricer(zero_cost_lookup);
+        let root = NoteScriptRoot::from_array([1, 0, 0, 0]);
+        assert!(matches!(broken.price(root), Err(NotePricingError::ZeroCycles)));
     }
 
     #[test]
     fn overflowing_fee_is_rejected() {
-        // u32::MAX * (31 + 1 + u32::MAX) overflows a u64.
+        // The kernel fee (u32::MAX * 32) plus the margin fee (u32::MAX * u32::MAX) overflows a
+        // u64.
         assert!(matches!(
-            pricer(u32::MAX, u32::MAX).fee_for_cycles(u32::MAX),
+            pricer(u32::MAX, u32::MAX).fee(fee_inputs(u32::MAX)),
             Err(NotePricingError::FeeOverflow)
         ));
     }
@@ -412,8 +430,8 @@ mod tests {
     #[test]
     fn swap_price_includes_the_p2id_payback_leg() {
         let pricer = pricer(500, 0);
-        let p2id_fee = pricer.fee_for_cycles(P2ID_CONSUMPTION_CYCLES).unwrap().as_u64();
-        let swap_fee = pricer.fee_for_cycles(SWAP_CONSUMPTION_CYCLES).unwrap().as_u64();
+        let p2id_fee = pricer.fee(fee_inputs(P2ID_CONSUMPTION_CYCLES)).unwrap().as_u64();
+        let swap_fee = pricer.fee(fee_inputs(SWAP_CONSUMPTION_CYCLES)).unwrap().as_u64();
         assert_eq!(pricer.price(SwapNote::script_root()).unwrap().as_u64(), swap_fee + p2id_fee);
     }
 }

@@ -119,6 +119,7 @@ mod tests {
     use miden_protocol::account::AccountId;
     use miden_protocol::block::FeeParameters;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use miden_protocol::transaction::TransactionFee;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
         NetworkNotePricer,
@@ -196,14 +197,19 @@ mod tests {
         assert_eq!(p2id_cost.cycles(), P2ID_CONSUMPTION_CYCLES);
     }
 
+    fn fee(pricer: &NetworkNotePricer, cycles: u32) -> u64 {
+        let fee_inputs = TransactionFee::new(cycles).expect("cycle counts are non-zero");
+        pricer.fee(fee_inputs).expect("fee should be representable").as_u64()
+    }
+
     #[test]
     fn claim_price_includes_the_mint_and_p2id_legs() {
         let pricer = pricer();
 
         // A CLAIM's price covers the whole chain it triggers: CLAIM + MINT + P2ID.
-        let expected = pricer.fee_for_cycles(CLAIM_CONSUMPTION_CYCLES).unwrap().as_u64()
-            + pricer.fee_for_cycles(MINT_CONSUMPTION_CYCLES).unwrap().as_u64()
-            + pricer.fee_for_cycles(P2ID_CONSUMPTION_CYCLES).unwrap().as_u64();
+        let expected = fee(&pricer, CLAIM_CONSUMPTION_CYCLES)
+            + fee(&pricer, MINT_CONSUMPTION_CYCLES)
+            + fee(&pricer, P2ID_CONSUMPTION_CYCLES);
         assert_eq!(pricer.price(ClaimNote::script_root()).unwrap().as_u64(), expected);
     }
 }
