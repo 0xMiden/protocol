@@ -24,9 +24,10 @@ the `claude` and `gh` CLIs (authenticated), and `make` / the Rust toolchain.
    ```bash
    claude --permission-mode bypassPermissions --worktree issue-1234 --tmux
    ```
-3. **Run `/work <issue-number>`** and plan it out together. The command starts
-   in plan mode and writes no code until you approve. Base defaults to `next`
-   (`--base <branch>` to override).
+3. **Run `/work <issue-number>`** and plan it out together. The command first
+   checks open PRs for overlapping work, then starts in plan mode and writes
+   no code until you approve. Base defaults to `next` (`--base <branch>` to
+   override).
 4. **Let it work.** Claude implements the plan and opens a **draft** PR when
    it's ready.
 5. **Review the PR on GitHub.** If changes are needed, tell Claude to apply
@@ -40,10 +41,13 @@ Hooks in `settings.json` enforce quality at the commit, push, and PR boundaries:
 
 - `pre_commit_lint` - runs `make lint` before any commit.
 - `pre_push_test` - runs `make test` before any push.
-- `pre_push_review` - runs the code-reviewer and security-reviewer agents
-  before any push; blocks on Critical/Important/Warning findings.
 - `pre_pr_draft` - every PR must be created with `--draft`; a human promotes
   it to ready-for-review.
+- `pre_pr_review` and `post_commit_review` - run the code-reviewer and
+  security-reviewer agents before PR creation and after every commit. On a
+  Critical/Important/Warning finding, `pre_pr_review` blocks PR creation;
+  `post_commit_review` can't undo a commit already made, so it halts the
+  agent until the finding is fixed and the commit amended.
 - `post_pr_create_changelog` - classifies the diff and either requires a
   CHANGELOG entry or applies the `no changelog` label.
 
