@@ -9,7 +9,7 @@ impl ExecutedTransaction {
             u32::try_from(self.measurements().total_cycles())
                 .expect("total number of cycles should fit in u32"),
         )
-        .expect("an executed transaction has a non-zero cycle count")
+        .expect("an executed transaction's cycle count is non-zero and within the kernel bound")
         .compute_fee(self.tx_inputs().block_header().fee_parameters())
     }
 

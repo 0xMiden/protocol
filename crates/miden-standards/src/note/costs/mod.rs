@@ -32,7 +32,7 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::transaction::TransactionFee;
+use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
 
 use crate::note::{
     BurnNote,
@@ -142,10 +142,11 @@ impl StandardNote {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum NotePricingError {
-    /// A note cost of zero cycles was priced; the cost tables never contain zero, so this
-    /// indicates a broken custom lookup.
-    #[error("cannot price a note with zero consumption cycles")]
-    ZeroCycles,
+    /// A note's cycle cost could not form valid transaction fee inputs (zero or above the
+    /// kernel's maximum); the cost tables never contain such values, so this indicates a
+    /// broken custom lookup.
+    #[error("a note's cycle cost does not form valid transaction fee inputs")]
+    InvalidCycles(#[source] TransactionFeeError),
     /// The computed fee overflowed during accumulation.
     #[error("computed fee overflows u64")]
     FeeOverflow,
@@ -163,9 +164,8 @@ pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
-/// The fee formula lives in [`TransactionFee`] (the Rust mirror of the transaction kernel's
-/// `compute_fee`); this pricer adds a safety margin expressed in extra verification cycles on
-/// top. The default margin of one (verification cycle) prices a note as-if it consumed at
+/// The fee formula lives in [`TransactionFee`]; this pricer adds a safety margin expressed in
+/// extra verification cycles on top. The default margin prices a note as-if it consumed at
 /// twice its measured cycles.
 ///
 /// The chain's current [`FeeParameters`] provide the verification base fee. The cost lookup
@@ -249,8 +249,8 @@ impl NetworkNotePricer {
         let cost = (self.lookup)(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
-        let fee_inputs = TransactionFee::new(cost.cycles())
-            .map_err(|_zero_cycles| NotePricingError::ZeroCycles)?;
+        let fee_inputs =
+            TransactionFee::new(cost.cycles()).map_err(NotePricingError::InvalidCycles)?;
         let own_fee = self.fee_raw(fee_inputs)?;
 
         if pricing_stack.contains(&root) {
@@ -274,6 +274,7 @@ impl NetworkNotePricer {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::MAX_TX_EXECUTION_CYCLES;
     use miden_protocol::account::AccountId;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
@@ -323,19 +324,26 @@ mod tests {
         Some(NoteCost::new(0, Vec::new()))
     }
 
+    /// Fabricated broken lookup returning a cost above the kernel's maximum cycle count.
+    fn oversized_cost_lookup(_root: NoteScriptRoot) -> Option<NoteCost> {
+        Some(NoteCost::new(u32::MAX, Vec::new()))
+    }
+
     #[test]
-    fn zero_cycle_costs_cannot_be_priced() {
-        let broken = custom_pricer(zero_cost_lookup);
+    fn out_of_range_cycle_costs_cannot_be_priced() {
         let root = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        assert!(matches!(broken.price(root), Err(NotePricingError::ZeroCycles)));
+        for lookup in [zero_cost_lookup as CostLookupFn, oversized_cost_lookup] {
+            let broken = custom_pricer(lookup);
+            assert!(matches!(broken.price(root), Err(NotePricingError::InvalidCycles(_))));
+        }
     }
 
     #[test]
     fn overflowing_fee_is_rejected() {
-        // The kernel fee (u32::MAX * 32) plus the margin fee (u32::MAX * u32::MAX) overflows a
+        // The kernel fee (u32::MAX * 30) plus the margin fee (u32::MAX * u32::MAX) overflows a
         // u64.
         assert!(matches!(
-            pricer(u32::MAX, u32::MAX).fee(fee_inputs(u32::MAX)),
+            pricer(u32::MAX, u32::MAX).fee(fee_inputs(MAX_TX_EXECUTION_CYCLES)),
             Err(NotePricingError::FeeOverflow)
         ));
     }

@@ -147,9 +147,7 @@ mod tests {
     ];
 
     /// Ties the hand-written per-variant tables to each other and each variant's cost to its
-    /// own table constant: a copy-paste swap between two variants could otherwise hide inside
-    /// the bench snapshot tests' 5% drift tolerance (CONFIG_AGG_BRIDGE and
-    /// DEREGISTER_AGG_FAUCET differ by 0.05%).
+    /// own table constant.
     #[test]
     fn variant_tables_are_self_consistent_and_pin_the_table_constants() {
         for note in ALL_NOTES {
