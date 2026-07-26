@@ -120,8 +120,7 @@ impl ProvenTransaction {
             output_notes.commitment(),
         );
 
-        let proven_transaction = Self {
-            id,
+        Self::from_parts(
             account_update,
             input_notes,
             output_notes,
@@ -129,9 +128,7 @@ impl ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
-        };
-
-        proven_transaction.validate()
+        )
     }
 
     // PUBLIC ACCESSORS
@@ -197,31 +194,54 @@ impl ProvenTransaction {
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
 
-    /// Validates the transaction.
+    /// Creates a [`ProvenTransaction`] from its raw parts, enforcing all invariants.
+    ///
+    /// Both [`ProvenTransaction::new`] and [`ProvenTransaction::read_from`] funnel through this
+    /// constructor so that every invariant is checked on both the creation and deserialization
+    /// paths.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The transaction is empty, which is the case if the account state is unchanged or the
-    ///   number of input notes is zero.
-    /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
-    ///   not match its declared account delta commitment.
-    fn validate(self) -> Result<Self, ProvenTransactionError> {
+    /// - The transaction is empty (account state unchanged and no input notes).
+    /// - The same note ID appears as both an unauthenticated input and an output (circular
+    ///   dependency, see <https://github.com/0xMiden/protocol/issues/2796>).
+    /// - The commitment computed on the actual account delta does not match its declared
+    ///   account delta commitment.
+    fn from_parts(
+        account_update: TxAccountUpdate,
+        input_notes: InputNotes<InputNoteCommitment>,
+        output_notes: OutputNotes,
+        ref_block_num: BlockNumber,
+        ref_block_commitment: Word,
+        expiration_block_num: BlockNumber,
+        proof: ExecutionProof,
+    ) -> Result<Self, ProvenTransactionError> {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
-        if self.account_update.initial_state_commitment()
-            == self.account_update.final_state_commitment()
-            && self.input_notes.commitment().is_empty()
+        if account_update.initial_state_commitment()
+            == account_update.final_state_commitment()
+            && input_notes.commitment().is_empty()
         {
             return Err(ProvenTransactionError::EmptyTransaction);
         }
 
-        match &self.account_update.details {
+        // Disallow creating and consuming notes with the same ID in a transaction. This is a
+        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
+        // This is only relevant for unauthenticated notes (notes with a header), since only these
+        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
+        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
+            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
+                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
+            }
+        }
+
+        match &account_update.details {
             // The patch commitment cannot be validated for private account updates. It will be
             // validated as part of transaction proof verification implicitly.
             AccountUpdateDetails::Private => (),
             AccountUpdateDetails::Public(account_patch) => {
-                let expected_commitment = self.account_update.account_patch_commitment;
+                let expected_commitment = account_update.account_patch_commitment;
                 let actual_commitment = account_patch.to_commitment();
                 if expected_commitment != actual_commitment {
                     return Err(ProvenTransactionError::AccountPatchCommitmentMismatch(Box::from(
@@ -233,7 +253,23 @@ impl ProvenTransaction {
             },
         }
 
-        Ok(self)
+        let id = TransactionId::new(
+            account_update.initial_state_commitment(),
+            account_update.final_state_commitment(),
+            input_notes.commitment(),
+            output_notes.commitment(),
+        );
+
+        Ok(Self {
+            id,
+            account_update,
+            input_notes,
+            output_notes,
+            ref_block_num,
+            ref_block_commitment,
+            expiration_block_num,
+            proof,
+        })
     }
 }
 
@@ -268,8 +304,7 @@ impl Deserializable for ProvenTransaction {
             output_notes.commitment(),
         );
 
-        let proven_transaction = Self {
-            id,
+        Self::from_parts(
             account_update,
             input_notes,
             output_notes,
@@ -277,11 +312,8 @@ impl Deserializable for ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
-        };
-
-        proven_transaction
-            .validate()
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        )
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
