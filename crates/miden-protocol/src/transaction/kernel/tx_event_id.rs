@@ -27,6 +27,9 @@ pub enum TransactionEventId {
     AccountVaultBeforeRemoveAsset = ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_ID,
     AccountVaultAfterRemoveAsset = ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID,
 
+    AccountVaultBeforeMintAsset = ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID,
+    AccountVaultBeforeBurnAsset = ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID,
+
     AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
     AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
 
@@ -102,6 +105,8 @@ impl TransactionEventId {
             Self::AccountVaultAfterAddAsset => &ACCOUNT_VAULT_AFTER_ADD_ASSET_NAME,
             Self::AccountVaultBeforeRemoveAsset => &ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_NAME,
             Self::AccountVaultAfterRemoveAsset => &ACCOUNT_VAULT_AFTER_REMOVE_ASSET_NAME,
+            Self::AccountVaultBeforeMintAsset => &ACCOUNT_VAULT_BEFORE_MINT_ASSET_NAME,
+            Self::AccountVaultBeforeBurnAsset => &ACCOUNT_VAULT_BEFORE_BURN_ASSET_NAME,
             Self::AccountBeforeAssetDeltaComputation => {
                 &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
             },
@@ -163,6 +168,13 @@ impl TryFrom<EventId> for TransactionEventId {
             },
             ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID => {
                 Ok(TransactionEventId::AccountVaultAfterRemoveAsset)
+            },
+
+            ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeMintAsset)
+            },
+            ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeBurnAsset)
             },
 
             ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID => {

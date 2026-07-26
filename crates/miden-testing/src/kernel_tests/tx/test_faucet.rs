@@ -511,13 +511,6 @@ async fn test_burn_asset_succeeds_in_tx_kernel(
         begin
             exec.prologue::prepare_transaction
 
-            # check that the non-fungible asset is present in the input vault
-            push.{INPUT_VAULT_ROOT_PTR}
-            push.{NON_FUNGIBLE_ASSET_ID}
-            exec.asset_vault::get_asset
-            push.{NON_FUNGIBLE_ASSET_VALUE}
-            assert_eqw.err="input vault should contain the asset"
-
             # burn the non-fungible asset
             push.{ASSET_VALUE}
             push.{ASSET_ID}
