@@ -113,13 +113,6 @@ impl ProvenTransaction {
             }
         }
 
-        let id = TransactionId::new(
-            account_update.initial_state_commitment(),
-            account_update.final_state_commitment(),
-            input_notes.commitment(),
-            output_notes.commitment(),
-        );
-
         Self::from_parts(
             account_update,
             input_notes,
@@ -296,13 +289,6 @@ impl Deserializable for ProvenTransaction {
         let ref_block_commitment = Word::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
-
-        let id = TransactionId::new(
-            account_update.initial_state_commitment(),
-            account_update.final_state_commitment(),
-            input_notes.commitment(),
-            output_notes.commitment(),
-        );
 
         Self::from_parts(
             account_update,
