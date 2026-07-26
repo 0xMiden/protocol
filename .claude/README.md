@@ -24,9 +24,9 @@ the `claude` and `gh` CLIs (authenticated), and `make` / the Rust toolchain.
    ```bash
    claude --permission-mode bypassPermissions --worktree issue-1234 --tmux
    ```
-3. **Run `/work <issue-number>`** and plan it out together. The command first
-   checks open PRs for overlapping work, then starts in plan mode and writes
-   no code until you approve. Base defaults to `next` (`--base <branch>` to
+3. **Run `/work <issue-number>`** and plan it out together. The command
+   checks for duplicate PRs, then starts in plan mode and writes no code
+   until you approve. Base defaults to `next` (`--base <branch>` to
    override).
 4. **Let it work.** Claude implements the plan and opens a **draft** PR when
    it's ready.
