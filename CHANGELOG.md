@@ -16,6 +16,7 @@
 - [BREAKING] Renamed the `FeeManager` component to `FeePolicyManager` and turned it from an account component into the fee-policy configuration of the `AuthNetworkAccount` component ([#3353](https://github.com/0xMiden/protocol/pull/3353)).
 - [BREAKING] Renamed `ConstantFeePolicy` to `BasicConstantFeePolicy` ([#3391](https://github.com/0xMiden/protocol/issues/3391)).
 - [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
+- Added a documentation on every authority-gated procedure that it must be invoked as a direct `call` entrypoint and never `exec`ed from a compound procedure ([#3417](https://github.com/0xMiden/protocol/pull/3417)).
 
 ### Fixes
 
