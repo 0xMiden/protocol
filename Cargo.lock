@@ -1913,7 +1913,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
- "walkdir",
 ]
 
 [[package]]
@@ -1922,6 +1921,7 @@ version = "0.16.0-beta.1"
 dependencies = [
  "fs-err",
  "miden-assembly",
+ "miden-core",
  "miden-mast-package",
  "miden-package-registry",
  "miden-project",

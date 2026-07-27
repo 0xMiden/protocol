@@ -5,7 +5,6 @@ use std::path::Path;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Path as MasmPath, ProjectTargetSelector};
-use miden_core::events::EventId;
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::{Package, PackageExport};
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
@@ -15,12 +14,12 @@ use miden_protocol_build_utils::{
     PROJECT_MANIFEST,
     assemble_project,
     extract_all_masm_errors,
+    extract_all_masm_events,
     generate_error_file,
-    is_masm_file,
+    generate_event_file,
     write_release_package,
 };
 use regex::Regex;
-use walkdir::WalkDir;
 
 // CONSTANTS
 // ================================================================================================
@@ -40,6 +39,7 @@ const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
 const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
+const TX_EVENTS_RS_FILE: &str = "transaction_events.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
 const PROTOCOL_LIB_ERRORS_RS_FILE: &str = "protocol_errors.rs";
 
@@ -97,7 +97,9 @@ fn main() -> Result<()> {
 
     generate_error_constants(&source_dir, &build_dir)?;
 
-    generate_event_constants(&source_dir, &target_dir)?;
+    // extract the event definitions from the MASM sources and generate their constants
+    let events = extract_all_masm_events(&source_dir)?;
+    generate_event_file(target_dir.join(TX_EVENTS_RS_FILE), &events)?;
 
     Ok(())
 }
@@ -413,114 +415,4 @@ fn validate_tx_kernel_category(errors: &[NamedError]) -> Result<()> {
     }
 
     Ok(())
-}
-
-// EVENT CONSTANTS FILE GENERATION
-// ================================================================================================
-
-/// Reads all MASM files from the `asm_source_dir` and extracts event definitions,
-/// then generates the transaction_events.rs file with constants.
-fn generate_event_constants(asm_source_dir: &Path, target_dir: &Path) -> Result<()> {
-    // Extract all event definitions from MASM files
-    let events = extract_all_event_definitions(asm_source_dir)?;
-
-    // Generate the events file in OUT_DIR
-    let event_file_content = generate_event_file_content(&events).into_diagnostic()?;
-    let event_file_path = target_dir.join("transaction_events.rs");
-    fs::write(event_file_path, event_file_content).into_diagnostic()?;
-
-    Ok(())
-}
-
-/// Extract all `const X=event("x")` definitions from all MASM files
-fn extract_all_event_definitions(asm_source_dir: &Path) -> Result<BTreeMap<String, String>> {
-    // collect mappings event path to const variable name, we want a unique mapping
-    // which we use to generate the constants and enum variant names
-    let mut events = BTreeMap::new();
-
-    // Walk all MASM files
-    for entry in WalkDir::new(asm_source_dir) {
-        let entry = entry.into_diagnostic()?;
-        if !is_masm_file(entry.path()).into_diagnostic()? {
-            continue;
-        }
-        let file_contents = fs::read_to_string(entry.path()).into_diagnostic()?;
-        extract_event_definitions_from_file(&mut events, &file_contents, entry.path())?;
-    }
-
-    Ok(events)
-}
-
-/// Extract event definitions from a single MASM file in form of `const ${X} = event("${x::path}")`.
-fn extract_event_definitions_from_file(
-    events: &mut BTreeMap<String, String>,
-    file_contents: &str,
-    file_path: &Path,
-) -> Result<()> {
-    let regex = Regex::new(r#"const\s*(\w+)\s*=\s*event\(\s*"([^"]+)"\s*\)"#).unwrap();
-
-    for capture in regex.captures_iter(file_contents) {
-        let const_name = capture.get(1).expect("const name should be captured");
-        let event_path = capture.get(2).expect("event path should be captured");
-
-        let event_path = event_path.as_str();
-        let const_name = const_name.as_str();
-
-        let const_name_wo_suffix =
-            if let Some((const_name_wo_suffix, _)) = const_name.rsplit_once("_EVENT") {
-                const_name_wo_suffix.to_string()
-            } else {
-                const_name.to_owned()
-            };
-
-        if !event_path.starts_with("miden::") {
-            return Err(miette::miette!("unhandled `event_path={event_path}`"));
-        }
-
-        // Check for duplicates with different definitions
-        if let Some(existing_const_name) = events.get(event_path) {
-            if existing_const_name != &const_name_wo_suffix {
-                println!(
-                    "cargo:warning=Duplicate event definition found {event_path} with different definitions names:
-                    '{existing_const_name}' vs '{const_name}' in {}",
-                    file_path.display()
-                );
-            }
-        } else {
-            events.insert(event_path.to_owned(), const_name_wo_suffix.to_owned());
-        }
-    }
-
-    Ok(())
-}
-
-/// Generate the content of the transaction_events.rs file
-fn generate_event_file_content(
-    events: &BTreeMap<String, String>,
-) -> std::result::Result<String, std::fmt::Error> {
-    use std::fmt::Write;
-
-    let mut output = String::new();
-
-    writeln!(&mut output, "// This file is generated by build.rs, do not modify")?;
-    writeln!(&mut output)?;
-
-    // Generate constants
-    //
-    // Note: If we ever encounter two constants `const X`, that are both named `X` we will error
-    // when attempting to generate the rust code. Currently this is a side-effect, but we
-    // want to error out as early as possible:
-    // TODO: make the error out at build-time to be able to present better error hints
-    for (event_path, event_name) in events {
-        let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
-        debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {event_name}_ID: u64 = {value};")?;
-        writeln!(
-            &mut output,
-            "static {event_name}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{event_path}\");"
-        )?;
-        writeln!(&mut output)?;
-    }
-
-    Ok(output)
 }

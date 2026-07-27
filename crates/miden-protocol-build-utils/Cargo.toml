@@ -18,6 +18,7 @@ test    = false
 [dependencies]
 fs-err                 = { workspace = true }
 miden-assembly         = { features = ["std"], workspace = true }
+miden-core             = { workspace = true }
 miden-mast-package     = { features = ["std"], workspace = true }
 miden-package-registry = { features = ["std"], workspace = true }
 miden-project          = { features = ["serde", "std"], workspace = true }
