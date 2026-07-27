@@ -43,9 +43,9 @@ pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 ///
 /// The chain's current [`FeeParameters`] provide the verification base fee. The cost lookup
 /// resolves script roots to their benchmarked costs and defaults to the widest lookup
-/// ([`AgglayerNote::note_cost`]), pricing agglayer and standard notes through a single pricer;
-/// pass [`StandardNote::note_cost`](miden_standards::note::StandardNote::note_cost) or a
-/// custom lookup to narrow or extend it.
+/// ([`AgglayerNote::note_cost`]), covering agglayer and standard notes; pass
+/// [`StandardNote::note_cost`](miden_standards::note::StandardNote::note_cost) or a custom
+/// lookup to narrow or extend it.
 ///
 /// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
 /// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
