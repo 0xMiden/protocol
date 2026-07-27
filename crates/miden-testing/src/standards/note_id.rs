@@ -1,9 +1,9 @@
-//! Tests for the `miden::standards::note::note_id` module.
+//! Tests for the `miden::standards::note::note_id` module and the kernel note ID accessors it
+//! builds on.
 //!
-//! Input and active note IDs are read from the kernel's prologue cache via the `get_note_id`
-//! accessors, while output note IDs are recomputed from the four commitments the kernel exposes.
-//! These tests pin both paths against the Rust [`NoteId`](miden_protocol::note::NoteId) so they
-//! cannot drift.
+//! Input and active note IDs come from the kernel's `get_note_id` accessors, while output note IDs
+//! are computed from the four commitments the kernel exposes. These tests pin both paths against
+//! the Rust [`NoteId`](miden_protocol::note::NoteId) so they cannot drift.
 
 use miden_protocol::Word;
 use miden_protocol::account::Account;
@@ -43,20 +43,20 @@ fn two_note_tx() -> anyhow::Result<MockTransaction> {
         .build()
 }
 
-/// Recomputing a note's ID in MASM must match `Note::id()` in Rust, for both notes of the fixture
+/// A note's ID read from MASM must match `Note::id()` in Rust, for both notes of the fixture
 /// (note 0 is bare, note 1 carries an asset and attachments) through both the indexed and the
-/// active-note procedure.
+/// active-note accessor.
 #[rstest]
 #[tokio::test]
-async fn compute_active_and_input_note_id_matches_rust(
+async fn active_and_input_note_id_matches_rust(
     #[values(0, 1)] note_index: u8,
-    #[values("compute_active_note_id", "compute_input_note_id")] procedure: &str,
+    #[values("active_note", "input_note")] module: &str,
 ) -> anyhow::Result<()> {
     let tx_context = two_note_tx()?;
 
     // The input variant takes the note index from the stack; the active variant reads the active
     // note, so the test points the active-note pointer at the note under test instead.
-    let setup_code = if procedure == "compute_active_note_id" {
+    let setup_code = if module == "active_note" {
         format!(
             "push.{note_index} exec.memory::get_input_note_ptr exec.memory::set_active_input_note_ptr"
         )
@@ -68,13 +68,13 @@ async fn compute_active_and_input_note_id_matches_rust(
         r#"
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::prologue
-        use miden::standards::note::note_id
+        use miden::protocol::{module}
 
         begin
             exec.prologue::prepare_transaction
 
             {setup_code}
-            exec.note_id::{procedure}
+            exec.{module}::get_note_id
             # => [NOTE_ID]
 
             # truncate the stack
