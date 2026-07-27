@@ -205,14 +205,17 @@ impl TransactionEvent {
                 Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
             },
             TransactionEventId::AccountVaultBeforeAddAsset
-            | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET_ID, ASSET_VALUE, account_vault_root_ptr]
+            | TransactionEventId::AccountVaultBeforeRemoveAsset
+            | TransactionEventId::AccountVaultBeforeMintAsset
+            | TransactionEventId::AccountVaultBeforeBurnAsset => {
+                // Expected stack state:
+                // [event, ASSET_ID, ASSET_VALUE, {input,account}_vault_root_ptr]
                 let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(9);
 
                 let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "AccountVaultBefore{Add,Remove}Asset",
+                        handler: "AccountVaultBefore{Add,Remove,Mint,Burn}Asset",
                         source,
                     }
                 })?;
