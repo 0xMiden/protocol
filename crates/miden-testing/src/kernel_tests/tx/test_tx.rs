@@ -788,7 +788,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         ref_block_commitment,
         0,
         TransactionSummaryUserParams::new(
-            [0, 0, 0, 0, 0, 0, final_nonce.as_canonical_u64() as u32].map(Felt::from),
+            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0, 0].map(Felt::from),
         ),
     );
 

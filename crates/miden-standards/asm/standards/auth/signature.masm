@@ -50,7 +50,7 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #! It first increments the nonce of the account, independent of whether the account's state has
 #! changed or not. Then it computes and signs the following message (in memory order):
 #! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!  BLOCK_COMMITMENT, [expiration_delta, 0, 0, 0], [0, 0, 0, final_nonce]]
+#!  BLOCK_COMMITMENT, [expiration_delta, final_nonce, 0, 0], [0, 0, 0, 0]]
 #!
 #! Including the final_nonce is necessary for replay protection. The reference block commitment is
 #! included to commit to the transaction creator's intended reference block of the transaction
@@ -68,8 +68,8 @@ pub proc authenticate_transaction
     exec.native_account::incr_nonce
     # => [final_nonce, PK_COMM, scheme_id]
 
-    # Pass the final nonce as the last user param and zero the remaining ones.
-    push.0.0.0.0.0.0
+    # Pass the final nonce as the first user param and zero the remaining ones.
+    push.0.0.0.0.0.0 movup.6
     # => [user_params(7), PK_COMM, scheme_id]
 
     # Compute the message that is signed. The summary preimage is inserted into the advice map

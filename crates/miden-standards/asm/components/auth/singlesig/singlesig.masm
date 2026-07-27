@@ -33,7 +33,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #! It then increments the nonce of the account, independent of whether the account's state has
 #! changed or not, and computes and signs the following message (in memory order):
 #! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!  BLOCK_COMMITMENT, [expiration_delta, 0, 0, 0], [0, 0, 0, final_nonce]]
+#!  BLOCK_COMMITMENT, [expiration_delta, final_nonce, 0, 0], [0, 0, 0, 0]]
 #!
 #! Including the final_nonce is necessary for replay protection. The reference block commitment is
 #! included to commit to the transaction creator's intended reference block of the transaction
