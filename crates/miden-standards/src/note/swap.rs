@@ -88,13 +88,13 @@ impl SwapNote {
         /// Defaults to [`NoteType::Private`], which only the counterparties the creator shares
         /// the note with can fill. A SWAP note offered to the network at large must be set to
         /// [`NoteType::Public`] explicitly.
-        #[builder(default = NoteType::Private)]
+        #[builder(default)]
         note_type: NoteType,
         /// Defaults to [`NoteType::Private`], so the payback note's details are known only to the
         /// creator, who needs the [`NoteDetails`] returned by [`SwapNote::payback_note_details`]
         /// to consume it. Set to [`NoteType::Public`] to have the network store those
         /// details instead.
-        #[builder(default = NoteType::Private)]
+        #[builder(default)]
         payback_note_type: NoteType,
     ) -> Result<Self, NoteError> {
         if requested_asset == offered_asset {
