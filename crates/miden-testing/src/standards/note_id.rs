@@ -52,7 +52,7 @@ async fn active_and_input_note_id_matches_rust(
     #[values(0, 1)] note_index: u8,
     #[values("active_note", "input_note")] module: &str,
 ) -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
+    let mock_tx = two_note_tx()?;
 
     // The input variant takes the note index from the stack; the active variant reads the active
     // note, so the test points the active-note pointer at the note under test instead.
@@ -83,9 +83,9 @@ async fn active_and_input_note_id_matches_rust(
         "#
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
-    let expected = tx_context.input_notes().get_note(note_index as usize).note().id();
+    let expected = mock_tx.input_notes().get_note(note_index as usize).note().id();
     assert_eq!(exec_output.get_stack_word(0), expected.as_word());
 
     Ok(())
@@ -96,8 +96,8 @@ async fn active_and_input_note_id_matches_rust(
 #[rstest]
 #[tokio::test]
 async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
-    let note_id = tx_context.input_notes().get_note(note_index as usize).note().id();
+    let mock_tx = two_note_tx()?;
+    let note_id = mock_tx.input_notes().get_note(note_index as usize).note().id();
 
     let code = format!(
         r#"
@@ -119,7 +119,7 @@ async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> 
         note_id = note_id.as_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), Word::from([1, note_index as u32, 0, 0]));
 
@@ -129,7 +129,7 @@ async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> 
 /// An ID that matches no input note reports is_found = 0.
 #[tokio::test]
 async fn find_input_note_by_id_reports_missing_note() -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
+    let mock_tx = two_note_tx()?;
     let unknown_id = Word::from([11, 12, 13, 14u32]);
 
     let code = format!(
@@ -151,7 +151,7 @@ async fn find_input_note_by_id_reports_missing_note() -> anyhow::Result<()> {
         "#
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), Word::empty());
 
@@ -180,7 +180,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
         .build()?;
     let tag = expected_note.metadata().tag();
 
-    let tx_context = TestTransactionBuilder::new(account).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).build()?;
 
     let code = format!(
         r#"
@@ -224,7 +224,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
         attachment_scheme = attachment_scheme.as_u16(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), expected_note.id().as_word());
 

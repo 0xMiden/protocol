@@ -12,7 +12,7 @@ use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::account::auth::NetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicy,
@@ -26,6 +26,7 @@ pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
 pub mod config_note;
+pub mod costs;
 pub mod deregister_note;
 pub mod errors;
 pub mod eth_types;
@@ -70,56 +71,56 @@ pub use utils::Keccak256Output;
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-static AGGLAYER_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static AGGLAYER_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
     Package::read_from_bytes_trusted(bytes).expect("shipped AggLayer package is well-formed")
 });
 
-static BRIDGE_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static BRIDGE_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped bridge component package is well-formed")
 });
 
-static FAUCET_COMPONENT_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static FAUCET_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped faucet component package is well-formed")
 });
 
-/// Returns the AggLayer Library containing all agglayer modules, including the note scripts.
+/// Returns the AggLayer package containing all agglayer modules, including the note scripts.
 ///
-/// The note scripts this crate builds are external references into this library rather than
+/// The note scripts this crate builds are external references into this package rather than
 /// self-contained copies of it, so it must be registered with the MAST store of any executor that
 /// runs AggLayer notes. This mirrors the standard note scripts, which are external references into
-/// the standards library. `TransactionMastStore::new` preloads both libraries, so the in-repo
+/// the standards library. `TransactionMastStore::new` preloads both packages, so the in-repo
 /// prover and test executors resolve AggLayer notes automatically; a downstream executor that
-/// supplies its own `DataStore` must register this library into it (e.g. via
+/// supplies its own `DataStore` must register this package into it (e.g. via
 /// `TransactionMastStore::insert_package`), exactly as it must already register the standards
-/// library to run standard notes.
-pub fn agglayer_library() -> Package {
-    AGGLAYER_LIBRARY.clone()
+/// package to run standard notes.
+pub fn agglayer_package() -> Package {
+    AGGLAYER_PACKAGE.clone()
 }
 
-/// Resolves the note script exported at `path` from the AggLayer library.
+/// Resolves the note script exported at `path` from the AggLayer package.
 ///
 /// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
 /// e.g. `::agglayer::notes::claim::main`.
 pub(crate) fn note_script(path: &str) -> NoteScript {
-    NoteScript::from_library_reference(&AGGLAYER_LIBRARY, Path::new(path))
-        .expect("agglayer library contains the note script procedure")
+    NoteScript::from_package_reference(&AGGLAYER_PACKAGE, Path::new(path))
+        .expect("agglayer package contains the note script procedure")
 }
 
-/// Returns the Bridge component library.
-fn agglayer_bridge_component_library() -> Package {
-    BRIDGE_COMPONENT_LIBRARY.clone()
+/// Returns the Bridge component package.
+fn agglayer_bridge_component_package() -> Package {
+    BRIDGE_COMPONENT_PACKAGE.clone()
 }
 
-/// Returns the Faucet component library.
-fn agglayer_faucet_component_library() -> Package {
-    FAUCET_COMPONENT_LIBRARY.clone()
+/// Returns the Faucet component package.
+fn agglayer_faucet_component_package() -> Package {
+    FAUCET_COMPONENT_PACKAGE.clone()
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS
@@ -153,31 +154,32 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
-/// Returns the `FeeManager` installed on the agglayer bridge and faucet accounts so their auth
-/// procedure can collect sponsored fees and answer sponsorship fee estimates. The active policy
-/// schedules an explicit 0 fee for every note script in `auth`'s allowlist, so it charges and
-/// collects nothing while still letting fee estimation resolve every note the account can consume;
-/// a real fee faucet and schedule are configured when fees are enabled on these accounts.
+/// Returns the `FeePolicyManager` installed on the agglayer bridge and faucet accounts so their
+/// auth procedure can collect sponsored fees and answer sponsorship fee estimates. The active
+/// policy schedules an explicit 0 fee for every note script in `auth`'s allowlist, so it charges
+/// and collects nothing while still letting fee estimation resolve every note the account can
+/// consume; a real fee faucet and schedule are configured when fees are enabled on these accounts.
 ///
 /// Because every scheduled fee is 0, the fee asset (and hence the placeholder faucet id below)
 /// never funds a transfer; only the components' procedure code contributes to the account code
 /// commitment, which `build.rs` mirrors when computing the compile-time commitment constants (the
 /// fee schedule entries and the manager's fee asset id are storage, so they do not affect the
 /// commitment).
-fn agglayer_fee_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeeManager {
+fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
     // A placeholder public faucet id; see the note above on why its value is immaterial.
     let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
         .expect("placeholder fee faucet id is valid");
 
-    // A constant fee policy aborts fee estimation for note scripts without a schedule entry, so
-    // enumerate the allowlist and schedule each as free.
-    let mut constant_fee_policy = ConstantFeePolicy::new();
+    // The basic constant fee policy aborts fee estimation for note scripts without a schedule
+    // entry, so enumerate the allowlist and schedule each as free.
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in allowed_notes {
-        constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
-    FeeManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+    FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(fee_faucet_id)
         .build()
 }
@@ -205,14 +207,14 @@ fn create_bridge_account_builder(
     roles: BridgeRoles,
     network_id: u32,
 ) -> AccountBuilder {
-    NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes())
+    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerBridge::allowed_notes());
+    NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))
         .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })
-        .with_components(agglayer_fee_manager(AggLayerBridge::allowed_notes()))
 }
 
 /// Creates a new bridge account with the standard configuration.
@@ -267,14 +269,14 @@ fn create_agglayer_faucet_builder(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
-    NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes())
+    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerFaucet::allowed_notes());
+    NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
         .expect("faucet note allowlist is non-empty")
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
-        .with_components(agglayer_fee_manager(AggLayerFaucet::allowed_notes()))
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.

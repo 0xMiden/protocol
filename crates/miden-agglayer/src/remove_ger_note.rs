@@ -16,7 +16,7 @@ use crate::{ExitRoot, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the REMOVE_GER note script procedure in the agglayer library.
+/// Path to the REMOVE_GER note script procedure in the agglayer package.
 const REMOVE_GER_SCRIPT_PATH: &str = "::agglayer::notes::remove_ger::main";
 
 // Initialize the REMOVE_GER note script only once

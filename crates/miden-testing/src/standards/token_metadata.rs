@@ -157,7 +157,7 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
 fn build_pol_faucet_account() -> Account {
     AccountBuilder::new([4u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(build_pol_faucet_metadata())
         .build()
         .unwrap()
@@ -212,7 +212,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .with_component(Pausable::unpaused())
         .build()?;
@@ -249,7 +249,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .with_component(Pausable::unpaused())
         .build()?;
@@ -414,7 +414,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .with_component(Pausable::unpaused())
         .build()?;
@@ -458,7 +458,7 @@ async fn is_field_mutable_checks(
     #[case] expected: u8,
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .with_component(Pausable::unpaused())
         .build()?;
@@ -498,7 +498,7 @@ fn faucet_with_metadata_storage_layout() {
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .build()
         .unwrap();
@@ -538,7 +538,7 @@ fn verify_faucet_with_max_name_and_description(
 
     let mut builder = AccountBuilder::new(seed)
         .account_type(account_type)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .with_component(Pausable::unpaused());
 
@@ -701,7 +701,7 @@ async fn test_field_setter_owner_succeeds(
     let mock_tx = mock_chain
         .build_transaction(faucet_account.id())
         .unauthenticated_input_note(note)
-        .extend_advice_map(hash, field_advice_map_value(&new_data))
+        .add_advice_map_entry(hash, field_advice_map_value(&new_data))
         .with_source_manager(source_manager)
         .build()?;
 

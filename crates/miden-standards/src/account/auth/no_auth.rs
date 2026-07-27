@@ -77,7 +77,7 @@ mod tests {
     fn test_no_auth_component() {
         // Create an account using the NoAuth component
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

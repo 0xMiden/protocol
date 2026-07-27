@@ -32,7 +32,7 @@ use crate::{TestTransactionBuilder, assert_execution_error};
 /// Tests that account::get_balance returns the correct amount.
 #[tokio::test]
 async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let asset_id = AssetId::new_fungible(faucet_id);
@@ -56,11 +56,11 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         ASSET_ID = asset_id.to_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
-        tx_context.account().vault().get_balance(asset_id)?.as_u64()
+        mock_tx.account().vault().get_balance(asset_id)?.as_u64()
     );
 
     Ok(())
@@ -69,7 +69,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 /// Tests that asset_vault::peek_asset returns the correct asset.
 #[tokio::test]
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let asset_id = AssetId::new_fungible(faucet_id);
 
@@ -106,11 +106,11 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
         ASSET_ID = asset_id.to_word()
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
-        tx_context.account().vault().get(asset_id).unwrap().to_value_word()
+        mock_tx.account().vault().get(asset_id).unwrap().to_value_word()
     );
 
     Ok(())
@@ -118,11 +118,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
-    // Disable lazy loading otherwise the handler will return an error before the transaction kernel
-    // can abort, which is what we want to test.
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
-        .disable_lazy_loading()
-        .build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
     let non_fungible_asset =
@@ -141,7 +137,9 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
-    let exec_result = tx_context.execute_code(&code).await;
+    // Execute without lazy loading, otherwise the handler will return an error before the
+    // transaction kernel can abort, which is what we want to test.
+    let exec_result = mock_tx.execute_code_without_lazy_loading(&code).await;
 
     assert_execution_error!(
         exec_result,
@@ -153,9 +151,9 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let non_fungible_asset =
-        tx_context.account().vault().assets().find(Asset::is_non_fungible).unwrap();
+        mock_tx.account().vault().assets().find(Asset::is_non_fungible).unwrap();
 
     let code = format!(
         "
@@ -175,7 +173,7 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_ID = non_fungible_asset.to_id_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_element(0), ONE);
 
@@ -184,9 +182,9 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_has_initial_asset() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let non_fungible_asset =
-        tx_context.account().vault().assets().find(Asset::is_non_fungible).unwrap();
+        mock_tx.account().vault().assets().find(Asset::is_non_fungible).unwrap();
 
     let code = format!(
         "
@@ -223,7 +221,7 @@ async fn test_has_initial_asset() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     // The asset is reported both before and after its removal from the current vault.
     assert_eq!(exec_output.get_stack_element(0).as_canonical_u64(), 1);
@@ -234,8 +232,8 @@ async fn test_has_initial_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mut account_vault = mock_tx.account().vault().clone();
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT;
     let add_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
@@ -259,7 +257,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
         FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
@@ -279,8 +277,8 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mut account_vault = mock_tx.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT + 1;
@@ -303,7 +301,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
         FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
-    let exec_result = tx_context.execute_code(&code).await;
+    let exec_result = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_result, ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED);
     assert!(account_vault.add_asset(Asset::Fungible(add_fungible_asset)).is_err());
@@ -313,9 +311,9 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mut account_vault = mock_tx.account().vault().clone();
     let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
         &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]),
     ));
@@ -339,7 +337,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = add_non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
@@ -356,9 +354,9 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
-    let mut account_vault = tx_context.account().vault().clone();
+    let mut account_vault = mock_tx.account().vault().clone();
     let non_fungible_asset_details =
         NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
     let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
@@ -380,7 +378,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
-    let exec_result = tx_context.execute_code(&code).await;
+    let exec_result = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS);
     assert!(account_vault.add_asset(non_fungible_asset).is_err());
@@ -390,8 +388,8 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mut account_vault = mock_tx.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT;
@@ -416,7 +414,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let remaining = account_vault
         .remove_asset(Asset::Fungible(remove_fungible_asset))?
@@ -433,7 +431,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
 #[tokio::test]
 async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT + 1;
     let remove_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
@@ -454,7 +452,7 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
-    let exec_result = tx_context.execute_code(&code).await;
+    let exec_result = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(
         exec_result,
@@ -466,8 +464,8 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mut account_vault = mock_tx.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT - 1;
@@ -492,7 +490,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
         FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let remaining = account_vault
         .remove_asset(Asset::Fungible(remove_fungible_asset))?
@@ -509,9 +507,9 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
 #[tokio::test]
 async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into().unwrap();
-    let mut account_vault = tx_context.account().vault().clone();
+    let mut account_vault = mock_tx.account().vault().clone();
 
     let non_fungible_asset_details =
         NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
@@ -540,7 +538,7 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
         FUNGIBLE_ASSET_VALUE = non_existent_non_fungible_asset.to_value_word(),
     );
 
-    let exec_result = tx_context.execute_code(&code).await;
+    let exec_result = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND);
     assert_matches!(
@@ -554,8 +552,8 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let mut account_vault = tx_context.account().vault().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mut account_vault = mock_tx.account().vault().clone();
     let non_fungible_asset = account_vault
         .assets()
         .find(|asset| asset.id().composition().is_none())
@@ -580,7 +578,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert!(
         account_vault.remove_asset(non_fungible_asset)?.is_none(),

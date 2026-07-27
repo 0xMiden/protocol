@@ -20,15 +20,6 @@ use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PAR
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
 
-# EVENTS
-#=================================================================================================
-
-# Emission of an equivalent to `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT`, use in `add_input_note_assets_to_vault`
-const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT =
-    event(
-        "miden::protocol::account::vault_before_add_asset"
-    )
-
 # ERRORS
 # =================================================================================================
 

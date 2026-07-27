@@ -21,7 +21,7 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -85,7 +85,7 @@ fn main() -> Result<()> {
     let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
 
     // compile agglayer library (includes note scripts) and seed it into the registry
-    compile_agglayer_lib(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
+    compile_agglayer_package(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
 
     // compile account components (thin wrappers per component) and return their packages
     let component_packages = compile_account_components(
@@ -134,7 +134,7 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
 
 /// Assembles the agglayer library project in "{source_dir}/agglayer" into a package, saves it to
 /// the `target_dir`, and seeds it into the `registry` so the account components can resolve it.
-fn compile_agglayer_lib(
+fn compile_agglayer_package(
     source_dir: &Path,
     target_dir: &Path,
     assembler: Assembler,
@@ -238,11 +238,6 @@ fn generate_agglayer_constants(
         // policies alongside the agglayer faucet component, since
         // fungible::mint_and_send requires these for access control.
         //
-        // The allowlist lives in storage, not code, and here we only care about the code commitment
-        // of the accounts, so we can init the allowlists with dummy values.
-        let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
-        let auth_component = AuthNetworkAccount::with_allowed_notes(placeholder_allowlist)
-            .expect("placeholder allowlist is non-empty");
         // Use a dummy owner for commitment computation - the actual owner is set at runtime. Only
         // the component code (not storage) contributes to the code commitment.
         let dummy_owner = miden_protocol::account::AccountId::try_from(
@@ -250,8 +245,27 @@ fn generate_agglayer_constants(
         )
         .unwrap();
 
-        let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(auth_component), agglayer_component];
+        // Both the bridge and the faucet install a FeePolicyManager (see
+        // `agglayer_fee_policy_manager` in lib.rs). Only its procedure code affects the commitment,
+        // so the fee faucet id backing the policy is immaterial here. The manager's active policy,
+        // allowed policies and fee asset initialize the fee-policy slots the auth component owns,
+        // but those are storage (not code) and so do not affect the commitment either.
+        let fee_policy_manager = FeePolicyManager::builder()
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .fee_faucet_id(dummy_owner)
+            .build();
+
+        // The allowlist lives in storage, not code, and here we only care about the code commitment
+        // of the accounts, so we can init the allowlists with dummy values.
+        let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
+        let auth_component = AuthNetworkAccount::new(placeholder_allowlist, fee_policy_manager)
+            .expect("placeholder allowlist is non-empty");
+
+        // The auth component expands into itself followed by the fee policy manager's components,
+        // matching `NetworkAccount::builder`, which installs them via `with_components` before the
+        // account-specific components below.
+        let mut components: Vec<AccountComponent> = auth_component.into_iter().collect();
+        components.push(agglayer_component);
         if component_name == "bridge" {
             // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
             // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. An
@@ -282,15 +296,6 @@ fn generate_agglayer_constants(
 
             components.extend(token_policy_manager);
         }
-
-        // Both the bridge and the faucet install a FeeManager (see `agglayer_fee_manager` in
-        // lib.rs). Only its procedure code affects the commitment, so the fee faucet id configured
-        // on the manager is immaterial here.
-        let fee_manager = FeeManager::builder()
-            .active_fee_policy(ConstantFeePolicy::new().into())
-            .fee_faucet_id(dummy_owner)
-            .build();
-        components.extend(fee_manager);
 
         // use `AccountCode` to merge codes of agglayer and authentication components
         let account_code =

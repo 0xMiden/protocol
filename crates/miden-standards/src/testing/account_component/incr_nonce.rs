@@ -14,7 +14,7 @@ const INCR_NONCE_AUTH_CODE: &str = "
     end
 ";
 
-static INCR_NONCE_AUTH_LIBRARY: LazyLock<Package> = LazyLock::new(|| {
+static INCR_NONCE_AUTH_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("incr_nonce", INCR_NONCE_AUTH_CODE)
         .expect("incr nonce code should be valid")
@@ -32,7 +32,7 @@ impl From<IncrNonceAuthComponent> for AccountComponent {
         let metadata = AccountComponentMetadata::new("miden::testing::incr_nonce_auth")
             .with_description("Testing auth component that always increments nonce");
 
-        AccountComponent::new(INCR_NONCE_AUTH_LIBRARY.clone(), vec![], metadata)
+        AccountComponent::new(INCR_NONCE_AUTH_PACKAGE.clone(), vec![], metadata)
             .expect("component should be valid")
     }
 }
