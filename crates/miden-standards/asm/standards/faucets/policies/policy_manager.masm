@@ -81,6 +81,9 @@ end
 
 #! Sets active mint policy root.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -119,6 +122,9 @@ pub proc get_burn_policy
 end
 
 #! Sets active burn policy root.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -186,6 +192,9 @@ pub proc get_send_policy
 end
 
 #! Sets active send policy root.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Writes into [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`].
 #!
@@ -257,6 +266,9 @@ pub proc get_receive_policy
 end
 
 #! Sets active receive policy root.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Writes into [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`].
 #!

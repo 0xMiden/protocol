@@ -48,6 +48,9 @@ const ERR_AUTHORITY_FROZEN = "authority is frozen"
 
 #! Freezes the account's authority-gated surface as an emergency switch.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `assert_authorized`).
+#!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
@@ -65,6 +68,9 @@ pub proc freeze
 end
 
 #! Unfreezes the account's authority-gated surface, clearing the emergency switch.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `assert_authorized`).
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]

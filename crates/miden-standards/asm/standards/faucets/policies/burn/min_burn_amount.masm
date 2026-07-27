@@ -80,6 +80,9 @@ end
 
 #! Sets the minimum burn amount.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Inputs:  [new_min_burn_amount, pad(15)]
 #! Outputs: [pad(16)]
 #!

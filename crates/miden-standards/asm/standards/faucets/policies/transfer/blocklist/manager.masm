@@ -21,6 +21,9 @@ use miden::standards::faucets::policies::transfer::blocklist
 
 #! Block an account, gated by the account-wide `Authority` component.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
@@ -38,6 +41,9 @@ pub proc block_account
 end
 
 #! Unblock an account, gated by the account-wide `Authority` component.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
 #! Outputs: [pad(16)]

@@ -67,6 +67,9 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and stores it in a map with value
 #! GER_KNOWN_FLAG to indicate the GER is known.
 #!
@@ -108,6 +111,9 @@ end
 
 #! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
 #! removed-GER keccak256 hash chain.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), overwrites the map entry with
 #! [0, 0, 0, 0] (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`) while asserting
@@ -193,6 +199,9 @@ pub proc assert_valid_ger
 end
 
 #! Registers a faucet in the bridge's faucet registry, token registry, and metadata map.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Stores conversion metadata for the faucet using a sub-key scheme in faucet_metadata_map:
 #! 1. KEY [0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]  (origin address part 1)
@@ -347,6 +356,9 @@ end
 
 #! Stores the metadata hash for a registered faucet in the bridge's faucet metadata map.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! This is the second call in the faucet registration flow (called after register_faucet).
 #! Stores the metadata hash using sub-keys 2 and 3 in faucet_metadata_map:
 #! - KEY [2, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_LO
@@ -392,6 +404,9 @@ end
 #! is currently registered first. Afterwards `assert_faucet_registered` and
 #! `lookup_faucet_by_token_address` fail for the faucet, so in-flight B2AGG / CLAIM notes targeting
 #! it are rejected.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
 #! Outputs: [pad(16)]

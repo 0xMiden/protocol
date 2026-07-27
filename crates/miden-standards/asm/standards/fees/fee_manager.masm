@@ -139,6 +139,9 @@ end
 
 #! Sets active fee policy root.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -162,6 +165,9 @@ pub proc set_fee_policy(new_policy_root: AccountProcedureRoot)
 end
 
 #! Adds a fee policy root to the allowed fee policy roots map.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Registers `FEE_POLICY_ROOT` as an allowed alternative that `set_fee_policy` may later activate.
 #! Adding a root that is already allowed is a no-op. This only mutates the allowlist gate; the root
@@ -193,6 +199,9 @@ pub proc add_allowed_fee_policy(policy_root: AccountProcedureRoot)
 end
 
 #! Removes a fee policy root from the allowed fee policy roots map.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Writes the empty word for `FEE_POLICY_ROOT`, which `set_fee_policy` treats as not allowed.
 #! Removing a root that is not currently allowed is a no-op. The active fee policy's root cannot be

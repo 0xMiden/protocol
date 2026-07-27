@@ -61,6 +61,9 @@ end
 
 #! Adds a note script root to the account's note script allowlist.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so an added root only takes effect from the next transaction.
 #!
@@ -87,6 +90,9 @@ pub proc add_allowed_note_script(script_root: NoteScriptRoot)
 end
 
 #! Removes a note script root from the account's note script allowlist.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so a removed root only takes effect from the next transaction.
@@ -116,6 +122,9 @@ end
 
 #! Adds a tx script root to the account's tx script allowlist.
 #!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
+#!
 #! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so an added root only takes effect from the next transaction.
 #!
@@ -142,6 +151,9 @@ pub proc add_allowed_tx_script(script_root: TransactionScriptRoot)
 end
 
 #! Removes a tx script root from the account's tx script allowlist.
+#!
+#! This procedure MUST be a direct `call` entrypoint; never `exec` it from a compound procedure,
+#! or the `Authority` role check resolves to the wrong root (see `authority::assert_authorized`).
 #!
 #! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
 #! transaction's initial state, so a removed root only takes effect from the next transaction.
