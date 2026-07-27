@@ -123,7 +123,8 @@ pub(crate) async fn execute_note_on_faucet(
     note: &Note,
 ) -> anyhow::Result<()> {
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[note.id()], &[])?
+        .build_transaction(faucet_id)
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -165,7 +166,8 @@ async fn pausable_manager_pause_fails_when_sender_not_owner() -> anyhow::Result<
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_note.id())
         .build()?
         .execute()
         .await;
@@ -192,7 +194,8 @@ async fn pausable_manager_unpause_fails_when_sender_not_owner() -> anyhow::Resul
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_unpause_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_unpause_note.id())
         .build()?
         .execute()
         .await;
@@ -381,7 +384,8 @@ async fn rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> 
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pause_note.id())
         .build()?
         .execute()
         .await;
@@ -411,7 +415,8 @@ async fn rbac_unmapped_procedure_falls_back_to_admin() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_note).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_note.id())
         .build()?
         .execute()
         .await;
@@ -490,7 +495,8 @@ async fn pausable_transfer_succeeds_when_unpaused() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target.id(), &[note.id()], &[])?
+        .build_transaction(target.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -524,7 +530,8 @@ async fn pausable_transfer_fails_when_paused() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target.id(), &[note.id()], &[])?
+        .build_transaction(target.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -563,7 +570,8 @@ async fn pausable_transfer_resumes_after_unpause() -> anyhow::Result<()> {
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     mock_chain
-        .build_tx_context(target.id(), &[note.id()], &[])?
+        .build_transaction(target.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -614,7 +622,7 @@ async fn pausable_mint_fails_when_paused() -> anyhow::Result<()> {
         miden_standards::code_builder::CodeBuilder::default().compile_tx_script(&tx_script_code)?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -659,7 +667,8 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[burn_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
         .build()?
         .execute()
         .await;
@@ -732,7 +741,8 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     // Now try to update max_supply — should fail because set_max_supply has
     // `exec.pausable::assert_not_paused` after the authority check.
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[set_max_supply_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_max_supply_note.id())
         .build()?
         .execute()
         .await;

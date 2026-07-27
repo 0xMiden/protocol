@@ -37,6 +37,7 @@ use super::{
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSigAcl, NetworkAccount};
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -573,7 +574,7 @@ pub fn create_singlesig_user_fungible_faucet(
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_asset_callbacks(asset_callbacks)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -593,7 +594,7 @@ pub fn create_multisig_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -613,7 +614,7 @@ pub fn create_guarded_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -635,11 +636,12 @@ pub fn create_network_fungible_faucet(
     faucet: FungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
+    fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
 
-    NetworkAccount::builder(init_seed, note_allowlist)
+    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
         .with_asset_callbacks(asset_callbacks)
         .with_component(faucet)

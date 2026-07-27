@@ -83,9 +83,9 @@ fn compute_fee_code(
 #[tokio::test]
 async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -101,7 +101,7 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
             exec.sys::truncate_stack
         end
     ";
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
     assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());
@@ -115,9 +115,9 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
 #[tokio::test]
 async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -132,7 +132,7 @@ async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyho
             exec.sys::truncate_stack
         end
     ";
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
     assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());
@@ -145,12 +145,12 @@ async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyho
 #[tokio::test]
 async fn compute_fee_adds_extra_cycles() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
     let code = compute_fee_code("0.0.0.0", u64::from(NUM_EXTRA_CYCLES), 0);
     let verification_base_fee =
-        tx_context.tx_inputs().block_header().fee_parameters().verification_base_fee();
-    let exec_output = tx_context.execute_code(&code).await?;
+        mock_tx.tx_inputs().block_header().fee_parameters().verification_base_fee();
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     let expected_fee = verification_base_fee * EXPECTED_VERIFICATION_CYCLES;
 
@@ -204,11 +204,11 @@ async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
 #[tokio::test]
 async fn compute_fee_fails_on_non_u32_extra_cycles() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
 
     // A value that exceeds u32::MAX is not a valid number of extra cycles.
     let code = compute_fee_code("0.0.0.0", u64::from(u32::MAX) + 1, 0);
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
     // variant explicitly and assert on its error code.
@@ -230,13 +230,13 @@ async fn compute_fee_fails_on_exclude_notes_commitment_mismatch() -> anyhow::Res
     // Seed the advice map with indices that do not hash to the provided commitment.
     let (commitment, _) = build_exclude_notes_commitment(&[1, 2, 3]);
     let (_, mismatching_elements) = build_exclude_notes_commitment(&[1, 2, 4]);
-    let tx_context = mock_chain
-        .build_tx_context(account, &[], &[])?
-        .extend_advice_map(vec![(commitment, mismatching_elements)])
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .add_advice_map_entry(commitment, mismatching_elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), 0, 0);
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COMMITMENT_MISMATCH);
 
@@ -266,13 +266,13 @@ async fn compute_fee_fails_on_invalid_exclude_notes(
     let (mock_chain, account) = mock_chain_with_fee()?;
 
     let (commitment, elements) = build_exclude_notes_commitment(&exclude_indices);
-    let tx_context = mock_chain
-        .build_tx_context(account, &[], &[])?
-        .extend_advice_map(vec![(commitment, elements)])
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), 0, num_output_notes);
-    let exec_output = tx_context.execute_code(&code).await;
+    let exec_output = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_output, expected_error);
 
@@ -296,15 +296,15 @@ async fn compute_fee_accepts_sorted_in_bounds_exclude_notes(
     let (mock_chain, account) = mock_chain_with_fee()?;
 
     let (commitment, elements) = build_exclude_notes_commitment(&exclude_indices);
-    let tx_context = mock_chain
-        .build_tx_context(account, &[], &[])?
-        .extend_advice_map(vec![(commitment, elements)])
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = compute_fee_code(&commitment.to_string(), u64::from(NUM_EXTRA_CYCLES), 6);
     let verification_base_fee =
-        tx_context.tx_inputs().block_header().fee_parameters().verification_base_fee();
-    let exec_output = tx_context.execute_code(&code).await?;
+        mock_tx.tx_inputs().block_header().fee_parameters().verification_base_fee();
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     // Excluding notes does not affect the fee yet, so it is still `base_fee * verification_cycles`.
     let expected_fee = verification_base_fee * EXPECTED_VERIFICATION_CYCLES;

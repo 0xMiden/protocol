@@ -1,23 +1,32 @@
+use alloc::sync::Arc;
+use std::collections::BTreeSet;
+
 use miden_processor::ExecutionError;
+use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{AssetAmount, AssetId};
-use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-};
+use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager, FeePolicy};
+use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
+    ERR_FEE_POLICY_ROOT_IS_ACTIVE,
+    ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
+    ERR_SENDER_NOT_OWNER,
     ERR_TIMEFRAME_OR_PRIORITY_NOT_U32,
 };
+use miden_standards::note::FeeSponsorshipNote;
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -31,27 +40,36 @@ pub(super) fn fee_faucet_id() -> anyhow::Result<AccountId> {
     Ok(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)
 }
 
-/// The note script root priced in the fee schedule of the constant fee policy.
+/// The note script root priced in the fee schedule of the basic constant fee policy.
 pub(super) fn priced_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([1, 2, 3, 4])
 }
 
-/// The note script root scheduled with an explicit 0 fee in the constant fee policy.
+/// The note script root scheduled with an explicit 0 fee in the basic constant fee policy.
 fn free_root() -> NoteScriptRoot {
     NoteScriptRoot::from_array([5, 6, 7, 8])
 }
 
-/// Builds a `FeeManager` whose active policy is a `ConstantFeePolicy` charging [`FEE_AMOUNT`]
-/// (in the test faucet's asset) for notes with the [`priced_root`] script root and an explicit
-/// 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
+/// Builds a `FeePolicyManager` whose active policy is a `BasicConstantFeePolicy` charging
+/// [`FEE_AMOUNT`] (in the test faucet's asset) for notes with the [`priced_root`] script root and
+/// an explicit 0 fee for the [`free_root`] script root, and whose allowed-policies map additionally
 /// registers the user-defined [`custom_fee_policy`] for runtime switching.
-fn fee_manager() -> anyhow::Result<FeeManager> {
-    let constant_fee_policy = ConstantFeePolicy::new(fee_faucet_id()?)
+///
+/// Each root in `zero_fee_note_roots` is additionally scheduled at a 0 fee.
+fn fee_policy_manager(
+    zero_fee_note_roots: &BTreeSet<NoteScriptRoot>,
+) -> anyhow::Result<FeePolicyManager> {
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new()
         .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
         .with_fee(free_root(), AssetAmount::ZERO);
-    Ok(FeeManager::builder()
+    for note_root in zero_fee_note_roots {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
+    }
+
+    Ok(FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .allowed_fee_policy(custom_fee_policy()?)
         .build())
 }
@@ -63,20 +81,26 @@ pub(super) const CUSTOM_FEE_AMOUNT: u64 = 777;
 /// commitment, timeframe, and priority. The distinct timeframe and priority weights make a
 /// transposition of the two parameters detectable; the storage-commitment term proves the
 /// policy recovered the commitment from the recipient.
+///
+/// The commitment elements are field-summed and reduced to their low 32 bits, keeping the fee
+/// within a valid asset amount for any (hash-derived) commitment.
 pub(super) fn custom_fee_amount_for(
     storage_commitment: Word,
     timeframe: u64,
     priority: u64,
-) -> u64 {
-    let commitment_sum = (0..4).map(|idx| storage_commitment[idx].as_canonical_u64()).sum::<u64>();
-    CUSTOM_FEE_AMOUNT + 2 * timeframe + priority + commitment_sum
+) -> AssetAmount {
+    let elements = storage_commitment.as_elements();
+    let commitment_sum = elements[0] + elements[1] + elements[2] + elements[3];
+    let commitment_term = commitment_sum.as_canonical_u64() & u64::from(u32::MAX);
+    let amount = CUSTOM_FEE_AMOUNT + 2 * timeframe + priority + commitment_term;
+    AssetAmount::new(amount).expect("custom fee amount should not exceed the maximum asset amount")
 }
 
 /// The namespace under which the user-defined test policy is compiled.
 const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 
 /// Builds a user-defined fee policy component, mirroring how a contract developer would plug
-/// their own fee computation logic into the `FeeManager` via [`FeePolicy::custom`].
+/// their own fee computation logic into the `FeePolicyManager` via [`FeePolicy::custom`].
 ///
 /// The policy charges [`custom_fee_amount_for`] the note's storage commitment (recovered from
 /// RECIPIENT via the advice provider), timeframe, and priority. Pricing on parameters other than
@@ -93,8 +117,9 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
         use {{Asset, NoteRecipient}} from miden::protocol::types
 
         #! Fee policy charging a fixed amount plus twice the timeframe plus the priority plus the
-        #! sum of the storage commitment elements (recovered from the recipient via the advice
-        #! provider), in the fee asset the manager is configured with.
+        #! low 32 bits of the sum of the storage commitment elements, in the fee asset the manager
+        #! is configured with. The commitment term is bounded so the fee is always a valid asset
+        #! amount.
         #!
         #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
         #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
@@ -112,18 +137,19 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
             #     timeframe, priority, pad(2)]
 
-            # drop the script root and reduce the storage commitment to the sum of its elements
-            dropw add add add
-            # => [storage_commitment_sum, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
+            # drop the script root and reduce the storage commitment to the low 32 bits of the sum
+            # of its elements. The commitment's raw sum could exceed a valid asset amount so we
+            # take the low 32 bits.
+            dropw add add add u32split swap drop
+            # => [storage_commitment_term, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe,
             #     priority, pad(2)]
 
-            # keep the sum and the timeframe and priority as pricing inputs, dropping the
-            # remaining note parameters
+            # drop the remaining note parameters
             movdn.8 dropw dropw
-            # => [storage_commitment_sum, timeframe, priority, pad(10)]
+            # => [storage_commitment_term, timeframe, priority, pad(10)]
 
-            # charge the base amount plus twice the timeframe plus the priority plus the storage
-            # commitment sum
+            # charge the base amount plus twice the timeframe plus the priority plus the bounded
+            # storage commitment term
             swap mul.2 add add push.{CUSTOM_FEE_AMOUNT} add
             # => [fee_amount, pad(12)]
 
@@ -159,16 +185,22 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     Ok(FeePolicy::custom(root, [component])?)
 }
 
-/// Builds an account exposing the fee manager procedures, owned by `owner` via `Ownable2Step`
-/// with an owner-controlled `Authority` so the owner-gated `set_fee_policy` can be exercised.
-pub(super) fn build_fee_account_with_switching(owner: AccountId) -> anyhow::Result<Account> {
-    Ok(AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+/// Builds a network account exposing the fee policy manager procedures, owned by `owner` via
+/// `Ownable2Step` with an owner-controlled `Authority` so the owner-gated `set_fee_policy` can be
+/// exercised.
+///
+/// `allowed_note_roots` seeds the note-script allowlist, so callers must register the root of any
+/// note they consume against the account (the auth procedure rejects a transaction touching a
+/// non-allowlisted root). The FEE_SPONSORSHIP root is allowlisted by [`NetworkAccount::builder`].
+pub(super) fn build_fee_account_with_switching(
+    owner: AccountId,
+    allowed_note_roots: BTreeSet<NoteScriptRoot>,
+) -> anyhow::Result<Account> {
+    let fee_policy_manager = fee_policy_manager(&allowed_note_roots)?;
+    Ok(NetworkAccount::builder([1; 32], allowed_note_roots, fee_policy_manager)?
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_components(fee_manager()?)
         .build_existing()?)
 }
 
@@ -229,28 +261,61 @@ pub(super) fn estimate_note_fee_tx_script_code(
     )
 }
 
-/// Builds a note script that calls the owner-gated `set_fee_policy` with the given policy root.
-pub(super) fn create_set_fee_policy_note_script(policy_root: Word) -> String {
+/// Builds a note script that calls the owner-gated `fee_manager` procedure `proc_name` with the
+/// given policy root. Covers the procedures taking a single policy-root word: `set_fee_policy`,
+/// `add_allowed_fee_policy`, and `remove_allowed_fee_policy`.
+pub(super) fn create_fee_manager_note_script(proc_name: &str, policy_root: Word) -> String {
     format!(
         r#"
         use miden::standards::fees::fee_manager
 
         @note_script
         pub proc main
-            padw padw padw
             push.{policy_root}
-            call.fee_manager::set_fee_policy
-            dropw dropw dropw dropw
+            call.fee_manager::{proc_name}
+
+            dropw
         end
         "#
     )
 }
 
+/// Builds a note script that calls `get_fee_policy` and asserts the returned active fee policy root
+/// matches `expected_policy_root`.
+pub(super) fn create_get_fee_policy_note_script(expected_policy_root: Word) -> String {
+    format!(
+        r#"
+        use miden::standards::fees::fee_manager
+
+        @note_script
+        pub proc main
+            padw padw padw padw
+            call.fee_manager::get_fee_policy
+            # => [FEE_POLICY_ROOT, pad(12)]
+
+            push.{expected_policy_root}
+            assert_eqw.err="get_fee_policy should return the active fee policy root"
+            # => [pad(12)]
+            dropw dropw dropw
+        end
+        "#
+    )
+}
+
+/// Builds a private note carrying `note_script`, sent by `sender` and seeded from `seed`.
+fn build_sender_note(sender: AccountId, seed: u32, note_script: &str) -> anyhow::Result<Note> {
+    let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
+    Ok(NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .code(note_script)
+        .build()?)
+}
+
 // TESTS
 // ================================================================================================
 
-/// `FeeManager::estimate_note_fee`, invoked via `call` from a transaction script, dispatches to
-/// the active `ConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
+/// `FeePolicyManager::estimate_note_fee`, invoked via `call` from a transaction script, dispatches
+/// to the active `BasicConstantFeePolicy` and returns the policy's fee asset ID and the fee amount
 /// scheduled for the queried note script root. Roots scheduled with an explicit 0 fee estimate
 /// to an amount of 0.
 #[rstest]
@@ -261,18 +326,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
     #[case] queried_root: NoteScriptRoot,
     #[case] expected_amount: u64,
 ) -> anyhow::Result<()> {
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager()?)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    // The constant fee policy ignores the storage commitment, timeframe, and priority, so an
+    // The basic constant fee policy ignores the storage commitment, timeframe, and priority, so an
     // all-zero commitment and arbitrary non-zero timeframe and priority are passed.
     let tx_script_code = estimate_note_fee_tx_script_code(
         Word::empty(),
@@ -283,8 +337,33 @@ async fn estimate_note_fee_returns_scheduled_fee(
     );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
+    let mut builder = MockChain::builder();
+    let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // A note-less query transaction would be rejected as an empty no-op, so the account consumes a
+    // note. Its root is allowlisted and scheduled at a 0 fee so the auth procedure's fee collection
+    // stays a no-op.
+    let consumed_note = builder.add_p2any_note(sender.id(), NoteType::Public, [])?;
+    let consumed_root = consumed_note.script().root();
+
+    // The network auth procedure runs after the tx script and rejects any non-allowlisted tx script
+    // or input note, so allowlist both the estimate script and the consumed note.
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::from([consumed_root]),
+            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
+            fee_policy_manager: fee_policy_manager(&BTreeSet::from([consumed_root]))?,
+        })
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(consumed_note.id())
         .tx_script(tx_script)
         .tx_script_args(queried_root.as_word())
         .build()?
@@ -303,17 +382,6 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
     #[case] timeframe: u64,
     #[case] priority: u64,
 ) -> anyhow::Result<()> {
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager()?)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
     // The expected fee asset is irrelevant since the call aborts before the assertions.
     let tx_script_code = estimate_note_fee_tx_script_code(
         Word::empty(),
@@ -324,8 +392,22 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
     );
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::new(),
+            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
+            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
+        })
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(priced_root().as_word())
         .build()?
@@ -346,29 +428,32 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
 }
 
 /// `estimate_note_fee` aborts when the queried note script root has no entry in the active
-/// `ConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
+/// `BasicConstantFeePolicy`'s fee schedule, rather than estimating unpriced note scripts to a fee
 /// of 0.
 #[tokio::test]
 async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager()?)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
     // The expected fee asset words are irrelevant: execution aborts in `compute_note_fee`
     // before the tx script's assertions are reached.
     let tx_script_code =
         estimate_note_fee_tx_script_code(Word::empty(), 0, 0, Word::empty(), Word::empty());
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
+    let account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::new(),
+            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
+            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
+        })
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(NoteScriptRoot::from_array([9, 10, 11, 12]).as_word())
         .build()?
@@ -376,50 +461,6 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE);
-
-    Ok(())
-}
-
-/// `estimate_note_fee` aborts when the active `ConstantFeePolicy` is configured with a different
-/// fee asset than the `FeeManager` dispatching to it: the manager asserts the fee asset returned
-/// by the policy matches its own configured fee asset, surfacing the misconfiguration at
-/// estimation time.
-#[tokio::test]
-async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Result<()> {
-    let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-    let misconfigured_policy = ConstantFeePolicy::new(other_faucet_id)
-        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?);
-    let fee_manager = FeeManager::builder()
-        .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(misconfigured_policy.into())
-        .build();
-
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .with_components(fee_manager)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    // The expected fee asset words are irrelevant: execution aborts in the manager's fee asset
-    // consistency check before the tx script's assertions are reached.
-    let tx_script_code =
-        estimate_note_fee_tx_script_code(Word::empty(), 0, 0, Word::empty(), Word::empty());
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .tx_script(tx_script)
-        .tx_script_args(priced_root().as_word())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_POLICY_FEE_ASSET_MISMATCH);
 
     Ok(())
 }
@@ -435,21 +476,25 @@ async fn estimate_note_fee_aborts_on_policy_fee_asset_mismatch() -> anyhow::Resu
 /// reached the user-defined procedure slot by slot.
 #[tokio::test]
 async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Result<()> {
-    let fee_manager = FeeManager::builder()
+    let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
         .active_fee_policy(custom_fee_policy()?)
         .build();
 
+    // The foreign account's auth never runs under FPI, so its allowlists can stay empty.
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::new(),
+            allowed_tx_script_roots: BTreeSet::new(),
+            fee_policy_manager,
+        })
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -515,13 +560,12 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         end
         "#,
         note_script_root = NoteScriptRoot::from_array([9, 9, 9, 9]).as_word(),
-        estimate_note_fee_root = FeeManager::estimate_note_fee_root().mast_root(),
+        estimate_note_fee_root = AuthNetworkAccount::estimate_note_fee_root().mast_root(),
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         expected_fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word(),
         expected_fee_value =
-            AssetAmount::new(custom_fee_amount_for(storage_commitment, timeframe, priority))?
-                .to_word(),
+            custom_fee_amount_for(storage_commitment, timeframe, priority).to_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
@@ -529,7 +573,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
@@ -539,21 +583,63 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     Ok(())
 }
 
-/// `FeeManager::get_fee_asset_id`, invoked via FPI, returns the fee asset ID the manager was
+/// Tests that `get_fee_policy` returns the active fee policy root the manager was configured with.
+#[tokio::test]
+async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    // The active policy is the basic constant fee policy the manager is built with.
+    let get_policy_note_script =
+        create_get_fee_policy_note_script(BasicConstantFeePolicy::root().as_word());
+    let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
+    let get_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(get_policy_note_script)
+        .build()?;
+
+    // The account only consumes the get-policy note, so allowlist just its script root (the auth
+    // procedure also prices it, which the helper schedules at a 0 fee).
+    let account = build_fee_account_with_switching(
+        owner_account_id,
+        BTreeSet::from([get_policy_note.script().root()]),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(get_policy_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(get_policy_note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// `FeePolicyManager::get_fee_asset_id`, invoked via FPI, returns the fee asset ID the manager was
 /// configured with. A wrong result aborts the transaction, so successful execution proves the
 /// returned fee asset ID.
 #[tokio::test]
 async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Result<()> {
+    // The foreign account's auth never runs under FPI, so its allowlists can stay empty.
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::new(),
+            allowed_tx_script_roots: BTreeSet::new(),
+            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
+        })
         .with_component(BasicWallet)
-        .with_components(fee_manager()?)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -565,13 +651,12 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
     let tx_script_code = format!(
         r#"
         use miden::protocol::tx
+        use miden::standards::fees::fee_manager
 
         @transaction_script
         pub proc main
-            # => [pad(16)]
-
             # push the get_fee_asset_id procedure root and the foreign account ID
-            push.{get_fee_asset_id_root}
+            procref.fee_manager::get_fee_asset_id
             push.{foreign_prefix} push.{foreign_suffix}
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, pad(16)]
 
@@ -583,7 +668,6 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
             # => [pad(16)]
         end
         "#,
-        get_fee_asset_id_root = FeeManager::get_fee_asset_id_root().mast_root(),
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         expected_fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word(),
@@ -594,12 +678,260 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
     mock_chain
-        .build_tx_context(native_account.id(), &[], &[])?
+        .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Builds the owner-gated network account for [`owner_can_mutate_allowed_fee_policy_roots`],
+/// scheduling each root in `allowed_note_roots` at a 0 fee.
+///
+/// When `custom_policy_allowed` is set, [`custom_fee_policy`] starts in the allowed-policies map.
+/// Otherwise it is left off the initial allowlist but its component is still installed, so it only
+/// becomes switchable once the owner adds its root at runtime. That test needs both starting states
+/// so it can exercise a meaningful add (root starts disallowed) and remove (root starts allowed);
+/// it therefore builds its account here rather than through [`build_fee_account_with_switching`],
+/// which always registers the custom policy.
+fn build_mutation_test_account(
+    owner: AccountId,
+    allowed_note_roots: BTreeSet<NoteScriptRoot>,
+    custom_policy_allowed: bool,
+) -> anyhow::Result<Account> {
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new()
+        .with_fee(priced_root(), AssetAmount::new(FEE_AMOUNT)?)
+        .with_fee(free_root(), AssetAmount::ZERO);
+    for note_root in &allowed_note_roots {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_root, AssetAmount::ZERO);
+    }
+
+    let mut manager_builder = FeePolicyManager::builder()
+        .fee_faucet_id(fee_faucet_id()?)
+        .active_fee_policy(basic_constant_fee_policy.into());
+    if custom_policy_allowed {
+        manager_builder = manager_builder.allowed_fee_policy(custom_fee_policy()?);
+    }
+
+    let mut account_builder =
+        NetworkAccount::builder([1; 32], allowed_note_roots, manager_builder.build())?
+            .with_component(BasicWallet)
+            .with_component(Ownable2Step::new(owner))
+            .with_component(Authority::OwnerControlled);
+
+    // The manager only installs components for the policies it registers, so when the custom policy
+    // is left off the initial allowlist its component must be installed separately to keep it
+    // dispatchable once the owner adds its root at runtime.
+    if !custom_policy_allowed {
+        for component in custom_fee_policy()? {
+            account_builder = account_builder.with_component(component);
+        }
+    }
+
+    Ok(account_builder.build_existing()?)
+}
+
+/// The owner mutates the allowed-policies map after deployment, then a follow-up transaction whose
+/// note switches the active policy to the `custom_fee_policy` root observes the mutation. Each case
+/// starts from the initial allowlist state that makes its mutation meaningful.
+///
+/// - `add`: the custom policy starts off the allowlist, so `add_allowed_fee_policy` is what makes
+///   it switchable. Switching then succeeds; the network auth procedure prices the switch note
+///   through the now-active custom policy, so the note is paired with a FEE_SPONSORSHIP note
+///   covering that fee and the transaction succeeds.
+/// - `remove`: the custom policy starts on the allowlist, so `remove_allowed_fee_policy` is what
+///   makes it non-switchable. Switching then is rejected with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED`
+///   before fee collection, leaving the sponsorship note unused.
+#[rstest]
+#[case::add(
+    "add_allowed_fee_policy",
+    custom_fee_policy().unwrap().root().as_word(),
+    false,
+    None
+)]
+#[case::remove(
+    "remove_allowed_fee_policy",
+    custom_fee_policy().unwrap().root().as_word(),
+    true,
+    Some(ERR_FEE_POLICY_ROOT_NOT_ALLOWED)
+)]
+#[tokio::test]
+async fn owner_can_mutate_allowed_fee_policy_roots(
+    #[case] mutator_proc: &str,
+    #[case] target_root: Word,
+    #[case] custom_policy_initially_allowed: bool,
+    #[case] set_fee_policy_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    let mutation_note = build_sender_note(
+        owner_account_id,
+        700,
+        &create_fee_manager_note_script(mutator_proc, target_root),
+    )?;
+    let set_note = build_sender_note(
+        owner_account_id,
+        701,
+        &create_fee_manager_note_script("set_fee_policy", target_root),
+    )?;
+
+    // The account consumes the mutation note, the switch note, and the switch note's sponsorship
+    // note. Allowlist the mutation and switch note roots; the helper schedules those two roots at a
+    // 0 fee, so the still-active constant policy prices them for free.
+    let account = build_mutation_test_account(
+        owner_account_id,
+        BTreeSet::from([mutation_note.script().root(), set_note.script().root()]),
+        custom_policy_initially_allowed,
+    )?;
+
+    // In the `add` case the switch note activates the custom policy, which fee collection then
+    // prices the switch note through (on its storage commitment, with a timeframe and priority
+    // of 0), so pair it with a sponsorship note covering exactly that fee. The `remove` case
+    // aborts in the switch note's script before fee collection, leaving the sponsorship note
+    // unused.
+    let custom_fee = custom_fee_amount_for(set_note.recipient().storage().commitment(), 0, 0);
+    let sponsorship_note = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(owner_account_id)
+            .target_account(account.id())
+            .feature_note_id(set_note.id())
+            .asset(FungibleAsset::new(fee_faucet_id()?, custom_fee.as_u64())?)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(mutation_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Apply the allowlist mutation; it takes effect from the next block. The mutation note is
+    // priced by the still-active constant policy at 0, so it needs no sponsorship.
+    let executed_transaction = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(mutation_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    // Switch to the mutated root, consuming the switch note followed immediately by its sponsorship
+    // note. In the `add` case the switch succeeds and fee collection prices the switch note through
+    // the now-active custom policy, covered by the sponsorship; in the `remove` case the switch
+    // note aborts with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED`.
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    match set_fee_policy_error {
+        None => {
+            result?;
+        },
+        Some(expected) => assert_transaction_executor_error!(result, expected),
+    }
+
+    Ok(())
+}
+
+/// A non-owner cannot mutate the allowed-policies map: `add_allowed_fee_policy` is gated by the
+/// account-wide `Authority`, which rejects a note sent by anyone other than the owner.
+#[tokio::test]
+async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+    let non_owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    let new_root = AuthNetworkAccount::get_fee_policy_root().as_word();
+    let add_note = build_sender_note(
+        non_owner_account_id,
+        702,
+        &create_fee_manager_note_script("add_allowed_fee_policy", new_root),
+    )?;
+
+    // Allowlist the consumed note's root so execution reaches the gated `add_allowed_fee_policy`
+    // (which aborts because the sender is not the owner) instead of being rejected by the auth
+    // procedure's allowlist check.
+    let account = build_fee_account_with_switching(
+        owner_account_id,
+        BTreeSet::from([add_note.script().root()]),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(add_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(add_note.id())
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// The active fee policy's root cannot be removed from the allowed-policies map:
+/// `remove_allowed_fee_policy` aborts with `ERR_FEE_POLICY_ROOT_IS_ACTIVE`, so the active policy's
+/// root always stays allowlisted.
+#[tokio::test]
+async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+
+    // The active policy is the `BasicConstantFeePolicy`; its root is registered in the allowlist at
+    // deployment.
+    let active_root = BasicConstantFeePolicy::root().as_word();
+
+    let remove_note = build_sender_note(
+        owner_account_id,
+        720,
+        &create_fee_manager_note_script("remove_allowed_fee_policy", active_root),
+    )?;
+
+    // Allowlist the consumed note's root so execution reaches the gated `remove_allowed_fee_policy`
+    // (which aborts because the target is the active policy's root).
+    let account = build_fee_account_with_switching(
+        owner_account_id,
+        BTreeSet::from([remove_note.script().root()]),
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Consuming the note that tries to remove the active policy's root aborts.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(remove_note.id())
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_POLICY_ROOT_IS_ACTIVE);
 
     Ok(())
 }

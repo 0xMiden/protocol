@@ -35,7 +35,7 @@ static CONDITIONAL_AUTH_CODE: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-static CONDITIONAL_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+static CONDITIONAL_AUTH_PACKAGE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("mock::conditional_auth", CONDITIONAL_AUTH_CODE.as_str())
         .expect("conditional auth code should be valid")
@@ -55,7 +55,7 @@ impl From<ConditionalAuthComponent> for AccountComponent {
         let metadata = AccountComponentMetadata::new("miden::testing::conditional_auth")
             .with_description("Testing auth component with conditional behavior");
 
-        AccountComponent::new(CONDITIONAL_AUTH_LIBRARY.clone(), vec![], metadata)
+        AccountComponent::new(CONDITIONAL_AUTH_PACKAGE.clone(), vec![], metadata)
             .expect("component should be valid")
     }
 }

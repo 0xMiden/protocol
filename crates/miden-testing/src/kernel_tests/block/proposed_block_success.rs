@@ -17,7 +17,7 @@ use miden_tx::LocalTransactionProver;
 use rand::RngExt;
 
 use super::utils::MockChainBlockExt;
-use crate::{AccountState, Auth, MockChain, TxContextInput};
+use crate::{AccountState, Auth, MockChain, MockTransactionInput};
 
 /// Tests that we can build empty blocks.
 #[tokio::test]
@@ -332,7 +332,7 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
 /// To make this transaction (always) non-empty, it consumes one "noop note", which does nothing.
 async fn generate_conditional_tx(
     chain: &mut MockChain,
-    input: impl Into<TxContextInput>,
+    input: impl Into<MockTransactionInput>,
     noop_note: Note,
     modify_storage: bool,
 ) -> ExecutedTransaction {
@@ -344,11 +344,11 @@ async fn generate_conditional_tx(
         if modify_storage { Felt::ONE } else { Felt::ZERO },
     ];
 
-    let tx_context = chain
-        .build_tx_context(input.into(), &[noop_note.id()], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(input)
+        .authenticated_input_note(noop_note.id())
         .auth_args(auth_args.into())
         .build()
         .unwrap();
-    tx_context.execute().await.unwrap()
+    mock_tx.execute().await.unwrap()
 }

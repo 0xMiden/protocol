@@ -1,6 +1,5 @@
 extern crate alloc;
 
-use alloc::slice;
 use alloc::string::String;
 
 use anyhow::Context;
@@ -23,7 +22,7 @@ use miden_agglayer::{
     RemoveGerNote,
     SmtNode,
     UpdateGerNote,
-    agglayer_library,
+    agglayer_package,
     create_existing_agglayer_faucet,
     create_existing_agglayer_faucet_with_callbacks,
 };
@@ -200,7 +199,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .into_account_id();
 
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account.clone())?;
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
@@ -271,20 +270,22 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
     // --------------------------------------------------------------------------------------------
-    let config_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+    let config_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
-    let config_executed = config_tx_context.execute().await?;
+    let config_executed = config_mock_tx.execute().await?;
 
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX1: EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let update_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_ger_executed = update_ger_tx_context.execute().await?;
+    let update_ger_executed = update_ger_mock_tx.execute().await?;
 
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
@@ -292,12 +293,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (validates proof, creates MINT note)
     // --------------------------------------------------------------------------------------------
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+    let claim_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 
-    let claim_executed = claim_tx_context
+    let claim_executed = claim_mock_tx
         .execute()
         .await
         .context("TX2: CLAIM note execution against bridge failed")?;
@@ -333,12 +335,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // TX3: EXECUTE MINT NOTE AGAINST AGGFAUCET (mints asset, creates P2ID note)
     // --------------------------------------------------------------------------------------------
-    let mint_tx_context = mock_chain
-        .build_tx_context(agglayer_faucet.id(), &[mint_output_note.id()], &[])?
+    let mint_mock_tx = mock_chain
+        .build_transaction(agglayer_faucet.id())
+        .authenticated_input_note(mint_output_note.id())
         .add_note_script(P2idNote::script())
         .build()?;
 
-    let mint_executed = mint_tx_context
+    let mint_executed = mint_mock_tx
         .execute()
         .await
         .context("TX3: MINT note execution against faucet failed")?;
@@ -404,15 +407,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // issuing AggLayer faucet must be supplied as a foreign account so the kernel can
     // dispatch the receive callback when the asset is added to the destination vault.
     let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let consume_tx_context = mock_chain
-        .build_tx_context(
-            destination_account.clone(),
-            &[],
-            slice::from_ref(&expected_output_p2id_note),
-        )?
+    let consume_mock_tx = mock_chain
+        .build_transaction(destination_account.clone())
+        .unauthenticated_input_note(expected_output_p2id_note)
         .foreign_accounts(vec![agglayer_faucet_inputs])
         .build()?;
-    let consume_executed_transaction = consume_tx_context.execute().await?;
+    let consume_executed_transaction = consume_mock_tx.execute().await?;
 
     // Verify the destination account received the minted asset
     let mut destination_account = destination_account;
@@ -505,7 +505,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
-    let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    let dest = Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(dest)?;
 
     let sender_account_builder =
@@ -576,7 +576,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // TX0: register faucet_A and faucet_B.
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id(), config_note_b.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_notes([config_note.id(), config_note_b.id()])
         .build()?
         .execute()
         .await?;
@@ -585,7 +586,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // TX1: store GER.
     let update_ger_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await?;
@@ -595,7 +597,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     // TX2: claim → produces MINT note bound to faucet_A's asset.
     let faucet_a_foreign_inputs = mock_chain.get_foreign_account_inputs(faucet_a.id())?;
     let claim_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_a_foreign_inputs])
         .build()?
         .execute()
@@ -613,12 +616,13 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     // The MINT note's stored `ASSET_ID` carries faucet_A's ID. faucet_B's `mint_and_send`
     // derives the asset for faucet_B, finds its key differs from the stored one, and rejects
     // the consumption.
-    let attack_tx_context = mock_chain
-        .build_tx_context(faucet_b.id(), &[mint_output_note.id()], &[])?
+    let attack_mock_tx = mock_chain
+        .build_transaction(faucet_b.id())
+        .authenticated_input_note(mint_output_note.id())
         .add_note_script(P2idNote::script())
         .build()?;
 
-    let attack_result = attack_tx_context.execute().await;
+    let attack_result = attack_mock_tx.execute().await;
     assert_transaction_executor_error!(
         attack_result,
         ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
@@ -745,28 +749,31 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
     // --------------------------------------------------------------------------------------------
-    let config_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+    let config_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
-    mock_chain.add_pending_executed_transaction(&config_tx_context.execute().await?)?;
+    mock_chain.add_pending_executed_transaction(&config_mock_tx.execute().await?)?;
     mock_chain.prove_next_block()?;
 
     // TX1: EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let update_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    mock_chain.add_pending_executed_transaction(&update_ger_tx_context.execute().await?)?;
+    mock_chain.add_pending_executed_transaction(&update_ger_mock_tx.execute().await?)?;
     mock_chain.prove_next_block()?;
 
     // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (must fail: wrong destination_network)
     // --------------------------------------------------------------------------------------------
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+    let claim_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
-    let result = claim_tx_context.execute().await;
+    let result = claim_mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH);
 
     Ok(())
@@ -895,28 +902,31 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let mut mock_chain = builder.clone().build()?;
 
     // TX0: CONFIG_AGG_BRIDGE
-    let config_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+    let config_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
-    let config_executed = config_tx_context.execute().await?;
+    let config_executed = config_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX1: UPDATE_GER
-    let update_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_ger_executed = update_ger_tx_context.execute().await?;
+    let update_ger_executed = update_ger_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX2: FIRST CLAIM (should succeed)
     let faucet_foreign_inputs_1 = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_tx_context_1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note_1])?
+    let claim_mock_tx_1 = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note_1)
         .foreign_accounts(vec![faucet_foreign_inputs_1])
         .build()?;
-    let claim_executed_1 = claim_tx_context_1.execute().await?;
+    let claim_executed_1 = claim_mock_tx_1.execute().await?;
     assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
 
     mock_chain.add_pending_executed_transaction(&claim_executed_1)?;
@@ -924,11 +934,12 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // TX3: SECOND CLAIM WITH SAME PROOF_DATA_KEY (should fail)
     let faucet_foreign_inputs_2 = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_tx_context_2 = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note_2])?
+    let claim_mock_tx_2 = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note_2)
         .foreign_accounts(vec![faucet_foreign_inputs_2])
         .build()?;
-    let result = claim_tx_context_2.execute().await;
+    let result = claim_mock_tx_2.execute().await;
 
     assert_transaction_executor_error!(result, ERR_CLAIM_ALREADY_SPENT);
 
@@ -1047,33 +1058,37 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // TX0: CONFIG_AGG_BRIDGE
-    let config_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+    let config_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
-    let config_executed = config_tx_context.execute().await?;
+    let config_executed = config_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX1: UPDATE_GER
-    let update_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_ger_executed = update_ger_tx_context.execute().await?;
+    let update_ger_executed = update_ger_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX2: REMOVE_GER
-    let remove_ger_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+    let remove_ger_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()?;
-    let remove_ger_executed = remove_ger_tx_context.execute().await?;
+    let remove_ger_executed = remove_ger_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&remove_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX3: CLAIM (should fail because its GER was removed)
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?
         .execute()
@@ -1165,7 +1180,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account.clone())?;
 
     // Sender of the CLAIM note (any wallet — just a note creator).
@@ -1232,7 +1247,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // TX0: CONFIG — registers native faucet with is_native = true.
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
@@ -1245,7 +1261,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // vault; supply the faucet as a foreign account so the kernel can load it.
     let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let lock_executed = mock_chain
-        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .build_transaction(bridge_account.clone())
+        .authenticated_input_note(b2agg_note.id())
         .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
@@ -1266,7 +1283,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // TX2: UPDATE_GER.
     let update_ger_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await?;
@@ -1279,7 +1297,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // callback, so the faucet must be available as a foreign account.
     let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let claim_executed = mock_chain
-        .build_tx_context(bridge_account.clone(), &[], &[claim_note])?
+        .build_transaction(bridge_account.clone())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
@@ -1359,7 +1378,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // faucet as a foreign account.
     let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let consume_executed = mock_chain
-        .build_tx_context(destination_account.clone(), &[], slice::from_ref(&expected_p2id_note))?
+        .build_transaction(destination_account.clone())
+        .unauthenticated_input_note(expected_p2id_note)
         .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
@@ -1441,7 +1461,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
     let destination_account =
-        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+        Account::mock(u128::from(destination_account_id), [IncrNonceAuthComponent]);
     builder.add_account(destination_account)?;
 
     let claim_sender = {
@@ -1522,7 +1542,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
 
     // TX0: CONFIG — register native faucet.
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
@@ -1535,7 +1556,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // account.
     let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let lock_executed = mock_chain
-        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .build_transaction(bridge_account.clone())
+        .authenticated_input_note(b2agg_note.id())
         .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
@@ -1550,7 +1572,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
 
     // TX2: UPDATE_GER.
     let update_ger_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await?;
@@ -1563,7 +1586,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // available as a foreign account.
     let native_faucet_inputs = mock_chain.get_foreign_account_inputs(native_faucet.id())?;
     let claim_executed_1 = mock_chain
-        .build_tx_context(bridge_account.clone(), &[], &[claim_note_1])?
+        .build_transaction(bridge_account.clone())
+        .unauthenticated_input_note(claim_note_1)
         .foreign_accounts(vec![native_faucet_inputs])
         .build()?
         .execute()
@@ -1582,7 +1606,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // `unlock_and_send`. Vault still has enough to serve it, so a pass here would mean the
     // nullifier gate is broken.
     let result = mock_chain
-        .build_tx_context(bridge_account, &[], &[claim_note_2])?
+        .build_transaction(bridge_account)
+        .unauthenticated_input_note(claim_note_2)
         .build()?
         .execute()
         .await;
@@ -1606,11 +1631,11 @@ async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
         let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
         let tx_script = CodeBuilder::new()
-            .with_statically_linked_library(&agglayer_library())?
+            .with_statically_linked_package(&agglayer_package())?
             .compile_tx_script(source)?;
 
         mock_chain
-            .build_tx_context(account.id(), &[], &[])?
+            .build_transaction(account.id())
             .tx_script(tx_script.clone())
             .build()?
             .execute()
@@ -1735,7 +1760,8 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
 
     // TX0: register faucet for `registered_origin_network`.
     let config_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
     let config_executed = config_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
@@ -1743,7 +1769,8 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
 
     // TX1: store the GER.
     let update_ger_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
     let update_ger_executed = update_ger_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
@@ -1752,7 +1779,8 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     // TX2: attempt the CLAIM whose leaf carries `leaf_origin_network`. The lookup must miss.
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
     let claim_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 
@@ -1888,7 +1916,8 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
 
     // TX0: register under the leaf network.
     let executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_leaf_network.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_leaf_network.id())
         .build()?
         .execute()
         .await?;
@@ -1897,7 +1926,8 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
 
     // TX1: re-register under a different network (clears the prior leaf-network token key).
     let executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_reregister.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_reregister.id())
         .build()?
         .execute()
         .await?;
@@ -1906,7 +1936,8 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
 
     // TX2: store the GER.
     let executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await?;
@@ -1917,7 +1948,8 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     // re-registration, so `lookup_faucet_by_token_address` misses and the claim is rejected.
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
     let claim_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 

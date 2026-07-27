@@ -25,7 +25,7 @@ async fn execute_no_auth_tx(
     input_note: Option<Note>,
 ) -> anyhow::Result<(Account, Result<ExecutedTransaction, miden_tx::TransactionExecutorError>)> {
     let account = AccountBuilder::new([11; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_assets(assets)
         .account_type(AccountType::Public)
@@ -39,7 +39,12 @@ async fn execute_no_auth_tx(
     let mock_chain = builder.build()?;
 
     let notes: Vec<Note> = input_note.into_iter().collect();
-    let result = mock_chain.build_tx_context(account.id(), &[], &notes)?.build()?.execute().await;
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(notes)
+        .build()?
+        .execute()
+        .await;
 
     Ok((account, result))
 }

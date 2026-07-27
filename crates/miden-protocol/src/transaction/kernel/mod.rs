@@ -487,14 +487,19 @@ fn package_entrypoint_source_node(
 
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
-    const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
+    const KERNEL_CORE_PACKAGE_BYTES: &'static [u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
-    /// Returns the kernel library.
-    pub fn library() -> Package {
+    /// Returns the transaction kernel procedures as a [`Package`] linkable under the
+    /// `miden::tx_kernel_core` namespace.
+    ///
+    /// Unlike [`TransactionKernel::package()`], which returns the assembled kernel itself, this
+    /// package exposes the kernel procedures as a regular library so that they can be invoked
+    /// individually in tests.
+    pub fn core_package() -> Package {
         // These bytes are produced by this crate's build script and embedded in the binary.
-        Package::read_from_bytes_trusted(Self::KERNEL_TESTING_PACKAGE_BYTES)
-            .expect("failed to deserialize transaction kernel library package")
+        Package::read_from_bytes_trusted(Self::KERNEL_CORE_PACKAGE_BYTES)
+            .expect("failed to deserialize transaction kernel core package")
     }
 }
 

@@ -5,7 +5,7 @@ use miden_protocol::account::auth::{self, PublicKeyCommitment};
 use miden_protocol::asset::NonFungibleAsset;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{NoteAttachments, NoteType};
+use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
 use crate::account::auth::{
@@ -21,22 +21,21 @@ use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
 use crate::testing::account_interface::get_public_keys_from_account;
 
-/// Checks the function `create_swap_note` should fail if the requested asset is the same as the
+/// Checks that building a SWAP note should fail if the requested asset is the same as the
 /// offered asset.
 #[test]
 fn test_required_asset_same_as_offered() {
     let offered_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let result = SwapNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        offered_asset,
-        requested_asset,
-        NoteType::Public,
-        NoteAttachments::default(),
-        NoteType::Public,
-        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
-    );
+    let result = SwapNote::builder()
+        .sender(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap())
+        .offered_asset(offered_asset)
+        .requested_asset(requested_asset)
+        .note_type(NoteType::Public)
+        .payback_note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .build();
 
     assert_matches!(result, Err(NoteError::Other { error_msg, .. }) if error_msg == "requested asset same as offered asset".into());
 }
@@ -57,7 +56,7 @@ fn get_mock_falcon_auth_component() -> AuthSingleSig {
 fn test_account_interface_identifies_single_sig_auth() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_falcon_auth_component())
+        .with_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -74,7 +73,7 @@ fn test_account_interface_identifies_single_sig_auth() {
 fn test_account_interface_identifies_no_auth() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let no_auth_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create no-auth account");
@@ -98,7 +97,7 @@ fn test_basic_wallet_is_not_an_auth_component() {
 fn test_public_key_extraction_regular_account() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_falcon_auth_component())
+        .with_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -132,7 +131,7 @@ fn test_public_key_extraction_multisig_account() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let multisig_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(multisig_component)
+        .with_component(multisig_component)
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create multisig account");
@@ -149,7 +148,7 @@ fn test_public_key_extraction_multisig_account() {
 fn test_public_key_extraction_no_auth_account() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let no_auth_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create no-auth account");

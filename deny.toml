@@ -45,6 +45,7 @@ multiple-versions = "deny"
 skip = [
   #{ name = "ansi_term", version = "=0.11.0" },
   { name = "cpufeatures" },
+  { name = "itertools" },
   { name = "sha3" },
   # Allow duplicate rand versions - miden-field uses 0.10, proptest uses 0.9.
   { name = "getrandom" },

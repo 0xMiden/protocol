@@ -69,9 +69,9 @@ async fn execute_fee_paying_tx(
     });
 
     let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;
@@ -269,9 +269,9 @@ async fn execute_with_conversion_entry(
 
     let (key, value) = entry;
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(key)
-        .extend_advice_map([(key, value)])
+        .add_advice_map_entry(key, value)
         .build()?
         .execute()
         .await;
@@ -419,7 +419,7 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let executed_transaction =
-        mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await?;
+        mock_chain.build_transaction(account.id()).build()?.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
 
@@ -444,9 +444,9 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await;
@@ -473,7 +473,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let result = mock_chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await;
+    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_MISSING);
 
@@ -562,10 +562,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
     );
 
     let executed_transaction = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .auth_args(args)
-        .extend_advice_map([(args, advice_value)])
+        .add_advice_map_entry(args, advice_value)
         .build()?
         .execute()
         .await?;

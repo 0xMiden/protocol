@@ -32,10 +32,10 @@ use crate::code_builder::CodeBuilder;
 #[derive(Debug, Clone)]
 enum SourceCodeOrigin {
     Masm {
-        dyn_libraries: Vec<Package>,
+        dyn_packages: Vec<Package>,
         source_manager: Arc<dyn SourceManagerSync>,
     },
-    Library(Arc<Package>),
+    Package(Arc<Package>),
     Script(NoteScript),
 }
 
@@ -74,7 +74,7 @@ impl NoteBuilder {
             attachments: NoteAttachments::default(),
             advice_map: AdviceMap::default(),
             source_code: SourceCodeOrigin::Masm {
-                dyn_libraries: Vec::new(),
+                dyn_packages: Vec::new(),
                 source_manager: Arc::new(DefaultSourceManager::default()),
             },
         }
@@ -133,21 +133,21 @@ impl NoteBuilder {
         self
     }
 
-    /// Extends the set of dynamically linked libraries that are passed to the assembler at
+    /// Extends the set of dynamically linked packages that are passed to the assembler at
     /// build-time.
-    pub fn dynamically_linked_libraries(
+    pub fn dynamically_linked_packages(
         mut self,
-        dyn_libs: impl IntoIterator<Item = Package>,
+        dyn_pkgs: impl IntoIterator<Item = Package>,
     ) -> Self {
         match &mut self.source_code {
-            SourceCodeOrigin::Masm { dyn_libraries, .. } => {
-                dyn_libraries.extend(dyn_libs);
+            SourceCodeOrigin::Masm { dyn_packages, .. } => {
+                dyn_packages.extend(dyn_pkgs);
             },
-            SourceCodeOrigin::Library(_) => {
-                panic!("dynamic libraries cannot be set on a library")
+            SourceCodeOrigin::Package(_) => {
+                panic!("dynamic packages cannot be set on a package")
             },
             SourceCodeOrigin::Script(_) => {
-                panic!("dynamic libraries cannot be set on a precompiled script")
+                panic!("dynamic packages cannot be set on a precompiled script")
             },
         }
         self
@@ -158,8 +158,8 @@ impl NoteBuilder {
             SourceCodeOrigin::Masm { source_manager, .. } => {
                 *source_manager = sm;
             },
-            SourceCodeOrigin::Library(_) => {
-                panic!("source manager cannot be set on a library")
+            SourceCodeOrigin::Package(_) => {
+                panic!("source manager cannot be set on a package")
             },
             SourceCodeOrigin::Script(_) => {
                 panic!("source manager cannot be set on a precompiled script")
@@ -168,9 +168,9 @@ impl NoteBuilder {
         self
     }
 
-    /// Sets the source code origin to a library.
-    pub fn library(mut self, library: Package) -> Self {
-        self.source_code = SourceCodeOrigin::Library(Arc::new(library));
+    /// Sets the source code origin to a package.
+    pub fn package(mut self, package: Package) -> Self {
+        self.source_code = SourceCodeOrigin::Package(Arc::new(package));
         self
     }
 
@@ -182,7 +182,7 @@ impl NoteBuilder {
 
     pub fn build(self) -> Result<Note, NoteError> {
         let note_script = match self.source_code {
-            SourceCodeOrigin::Masm { dyn_libraries, source_manager } => {
+            SourceCodeOrigin::Masm { dyn_packages, source_manager } => {
                 // Generate a unique file name from the note's serial number, which should be
                 // unique per note. Only includes two elements in the file name which should be
                 // enough for the uniqueness in the testing context and does not result in overly
@@ -198,17 +198,17 @@ impl NoteBuilder {
                 );
 
                 let mut builder = CodeBuilder::with_source_manager(source_manager.clone());
-                for dyn_library in dyn_libraries {
+                for dyn_package in dyn_packages {
                     builder
-                        .link_dynamic_library(&dyn_library)
-                        .expect("library should link successfully");
+                        .link_dynamic_package(&dyn_package)
+                        .expect("package should link successfully");
                 }
 
                 builder
                     .compile_note_script(virtual_source_file)
                     .expect("note script should compile")
             },
-            SourceCodeOrigin::Library(library) => NoteScript::from_library(&library)?,
+            SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
             SourceCodeOrigin::Script(script) => script,
         };
 

@@ -1,7 +1,6 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use core::slice;
 use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
@@ -34,9 +33,8 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_PRIV
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
-use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
@@ -56,7 +54,14 @@ use miden_standards::errors::standards::{
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
+use miden_standards::note::{
+    BurnNote,
+    MintNote,
+    MintNoteStorage,
+    NetworkAccountConfigNote,
+    P2idNote,
+    StandardNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -124,13 +129,13 @@ pub async fn execute_mint_transaction(
     let tx_script_code = create_mint_script_code(params, faucet.id());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code)?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet, &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    Ok(tx_context.execute().await?)
+    Ok(mock_tx.execute().await?)
 }
 
 /// Verifies minted output note matches expectations
@@ -178,12 +183,13 @@ async fn execute_faucet_note_script(
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_id, &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_id)
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    Ok(tx_context.execute().await)
+    Ok(mock_tx.execute().await)
 }
 
 fn create_set_burn_policy_note_script(policy_root: Word) -> String {
@@ -513,7 +519,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
     let tx = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -606,7 +612,8 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     // --------------------------------------------------------------------------------------------
     // Execute the transaction and get the witness
     let executed_transaction = mock_chain
-        .build_tx_context(faucet.id(), &[note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
@@ -661,7 +668,8 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
     let mock_chain = builder.build()?;
 
     let tx = mock_chain
-        .build_tx_context(faucet.id(), &[note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await;
@@ -802,10 +810,11 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let mock_chain = builder.build()?;
 
     // Execute the transaction - this should fetch the output note script from the data store.
-    // Note: There is intentionally no call to extend_expected_output_notes here, so the
+    // Note: There is intentionally no call to expected_output_notes here, so the
     // transaction host is forced to request the script from the data store during execution.
     let executed_transaction = mock_chain
-        .build_tx_context(faucet.id(), &[trigger_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(trigger_note.id())
         .add_note_script(output_note_script)
         .with_source_manager(source_manager)
         .build()?
@@ -935,8 +944,11 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // EXECUTE MINT NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(mint_note.id())
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Check that a P2ID note was created by the faucet
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
@@ -960,11 +972,12 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // Execute transaction to consume the output note with the target account
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-    let consume_tx_context = mock_chain
-        .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+    let consume_mock_tx = mock_chain
+        .build_transaction(target_account.id())
+        .unauthenticated_input_note(p2id_mint_output_note)
         .foreign_accounts(vec![faucet_inputs])
         .build()?;
-    let consume_executed_transaction = consume_tx_context.execute().await?;
+    let consume_executed_transaction = consume_mock_tx.execute().await?;
 
     // Apply the delta to the target account and verify the asset was added to the account's vault
     target_account.apply_patch(consume_executed_transaction.account_patch())?;
@@ -1023,8 +1036,11 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint_note)
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
 
@@ -1206,8 +1222,11 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         .build()?
         .into();
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
-    let result = tx_context.execute().await;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint_note)
+        .build()?;
+    let result = mock_tx.execute().await;
 
     // The mint function uses ERR_ONLY_OWNER, which is "note sender is not the owner"
     let expected_error = ERR_SENDER_NOT_OWNER;
@@ -1351,16 +1370,20 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Sanity Check: Execute mint transaction to verify initial owner can mint
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint_note)
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
 
     // Execute transfer_ownership via note script (nominates new owner)
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[transfer_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Persistence: Apply the transaction to update the faucet state
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
@@ -1377,11 +1400,12 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         .script(accept_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(updated_faucet.clone(), &[], slice::from_ref(&accept_note))?
+    let mock_tx = mock_chain
+        .build_transaction(updated_faucet.clone())
+        .unauthenticated_input_note(accept_note)
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     let mut final_faucet = updated_faucet.clone();
     final_faucet.apply_patch(executed_transaction.account_patch())?;
@@ -1455,11 +1479,12 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         .script(transfer_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[transfer_note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(transfer_note)
         .with_source_manager(source_manager.clone())
         .build()?;
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
@@ -1548,11 +1573,12 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Execute renounce_ownership
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[renounce_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(renounce_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
@@ -1570,11 +1596,12 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     // Try to transfer ownership - should fail because there's no owner
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(updated_faucet.id(), &[transfer_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(updated_faucet.id())
+        .authenticated_input_note(transfer_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
@@ -1649,8 +1676,11 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Check that the burn was successful - no output notes should be created for burn
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
@@ -1715,16 +1745,20 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     mock_chain.prove_next_block()?;
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let result = tx_context.execute().await;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
@@ -1769,16 +1803,20 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     mock_chain.prove_next_block()?;
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_policy_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
     assert_eq!(
@@ -1850,8 +1888,11 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let result = tx_context.execute().await;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT);
 
@@ -1891,8 +1932,11 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
 
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
@@ -1949,18 +1993,22 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
 
     // Execute the set-min-burn-amount note first.
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[set_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let set_transaction = tx_context.execute().await?;
+    let set_transaction = mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&set_transaction)?;
     mock_chain.prove_next_block()?;
     faucet.apply_patch(set_transaction.account_patch())?;
 
     // The burn that was below the original threshold now succeeds.
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let burn_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?;
+    let burn_transaction = mock_tx.execute().await?;
 
     // Lowering the threshold left the supply untouched; only the burn reduces it.
     faucet.apply_patch(burn_transaction.account_patch())?;
@@ -2002,8 +2050,11 @@ async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::R
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[set_note.id()], &[])?.build()?;
-    let result = tx_context.execute().await;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_note.id())
+        .build()?;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
@@ -2089,8 +2140,11 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[set_note.id()], &[])?.build()?;
-    let result = tx_context.execute().await;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_note.id())
+        .build()?;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(
         result,
@@ -2172,8 +2226,11 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(mint_note.id())
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
     let output_note = executed_transaction.output_notes().get_note(0);
@@ -2202,11 +2259,12 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     // Consume the output note with target account
     let mut target_account_mut = target_account.clone();
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-    let consume_tx_context = mock_chain
-        .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+    let consume_mock_tx = mock_chain
+        .build_transaction(target_account.id())
+        .unauthenticated_input_note(p2id_mint_output_note)
         .foreign_accounts(vec![faucet_inputs])
         .build()?;
-    let consume_executed_transaction = consume_tx_context.execute().await?;
+    let consume_executed_transaction = consume_mock_tx.execute().await?;
 
     target_account_mut.apply_patch(consume_executed_transaction.account_patch())?;
 
@@ -2289,13 +2347,13 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code)?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet.clone())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // Verify two output notes were created
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
@@ -2354,18 +2412,21 @@ fn build_network_faucet_with_blocklist_transfer(
         .build();
 
     let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
-    let auth = AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())?;
 
     // the network-account auth procedure collects sponsored fees, which needs an active fee policy;
     // a constant policy aborts fee estimation for note scripts without a schedule entry, so
     // schedule an explicit 0 fee for every allowlisted note to keep this a no-op on this fee-free
     // chain
-    let mut constant_fee_policy = ConstantFeePolicy::new(ACCOUNT_ID_FEE_FAUCET.try_into()?);
-    for note_script in auth.allowed_notes().allowed_script_roots() {
-        constant_fee_policy = constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+    for note_script in &allowed_script_roots {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
     }
-    let fee_manager = FeeManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+    // `with_allowed_notes` always allowlists the config note, priced by the auth flow if consumed.
+    basic_constant_fee_policy = basic_constant_fee_policy
+        .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    let fee_policy_manager = FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build();
 
@@ -2376,13 +2437,13 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(Authority::OwnerControlled)
         .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused())
-        .with_components(fee_manager);
+        .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(
         Auth::NetworkAccount {
             allowed_script_roots,
             allowed_tx_script_roots: BTreeSet::new(),
+            fee_policy_manager,
         },
         account_builder,
         AccountState::Exists,
@@ -2451,7 +2512,8 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(faucet.id(), &[mint_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(mint_note.id())
         .build()?
         .execute()
         .await?;
