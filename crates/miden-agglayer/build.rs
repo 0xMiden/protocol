@@ -7,14 +7,6 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::{ProjectTargetSelector, Report};
-use miden_build_utils::{
-    ErrorModule,
-    PROJECT_MANIFEST,
-    assemble_project,
-    assemble_workspace,
-    extract_all_masm_errors,
-    generate_error_file,
-};
 use miden_core::Word;
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
@@ -24,6 +16,14 @@ use miden_protocol::ProtocolLib;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol_build_utils::{
+    ErrorModule,
+    PROJECT_MANIFEST,
+    assemble_project,
+    assemble_workspace,
+    extract_all_masm_errors,
+    generate_error_file,
+};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::auth::AuthNetworkAccount;

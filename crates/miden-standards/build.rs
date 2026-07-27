@@ -3,7 +3,11 @@ use std::path::Path;
 
 use miden_assembly::ProjectTargetSelector;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-use miden_build_utils::{
+use miden_core_lib::CoreLibrary;
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_protocol::ProtocolLib;
+use miden_protocol::transaction::TransactionKernel;
+use miden_protocol_build_utils::{
     ErrorModule,
     PROJECT_MANIFEST,
     assemble_project,
@@ -12,10 +16,6 @@ use miden_build_utils::{
     generate_error_file,
     write_release_package,
 };
-use miden_core_lib::CoreLibrary;
-use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_protocol::ProtocolLib;
-use miden_protocol::transaction::TransactionKernel;
 
 // CONSTANTS
 // ================================================================================================

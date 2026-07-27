@@ -1,9 +1,10 @@
-//! Build-time helpers shared by the `build.rs` scripts of the Miden workspace crates.
+//! Build-time helpers shared by the `build.rs` scripts of the Miden protocol crates.
 //!
 //! These utilities locate MASM sources, extract MASM error constants into generated Rust
 //! files, and set up the registry and assembler used to build and write MAST packages.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -52,9 +53,10 @@ pub fn assemble_project(
     Ok(package)
 }
 
-/// Assembles every member of the workspace whose manifest is at `manifest_path` into a library
-/// package, writes each package to `target_dir` as a `.masp` file, and returns the assembled
-/// packages. Dependencies are resolved against `registry`.
+/// Assembles every member of the workspace whose manifest is at `manifest_path` that defines a
+/// library target into a library package, writes each package to `target_dir` as a `.masp` file,
+/// and returns the assembled packages. Members without a library target are skipped. Dependencies
+/// are resolved against `registry`.
 pub fn assemble_workspace(
     manifest_path: impl AsRef<Path>,
     registry: &mut InMemoryPackageRegistry,
@@ -68,6 +70,12 @@ pub fn assemble_workspace(
 
     let mut packages = Vec::with_capacity(workspace.members().len());
     for member in workspace.members() {
+        // A workspace member is not required to define a library target (it may only define
+        // executables), and assembling one from such a member would fail.
+        if member.library_target().is_none() {
+            continue;
+        }
+
         let package = assembler
             .clone()
             .for_project(member.clone(), registry)?
@@ -83,12 +91,7 @@ pub fn assemble_workspace(
 pub fn write_release_package(package: &Package) -> Result<()> {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
     let out_path = Path::new(&out_dir);
-    // OUT_DIR is `<target>/<profile>/build/<pkg>-<hash>/out` so the profile dir is its 3rd
-    // ancestor.
-    let profile_dir = out_path
-        .ancestors()
-        .nth(3)
-        .expect("OUT_DIR should live under <target>/<profile>/build/<pkg>/out");
+    let profile_dir = profile_dir(out_path)?;
 
     let name: &str = &package.name;
     let final_path = profile_dir.join(name).with_extension(Package::EXTENSION);
@@ -104,6 +107,33 @@ pub fn write_release_package(package: &Package) -> Result<()> {
 
     package.write_to_file(&tmp_path).into_diagnostic()?;
     fs::rename(&tmp_path, &final_path).into_diagnostic()
+}
+
+/// Returns the cargo profile directory (e.g. `<target>/release`) that the current build script's
+/// `OUT_DIR` lives under.
+fn profile_dir(out_dir: &Path) -> Result<&Path> {
+    // The profile directory is the parent of the `build` directory holding this build script's
+    // output, located by name so the depth of `OUT_DIR` (a cargo implementation detail) doesn't
+    // matter.
+    let by_build_dir = out_dir
+        .ancestors()
+        .find(|dir| dir.file_name() == Some(OsStr::new("build")))
+        .and_then(Path::parent);
+
+    // Should cargo stop nesting build script outputs under a `build` directory, fall back to the
+    // profile name. Note that `PROFILE` only ever holds `debug` or `release`, so this cannot find
+    // the directory of a custom profile such as `test-dev`, whose `PROFILE` is `debug`.
+    let by_profile_name = || {
+        let profile = env::var("PROFILE").expect("PROFILE is always set for build scripts");
+        out_dir.ancestors().find(|dir| dir.file_name() == Some(OsStr::new(&profile)))
+    };
+
+    by_build_dir.or_else(by_profile_name).ok_or_else(|| {
+        Report::msg(format!(
+            "failed to locate the profile directory containing OUT_DIR `{}`",
+            out_dir.display()
+        ))
+    })
 }
 
 // ERROR CONSTANTS EXTRACTION

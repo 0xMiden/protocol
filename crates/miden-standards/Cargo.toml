@@ -29,11 +29,11 @@ rand      = { optional = true, workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-miden-assembly         = { features = ["std"], workspace = true }
-miden-build-utils      = { workspace = true }
-miden-core-lib         = { workspace = true }
-miden-package-registry = { features = ["resolver", "std"], workspace = true }
-miden-protocol         = { workspace = true }
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core-lib             = { workspace = true }
+miden-package-registry     = { features = ["resolver", "std"], workspace = true }
+miden-protocol             = { workspace = true }
+miden-protocol-build-utils = { workspace = true }
 
 [dev-dependencies]
 anyhow         = { workspace = true }

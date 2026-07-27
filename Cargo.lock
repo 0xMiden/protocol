@@ -1512,13 +1512,13 @@ dependencies = [
  "alloy-sol-types",
  "fs-err",
  "miden-assembly",
- "miden-build-utils",
  "miden-core",
  "miden-core-lib",
  "miden-crypto",
  "miden-mast-package",
  "miden-package-registry",
  "miden-protocol",
+ "miden-protocol-build-utils",
  "miden-standards",
  "miden-utils-sync",
  "primitive-types",
@@ -1601,19 +1601,6 @@ version = "0.16.0-beta.1"
 dependencies = [
  "miden-protocol",
  "thiserror",
-]
-
-[[package]]
-name = "miden-build-utils"
-version = "0.16.0-beta.1"
-dependencies = [
- "fs-err",
- "miden-assembly",
- "miden-mast-package",
- "miden-package-registry",
- "miden-project",
- "regex",
- "walkdir",
 ]
 
 [[package]]
@@ -1904,7 +1891,6 @@ dependencies = [
  "getrandom 0.4.3",
  "miden-assembly",
  "miden-assembly-syntax",
- "miden-build-utils",
  "miden-core",
  "miden-core-lib",
  "miden-crypto",
@@ -1913,6 +1899,7 @@ dependencies = [
  "miden-package-registry",
  "miden-processor",
  "miden-protocol",
+ "miden-protocol-build-utils",
  "miden-utils-sync",
  "miden-verifier",
  "pprof",
@@ -1926,6 +1913,19 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "walkdir",
+]
+
+[[package]]
+name = "miden-protocol-build-utils"
+version = "0.16.0-beta.1"
+dependencies = [
+ "fs-err",
+ "miden-assembly",
+ "miden-mast-package",
+ "miden-package-registry",
+ "miden-project",
+ "regex",
  "walkdir",
 ]
 
@@ -1972,10 +1972,10 @@ dependencies = [
  "assert_matches",
  "bon",
  "miden-assembly",
- "miden-build-utils",
  "miden-core-lib",
  "miden-package-registry",
  "miden-protocol",
+ "miden-protocol-build-utils",
  "miden-standards",
  "rand 0.10.2",
  "rstest",

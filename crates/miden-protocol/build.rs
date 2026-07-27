@@ -5,7 +5,11 @@ use std::path::Path;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Path as MasmPath, ProjectTargetSelector};
-use miden_build_utils::{
+use miden_core::events::EventId;
+use miden_core_lib::CoreLibrary;
+use miden_mast_package::{Package, PackageExport};
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_protocol_build_utils::{
     ErrorModule,
     NamedError,
     PROJECT_MANIFEST,
@@ -15,10 +19,6 @@ use miden_build_utils::{
     is_masm_file,
     write_release_package,
 };
-use miden_core::events::EventId;
-use miden_core_lib::CoreLibrary;
-use miden_mast_package::{Package, PackageExport};
-use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use regex::Regex;
 use walkdir::WalkDir;
 
