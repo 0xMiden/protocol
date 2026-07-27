@@ -339,9 +339,9 @@ mod tests {
     /// dwarfs the tolerated drift.
     const DRIFT_TOLERANCE_PERCENT: u64 = 5;
 
-    /// Every priced note must price end-to-end through the pricer's default lookup (the widest
-    /// one, [`AgglayerNote::note_cost`]): each root its consumption declares as created has to
-    /// resolve through that lookup, or fee-schedule construction would fail at runtime with
+    /// Every priced note must price end-to-end through the pricer: each root its consumption
+    /// declares as created has to resolve through the pricer's lookup
+    /// ([`AgglayerNote::note_cost`]), or fee-schedule construction would fail at runtime with
     /// `UnknownNoteScriptRoot`.
     #[test]
     fn every_priced_note_prices_through_the_agglayer_lookup() {

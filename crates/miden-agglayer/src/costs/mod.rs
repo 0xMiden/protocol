@@ -4,9 +4,9 @@
 //! consuming the note - measured by the `bench-transaction` binary. See
 //! [`miden_standards::note::costs`] for the full definition of the canonical transaction, the
 //! cycle denomination, and why the values are estimates rather than guaranteed worst cases.
-//! The `NetworkNotePricer` in `miden-tx` turns cycle costs into fees; its default lookup
-//! ([`AgglayerNote::note_cost`](crate::AgglayerNote::note_cost)) covers agglayer and standard
-//! notes.
+//! The `NetworkNotePricer` in `miden-tx` turns cycle costs into fees, resolving them through
+//! [`AgglayerNote::note_cost`](crate::AgglayerNote::note_cost) - agglayer and standard notes
+//! alike.
 //!
 //! The table is regenerated with `make update-note-costs`; a snapshot test in
 //! `bench-transaction` fails CI when a checked-in value drifts more than 5% from the measured

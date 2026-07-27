@@ -17,7 +17,7 @@ use miden_standards::note::costs::NoteCost;
 pub enum NotePricingError {
     /// A note's cycle cost could not form valid transaction fee inputs (zero or above the
     /// kernel's maximum); the cost tables never contain such values, so this indicates a
-    /// broken custom lookup.
+    /// broken cost table.
     #[error("a note's cycle cost does not form valid transaction fee inputs")]
     InvalidCycles(#[source] TransactionFeeError),
     /// The computed fee overflowed during accumulation.
@@ -32,7 +32,7 @@ pub enum NotePricingError {
 }
 
 /// The lookup resolving a note script root to its benchmarked consumption cost.
-pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
+type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
@@ -41,11 +41,9 @@ pub type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 /// extra verification cycles on top. The default margin prices a note as-if it consumed at
 /// twice its measured cycles.
 ///
-/// The chain's current [`FeeParameters`] provide the verification base fee. The cost lookup
-/// resolves script roots to their benchmarked costs and defaults to the widest lookup
-/// ([`AgglayerNote::note_cost`]), covering agglayer and standard notes; pass
-/// [`StandardNote::note_cost`](miden_standards::note::StandardNote::note_cost) or a custom
-/// lookup to narrow or extend it.
+/// The chain's current [`FeeParameters`] provide the verification base fee. Costs are
+/// resolved through [`AgglayerNote::note_cost`], so agglayer and standard notes are priced
+/// alike.
 ///
 /// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
 /// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
@@ -59,8 +57,9 @@ pub struct NetworkNotePricer {
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
-    /// The cost lookup used to resolve note script roots.
-    #[builder(default = AgglayerNote::note_cost)]
+    /// The cost lookup resolving note script roots; always [`AgglayerNote::note_cost`],
+    /// swapped out only by tests.
+    #[builder(skip = AgglayerNote::note_cost)]
     lookup: CostLookupFn,
 }
 
@@ -255,12 +254,14 @@ mod tests {
         }
     }
 
+    /// Builds a pricer over a fabricated lookup; only tests can bypass the built-in cost
+    /// resolution.
     fn custom_pricer(lookup: CostLookupFn) -> NetworkNotePricer {
-        NetworkNotePricer::builder()
-            .fee_parameters(fee_parameters(500))
-            .safety_margin_verification_cycles(0)
-            .lookup(lookup)
-            .build()
+        NetworkNotePricer {
+            fee_parameters: fee_parameters(500),
+            safety_margin_verification_cycles: 0,
+            lookup,
+        }
     }
 
     #[test]
@@ -287,8 +288,8 @@ mod tests {
         ));
     }
 
-    /// The default lookup resolves standard notes: a SWAP prices as its own fee plus the P2ID
-    /// payback leg.
+    /// The built-in lookup resolves standard notes: a SWAP prices as its own fee plus the
+    /// P2ID payback leg.
     #[test]
     fn swap_price_includes_the_p2id_payback_leg() {
         let pricer = pricer(500, 0);
@@ -297,7 +298,7 @@ mod tests {
         assert_eq!(pricer.price(SwapNote::script_root()).unwrap().as_u64(), swap_fee + p2id_fee);
     }
 
-    /// The default lookup resolves agglayer notes: a CLAIM's price covers the whole chain it
+    /// The built-in lookup resolves agglayer notes: a CLAIM's price covers the whole chain it
     /// triggers - CLAIM + MINT + P2ID.
     #[test]
     fn claim_price_includes_the_mint_and_p2id_legs() {

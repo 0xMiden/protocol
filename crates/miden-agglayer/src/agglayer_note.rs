@@ -101,8 +101,8 @@ impl AgglayerNote {
     /// resolving the agglayer notes first and falling back to the standard notes
     /// ([`StandardNote::note_cost`]).
     ///
-    /// This is the widest cost lookup, covering agglayer and standard notes; the
-    /// `NetworkNotePricer` in `miden-tx` uses it as its default lookup.
+    /// This lookup covers agglayer and standard notes; the `NetworkNotePricer` in `miden-tx`
+    /// resolves all costs through it.
     pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
         match Self::from_script_root(root) {
             Some(note) => Some(note.cost()),

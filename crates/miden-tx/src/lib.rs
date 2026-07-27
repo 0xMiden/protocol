@@ -33,7 +33,7 @@ pub use prover::{
 };
 
 mod pricer;
-pub use pricer::{CostLookupFn, NetworkNotePricer, NotePricingError};
+pub use pricer::{NetworkNotePricer, NotePricingError};
 
 mod errors;
 pub use errors::{
