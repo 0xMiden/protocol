@@ -369,8 +369,7 @@ mod tests {
             Word::from([u32::from(RBAC_CONTROLLED), 0, 0, 0]),
         );
         let key = StorageMapKey::new(Word::from([1u32, 2, 3, 4]));
-        let map =
-            StorageMap::with_entries([(key, role_value)].into_iter()).expect("map should be valid");
+        let map = StorageMap::with_entries([(key, role_value)]).expect("map should be valid");
         let roles = StorageSlot::with_map(Authority::procedure_roles_slot().clone(), map);
         AccountStorage::new(vec![config, roles]).expect("storage should be valid")
     }
