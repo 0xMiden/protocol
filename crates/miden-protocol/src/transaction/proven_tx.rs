@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -8,19 +7,10 @@ use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
-    AccountId,
-    InputNotes,
-    Nullifier,
-    OutputNote,
-    OutputNotes,
-    TransactionId,
+    AccountId, InputNotes, Nullifier, OutputNote, OutputNotes, TransactionId,
 };
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::vm::ExecutionProof;
 use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
@@ -102,16 +92,6 @@ impl ProvenTransaction {
             InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
         let output_notes =
             OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
-
-        // Disallow creating and consuming notes with the same ID in a transaction. This is a
-        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
-        // This is only relevant for unauthenticated notes (notes with a header), since only these
-        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
-        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
-            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
-                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
-            }
-        }
 
         Self::from_parts(
             account_update,
@@ -212,8 +192,7 @@ impl ProvenTransaction {
     ) -> Result<Self, ProvenTransactionError> {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
-        if account_update.initial_state_commitment()
-            == account_update.final_state_commitment()
+        if account_update.initial_state_commitment() == account_update.final_state_commitment()
             && input_notes.commitment().is_empty()
         {
             return Err(ProvenTransactionError::EmptyTransaction);
@@ -229,22 +208,7 @@ impl ProvenTransaction {
             }
         }
 
-        match &account_update.details {
-            // The patch commitment cannot be validated for private account updates. It will be
-            // validated as part of transaction proof verification implicitly.
-            AccountUpdateDetails::Private => (),
-            AccountUpdateDetails::Public(account_patch) => {
-                let expected_commitment = account_update.account_patch_commitment;
-                let actual_commitment = account_patch.to_commitment();
-                if expected_commitment != actual_commitment {
-                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch(Box::from(
-                        format!(
-                            "expected account patch commitment {expected_commitment} but found {actual_commitment}"
-                        ),
-                    )));
-                }
-            },
-        }
+        account_update.details.validate(account_update.account_patch_commitment)?;
 
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
@@ -602,23 +566,13 @@ mod tests {
 
     use super::ProvenTransaction;
     use crate::account::{
-        Account,
-        AccountId,
-        AccountPatch,
-        AccountStoragePatch,
-        AccountType,
-        AccountUpdateDetails,
-        AccountVaultPatch,
-        StorageMapKey,
-        StorageMapPatch,
-        StorageMapPatchEntries,
-        StorageSlotName,
+        Account, AccountId, AccountPatch, AccountStoragePatch, AccountType, AccountUpdateDetails,
+        AccountVaultPatch, StorageMapKey, StorageMapPatch, StorageMapPatchEntries, StorageSlotName,
     };
     use crate::block::BlockNumber;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;

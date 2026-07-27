@@ -1,11 +1,10 @@
+use alloc::boxed::Box;
+
+use crate::Word;
 use crate::account::AccountPatch;
-use crate::errors::AccountPatchError;
+use crate::errors::{AccountPatchError, ProvenTransactionError};
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT UPDATE DETAILS
@@ -68,6 +67,32 @@ impl AccountUpdateDetails {
         Ok(merged_update)
     }
 
+    /// Validates the account patch commitment.
+    ///
+    /// For private accounts this always returns `Ok(())` because the commitment is validated
+    /// implicitly as part of transaction proof verification. For public accounts, checks that
+    /// the actual commitment of the carried [`AccountPatch`] matches `account_patch_commitment`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProvenTransactionError::AccountPatchCommitmentMismatch`] if the commitments
+    /// do not match.
+    pub fn validate(&self, account_patch_commitment: Word) -> Result<(), ProvenTransactionError> {
+        match self {
+            AccountUpdateDetails::Private => Ok(()),
+            AccountUpdateDetails::Public(account_patch) => {
+                let actual_commitment = account_patch.to_commitment();
+                if account_patch_commitment != actual_commitment {
+                    Err(ProvenTransactionError::AccountPatchCommitmentMismatch(Box::from(format!(
+                        "expected account patch commitment {account_patch_commitment} but found {actual_commitment}"
+                    ))))
+                } else {
+                    Ok(())
+                }
+            },
+        }
+    }
+
     /// Returns the tag of the [`AccountUpdateDetails`] as a string for inclusion in error messages.
     pub(crate) const fn as_tag_str(&self) -> &'static str {
         match self {
@@ -123,13 +148,8 @@ impl Deserializable for AccountUpdateDetails {
 mod tests {
     use super::AccountUpdateDetails;
     use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountPatch,
-        AccountStoragePatch,
-        AccountVaultPatch,
-        StorageMapKey,
-        StorageSlotName,
+        AccountCode, AccountId, AccountPatch, AccountStoragePatch, AccountVaultPatch,
+        StorageMapKey, StorageSlotName,
     };
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
