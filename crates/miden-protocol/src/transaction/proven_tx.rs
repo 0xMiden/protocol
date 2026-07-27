@@ -7,10 +7,19 @@ use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
-    AccountId, InputNotes, Nullifier, OutputNote, OutputNotes, TransactionId,
+    AccountId,
+    InputNotes,
+    Nullifier,
+    OutputNote,
+    OutputNotes,
+    TransactionId,
 };
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::vm::ExecutionProof;
 use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
@@ -179,8 +188,8 @@ impl ProvenTransaction {
     /// - The transaction is empty (account state unchanged and no input notes).
     /// - The same note ID appears as both an unauthenticated input and an output (circular
     ///   dependency, see <https://github.com/0xMiden/protocol/issues/2796>).
-    /// - The commitment computed on the actual account delta does not match its declared
-    ///   account delta commitment.
+    /// - The commitment computed on the actual account delta does not match its declared account
+    ///   delta commitment.
     fn from_parts(
         account_update: TxAccountUpdate,
         input_notes: InputNotes<InputNoteCommitment>,
@@ -207,8 +216,6 @@ impl ProvenTransaction {
                 return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
             }
         }
-
-        account_update.details.validate(account_update.account_patch_commitment)?;
 
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
@@ -356,6 +363,14 @@ impl TxAccountUpdate {
                     return Err(ProvenTransactionError::AccountIdMismatch {
                         tx_account_id: account_id,
                         details_account_id: patch.id(),
+                    });
+                }
+
+                let actual_patch_commitment = patch.to_commitment();
+                if account_patch_commitment != actual_patch_commitment {
+                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch {
+                        expected_patch_commitment: account_patch_commitment,
+                        actual_patch_commitment,
                     });
                 }
 
@@ -566,13 +581,23 @@ mod tests {
 
     use super::ProvenTransaction;
     use crate::account::{
-        Account, AccountId, AccountPatch, AccountStoragePatch, AccountType, AccountUpdateDetails,
-        AccountVaultPatch, StorageMapKey, StorageMapPatch, StorageMapPatchEntries, StorageSlotName,
+        Account,
+        AccountId,
+        AccountPatch,
+        AccountStoragePatch,
+        AccountType,
+        AccountUpdateDetails,
+        AccountVaultPatch,
+        StorageMapKey,
+        StorageMapPatch,
+        StorageMapPatchEntries,
+        StorageSlotName,
     };
     use crate::block::BlockNumber;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
@@ -606,6 +631,7 @@ mod tests {
             .with_component(AddComponent)
             .build_existing()?;
         let patch = AccountPatch::try_from(account.clone())?;
+        let patch_commitment = patch.to_commitment();
 
         let details = AccountUpdateDetails::Public(patch);
 
@@ -613,7 +639,7 @@ mod tests {
             account.id(),
             account.to_commitment(),
             account.to_commitment(),
-            Word::empty(),
+            patch_commitment,
             details,
         )?;
 
@@ -701,6 +727,36 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn account_patch_commitment_mismatch() -> anyhow::Result<()> {
+        let account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        let patch = AccountPatch::try_from(account.clone())?;
+        let actual_patch_commitment = patch.to_commitment();
+        // EMPTY_WORD is all-zeros and differs from a real Rescue hash.
+        let wrong_commitment = EMPTY_WORD;
+        assert_ne!(wrong_commitment, actual_patch_commitment);
+        let err = TxAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            account.to_commitment(),
+            wrong_commitment,
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap_err();
+        assert_matches!(
+            err,
+            ProvenTransactionError::AccountPatchCommitmentMismatch {
+                expected_patch_commitment,
+                actual_patch_commitment: returned_actual,
+            } if expected_patch_commitment == wrong_commitment
+                && returned_actual == actual_patch_commitment
+        );
+        Ok(())
+    }
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =
