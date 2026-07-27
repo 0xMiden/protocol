@@ -3,6 +3,21 @@ use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
 use {INPUT_VAULT_ROOT_PTR} from miden::tx_kernel_core::memory
 
+# EVENTS
+# =================================================================================================
+
+# Event emitted before an asset is minted into the input vault.
+const ACCOUNT_VAULT_BEFORE_MINT_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_mint_asset"
+    )
+
+# Event emitted before an asset is burned from the input vault.
+const ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_burn_asset"
+    )
+
 # PUBLIC INTERFACE
 # ==================================================================================================
 
@@ -34,6 +49,10 @@ pub proc mint
 
     push.INPUT_VAULT_ROOT_PTR
     movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # emit event to signal that an asset is going to be minted into the input vault
+    emit.ACCOUNT_VAULT_BEFORE_MINT_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
 
     # add the asset to the input vault for asset preservation
@@ -74,6 +93,10 @@ pub proc burn
 
     push.INPUT_VAULT_ROOT_PTR
     movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # emit event to signal that an asset is going to be burned from the input vault
+    emit.ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
 
     # remove the asset from the input vault for asset preservation

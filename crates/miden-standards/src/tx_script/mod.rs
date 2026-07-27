@@ -15,6 +15,6 @@ pub use send_notes_script::{SendNotesTransactionScript, SendNotesTransactionScri
 /// attribute, e.g. `::miden::standards::tx_scripts::expiration::main`.
 pub(crate) fn transaction_script(path: &str) -> TransactionScript {
     let standards_lib = StandardsLib::default();
-    TransactionScript::from_library_reference(standards_lib.as_ref(), Path::new(path))
+    TransactionScript::from_package_reference(standards_lib.as_ref(), Path::new(path))
         .expect("standards library contains the transaction script procedure")
 }

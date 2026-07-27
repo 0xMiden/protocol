@@ -85,6 +85,14 @@ impl NetworkAccountTxScriptAllowlist {
         )
     }
 
+    /// Extends the set of allowed tx script roots.
+    pub(super) fn extend_script_roots(
+        &mut self,
+        allowed_tx_script_roots: impl IntoIterator<Item = TransactionScriptRoot>,
+    ) {
+        self.allowed_script_roots.extend(allowed_tx_script_roots);
+    }
+
     /// Consumes this allowlist and returns the [`StorageSlot`] suitable for inclusion in an
     /// [`AccountComponent`](miden_protocol::account::AccountComponent)'s storage layout.
     pub fn into_storage_slot(self) -> StorageSlot {
@@ -158,9 +166,12 @@ pub enum NetworkAccountTxScriptAllowlistError {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::{AccountBuilder, StorageSlotContent};
+    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::note::NoteScriptRoot;
 
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
+    use crate::account::fees::FeePolicyManager;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -205,10 +216,11 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([
-                    miden_protocol::note::NoteScriptRoot::from_array([9, 9, 9, 9]),
-                ]))
+            .with_components(
+                AuthNetworkAccount::custom(
+                    BTreeSet::from_iter([NoteScriptRoot::from_array([9, 9, 9, 9])]),
+                    FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+                )
                 .expect("non-empty note allowlist should construct")
                 .with_allowed_tx_scripts(original_roots.clone()),
             )

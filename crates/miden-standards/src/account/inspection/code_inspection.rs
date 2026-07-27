@@ -147,7 +147,7 @@ mod tests {
     fn account_exposes_code_inspection_procedures() -> anyhow::Result<()> {
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(CodeInspection)
             .build_existing()?;
 

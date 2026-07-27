@@ -989,7 +989,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         assets_number_1 = output_note_1.assets().num_assets(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1065,7 +1065,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         METADATA = output_note.metadata().to_metadata_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1184,7 +1184,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
@@ -1216,7 +1216,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let elements = elements.into_iter().map(Felt::from).collect();
     let commitment = Word::from([42, 43, 44, 45u32]);
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_advice_map(commitment, elements)
+        .add_advice_map_entry(commitment, elements)
         .build()?;
 
     let code = format!(
@@ -1320,7 +1320,7 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
         end
         ";
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let result = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
@@ -1372,7 +1372,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         ATTACHMENT = attachment_word,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .expected_output_note(output_note.clone())
@@ -1447,7 +1447,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
         num_words = words.len(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .expected_output_note(output_note.clone())
@@ -1659,7 +1659,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
         EXPECTED_COMMITMENT_1 = commitment_1,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .expected_output_note(output_note.clone())
@@ -1789,7 +1789,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
         attachment1_num_words = attachment_1.num_words(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let tx = TestTransactionBuilder::new(account)
         .expected_output_note(output_note.clone())
@@ -1896,7 +1896,7 @@ async fn test_find_attachment(
         EXPECTED_WORD = word_1,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
     let tx = mock_chain
         .build_transaction(account.id())
@@ -1925,8 +1925,8 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     )?;
 
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-        .extend_advice_map(attachment0.to_commitment(), attachment0.content().to_elements())
-        .extend_advice_map(attachment1.to_commitment(), attachment1.content().to_elements())
+        .add_advice_map_entry(attachment0.to_commitment(), attachment0.content().to_elements())
+        .add_advice_map_entry(attachment1.to_commitment(), attachment1.content().to_elements())
         .build()?;
 
     let code = format!(

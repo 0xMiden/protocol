@@ -195,7 +195,7 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
     );
 
     let tx_script_mixed_compiled =
-        CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_mixed)?;
+        CodeBuilder::with_mock_packages().compile_tx_script(tx_script_mixed)?;
 
     // Without auth: must fail because `set_item` is not exempt.
     let result_no_auth = mock_chain
@@ -264,7 +264,7 @@ async fn test_acl_auth_uses_initial_public_key(
         .build_transaction(account.id())
         .unauthenticated_input_note(input_note)
         .authenticator(authenticator)
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await?;
@@ -320,7 +320,7 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         .build_transaction(account.id())
         .unauthenticated_input_note(input_note)
         .authenticator(Some(authenticator))
-        .tx_script(CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?)
+        .tx_script(CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?)
         .build()?
         .execute()
         .await;
@@ -381,7 +381,7 @@ async fn test_acl_burn_note_against_user_faucet_runs_without_signature(
 
     let faucet_account = AccountBuilder::new([42u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(policy_manager)
@@ -464,7 +464,7 @@ async fn test_acl_non_binary_exempt_marker_requires_auth_instead_of_bricking(
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(mock_component)
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -533,11 +533,11 @@ fn setup_acl_test(
     let component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
-    let (auth_component, authenticator) =
-        Auth::Acl { exempt_procedures, auth_scheme }.build_component();
+    let (auth_components, authenticator) =
+        Auth::Acl { exempt_procedures, auth_scheme }.build_components();
 
     let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_components)
         .with_component(component)
         .account_type(AccountType::Public)
         .build_existing()
@@ -582,7 +582,7 @@ fn compile_call_get_item_script() -> anyhow::Result<TransactionScript> {
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }
 
 /// Compiles the canonical "call `mock::account::set_item` on `MOCK_VALUE_SLOT0` with a fixed
@@ -604,5 +604,5 @@ pub(super) fn compile_call_set_item_script() -> anyhow::Result<TransactionScript
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
     );
-    Ok(CodeBuilder::with_mock_libraries().compile_tx_script(src)?)
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(src)?)
 }

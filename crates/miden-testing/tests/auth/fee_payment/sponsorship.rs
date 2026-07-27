@@ -14,7 +14,7 @@ use miden_standards::account::auth::{
     FeeConversionInfo,
     commit_fee_conversion_info,
 };
-use miden_standards::account::fees::{ConstantFeePolicy, FeeManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FeeSponsorshipNote,
@@ -48,30 +48,29 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
 
-/// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` + `FeeManager`)
-/// that allowlists `allowed_notes`, prices each `(root, amount)` in `priced` through its active
-/// `ConstantFeePolicy`, and holds `assets` in its vault.
+/// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` +
+/// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
+/// through its active `BasicConstantFeePolicy`, and holds `assets` in its vault.
 fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
     assets: impl IntoIterator<Item = Asset>,
 ) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new();
+    let mut policy = BasicConstantFeePolicy::new();
     for (root, amount) in priced {
         policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
     }
-    let fee_manager = FeeManager::builder()
+    let fee_policy_manager = FeePolicyManager::builder()
         .active_fee_policy(policy.into())
         .fee_faucet_id(fee_faucet_id()?)
         .build();
-    let auth = AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter(allowed_notes))?;
+    let auth = AuthNetworkAccount::new(BTreeSet::from_iter(allowed_notes), fee_policy_manager)?;
 
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
-        .with_auth_component(auth)
+        .with_components(auth)
         .with_component(BasicWallet)
-        .with_components(fee_manager)
         .with_assets(assets)
         .build_existing()?)
 }
@@ -153,7 +152,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         .foreign_accounts([foreign_target])
         .send_notes_script(&tx_script)
         .auth_args(auth_args)
-        .extend_advice_map(auth_args, advice_value)
+        .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()
@@ -242,7 +241,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
         .foreign_accounts([foreign_network])
         .send_notes_script(&tx_script)
         .auth_args(auth_args)
-        .extend_advice_map(auth_args, advice_value)
+        .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()

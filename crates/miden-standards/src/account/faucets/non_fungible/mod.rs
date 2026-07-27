@@ -38,6 +38,7 @@ use super::{
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSigAcl, NetworkAccount};
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -493,7 +494,7 @@ pub fn create_user_non_fungible_faucet(
 ) -> Result<Account, NonFungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -517,10 +518,11 @@ pub fn create_network_non_fungible_faucet(
     faucet: NonFungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
+    fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
 
-    NetworkAccount::builder(init_seed, note_allowlist)
+    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
         .with_component(faucet)
         .with_components(access_control)

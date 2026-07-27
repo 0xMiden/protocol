@@ -48,7 +48,6 @@ const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_co
 const ERR_NO_OWNER = "component has no owner"
 const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
 const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
-const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -143,8 +142,8 @@ end
 #!
 #! Panics if:
 #! - the component has no owner (owner is zero).
-#! - there is no nominated ownership transfer (nominated owner is zero).
-#! - the note sender is not the nominated owner.
+#! - the note sender is not the nominated owner. Since a note sender can never be the zero
+#!   address, this also covers the case where no ownership transfer is nominated.
 #!
 #! Invocation: call
 @account_procedure
@@ -159,13 +158,6 @@ pub proc accept_ownership
     assertz.err=ERR_NO_OWNER
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
-    # Check that a nominated transfer exists (nominated owner is not zero).
-    dup.1 dup.1 exec.account_id::eqz
-    # => [is_zero, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
-
-    assertz.err=ERR_NO_NOMINATED_OWNER
-    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
-
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
@@ -173,6 +165,8 @@ pub proc accept_ownership
     exec.account_id::eq
     # => [is_sender_nominated_owner, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 
+    # A valid account ID always has a non-zero version, so the sender can never be the zero
+    # address. This assertion therefore also rejects the case where no transfer is nominated.
     assert.err=ERR_SENDER_NOT_NOMINATED_OWNER
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 

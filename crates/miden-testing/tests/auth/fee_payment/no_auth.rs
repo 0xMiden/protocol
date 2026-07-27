@@ -25,7 +25,7 @@ async fn execute_no_auth_tx(
     input_note: Option<Note>,
 ) -> anyhow::Result<(Account, Result<ExecutedTransaction, miden_tx::TransactionExecutorError>)> {
     let account = AccountBuilder::new([11; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_assets(assets)
         .account_type(AccountType::Public)

@@ -50,7 +50,7 @@ use crate::{Auth, MockChain, TestTransactionBuilder};
 /// Tests that an empty account delta commits to the empty word.
 #[tokio::test]
 async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
-    let tx_script = CodeBuilder::with_mock_libraries()
+    let tx_script = CodeBuilder::with_mock_packages()
         .compile_tx_script(
             r#"
       use miden::core::sys
@@ -655,7 +655,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
         mock_map_slot = &*MOCK_MAP_SLOT,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     let expected_storage_patch = AccountStoragePatch::builder()
         .update_value(MOCK_VALUE_SLOT0.clone(), updated_slot_value)
@@ -711,7 +711,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(delta_check_auth_component())
+        .with_component(delta_check_auth_component())
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
             StorageSlot::with_map(map0_slot_name.clone(), map0.clone()),
@@ -745,7 +745,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -837,7 +837,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let tx = TestTransactionBuilder::new(account.clone()).build()?.execute().await?;
@@ -885,7 +885,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
             StorageSlot::with_empty_map(slot_name0.clone()),
             StorageSlot::with_empty_map(slot_name1.clone()),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let map_key = StorageMapKey::from_array([1, 2, 3, 4u32]);
@@ -920,7 +920,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -1062,12 +1062,12 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     );
 
     let auth_component_code =
-        CodeBuilder::with_mock_libraries().compile_component_code("test::account", auth_code)?;
+        CodeBuilder::with_mock_packages().compile_component_code("test::account", auth_code)?;
 
     let mut builder = MockChain::builder();
     let account = Account::builder(builder.rng_mut().random())
         .account_type(AccountType::Public)
-        .with_auth_component(AccountComponent::new(
+        .with_component(AccountComponent::new(
             auth_component_code,
             vec![],
             AccountComponentMetadata::new("test::account"),
@@ -1110,7 +1110,7 @@ fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
         code = code.as_ref()
     );
 
-    CodeBuilder::with_mock_libraries()
+    CodeBuilder::with_mock_packages()
         .compile_tx_script(&code)
         .context("failed to parse tx script")
 }
@@ -1213,15 +1213,15 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
     end
 "#;
 
-static DELTA_CHECK_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    CodeBuilder::with_mock_libraries()
+static DELTA_CHECK_AUTH_PACKAGE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    CodeBuilder::with_mock_packages()
         .compile_component_code("test::incr_nonce_with_delta_check_auth", DELTA_CHECK_AUTH_CODE)
         .expect("delta-check auth code should compile")
 });
 
 fn delta_check_auth_component() -> AccountComponent {
     AccountComponent::new(
-        DELTA_CHECK_AUTH_LIBRARY.clone(),
+        DELTA_CHECK_AUTH_PACKAGE.clone(),
         vec![],
         AccountComponentMetadata::new("test::incr_nonce_with_delta_check_auth"),
     )
@@ -1270,7 +1270,7 @@ impl AccountUpdateTest {
         let mut builder = MockChain::builder();
         let account = Account::builder(builder.rng_mut().random())
             .account_type(AccountType::Public)
-            .with_auth_component(delta_check_auth_component())
+            .with_component(delta_check_auth_component())
             .with_component(MockAccountComponent::with_slots(initial_storage_slots))
             .with_assets(initial_vault_assets)
             .build_existing()?;

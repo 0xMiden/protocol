@@ -27,7 +27,7 @@ use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the CLAIM note script procedure in the agglayer library.
+/// Path to the CLAIM note script procedure in the agglayer package.
 const CLAIM_SCRIPT_PATH: &str = "::agglayer::notes::claim::main";
 
 // Initialize the CLAIM note script only once

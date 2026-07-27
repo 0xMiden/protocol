@@ -29,7 +29,7 @@ use crate::{EthAddress, note_script};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the B2AGG note script procedure in the agglayer library.
+/// Path to the B2AGG note script procedure in the agglayer package.
 const B2AGG_SCRIPT_PATH: &str = "::agglayer::notes::b2agg::main";
 
 // Initialize the B2AGG note script only once

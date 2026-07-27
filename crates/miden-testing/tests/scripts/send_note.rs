@@ -472,7 +472,7 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
         .build_transaction(faucet_account.id())
         .tx_script(script.tx_script().clone())
         .tx_script_args(tampered_args)
-        .extend_advice_map(tampered_args, payload)
+        .add_advice_map_entry(tampered_args, payload)
         .build()?
         .execute()
         .await;

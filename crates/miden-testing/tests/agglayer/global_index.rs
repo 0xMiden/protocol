@@ -8,7 +8,7 @@ use miden_agglayer::errors::{
     ERR_LEADING_BITS_NON_ZERO,
     ERR_ROLLUP_INDEX_NON_ZERO,
 };
-use miden_agglayer::{GlobalIndex, agglayer_library};
+use miden_agglayer::{GlobalIndex, agglayer_package};
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::Program;
@@ -37,7 +37,7 @@ fn assemble_process_global_index_program(global_index: GlobalIndex, proc_name: &
     Assembler::new(Arc::new(DefaultSourceManager::default()))
         .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_package(Arc::new(agglayer_library()), Linkage::Dynamic)
+        .with_package(Arc::new(agglayer_package()), Linkage::Dynamic)
         .unwrap()
         .assemble_program("agglayer-test-script", &script_code)
         .unwrap()

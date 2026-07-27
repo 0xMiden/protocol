@@ -56,7 +56,7 @@ fn create_multisig_smart_account(
     )?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(AuthMultisigSmart::new(config)?)
+        .with_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(core::iter::once(asset.into()))
@@ -65,11 +65,11 @@ fn create_multisig_smart_account(
     Ok(multisig_account)
 }
 
-/// Compiles a transaction script that links against the multisig smart library so it can `call.`
+/// Compiles a transaction script that links against the multisig smart package so it can `call.`
 /// the wrapper-exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisigSmart::code())?
+        .with_dynamically_linked_package(AuthMultisigSmart::code())?
         .compile_tx_script(script.as_ref())?)
 }
 
