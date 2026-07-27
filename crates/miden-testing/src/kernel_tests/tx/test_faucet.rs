@@ -44,6 +44,121 @@ use crate::{
     assert_transaction_executor_error,
 };
 
+// MINT TESTS
+// ================================================================================================
+
+/// Tests minting succeeds in the tx kernel memory context (to assert input vault conditions).
+#[rstest]
+#[tokio::test]
+async fn test_mint_asset_succeeds_in_tx_kernel(
+    // The 2nd case has an unrelated asset in the initial vault.
+    #[values(vec![], vec![FungibleAsset::mock(345)])] initial_assets: Vec<Asset>,
+    #[values(
+      |id| NonFungibleAsset::new(&NonFungibleAssetDetails::new(id, vec![42])).into(),
+      |id| FungibleAsset::new(id, 42).unwrap().into(),
+    )]
+    make_asset: impl FnOnce(AccountId) -> Asset,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account_builder = AccountBuilder::new([1; 32])
+        .with_component(MockFaucetComponent)
+        .with_assets(initial_assets);
+    let faucet =
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+    let asset = make_asset(faucet.id());
+    let chain = builder.build()?;
+
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::asset_vault
+        use miden::tx_kernel_core::prologue
+        use mock::faucet as mock_faucet
+
+        begin
+            # mint asset
+            exec.prologue::prepare_transaction
+            push.{ASSET_VALUE}
+            push.{ASSET_ID}
+            call.mock_faucet::mint
+            # => []
+
+            # assert the input vault has been updated.
+            push.{INPUT_VAULT_ROOT_PTR}
+            push.{ASSET_ID}
+            exec.asset_vault::get_asset
+            push.{ASSET_VALUE}
+            assert_eqw.err="vault should contain asset"
+            # => []
+
+            # truncate the stack
+            dropw dropw
+        end
+        "#,
+        ASSET_ID = asset.to_id_word(),
+        ASSET_VALUE = asset.to_value_word(),
+    );
+
+    chain.build_transaction(faucet).build()?.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests minting succeeds in a real transaction.
+#[rstest]
+#[tokio::test]
+async fn test_mint_asset_succeeds(
+    // The 2nd case has an unrelated asset in the initial vault.
+    #[values(vec![], vec![FungibleAsset::mock(345)])] initial_assets: Vec<Asset>,
+    #[values(
+      |id| NonFungibleAsset::new(&NonFungibleAssetDetails::new(id, vec![42])).into(),
+      |id| FungibleAsset::new(id, 42).unwrap().into(),
+    )]
+    make_asset: impl FnOnce(AccountId) -> Asset,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account_builder = AccountBuilder::new([1; 32])
+        .with_component(MockFaucetComponent)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .with_assets(initial_assets);
+    let faucet =
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+    let asset = make_asset(faucet.id());
+    let chain = builder.build()?;
+
+    let tx_script = format!(
+        r#"
+        use mock::faucet as mock_faucet
+        use mock::account as mock_account
+
+        @transaction_script
+        pub proc main
+            # mint asset
+            push.{ASSET_VALUE}
+            push.{ASSET_ID}
+            call.mock_faucet::mint
+            # => []
+
+            # add the asset to the account vault for asset preservation AFTER the mint to ensure
+            # mint requests the asset witness
+            push.{ASSET_VALUE}
+            push.{ASSET_ID}
+            call.mock_account::add_asset
+            # => []
+
+            # truncate the stack
+            dropw dropw dropw dropw
+        end
+        "#,
+        ASSET_ID = asset.to_id_word(),
+        ASSET_VALUE = asset.to_value_word(),
+    );
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+    chain.build_transaction(faucet).tx_script(tx_script).build()?.execute().await?;
+
+    Ok(())
+}
+
 // FUNGIBLE FAUCET MINT TESTS
 // ================================================================================================
 
@@ -180,120 +295,43 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
     Ok(())
 }
 
-// NON-FUNGIBLE FAUCET MINT TESTS
-// ================================================================================================
-
-/// Tests minting succeeds in the tx kernel memory context (to assert input vault conditions).
-#[rstest]
+/// Tests minting a fungible asset with callbacks enabled.
 #[tokio::test]
-async fn test_mint_asset_succeeds_in_tx_kernel(
-    // The 2nd case has an unrelated asset in the initial vault.
-    #[values(vec![], vec![FungibleAsset::mock(345)])] initial_assets: Vec<Asset>,
-    #[values(
-      |id| NonFungibleAsset::new(&NonFungibleAssetDetails::new(id, vec![42])).into(),
-      |id| FungibleAsset::new(id, 42).unwrap().into(),
-    )]
-    make_asset: impl FnOnce(AccountId) -> Asset,
-) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let account_builder = AccountBuilder::new([1; 32])
-        .with_component(MockFaucetComponent)
-        .with_assets(initial_assets);
-    let faucet =
-        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
-    let asset = make_asset(faucet.id());
-    let chain = builder.build()?;
+async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()> {
+    // Use a faucet ID with callbacks enabled.
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS).unwrap();
+    let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
+    let asset_id = AssetId::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?;
 
     let code = format!(
         r#"
-        use miden::tx_kernel_core::asset_vault
-        use miden::tx_kernel_core::prologue
         use mock::faucet as mock_faucet
+        use miden::tx_kernel_core::prologue
 
         begin
-            # mint asset
             exec.prologue::prepare_transaction
-            push.{ASSET_VALUE}
-            push.{ASSET_ID}
+
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_faucet::mint
-            # => []
 
-            # assert the input vault has been updated.
-            push.{INPUT_VAULT_ROOT_PTR}
-            push.{ASSET_ID}
-            exec.asset_vault::get_asset
-            push.{ASSET_VALUE}
-            assert_eqw.err="vault should contain asset"
-            # => []
-
-            # truncate the stack
             dropw dropw
         end
         "#,
-        ASSET_ID = asset.to_id_word(),
-        ASSET_VALUE = asset.to_value_word(),
+        FUNGIBLE_ASSET_ID = asset_id.to_word(),
+        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
     );
 
-    chain.build_transaction(faucet).build()?.execute_code(&code).await?;
+    TestTransactionBuilder::with_fungible_faucet(faucet_id.into())
+        .build()?
+        .execute_code(&code)
+        .await?;
 
     Ok(())
 }
 
-/// Tests minting succeeds in a real transaction.
-#[rstest]
-#[tokio::test]
-async fn test_mint_asset_succeeds(
-    // The 2nd case has an unrelated asset in the initial vault.
-    #[values(vec![], vec![FungibleAsset::mock(345)])] initial_assets: Vec<Asset>,
-    #[values(
-      |id| NonFungibleAsset::new(&NonFungibleAssetDetails::new(id, vec![42])).into(),
-      |id| FungibleAsset::new(id, 42).unwrap().into(),
-    )]
-    make_asset: impl FnOnce(AccountId) -> Asset,
-) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let account_builder = AccountBuilder::new([1; 32])
-        .with_component(MockFaucetComponent)
-        .with_component(MockAccountComponent::with_empty_slots())
-        .with_assets(initial_assets);
-    let faucet =
-        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
-    let asset = make_asset(faucet.id());
-    let chain = builder.build()?;
-
-    let tx_script = format!(
-        r#"
-        use mock::faucet as mock_faucet
-        use mock::account as mock_account
-
-        @transaction_script
-        pub proc main
-            # mint asset
-            push.{ASSET_VALUE}
-            push.{ASSET_ID}
-            call.mock_faucet::mint
-            # => []
-
-            # add the asset to the account vault for asset preservation AFTER the mint to ensure
-            # mint requests the asset witness
-            push.{ASSET_VALUE}
-            push.{ASSET_ID}
-            call.mock_account::add_asset
-            # => []
-
-            # truncate the stack
-            dropw dropw dropw dropw
-        end
-        "#,
-        ASSET_ID = asset.to_id_word(),
-        ASSET_VALUE = asset.to_value_word(),
-    );
-
-    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
-    chain.build_transaction(faucet).tx_script(tx_script).build()?.execute().await?;
-
-    Ok(())
-}
+// NON-FUNGIBLE FAUCET MINT TESTS
+// ================================================================================================
 
 #[tokio::test]
 async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::Result<()> {
@@ -356,140 +394,7 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
     Ok(())
 }
 
-/// Tests minting a fungible asset with callbacks enabled.
-#[tokio::test]
-async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()> {
-    // Use a faucet ID with callbacks enabled.
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_WITH_CALLBACKS).unwrap();
-    let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
-    let asset_id = AssetId::new(AssetClass::default(), faucet_id, AssetComposition::Fungible)?;
-
-    let code = format!(
-        r#"
-        use mock::faucet as mock_faucet
-        use miden::tx_kernel_core::prologue
-
-        begin
-            exec.prologue::prepare_transaction
-
-            push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_ID}
-            call.mock_faucet::mint
-
-            dropw dropw
-        end
-        "#,
-        FUNGIBLE_ASSET_ID = asset_id.to_word(),
-        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
-    );
-
-    TestTransactionBuilder::with_fungible_faucet(faucet_id.into())
-        .build()?
-        .execute_code(&code)
-        .await?;
-
-    Ok(())
-}
-
-// FUNGIBLE FAUCET BURN TESTS
-// ================================================================================================
-
-/// Tests that burning a fungible asset on a non-faucet account fails.
-#[tokio::test]
-async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()> {
-    let account = setup_non_faucet_account()?;
-    let asset = FungibleAsset::mock(50);
-
-    let code = format!(
-        "
-      use mock::faucet
-
-      @transaction_script
-      pub proc main
-          push.{FUNGIBLE_ASSET_VALUE}
-          push.{FUNGIBLE_ASSET_ID}
-          call.faucet::burn
-      end
-      ",
-        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
-        FUNGIBLE_ASSET_ID = asset.to_id_word(),
-    );
-    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
-
-    let result = TestTransactionBuilder::new(account)
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
-    let mock_tx =
-        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
-
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
-    let fungible_asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
-
-    let code = format!(
-        "
-        use miden::tx_kernel_core::prologue
-        use mock::faucet
-
-        begin
-            exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_ID}
-            call.faucet::burn
-        end
-        ",
-        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
-    );
-
-    let exec_output = mock_tx.execute_code(&code).await;
-
-    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<()> {
-    let mock_tx = TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
-        .build()?;
-
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
-    let fungible_asset = FungibleAsset::new(faucet_id, CONSUMED_ASSET_1_AMOUNT + 1)?;
-
-    let code = format!(
-        "
-        use miden::tx_kernel_core::prologue
-        use mock::faucet
-
-        begin
-            exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_ID}
-            call.faucet::burn
-        end
-        ",
-        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
-    );
-
-    let exec_output = mock_tx.execute_code(&code).await;
-
-    assert_execution_error!(
-        exec_output,
-        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    );
-    Ok(())
-}
-
-// NON-FUNGIBLE FAUCET BURN TESTS
+// BURN TESTS
 // ================================================================================================
 
 /// Tests burning succeeds in the tx kernel memory context (to assert input vault conditions).
@@ -595,6 +500,107 @@ async fn test_burn_asset_succeeds(
 
     Ok(())
 }
+
+// FUNGIBLE FAUCET BURN TESTS
+// ================================================================================================
+
+/// Tests that burning a fungible asset on a non-faucet account fails.
+#[tokio::test]
+async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()> {
+    let account = setup_non_faucet_account()?;
+    let asset = FungibleAsset::mock(50);
+
+    let code = format!(
+        "
+      use mock::faucet
+
+      @transaction_script
+      pub proc main
+          push.{FUNGIBLE_ASSET_VALUE}
+          push.{FUNGIBLE_ASSET_ID}
+          call.faucet::burn
+      end
+      ",
+        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
+        FUNGIBLE_ASSET_ID = asset.to_id_word(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
+
+    let result = TestTransactionBuilder::new(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()> {
+    let mock_tx =
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use mock::faucet
+
+        begin
+            exec.prologue::prepare_transaction
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_ID}
+            call.faucet::burn
+        end
+        ",
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_FAUCET_IS_NOT_ASSET_ORIGIN);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
+        .build()?;
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, CONSUMED_ASSET_1_AMOUNT + 1)?;
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use mock::faucet
+
+        begin
+            exec.prologue::prepare_transaction
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_ID}
+            call.faucet::burn
+        end
+        ",
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await;
+
+    assert_execution_error!(
+        exec_output,
+        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    );
+    Ok(())
+}
+
+// NON-FUNGIBLE FAUCET BURN TESTS
+// ================================================================================================
 
 #[tokio::test]
 async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<()> {
