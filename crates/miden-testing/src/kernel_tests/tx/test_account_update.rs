@@ -1039,12 +1039,12 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         # => [[AUTH_ARGS], pad(12)]
 
         # Build the tx summary.
-        # Replace AUTH_ARGS with an EMPTY_WORD salt below the zeroed user params.
+        # Replace AUTH_ARGS with all-zero user params.
         dropw padw push.0.0.0
-        # => [param0, param1, param2, SALT, pad(12)]
+        # => [user_params(7), pad(12)]
 
         exec.::miden::standards::auth::create_tx_summary
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(12)]
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
 
         exec.::miden::standards::auth::hash_and_insert_tx_summary
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
@@ -1190,12 +1190,12 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
 
         dup
         if.true
-            # Replace AUTH_ARGS with an EMPTY_WORD salt below the zeroed user params.
+            # Replace AUTH_ARGS with all-zero user params.
             dropw padw push.0.0.0
-            # => [param0, param1, param2, SALT, pad(12)]
+            # => [user_params(7), pad(12)]
 
             exec.::miden::standards::auth::create_tx_summary
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, pad(12)]
+            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
 
             exec.::miden::standards::auth::hash_and_insert_tx_summary
             # => [TX_SUMMARY_COMMITMENT, pad(12)]

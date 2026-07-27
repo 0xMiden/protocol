@@ -68,15 +68,15 @@ pub proc authenticate_transaction
     exec.native_account::incr_nonce
     # => [final_nonce, PK_COMM, scheme_id]
 
-    # Build SALT = [0, 0, 0, final_nonce] below the zeroed user params.
+    # Pass the final nonce as the last user param and zero the remaining ones.
     push.0.0.0.0.0.0
-    # => [param0, param1, param2, SALT, PK_COMM, scheme_id]
+    # => [user_params(7), PK_COMM, scheme_id]
 
     # Compute the message that is signed. The summary preimage is inserted into the advice map
     # for extraction by the host.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT, PK_COMM, scheme_id]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, PK_COMM, scheme_id]
 
     exec.auth::hash_and_insert_tx_summary
     # OS => [MESSAGE, PK_COMM, scheme_id]

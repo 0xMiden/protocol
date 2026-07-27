@@ -19,8 +19,8 @@ const SUMMARY_ACCOUNT_DELTA_LOC = 0
 const SUMMARY_INPUT_NOTES_LOC = 4
 const SUMMARY_OUTPUT_NOTES_LOC = 8
 const SUMMARY_BLOCK_COMMITMENT_LOC = 12
-const SUMMARY_PARAMS_LOC = 16
-const SUMMARY_SALT_LOC = 20
+const SUMMARY_PARAMS_HEAD_LOC = 16
+const SUMMARY_PARAMS_TAIL_LOC = 20
 
 # Number of felts in the transaction summary preimage (6 words). Must match
 # TransactionSummary::NUM_ELEMENTS in miden-protocol
@@ -29,15 +29,17 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
-#! Inputs:  [param0, param1, param2, SALT]
+#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
+#!           user_param6]
 #! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!           BLOCK_COMMITMENT, PARAMS, SALT]
+#!           BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 #!
 #! Where:
-#! - param0, param1 and param2 are user-defined inputs which can be used to bind custom data to
-#!   the transaction summary (e.g. a maximum fee).
-#! - SALT is a user-defined input recommended to use as replay protection.
-#! - PARAMS is the word [expiration_delta, param0, param1, param2].
+#! - user_param0 through user_param6 are arbitrary, user-defined inputs which are bound by the
+#!   transaction summary. They are opaque: binding them enforces no meaning, so any semantics (e.g.
+#!   replay protection or a maximum fee) must be implemented by the calling component.
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2].
+#! - PARAMS_TAIL is the word [user_param3, user_param4, user_param5, user_param6].
 #! - expiration_delta is the transaction's expiration block delta, or 0 if it has not been set.
 #! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
@@ -45,21 +47,21 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 #!
 #! Invocation: exec
-pub proc create_tx_summary(param0: felt, param1: felt, param2: felt, salt: word)
+pub proc create_tx_summary(user_params: [felt; 7])
     exec.tx::get_expiration_block_delta
-    # => [PARAMS, SALT]
+    # => [PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_block_commitment
-    # => [BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_output_notes_commitment
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.native_account::compute_delta_commitment
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 end
 
 #! Hashes the provided transaction summary, inserts its preimage into the advice map keyed by the
@@ -70,18 +72,18 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!                   BLOCK_COMMITMENT, PARAMS, SALT]
+#!                   BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!   Advice map: {
 #!     TX_SUMMARY_COMMITMENT: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-#!                             OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+#!                             OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 #!   }
 #!
 #! Where:
-#! - SALT is an arbitrary word used for replay protection.
-#! - PARAMS is the word [expiration_delta, param0, param1, param2] binding the transaction's
-#!   expiration block delta and the user-defined parameters.
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2] and
+#!   PARAMS_TAIL the word [user_param3, user_param4, user_param5, user_param6], together binding the
+#!   transaction's expiration block delta and the seven user-defined parameters.
 #! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
@@ -94,41 +96,41 @@ pub proc hash_and_insert_tx_summary
     # save the first pair of rate words to the locals for the advice map insertion below
     loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
     swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     # pad capacity element of the hasher
     padw movdnw.2
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     # drop rate words
     dropw dropw
-    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS, SALT]
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     movdnw.2
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS, SALT]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
 
     # save the second pair of rate words to the locals
     loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC
     swapw loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC swapw
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS, SALT]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, PARAMS, SALT]
+    # => [RATE0, RATE1, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
 
     # drop rate words
     dropw dropw
-    # => [CAPACITY, PARAMS, SALT]
+    # => [CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
 
     movdnw.2
-    # => [PARAMS, SALT, CAPACITY]
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
 
     # save the third pair of rate words to the locals
-    loc_storew_le.SUMMARY_PARAMS_LOC
-    swapw loc_storew_le.SUMMARY_SALT_LOC swapw
-    # => [PARAMS, SALT, CAPACITY]
+    loc_storew_le.SUMMARY_PARAMS_HEAD_LOC
+    swapw loc_storew_le.SUMMARY_PARAMS_TAIL_LOC swapw
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
 
     exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
