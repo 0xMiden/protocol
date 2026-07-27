@@ -26,13 +26,13 @@ pub enum TransactionFeeError {
 /// term is currently hardcoded to zero and thus omitted here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransactionFee {
-    verification_cycles: u32,
+    log_verification_cycles: u32,
 }
 
 impl TransactionFee {
     /// Creates the fee inputs for a transaction executing `total_cycles` VM cycles.
     ///
-    /// Mirrors the kernel's `compute_fee`: the number of verification cycles is
+    /// Mirrors the kernel's `compute_fee`: the number of charged verification cycles is
     /// `ilog2(total_cycles) + 1`, where the unconditional `+ 1` rounds the proof-verification
     /// cost up to the next power of two.
     ///
@@ -47,13 +47,14 @@ impl TransactionFee {
             return Err(TransactionFeeError::TotalCyclesExceedsMax(total_cycles));
         }
         Ok(Self {
-            verification_cycles: total_cycles.ilog2() + 1,
+            log_verification_cycles: total_cycles.ilog2() + 1,
         })
     }
 
-    /// Returns the number of verification cycles the fee is charged for.
-    pub fn verification_cycles(&self) -> u32 {
-        self.verification_cycles
+    /// Returns the number of verification cycles the fee is charged for - a logarithmic
+    /// measure of the transaction's total cycle count, not an exact cycle count.
+    pub fn log_verification_cycles(&self) -> u32 {
+        self.log_verification_cycles
     }
 
     /// Computes the fee under the given fee parameters.
@@ -61,8 +62,8 @@ impl TransactionFee {
         // Multiply in u64: the kernel multiplies in the field, so a u32 product would wrap
         // where the kernel does not. The product is at most `u32::MAX * 30`, far below
         // `AssetAmount::MAX`.
-        let fee_amount =
-            u64::from(fee_parameters.verification_base_fee()) * u64::from(self.verification_cycles);
+        let fee_amount = u64::from(fee_parameters.verification_base_fee())
+            * u64::from(self.log_verification_cycles);
 
         AssetAmount::new(fee_amount).expect("fee is bounded far below AssetAmount::MAX")
     }
@@ -84,15 +85,16 @@ mod tests {
     }
 
     #[test]
-    fn verification_cycles_formula() {
-        let verification_cycles =
-            |total_cycles: u32| TransactionFee::new(total_cycles).unwrap().verification_cycles();
-        assert_eq!(verification_cycles(1), 1);
-        assert_eq!(verification_cycles(2), 2);
-        assert_eq!(verification_cycles(3), 2);
-        assert_eq!(verification_cycles(4), 3);
-        assert_eq!(verification_cycles(65_536), 17);
-        assert_eq!(verification_cycles(MAX_TX_EXECUTION_CYCLES), 30);
+    fn log_verification_cycles_formula() {
+        let log_verification_cycles = |total_cycles: u32| {
+            TransactionFee::new(total_cycles).unwrap().log_verification_cycles()
+        };
+        assert_eq!(log_verification_cycles(1), 1);
+        assert_eq!(log_verification_cycles(2), 2);
+        assert_eq!(log_verification_cycles(3), 2);
+        assert_eq!(log_verification_cycles(4), 3);
+        assert_eq!(log_verification_cycles(65_536), 17);
+        assert_eq!(log_verification_cycles(MAX_TX_EXECUTION_CYCLES), 30);
     }
 
     #[test]
