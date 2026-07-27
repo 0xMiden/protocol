@@ -191,7 +191,7 @@ pub enum SendNotesTransactionScriptError {
     #[error("note asset is not issued by faucet {0}")]
     IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
-    FaucetNoteWithoutAsset,
+    FaucetNoteUnexpectedNumAssets,
     #[error("invalid sender account: {0}")]
     InvalidSenderAccount(AccountId),
     #[error(
@@ -224,7 +224,7 @@ fn validate_faucet_notes(
         validate_note_sender(sender, note)?;
 
         if note.assets().num_assets() != 1 {
-            return Err(SendNotesTransactionScriptError::FaucetNoteWithoutAsset);
+            return Err(SendNotesTransactionScriptError::FaucetNoteUnexpectedNumAssets);
         }
         let asset = note.assets().iter().next().expect("note should contain an asset");
         if asset.faucet_id() != sender {

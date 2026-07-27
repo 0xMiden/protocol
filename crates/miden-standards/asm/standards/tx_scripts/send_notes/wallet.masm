@@ -5,6 +5,7 @@
 # parameters (the payload) from the advice map, so a single script root covers every possible
 # set of output notes. See the parent `send_notes` module for the payload layout.
 
+use miden::protocol::asset
 use miden::protocol::output_note
 use miden::standards::note::note_creator
 use miden::standards::tx_scripts::send_notes
@@ -133,10 +134,7 @@ proc process_notes
             loc_load.PROCESS_NOTES_NOTE_IDX_LOC
             # => [note_idx, pad(7), assets_left, notes_left, pad(16)]
 
-            padw loc_load.PROCESS_NOTES_ITEM_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
-            # => [ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
-
-            padw loc_load.PROCESS_NOTES_ITEM_PTR_LOC mem_loadw_le
+            loc_load.PROCESS_NOTES_ITEM_PTR_LOC exec.asset::load
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
 
             call.basic::move_asset_to_note
@@ -145,9 +143,12 @@ proc process_notes
             dropw dropw dropw dropw
             # => [assets_left, notes_left, pad(16)]
 
+            # advance to the next item, which starts right after this asset
             loc_load.PROCESS_NOTES_ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.PROCESS_NOTES_ITEM_PTR_LOC
+            # => [assets_left, notes_left, pad(16)]
 
             sub.1 dup neq.0
+            # => [assets_left != 0, assets_left, notes_left, pad(16)]
         end
         drop
         # => [notes_left, pad(16)]
@@ -174,9 +175,12 @@ proc process_notes
             exec.output_note::add_attachment
             # => [attachments_left, notes_left, pad(16)]
 
+            # advance to the next item, which starts right after this attachment
             loc_load.PROCESS_NOTES_ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.PROCESS_NOTES_ITEM_PTR_LOC
+            # => [attachments_left, notes_left, pad(16)]
 
             sub.1 dup neq.0
+            # => [attachments_left != 0, attachments_left, notes_left, pad(16)]
         end
         drop
         # => [notes_left, pad(16)]
@@ -184,8 +188,10 @@ proc process_notes
         # advance to the next note record, which starts right after the last item
         # -----------------------------------------------------------------------------------------
         loc_load.PROCESS_NOTES_ITEM_PTR_LOC loc_store.PROCESS_NOTES_READ_PTR_LOC
+        # => [notes_left, pad(16)]
 
         sub.1 dup neq.0
+        # => [notes_left != 0, notes_left, pad(16)]
     end
     drop
     # => [pad(16)]

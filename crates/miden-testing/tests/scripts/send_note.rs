@@ -2,24 +2,22 @@ use core::num::NonZeroU16;
 use core::slice;
 
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{AccountCodeInterface, AccountComponentCode, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNote,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteRecipient,
+    NoteStorage, NoteTag, NoteType, PartialNote, PartialNoteMetadata,
+};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::faucets::FungibleFaucet;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
 use miden_standards::note::P2idNote;
@@ -226,35 +224,40 @@ async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Resul
         slice::from_ref(&partial_note),
     );
 
-    assert!(matches!(result, Err(SendNotesTransactionScriptError::FaucetNoteWithoutAsset)));
+    assert!(matches!(
+        result,
+        Err(SendNotesTransactionScriptError::FaucetNoteUnexpectedNumAssets)
+    ));
 
     Ok(())
 }
 
+/// Builds the code interface of an account exposing `component`'s procedures, without
+/// instantiating an account. Enough for the script builder, which only inspects the interface.
+fn code_interface(
+    account_id: u128,
+    component: &AccountComponentCode,
+) -> anyhow::Result<AccountCodeInterface> {
+    let account_id = AccountId::try_from(account_id)?;
+    Ok(AccountCodeInterface::new(account_id, component.procedure_roots().collect())?)
+}
+
 /// Tests that the wallet path rejects notes whose sender is not the sending account at
 /// script-build time.
-#[tokio::test]
-async fn test_send_note_script_rejects_sender_mismatch() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let other_account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    builder.build()?;
+#[test]
+fn test_send_note_script_rejects_sender_mismatch() -> anyhow::Result<()> {
+    let sender_interface =
+        code_interface(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, BasicWallet::code())?;
+    let other_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2)?;
 
-    let foreign_note = create_assetless_note(other_account.id())?;
+    let foreign_note = create_assetless_note(other_id)?;
     let partial_note = PartialNote::from(foreign_note);
 
-    let result = SendNotesTransactionScript::new(
-        &sender_account.code_interface(),
-        slice::from_ref(&partial_note),
-    );
+    let result = SendNotesTransactionScript::new(&sender_interface, slice::from_ref(&partial_note));
 
     assert!(matches!(
         result,
-        Err(SendNotesTransactionScriptError::InvalidSenderAccount(sender)) if sender == other_account.id()
+        Err(SendNotesTransactionScriptError::InvalidSenderAccount(sender)) if sender == other_id
     ));
 
     Ok(())
@@ -262,35 +265,19 @@ async fn test_send_note_script_rejects_sender_mismatch() -> anyhow::Result<()> {
 
 /// Tests that the faucet path rejects notes carrying an asset issued by a different faucet at
 /// script-build time.
-#[tokio::test]
-async fn test_send_note_script_rejects_foreign_faucet_asset() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        "POL",
-        200,
-        None,
-    )?;
-    builder.build()?;
-
-    // The mock asset is issued by a mock faucet, not by the sending faucet.
+#[test]
+fn test_send_note_script_rejects_foreign_faucet_asset() -> anyhow::Result<()> {
+    // The mock asset is issued by `ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET`, so the sending faucet must
+    // be a different one for the asset to count as foreign.
+    let faucet_interface =
+        code_interface(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, FungibleFaucet::code())?;
     let foreign_asset = FungibleAsset::mock(10);
-    let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
-    let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Private)
-        .with_tag(tag);
-    let assets = NoteAssets::new(vec![foreign_asset])?;
-    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
-    let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let note = Note::new(assets, metadata, recipient);
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let note =
+        create_p2any_note(faucet_interface.id(), NoteType::Private, [foreign_asset], &mut rng);
     let partial_note = PartialNote::from(note);
 
-    let result = SendNotesTransactionScript::new(
-        &sender_fungible_faucet_account.code_interface(),
-        slice::from_ref(&partial_note),
-    );
+    let result = SendNotesTransactionScript::new(&faucet_interface, slice::from_ref(&partial_note));
 
     assert!(matches!(
         result,
@@ -362,26 +349,32 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<()> {
     let total_asset = FungibleAsset::mock(100);
+    let non_fungible_asset = NonFungibleAsset::mock(&[7, 8, 9]);
 
     let mut builder = MockChain::builder();
     let sender_account = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
-        [total_asset],
+        [total_asset, non_fungible_asset],
     )?;
     let mock_chain = builder.build()?;
 
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
-    // Note A: one asset, one attachment.
-    let attachment =
+    // Note A: two assets and two attachments.
+    let attachment_0 =
         NoteAttachment::with_word(NoteAttachmentScheme::new(7)?, Word::from([1, 2, 3, 4u32]));
+    let attachment_1 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(8)?,
+        vec![Word::from([5, 6, 7, 8u32]), Word::from([9, 10, 11, 12u32])],
+    )?;
     let note_a: Note = P2idNote::builder()
         .sender(sender_account.id())
         .target(sender_account.id())
         .asset(FungibleAsset::mock(10))
-        .attachments([attachment])
+        .asset(non_fungible_asset)
+        .attachments([attachment_0, attachment_1])
         .note_type(NoteType::Public)
         .generate_serial_number(&mut rng)
         .build()?
@@ -425,6 +418,25 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
     assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(note_b));
     assert_eq!(executed_transaction.output_notes().get_note(2), &RawOutputNote::Full(note_c));
 
+    // Both of note A's assets must have left the vault: the non-fungible one entirely, and the
+    // fungible one decremented by note A's and note B's amounts.
+    let vault_patch = executed_transaction.account_patch().vault();
+    assert_eq!(
+        vault_patch.removed_asset_ids().collect::<Vec<_>>(),
+        vec![&non_fungible_asset.id()],
+        "the non-fungible asset should have been completely removed"
+    );
+
+    let expected_removed = FungibleAsset::mock(10)
+        .unwrap_fungible()
+        .add(FungibleAsset::mock(40).unwrap_fungible())?;
+    let expected_asset_value = total_asset.unwrap_fungible().sub(expected_removed)?.into();
+    assert_eq!(
+        vault_patch.updated_assets().collect::<Vec<_>>(),
+        vec![expected_asset_value],
+        "the fungible asset should have been decremented by both notes' amounts"
+    );
+
     Ok(())
 }
 
@@ -442,14 +454,9 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
     )?;
     let mock_chain = builder.build()?;
 
-    let metadata = PartialNoteMetadata::new(faucet_account.id(), NoteType::Public)
-        .with_tag(NoteTag::with_account_target(faucet_account.id()));
-    let assets =
-        NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(faucet_account.id(), 10)?)])?;
-    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
-    let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let note = Note::new(assets, metadata, recipient);
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let own_asset = Asset::Fungible(FungibleAsset::new(faucet_account.id(), 10)?);
+    let note = create_p2any_note(faucet_account.id(), NoteType::Public, [own_asset], &mut rng);
 
     let script = SendNotesTransactionScript::new(&faucet_account.code_interface(), &[note.into()])?;
 
