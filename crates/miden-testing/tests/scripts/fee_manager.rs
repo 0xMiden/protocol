@@ -11,10 +11,10 @@ use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use miden_protocol::transaction::{RawOutputNote, TransactionScriptRoot};
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -185,25 +185,19 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     Ok(FeePolicy::custom(root, [component])?)
 }
 
-/// Builds an `AuthNetworkAccount`-authenticated account exposing the fee policy manager procedures,
-/// owned by `owner` via `Ownable2Step` with an owner-controlled `Authority` so the owner-gated
-/// `set_fee_policy` can be exercised.
+/// Builds a network account exposing the fee policy manager procedures, owned by `owner` via
+/// `Ownable2Step` with an owner-controlled `Authority` so the owner-gated `set_fee_policy` can be
+/// exercised.
 ///
-/// `allowed_note_roots` and `allowed_tx_script_roots` seed the network-auth allowlists, so callers
-/// must register the roots of any note they consume or transaction script they run against the
-/// account (the auth procedure rejects a transaction touching a non-allowlisted root).
+/// `allowed_note_roots` seeds the note-script allowlist, so callers must register the root of any
+/// note they consume against the account (the auth procedure rejects a transaction touching a
+/// non-allowlisted root). The FEE_SPONSORSHIP root is allowlisted by [`NetworkAccount::builder`].
 pub(super) fn build_fee_account_with_switching(
     owner: AccountId,
     allowed_note_roots: BTreeSet<NoteScriptRoot>,
-    allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    Ok(AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            fee_policy_manager: fee_policy_manager(&allowed_note_roots)?,
-            allowed_script_roots: allowed_note_roots,
-            allowed_tx_script_roots,
-        })
+    let fee_policy_manager = fee_policy_manager(&allowed_note_roots)?;
+    Ok(NetworkAccount::builder([1; 32], allowed_note_roots, fee_policy_manager)?
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -609,7 +603,6 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
     let account = build_fee_account_with_switching(
         owner_account_id,
         BTreeSet::from([get_policy_note.script().root()]),
-        BTreeSet::new(),
     )?;
 
     let mut builder = MockChain::builder();
@@ -724,16 +717,11 @@ fn build_mutation_test_account(
         manager_builder = manager_builder.allowed_fee_policy(custom_fee_policy()?);
     }
 
-    let mut account_builder = AccountBuilder::new([1; 32])
-        .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            fee_policy_manager: manager_builder.build(),
-            allowed_script_roots: allowed_note_roots,
-            allowed_tx_script_roots: BTreeSet::new(),
-        })
-        .with_component(BasicWallet)
-        .with_component(Ownable2Step::new(owner))
-        .with_component(Authority::OwnerControlled);
+    let mut account_builder =
+        NetworkAccount::builder([1; 32], allowed_note_roots, manager_builder.build())?
+            .with_component(BasicWallet)
+            .with_component(Ownable2Step::new(owner))
+            .with_component(Authority::OwnerControlled);
 
     // The manager only installs components for the policies it registers, so when the custom policy
     // is left off the initial allowlist its component must be installed separately to keep it
@@ -793,15 +781,11 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
     )?;
 
     // The account consumes the mutation note, the switch note, and the switch note's sponsorship
-    // note, so allowlist all three roots. The helper schedules the mutation and switch note roots
-    // at a 0 fee, so the still-active constant policy prices them for free.
+    // note. Allowlist the mutation and switch note roots; the helper schedules those two roots at a
+    // 0 fee, so the still-active constant policy prices them for free.
     let account = build_mutation_test_account(
         owner_account_id,
-        BTreeSet::from([
-            mutation_note.script().root(),
-            set_note.script().root(),
-            FeeSponsorshipNote::script_root(),
-        ]),
+        BTreeSet::from([mutation_note.script().root(), set_note.script().root()]),
         custom_policy_initially_allowed,
     )?;
 
@@ -884,7 +868,6 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
     let account = build_fee_account_with_switching(
         owner_account_id,
         BTreeSet::from([add_note.script().root()]),
-        BTreeSet::new(),
     )?;
 
     let mut builder = MockChain::builder();
@@ -930,7 +913,6 @@ async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
     let account = build_fee_account_with_switching(
         owner_account_id,
         BTreeSet::from([remove_note.script().root()]),
-        BTreeSet::new(),
     )?;
 
     let mut builder = MockChain::builder();

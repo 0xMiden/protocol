@@ -50,7 +50,7 @@ use miden_protocol::block::{
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -373,6 +373,7 @@ impl MockChainBuilder {
         account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
+        assets: Vec<Asset>,
     ) -> anyhow::Result<Account> {
         // network faucets authenticate with AuthNetworkAccount, which collects sponsored fees and
         // answers sponsorship fee estimates; both require an active fee policy. A constant policy
@@ -402,7 +403,8 @@ impl MockChainBuilder {
             ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
-            .with_component(PausableManager);
+            .with_component(PausableManager)
+            .with_assets(assets);
 
         let auth = Auth::NetworkAccount {
             allowed_script_roots,
@@ -480,6 +482,30 @@ impl MockChainBuilder {
         mint_policy: MintPolicy,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
+        self.add_existing_network_faucet_with_assets(
+            token_symbol,
+            max_supply,
+            owner_account_id,
+            token_supply,
+            mint_policy,
+            allowed_script_roots,
+            [],
+        )
+    }
+
+    /// Same as [`Self::add_existing_network_faucet`], but the faucet's vault additionally holds
+    /// `assets` (e.g. the native fee asset, so the faucet can pay transaction fees).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_existing_network_faucet_with_assets(
+        &mut self,
+        token_symbol: &str,
+        max_supply: u64,
+        owner_account_id: AccountId,
+        token_supply: Option<u64>,
+        mint_policy: MintPolicy,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+        assets: impl IntoIterator<Item = Asset>,
+    ) -> anyhow::Result<Account> {
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
@@ -513,6 +539,7 @@ impl MockChainBuilder {
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
+            assets.into_iter().collect(),
         )
     }
 
@@ -546,6 +573,7 @@ impl MockChainBuilder {
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
+            Vec::new(),
         )
     }
 
@@ -817,19 +845,21 @@ impl MockChainBuilder {
         requested_asset: Asset,
         payback_note_type: NoteType,
     ) -> anyhow::Result<(Note, NoteDetails)> {
-        let (swap_note, payback_note) = SwapNote::create(
-            sender,
-            offered_asset,
-            requested_asset,
-            NoteType::Public,
-            NoteAttachments::default(),
-            payback_note_type,
-            &mut self.rng,
-        )?;
+        let swap_note = SwapNote::builder()
+            .sender(sender)
+            .offered_asset(offered_asset)
+            .requested_asset(requested_asset)
+            .note_type(NoteType::Public)
+            .payback_note_type(payback_note_type)
+            .generate_serial_number(&mut self.rng)
+            .build()?;
 
-        self.add_output_note(RawOutputNote::Full(swap_note.clone()));
+        let payback_note = swap_note.payback_note_details();
+        let note = Note::from(swap_note);
 
-        Ok((swap_note, payback_note))
+        self.add_output_note(RawOutputNote::Full(note.clone()));
+
+        Ok((note, payback_note))
     }
 
     /// Adds a public `SPAWN` note to the list of genesis notes.

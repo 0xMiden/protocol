@@ -141,15 +141,15 @@ fn core_benchmarks(c: &mut Criterion) {
     });
 
     execute_group.bench_function(execute_id(None, SCENARIO_CLAIM_L1), |b| {
-        bench_async_execute(b, || tx_consume_claim_note(ClaimDataSource::L1ToMiden));
+        bench_async_execute(b, || tx_consume_claim_note(ClaimDataSource::L1ToMiden, false));
     });
 
     execute_group.bench_function(execute_id(None, SCENARIO_CLAIM_L2), |b| {
-        bench_async_execute(b, || tx_consume_claim_note(ClaimDataSource::L2ToMiden));
+        bench_async_execute(b, || tx_consume_claim_note(ClaimDataSource::L2ToMiden, false));
     });
 
     execute_group.bench_function(execute_id(None, SCENARIO_B2AGG), |b| {
-        bench_async_execute(b, || tx_consume_b2agg_note(None));
+        bench_async_execute(b, || tx_consume_b2agg_note(None, false));
     });
 
     execute_group.finish();
@@ -256,15 +256,19 @@ fn core_benchmarks(c: &mut Criterion) {
     );
 
     execute_and_prove_group.bench_function(prove_id(None, SCENARIO_CLAIM_L1), |b| {
-        bench_async_execute_and_prove(b, || tx_consume_claim_note(ClaimDataSource::L1ToMiden));
+        bench_async_execute_and_prove(b, || {
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden, false)
+        });
     });
 
     execute_and_prove_group.bench_function(prove_id(None, SCENARIO_CLAIM_L2), |b| {
-        bench_async_execute_and_prove(b, || tx_consume_claim_note(ClaimDataSource::L2ToMiden));
+        bench_async_execute_and_prove(b, || {
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden, false)
+        });
     });
 
     execute_and_prove_group.bench_function(prove_id(None, SCENARIO_B2AGG), |b| {
-        bench_async_execute_and_prove(b, || tx_consume_b2agg_note(None));
+        bench_async_execute_and_prove(b, || tx_consume_b2agg_note(None, false));
     });
 
     execute_and_prove_group.finish();
