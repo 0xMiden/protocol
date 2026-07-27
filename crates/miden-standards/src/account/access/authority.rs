@@ -290,7 +290,7 @@ impl Authority {
         let mut roles = BTreeMap::new();
         for (key, value) in map.entries() {
             // Enforce the canonical encoding on read: the reserved felts must be zero.
-            if value[1] != Felt::ZERO || value[2] != Felt::ZERO || value[3] != Felt::ZERO {
+            if value[1..4].iter().any(|v| *v != Felt::ZERO) {
                 return Err(AuthorityError::NonCanonicalConfig);
             }
             let proc_root = AccountProcedureRoot::from_raw(key.as_word());
@@ -353,7 +353,12 @@ pub enum AuthorityError {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
+
+    /// Procedure-root key of the single entry inserted by [`rbac_storage_with_role_value`].
+    const ROLE_KEY_WORD: [u32; 4] = [1, 2, 3, 4];
 
     /// Builds account storage whose authority value slot holds `word`.
     fn storage_with_config(word: Word) -> AccountStorage {
@@ -361,14 +366,14 @@ mod tests {
         AccountStorage::new(vec![slot]).expect("storage should be valid")
     }
 
-    /// Builds RBAC account storage whose procedure-roles map holds a single entry with
-    /// `role_value` as its value word.
+    /// Builds RBAC account storage whose procedure-roles map holds a single entry, keyed by
+    /// [`ROLE_KEY_WORD`], with `role_value` as its value word.
     fn rbac_storage_with_role_value(role_value: Word) -> AccountStorage {
         let config = StorageSlot::with_value(
             Authority::authority_slot().clone(),
             Word::from([u32::from(RBAC_CONTROLLED), 0, 0, 0]),
         );
-        let key = StorageMapKey::new(Word::from([1u32, 2, 3, 4]));
+        let key = StorageMapKey::new(Word::from(ROLE_KEY_WORD));
         let map = StorageMap::with_entries([(key, role_value)]).expect("map should be valid");
         let roles = StorageSlot::with_map(Authority::procedure_roles_slot().clone(), map);
         AccountStorage::new(vec![config, roles]).expect("storage should be valid")
@@ -424,26 +429,33 @@ mod tests {
 
     #[test]
     fn non_zero_reserved_felt_in_role_value_is_rejected() {
-        let role: Felt = RoleSymbol::new("ADMIN").unwrap().into();
+        let role = RoleSymbol::new("ADMIN").unwrap();
+        let role_felt: Felt = (&role).into();
+        let expected_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
 
-        // A canonical role value word `[role, 0, 0, 0]` is accepted.
-        let storage =
-            rbac_storage_with_role_value(Word::new([role, Felt::ZERO, Felt::ZERO, Felt::ZERO]));
-        assert!(matches!(
-            Authority::try_from_storage(&storage),
-            Ok(Authority::RbacControlled { .. })
-        ));
-
-        // A non-zero reserved felt in the role value word carries unexpected data.
+        // A canonical role value word `[role, 0, 0, 0]` is accepted and parses the configured role.
         let storage = rbac_storage_with_role_value(Word::new([
-            role,
+            role_felt,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ]));
+        assert_matches!(
+            Authority::try_from_storage(&storage),
+            Ok(Authority::RbacControlled { procedure_roles })
+                if procedure_roles.get(&expected_root) == Some(&role)
+        );
+
+        // A non-zero reserved felt in the role value word carries unexpected trailing data.
+        let storage = rbac_storage_with_role_value(Word::new([
+            role_felt,
             Felt::ZERO,
             Felt::from(9u8),
             Felt::ZERO,
         ]));
-        assert!(matches!(
+        assert_matches!(
             Authority::try_from_storage(&storage),
             Err(AuthorityError::NonCanonicalConfig)
-        ));
+        );
     }
 }
