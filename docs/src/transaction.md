@@ -17,7 +17,7 @@ Miden's `Transaction` model aims for the following:
 
 Compared to most blockchains, where a `Transaction` typically involves more than one account (e.g., sender and receiver), a `Transaction` in Miden involves a single account. To illustrate, Alice sends 5 ETH to Bob. In Miden, sending 5 ETH from Alice to Bob takes two transactions, one in which Alice creates a note containing 5 ETH and one in which Bob consumes that note and receives the 5 ETH. This model removes the need for a global lock on the blockchain's state, enabling Miden to process transactions in parallel.
 
-Currently the protocol limits the number of notes that can be consumed and produced in a transaction to 1000 each, which means that in a single `Transaction` an application could serve up to 2000 different user requests like deposits or withdrawals into/from a pool.
+Currently the protocol allows a `Transaction` to consume up to `1024` input notes and produce up to `1024` output notes. In aggregate, a `Transaction` can therefore process up to `2048` note-based requests, such as deposits into or withdrawals from a pool.
 
 A simple transaction currently takes about 1-2 seconds on a MacBook Pro. It takes around `90K` cycles to create the proof, as of now the signature verification step is the dominant cost.
 
