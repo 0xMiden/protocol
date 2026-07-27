@@ -4,7 +4,7 @@
 
 ### Features
 
-- [BREAKING] Cached each input note's `NoteId` in the transaction prologue at the new `INPUT_NOTE_ID_OFFSET` (44) of the note's kernel memory data segment (shifting `INPUT_NOTE_ASSETS_OFFSET` from 44 to 48), and added the `input_note_get_note_id` kernel accessor with `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` wrappers. Kernel procedure offsets after `INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET` are renumbered and the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
+- [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 
 ### Changes
 
