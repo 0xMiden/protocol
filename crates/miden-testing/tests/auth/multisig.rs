@@ -474,7 +474,7 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
         .unwrap_unauthorized_err();
 
     // The summary binds the expiration delta set by the transaction script.
-    assert_eq!(tx_summary.params().expiration_delta(), expiration_delta.get());
+    assert_eq!(tx_summary.expiration_delta(), expiration_delta.get());
     let original_block_commitment = tx_summary.block_commitment();
 
     let msg = tx_summary.to_commitment();

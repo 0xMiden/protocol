@@ -1,8 +1,8 @@
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
-use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::transaction::{ExecutedTransaction, TransactionSummary};
+use miden_protocol::{Word, ZERO};
 use miden_standards::account::auth::{
     Approver,
     ApproverSet,
@@ -55,10 +55,19 @@ fn multisig_fixture(
     Ok((approver_set, signers))
 }
 
+/// Asserts that `auth_args` is bound by the summary as the trailing word of its user parameters,
+/// which is how the multisig auth component uses the auth args as the summary salt.
+fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Word) {
+    assert_eq!(
+        tx_summary.user_params().as_elements(),
+        &[ZERO, ZERO, ZERO, auth_args[0], auth_args[1], auth_args[2], auth_args[3]]
+    );
+}
+
 /// Executes an empty transaction against a wallet with the multisig auth component on a
 /// fee-charging mock chain: runs once without signatures to obtain the transaction summary,
-/// asserts the auth args serve as the summary salt, signs the summary with all provided signers,
-/// and executes the signed transaction.
+/// asserts the auth args are bound as the trailing word of the summary's user params, signs the
+/// summary with all provided signers, and executes the signed transaction.
 async fn execute_fee_paying_multisig_tx(
     auth: Auth,
     signers: Vec<(PublicKey, BasicAuthenticator)>,
@@ -90,7 +99,7 @@ async fn execute_fee_paying_multisig_tx(
         .unwrap_unauthorized_err();
 
     // the auth args (the conversion info commitment) serve as the transaction summary salt
-    assert_eq!(tx_summary.salt(), args);
+    assert_auth_args_bound_as_salt(&tx_summary, args);
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -175,7 +184,7 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    assert_eq!(tx_summary.salt(), args);
+    assert_auth_args_bound_as_salt(&tx_summary, args);
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);

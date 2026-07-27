@@ -40,5 +40,5 @@ pub use tx_args::{
     TransactionScriptRoot,
 };
 pub use tx_header::TransactionHeader;
-pub use tx_summary::{TransactionSummary, TransactionSummaryParams};
+pub use tx_summary::{TransactionSummary, TransactionSummaryUserParams};
 pub use verifier::TransactionVerifier;

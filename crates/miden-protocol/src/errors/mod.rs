@@ -998,6 +998,10 @@ pub enum OutputNoteError {
 pub enum TransactionSummaryError {
     #[error("expiration delta element {0} does not fit into a u16")]
     ExpirationDeltaTooLarge(Felt),
+    #[error(
+        "transaction summary preimage contains {actual} elements but expected {expected} elements"
+    )]
+    InvalidPreimageLength { actual: usize, expected: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR

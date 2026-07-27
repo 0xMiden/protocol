@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::ProcessorState;
@@ -26,11 +27,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
-use miden_protocol::transaction::{
-    TransactionEventId,
-    TransactionSummary,
-    TransactionSummaryParams,
-};
+use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::vm::EventId;
 use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 
@@ -713,11 +710,6 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     }
 }
 
-/// The number of felts in the transaction summary preimage (6 words). Must match
-/// `TX_SUMMARY_NUM_ELEMENTS` in the standard auth library
-/// (crates/miden-standards/asm/standards/auth/mod.masm).
-const TX_SUMMARY_NUM_ELEMENTS: usize = 24;
-
 /// Extracts the transaction summary from the advice map using the provided `message` as the
 /// key.
 ///
@@ -725,7 +717,8 @@ const TX_SUMMARY_NUM_ELEMENTS: usize = 24;
 /// Expected advice map state: {
 ///     MESSAGE: [
 ///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-///         BLOCK_COMMITMENT, PARAMS, SALT
+///         BLOCK_COMMITMENT, [expiration_delta, user_param0, user_param1, user_param2],
+///         [user_param3, user_param4, user_param5, user_param6]
 ///     ]
 /// }
 /// ```
@@ -740,32 +733,25 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    if commitments.len() != TX_SUMMARY_NUM_ELEMENTS {
-        return Err(TransactionKernelError::TransactionSummaryConstructionFailed(
-            "expected 6 words for transaction summary commitments".into(),
-        ));
-    }
+    // This also validates the preimage length, which is what makes the commitment words below
+    // safe to slice out.
+    let (expiration_delta, user_params) = TransactionSummary::try_params_from_elements(commitments)
+        .map_err(|source| {
+            TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
+        })?;
 
     let account_delta_commitment = extract_word(commitments, 0);
     let input_notes_commitment = extract_word(commitments, 4);
     let output_notes_commitment = extract_word(commitments, 8);
     let block_commitment = extract_word(commitments, 12);
-    let params =
-        TransactionSummaryParams::try_from(extract_word(commitments, 16)).map_err(|source| {
-            TransactionKernelError::other_with_source(
-                "failed to convert word to transaction summary params",
-                source,
-            )
-        })?;
-    let salt = extract_word(commitments, 20);
 
     // Validate the expiration delta against the kernel state so that a summary preimage
     // carrying a fabricated delta is rejected rather than presented to the signer.
     let expected_expiration_delta = process.get_expiration_block_delta()?;
-    if params.expiration_delta() != expected_expiration_delta {
+    if expiration_delta != expected_expiration_delta {
         return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
             expected: expected_expiration_delta,
-            actual: params.expiration_delta(),
+            actual: expiration_delta,
         });
     }
 
@@ -774,8 +760,8 @@ fn extract_tx_summary<'store, STORE>(
         input_notes_commitment,
         output_notes_commitment,
         block_commitment,
-        params,
-        salt,
+        expiration_delta,
+        user_params,
     )?;
 
     if tx_summary.to_commitment() != message {

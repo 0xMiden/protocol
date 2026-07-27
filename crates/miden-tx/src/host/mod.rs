@@ -57,7 +57,7 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
-    TransactionSummaryParams,
+    TransactionSummaryUserParams,
 };
 pub(crate) use tx_event::{
     RecipientData,
@@ -436,8 +436,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         input_notes_commitment: Word,
         output_notes_commitment: Word,
         block_commitment: Word,
-        params: TransactionSummaryParams,
-        salt: Word,
+        expiration_delta: u16,
+        user_params: TransactionSummaryUserParams,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
@@ -492,8 +492,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             input_notes,
             output_notes,
             block_commitment,
-            params,
-            salt,
+            expiration_delta,
+            user_params,
         ))
     }
 

@@ -23,7 +23,8 @@ const SUMMARY_PARAMS_LOC = 16
 const SUMMARY_SALT_LOC = 20
 
 # Number of felts in the transaction summary preimage (6 words). Must match
-# TX_SUMMARY_NUM_ELEMENTS in miden-tx (crates/miden-tx/src/host/tx_event.rs).
+# TransactionSummary::NUM_ELEMENTS in miden-protocol
+# (crates/miden-protocol/src/transaction/tx_summary.rs).
 const TX_SUMMARY_NUM_ELEMENTS = 24
 
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
