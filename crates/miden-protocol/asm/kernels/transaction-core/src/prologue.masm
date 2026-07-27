@@ -882,7 +882,7 @@ proc process_input_note
     dup.4 exec.compute_input_note_details_commitment
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # save note details commitment to memory, keeping a copy of note_ptr for the note ID caching
+    # save note details commitment to memory
     dup.8 exec.memory::set_input_note_details_commitment
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
