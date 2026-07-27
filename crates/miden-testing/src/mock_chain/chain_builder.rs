@@ -50,7 +50,7 @@ use miden_protocol::block::{
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -845,19 +845,21 @@ impl MockChainBuilder {
         requested_asset: Asset,
         payback_note_type: NoteType,
     ) -> anyhow::Result<(Note, NoteDetails)> {
-        let (swap_note, payback_note) = SwapNote::create(
-            sender,
-            offered_asset,
-            requested_asset,
-            NoteType::Public,
-            NoteAttachments::default(),
-            payback_note_type,
-            &mut self.rng,
-        )?;
+        let swap_note = SwapNote::builder()
+            .sender(sender)
+            .offered_asset(offered_asset)
+            .requested_asset(requested_asset)
+            .note_type(NoteType::Public)
+            .payback_note_type(payback_note_type)
+            .generate_serial_number(&mut self.rng)
+            .build()?;
 
-        self.add_output_note(RawOutputNote::Full(swap_note.clone()));
+        let payback_note = swap_note.payback_note_details();
+        let note = Note::from(swap_note);
 
-        Ok((swap_note, payback_note))
+        self.add_output_note(RawOutputNote::Full(note.clone()));
+
+        Ok((note, payback_note))
     }
 
     /// Adds a public `SPAWN` note to the list of genesis notes.
