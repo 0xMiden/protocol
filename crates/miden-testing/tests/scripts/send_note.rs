@@ -2,28 +2,42 @@ use core::num::NonZeroU16;
 use core::slice;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountCodeInterface, AccountComponentCode, AccountId};
+use miden_protocol::account::{Account, AccountCodeInterface, AccountComponentCode, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteRecipient,
-    NoteStorage, NoteTag, NoteType, PartialNote, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNote,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
+use miden_standards::errors::standards::{
+    ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET,
+    ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH,
+};
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::TransactionExecutorError;
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
@@ -263,6 +277,37 @@ fn test_send_note_script_rejects_sender_mismatch() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that embedding the payload in the script's MAST forest leaves the script root untouched,
+/// so a single canonical root covers every set of output notes and stays allowlistable.
+#[test]
+fn test_send_note_script_root_is_independent_of_payload() -> anyhow::Result<()> {
+    let wallet_interface =
+        code_interface(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, BasicWallet::code())?;
+    let note = create_assetless_note(wallet_interface.id())?;
+
+    let script = SendNotesTransactionScript::new(&wallet_interface, &[note.clone().into()])?;
+    assert_eq!(
+        script.tx_script().root(),
+        SendNotesTransactionScript::wallet_script_root(),
+        "the embedded payload must not change the script root"
+    );
+
+    // A different payload must still produce the same root.
+    let other = SendNotesTransactionScript::with_expiration_delta(
+        &wallet_interface,
+        &[note.into()],
+        NonZeroU16::new(10).expect("10 is non-zero"),
+    )?;
+    assert_eq!(script.tx_script().root(), other.tx_script().root());
+    assert_ne!(
+        script.tx_script_args(),
+        other.tx_script_args(),
+        "a different payload should still change the script arguments"
+    );
+
+    Ok(())
+}
+
 /// Tests that the faucet path rejects notes carrying an asset issued by a different faucet at
 /// script-build time.
 #[test]
@@ -440,9 +485,10 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that the faucet script rejects a payload whose note record claims more than one asset.
-#[tokio::test]
-async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::Result<()> {
+/// Builds a faucet account and the genuine `send_notes` payload for a single one-asset note,
+/// returning the chain, the account, the script, and the payload elements.
+async fn faucet_with_single_asset_payload()
+-> anyhow::Result<(MockChain, Account, SendNotesTransactionScript, Vec<Felt>)> {
     let mut builder = MockChain::builder();
     let faucet_account = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
@@ -460,22 +506,75 @@ async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::R
 
     let script = SendNotesTransactionScript::new(&faucet_account.code_interface(), &[note.into()])?;
 
-    // Handcraft a payload whose first note record claims two assets and recompute the
-    // commitment so the payload passes the advice validation and reaches the script's own
-    // assertion.
-    let (_, mut payload) = script.advice_entries()[0].clone();
-    payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
-        + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
-    let tampered_args = Hasher::hash_elements(&payload);
+    // The genuine payload is read back out of the script's embedded advice map.
+    let payload = script
+        .tx_script()
+        .mast()
+        .advice_map()
+        .get(&script.tx_script_args())
+        .expect("the script should embed its payload")
+        .to_vec();
 
-    let result = mock_chain
+    Ok((mock_chain, faucet_account, script, payload))
+}
+
+/// Executes `payload` against `faucet_account` as a handcrafted `send_notes` payload, recomputing
+/// the commitment so it passes the advice validation and reaches the script's own assertions.
+async fn execute_with_payload(
+    mock_chain: &MockChain,
+    faucet_account: &Account,
+    script: &SendNotesTransactionScript,
+    payload: Vec<Felt>,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let tampered_args = Hasher::hash_elements(&payload);
+    Ok(mock_chain
         .build_transaction(faucet_account.id())
         .tx_script(script.tx_script().clone())
         .tx_script_args(tampered_args)
         .add_advice_map_entry(tampered_args, payload)
         .build()?
         .execute()
-        .await;
+        .await)
+}
+
+/// Tests that a payload whose note record claims more assets than it carries data for is rejected
+/// before any loop walks the record, rather than reading past the piped-in payload.
+#[tokio::test]
+async fn test_send_note_script_rejects_record_length_mismatch() -> anyhow::Result<()> {
+    let (mock_chain, faucet_account, script, mut payload) =
+        faucet_with_single_asset_payload().await?;
+
+    // Claim two assets without appending the second asset's elements.
+    payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
+        + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
+
+    let result = execute_with_payload(&mock_chain, &faucet_account, &script, payload).await?;
+
+    assert_transaction_executor_error!(result, ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests that the faucet script rejects a well-formed payload whose note record carries more than
+/// one asset, since the faucet mints exactly one asset per note.
+#[tokio::test]
+async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::Result<()> {
+    let (mock_chain, faucet_account, script, mut payload) =
+        faucet_with_single_asset_payload().await?;
+
+    // Claim two assets and append a second asset's elements, so the record stays well formed and
+    // the failure comes from the faucet's own one-asset assertion rather than the bounds check.
+    payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
+        + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
+    let first_asset_start = SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
+        + SendNotesTransactionScript::NOTE_RECORD_ITEMS_OFFSET;
+    let first_asset: Vec<Felt> = payload
+        [first_asset_start..first_asset_start + SendNotesTransactionScript::ITEM_NUM_ELEMENTS]
+        .to_vec();
+    let insert_at = first_asset_start + SendNotesTransactionScript::ITEM_NUM_ELEMENTS;
+    payload.splice(insert_at..insert_at, first_asset);
+
+    let result = execute_with_payload(&mock_chain, &faucet_account, &script, payload).await?;
 
     assert_transaction_executor_error!(result, ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET);
 

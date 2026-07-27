@@ -5,10 +5,11 @@ use miden_protocol::account::{AccountCodeInterface, AccountId};
 use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word, ZERO};
 use thiserror::Error;
 
-use crate::account::access::Ownable2Step;
+use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
 use crate::account::faucets::FungibleFaucet;
 use crate::account::wallets::BasicWallet;
 use crate::tx_script::transaction_script;
@@ -42,29 +43,28 @@ static SEND_NOTES_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> =
 /// so it does not affect the script root.
 ///
 /// When the account exposes both [`BasicWallet`] and [`FungibleFaucet`] procedures, the faucet
-/// script is preferred. Owner-controlled faucets (those exposing [`Ownable2Step`]) mint
-/// exclusively via MINT notes, so the standard `send_note` flow is rejected at script-build time
-/// to avoid runtime failures under the OwnerOnly mint policy.
+/// script is preferred. Faucets that delegate minting to an authority (those exposing
+/// [`Ownable2Step`] or [`RoleBasedAccessControl`]) are network faucets that mint exclusively via
+/// MINT notes, so the standard `send_note` flow is rejected at script build time to avoid runtime
+/// failures under their OwnerOnly mint policy.
 ///
-/// All three parts of the script must reach the transaction: the script itself
-/// ([`Self::tx_script`]), the payload commitment it reads its parameters from
-/// ([`Self::tx_script_args`]), and the payload and attachment contents keyed by their commitments
-/// ([`Self::advice_entries`]). The script fails at execution if the advice entries are missing.
+/// The payload and the attachment contents the script reads from the advice provider are embedded
+/// in the script's MAST forest, so they are loaded with the script. Callers only have to set the
+/// script ([`Self::tx_script`]) and the payload commitment it reads its parameters from
+/// ([`Self::tx_script_args`]).
 ///
 /// # Example
 ///
 /// ```ignore
 /// let script = SendNotesTransactionScript::new(&interface, &notes)?;
 ///
-/// let mut tx_args = TransactionArgs::new(AdviceMap::default())
+/// let tx_args = TransactionArgs::new(AdviceMap::default())
 ///     .with_tx_script_and_args(script.tx_script().clone(), script.tx_script_args());
-/// tx_args.extend_advice_map(script.advice_entries().to_vec());
 /// ```
 #[derive(Debug, Clone)]
 pub struct SendNotesTransactionScript {
     script: TransactionScript,
     tx_script_args: Word,
-    advice_entries: Vec<(Word, Vec<Felt>)>,
 }
 
 impl SendNotesTransactionScript {
@@ -81,6 +81,17 @@ impl SendNotesTransactionScript {
     ///
     /// See `encode_payload` for the full payload layout.
     pub const NOTE_RECORD_NUM_ASSETS_OFFSET: usize = 6;
+
+    /// Element offset of the first asset or attachment item within a note record, after the
+    /// RECIPIENT word and the metadata word.
+    ///
+    /// See `encode_payload` for the full payload layout.
+    pub const NOTE_RECORD_ITEMS_OFFSET: usize = 8;
+
+    /// Number of elements a single asset or attachment item occupies (two words).
+    ///
+    /// See `encode_payload` for the full payload layout.
+    pub const ITEM_NUM_ELEMENTS: usize = 8;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -112,16 +123,9 @@ impl SendNotesTransactionScript {
 
     /// The transaction script argument the script reads its payload commitment from.
     ///
-    /// Pass this as the transaction's `TX_SCRIPT_ARGS`, together with the advice map entries
-    /// from [`Self::advice_entries`].
+    /// Pass this as the transaction's `TX_SCRIPT_ARGS`.
     pub fn tx_script_args(&self) -> Word {
         self.tx_script_args
-    }
-
-    /// The advice map entries the script required at execution: the payload keyed by its
-    /// commitment, plus each attachment's content keyed by the attachment commitment.
-    pub fn advice_entries(&self) -> &[(Word, Vec<Felt>)] {
-        &self.advice_entries
     }
 
     /// The underlying [`TransactionScript`], to be set as the transaction's script.
@@ -147,16 +151,24 @@ impl SendNotesTransactionScript {
         let sender = interface.id();
 
         let has_mint_and_send = interface.contains([FungibleFaucet::mint_and_send_root()]);
-        let has_move_asset_to_note = interface.contains([BasicWallet::move_asset_to_note_root()]);
-        let is_owner_controlled = interface.contains(Ownable2Step::code().procedure_roots());
+
+        // The wallet script calls both procedures, so both must be exposed.
+        let can_send_own_assets = interface
+            .contains([BasicWallet::move_asset_to_note_root(), BasicWallet::create_note_root()]);
+
+        // A faucet that delegates minting to an authority is a network faucet: it mints
+        // exclusively via MINT notes, so the standard send_notes flow would fail at runtime under
+        // its OwnerOnly mint policy. Exposing either access-control component signals this.
+        let is_authority_controlled = interface.contains(Ownable2Step::code().procedure_roots())
+            || interface.contains(RoleBasedAccessControl::code().procedure_roots());
 
         let script = if has_mint_and_send {
-            if is_owner_controlled {
+            if is_authority_controlled {
                 return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
             }
             validate_faucet_notes(sender, output_notes)?;
             SEND_NOTES_FAUCET_TX_SCRIPT.clone()
-        } else if has_move_asset_to_note {
+        } else if can_send_own_assets {
             validate_wallet_notes(sender, output_notes)?;
             SEND_NOTES_WALLET_TX_SCRIPT.clone()
         } else {
@@ -166,19 +178,18 @@ impl SendNotesTransactionScript {
         let payload = encode_payload(output_notes, expiration_delta);
         let tx_script_args = Hasher::hash_elements(&payload);
 
-        let num_attachments: usize = output_notes
-            .iter()
-            .map(|note| note.attachments().num_attachments() as usize)
-            .sum();
-        let mut advice_entries = Vec::with_capacity(1 + num_attachments);
-        advice_entries.push((tx_script_args, payload));
+        // Embed the data the script reads from the advice provider into the script's MAST forest,
+        // so it is loaded automatically and callers only have to set the script and its arguments.
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(tx_script_args, payload);
         for note in output_notes {
             for attachment in note.attachments().iter() {
-                advice_entries.push((attachment.to_commitment(), attachment.to_elements()));
+                advice_map.insert(attachment.to_commitment(), attachment.to_elements());
             }
         }
+        let script = script.with_advice_map(advice_map);
 
-        Ok(Self { script, tx_script_args, advice_entries })
+        Ok(Self { script, tx_script_args })
     }
 }
 
@@ -283,10 +294,21 @@ fn encode_payload(notes: &[PartialNote], expiration_delta: u16) -> Vec<Felt> {
         );
         payload.push(Felt::from(num_assets));
         payload.push(Felt::from(note.attachments().num_attachments()));
+        debug_assert_eq!(
+            payload.len() - record_start,
+            SendNotesTransactionScript::NOTE_RECORD_ITEMS_OFFSET,
+            "items should start at the advertised record offset"
+        );
 
         for asset in note.assets().iter() {
+            let item_start = payload.len();
             payload.extend(asset.to_id_word().iter());
             payload.extend(asset.to_value_word().iter());
+            debug_assert_eq!(
+                payload.len() - item_start,
+                SendNotesTransactionScript::ITEM_NUM_ELEMENTS,
+                "an asset item should occupy the advertised number of elements"
+            );
         }
 
         for attachment in note.attachments().iter() {

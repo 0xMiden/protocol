@@ -206,12 +206,12 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Sets the transaction script, script arguments, and advice map entries required to execute
-    /// the provided [`SendNotesTransactionScript`].
-    pub fn send_notes_script(mut self, script: &SendNotesTransactionScript) -> Self {
-        for (key, value) in script.advice_entries() {
-            self.advice_inputs.map.insert(*key, value.clone());
-        }
+    /// Sets the transaction script and script arguments required to execute the provided
+    /// [`SendNotesTransactionScript`].
+    ///
+    /// The script's advice map entries are embedded in its MAST forest, so they load with the
+    /// script and need not be set here.
+    pub fn send_notes_script(self, script: &SendNotesTransactionScript) -> Self {
         self.tx_script(script.tx_script().clone())
             .tx_script_args(script.tx_script_args())
     }

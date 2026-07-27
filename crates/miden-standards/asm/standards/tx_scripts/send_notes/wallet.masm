@@ -23,11 +23,8 @@ const PROCESS_NOTES_ITEM_PTR_LOC = 2
 # ERRORS
 # =================================================================================================
 
-const ERR_SEND_NOTES_NUM_NOTES_INVALID = "send notes payload note count is not a valid u32"
 
-const ERR_SEND_NOTES_NUM_ASSETS_INVALID = "send notes payload asset count is not a valid u32"
 
-const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment count is not a valid u32"
 
 # TRANSACTION SCRIPT
 # =================================================================================================
@@ -68,8 +65,9 @@ end
 #! Outputs:
 #!   Operand stack: [pad(16)]
 #!
+#! The payload counts are validated by `send_notes::load_payload`, so this procedure trusts them.
+#!
 #! Panics if:
-#! - any payload count is not a valid u32.
 #! - the account does not expose the basic wallet interface.
 #! - any asset is not present in the account vault.
 #! - an attachment's elements are missing from the advice map.
@@ -85,7 +83,7 @@ proc process_notes
     push.NOTES_START_ADDR loc_store.PROCESS_NOTES_READ_PTR_LOC
     # => [pad(16)]
 
-    mem_load.NUM_NOTES_ADDR u32assert.err=ERR_SEND_NOTES_NUM_NOTES_INVALID
+    mem_load.NUM_NOTES_ADDR
     # => [notes_left, pad(16)]
 
     dup neq.0
@@ -121,7 +119,6 @@ proc process_notes
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.ITEMS_OFFSET loc_store.PROCESS_NOTES_ITEM_PTR_LOC
 
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ASSETS_OFFSET mem_load
-        u32assert.err=ERR_SEND_NOTES_NUM_ASSETS_INVALID
         # => [assets_left, notes_left, pad(16)]
 
         dup neq.0
@@ -156,7 +153,6 @@ proc process_notes
         # add the record's attachments to the note
         # -----------------------------------------------------------------------------------------
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
-        u32assert.err=ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID
         # => [attachments_left, notes_left, pad(16)]
 
         dup neq.0
