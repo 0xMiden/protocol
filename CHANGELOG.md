@@ -17,6 +17,10 @@
 - [BREAKING] Renamed `ConstantFeePolicy` to `BasicConstantFeePolicy` ([#3391](https://github.com/0xMiden/protocol/issues/3391)).
 - [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
 
+### Fixes
+
+- Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
+
 ## v0.16.0-beta.1 (2026-07-20)
 
 ### Features
