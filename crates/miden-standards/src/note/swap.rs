@@ -8,6 +8,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachment,
     NoteAttachments,
     NoteDetails,
     NoteRecipient,
@@ -41,8 +42,88 @@ static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // SWAP NOTE
 // ================================================================================================
 
-/// TODO: add docs
-pub struct SwapNote;
+/// A SWAP note: offers `offered_asset` in exchange for `requested_asset`.
+///
+/// Any account willing to pay the requested asset can consume the note: the consumer receives the
+/// offered asset and, in the same transaction, the script creates a P2ID payback note carrying the
+/// requested asset back to the swap creator. [`SwapNote::payback_note_details`] returns that
+/// payback note's [`NoteDetails`], which the creator needs to track and consume it once the swap is
+/// filled.
+///
+/// Construct one with the [builder](SwapNote::builder), which defaults both the note type and the
+/// payback note type to [`NoteType::Private`] and adds no attachments; convert it into a protocol
+/// [`Note`] infallibly via `Note::from`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapNote {
+    sender: AccountId,
+    offered_asset: Asset,
+    serial_number: Word,
+    note_type: NoteType,
+    storage: SwapNoteStorage,
+    attachments: NoteAttachments,
+}
+
+#[bon::bon]
+impl SwapNote {
+    /// Builds a new [`SwapNote`].
+    ///
+    /// The payback note targets the `sender`; the storage and script support any target. See
+    /// [`SwapPayback`] for how `payback_note_type` shapes the SWAP note storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The requested asset is the same as the offered asset.
+    /// - The attachments exceed their protocol limit (see [`NoteAttachments::new`]).
+    #[builder]
+    pub fn new(
+        #[builder(field)] attachments: Vec<NoteAttachment>,
+        sender: AccountId,
+        #[builder(into)] offered_asset: Asset,
+        #[builder(into)] requested_asset: Asset,
+        /// Must be drawn from a cryptographically secure RNG, e.g. via the builder's
+        /// `generate_serial_number`: two SWAP notes sharing a serial number derive the same
+        /// payback note, of which only one can be created.
+        serial_number: Word,
+        /// Defaults to [`NoteType::Private`], which only the counterparties the creator shares
+        /// the note with can fill. A SWAP note offered to the network at large must be set to
+        /// [`NoteType::Public`] explicitly.
+        #[builder(default = NoteType::Private)]
+        note_type: NoteType,
+        /// Defaults to [`NoteType::Private`], so the payback note's details are known only to the
+        /// creator, who needs the [`NoteDetails`] returned by [`SwapNote::payback_note_details`]
+        /// to consume it. Set to [`NoteType::Public`] to have the network store those
+        /// details instead.
+        #[builder(default = NoteType::Private)]
+        payback_note_type: NoteType,
+    ) -> Result<Self, NoteError> {
+        if requested_asset == offered_asset {
+            return Err(NoteError::other("requested asset same as offered asset"));
+        }
+
+        let attachments = NoteAttachments::new(attachments)?;
+
+        let payback_tag = NoteTag::with_account_target(sender);
+
+        let storage = match payback_note_type {
+            NoteType::Private => SwapNoteStorage::new_private(
+                requested_asset,
+                Self::payback_recipient(sender, serial_number).digest(),
+                payback_tag,
+            ),
+            NoteType::Public => SwapNoteStorage::new_public(requested_asset, sender, payback_tag),
+        };
+
+        Ok(Self {
+            sender,
+            offered_asset,
+            serial_number,
+            note_type,
+            storage,
+            attachments,
+        })
+    }
+}
 
 impl SwapNote {
     // CONSTANTS
@@ -64,65 +145,57 @@ impl SwapNote {
         SWAP_SCRIPT.root()
     }
 
-    // BUILDERS
-    // --------------------------------------------------------------------------------------------
-
-    /// Generates a SWAP note - swap of assets between two accounts - and returns the note as well
-    /// as [`NoteDetails`] for the payback note.
-    ///
-    /// This script enables a swap of 2 assets between the `sender` account and any other account
-    /// that is willing to consume the note. The consumer will receive the `offered_asset` and
-    /// will create a new P2ID note with `sender` as target, containing the `requested_asset`.
-    ///
-    /// See [`SwapPayback`] for how the two payback modes shape the SWAP note storage.
-    ///
-    /// # Errors
-    /// Returns an error if deserialization or compilation of the `SWAP` script fails.
-    pub fn create<R: FeltRng>(
-        sender: AccountId,
-        offered_asset: Asset,
-        requested_asset: Asset,
-        swap_note_type: NoteType,
-        swap_note_attachments: NoteAttachments,
-        payback_note_type: NoteType,
-        rng: &mut R,
-    ) -> Result<(Note, NoteDetails), NoteError> {
-        if requested_asset == offered_asset {
-            return Err(NoteError::other("requested asset same as offered asset"));
-        }
-
-        let serial_num = rng.draw_word();
-
-        // The payback recipient is P2ID(sender) with serial = swap_serial + 1, in both modes.
-        // `create` defaults the payback target to the sender; the storage and script support
-        // any target (see https://github.com/0xMiden/protocol/issues/2950).
-        let payback_serial_num = payback_serial_from_swap(serial_num);
-        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
-        let payback_assets = NoteAssets::new(vec![requested_asset])?;
-        let payback_note = NoteDetails::new(payback_assets, payback_recipient.clone());
-
-        let payback_tag = NoteTag::with_account_target(sender);
-        let swap_storage = match payback_note_type {
-            NoteType::Private => SwapNoteStorage::new_private(
-                requested_asset,
-                payback_recipient.digest(),
-                payback_tag,
-            ),
-            NoteType::Public => SwapNoteStorage::new_public(requested_asset, sender, payback_tag),
-        };
-
-        let recipient = swap_storage.into_recipient(serial_num);
-
-        // build the tag for the SWAP use case
-        let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
-
-        // build the outgoing note
-        let metadata = PartialNoteMetadata::new(sender, swap_note_type).with_tag(tag);
-        let assets = NoteAssets::new(vec![offered_asset])?;
-        let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
-
-        Ok((note, payback_note))
+    /// Returns the account ID of the note's sender, which is also the payback note's target.
+    pub fn sender(&self) -> AccountId {
+        self.sender
     }
+
+    /// Returns the asset offered by the note's sender.
+    pub fn offered_asset(&self) -> Asset {
+        self.offered_asset
+    }
+
+    /// Returns the asset the consumer must pay to claim the offered asset.
+    pub fn requested_asset(&self) -> Asset {
+        self.storage().requested_asset()
+    }
+
+    /// Returns the note's serial number.
+    pub fn serial_number(&self) -> Word {
+        self.serial_number
+    }
+
+    /// Returns the note's type.
+    pub fn note_type(&self) -> NoteType {
+        self.note_type
+    }
+
+    /// Returns the type of the payback note created when the swap is filled.
+    pub fn payback_note_type(&self) -> NoteType {
+        self.storage().payback_note_type()
+    }
+
+    /// Returns the attachments carried by the note.
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
+    }
+
+    /// Returns the note's storage.
+    pub fn storage(&self) -> &SwapNoteStorage {
+        &self.storage
+    }
+
+    /// Returns the [`NoteDetails`] of the payback note that the SWAP script creates when the note
+    /// is consumed.
+    pub fn payback_note_details(&self) -> NoteDetails {
+        let assets = NoteAssets::new(vec![self.requested_asset()])
+            .expect("a single asset never exceeds the note asset limit");
+
+        NoteDetails::new(assets, Self::payback_recipient(self.sender, self.serial_number))
+    }
+
+    // ASSOCIATED FUNCTIONS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns a note tag for a swap note with the specified parameters.
     ///
@@ -136,7 +209,7 @@ impl SwapNote {
     /// ```
     ///
     /// The script root serves as the use case identifier of the SWAP tag.
-    pub fn build_tag(
+    pub fn create_tag(
         note_type: NoteType,
         offered_asset: &Asset,
         requested_asset: &Asset,
@@ -161,6 +234,72 @@ impl SwapNote {
             | asset_pair as u32;
 
         NoteTag::new(tag)
+    }
+
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the payback note's recipient, which is P2ID(sender) in both payback modes.
+    fn payback_recipient(sender: AccountId, serial_number: Word) -> NoteRecipient {
+        P2idNoteStorage::new(sender).into_recipient(payback_serial_from_swap(serial_number))
+    }
+}
+
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: swap_note_builder::State> SwapNoteBuilder<S> {
+    /// Adds a single attachment to the note.
+    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
+        self.attachments.push(attachment.into());
+        self
+    }
+
+    /// Adds multiple attachments to the note.
+    pub fn attachments(
+        mut self,
+        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
+    ) -> Self {
+        self.attachments.extend(attachments.into_iter().map(Into::into));
+        self
+    }
+}
+
+impl<S: swap_note_builder::State> SwapNoteBuilder<S>
+where
+    S::SerialNumber: swap_note_builder::IsUnset,
+{
+    /// Draws a serial number from `rng` and sets it on the builder.
+    pub fn generate_serial_number(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> SwapNoteBuilder<swap_note_builder::SetSerialNumber<S>> {
+        self.serial_number(rng.draw_word())
+    }
+}
+
+// CONVERSIONS
+// ================================================================================================
+
+impl From<SwapNote> for Note {
+    fn from(note: SwapNote) -> Self {
+        let SwapNote {
+            sender,
+            offered_asset,
+            serial_number,
+            note_type,
+            storage,
+            attachments,
+        } = note;
+
+        let tag = SwapNote::create_tag(note_type, &offered_asset, &storage.requested_asset());
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
+        let recipient = storage.into_recipient(serial_number);
+
+        let assets = NoteAssets::new(vec![offered_asset])
+            .expect("a single asset never exceeds the note asset limit");
+
+        Note::with_attachments(assets, metadata, recipient, attachments)
     }
 }
 
@@ -408,13 +547,16 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+    use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::note::{NoteStorage, NoteType};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     };
+    use rstest::rstest;
 
     use super::*;
+    use crate::note::{NetworkAccountTarget, P2idNote};
 
     fn fungible_faucet() -> AccountId {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap()
@@ -443,6 +585,70 @@ mod tests {
 
     fn dummy_payback_tag() -> NoteTag {
         NoteTag::new(0xabcd1234)
+    }
+
+    /// The built note must carry the offered asset and a storage that encodes the payback
+    /// configuration, while the payback note details target the sender with the serial number the
+    /// MASM script derives.
+    #[rstest]
+    #[case::private_payback(NoteType::Private)]
+    #[case::public_payback(NoteType::Public)]
+    fn swap_note_builder(#[case] payback_note_type: NoteType) -> anyhow::Result<()> {
+        let sender = dummy_target_id();
+        let attachment = NoteAttachment::with_word(
+            NetworkAccountTarget::ATTACHMENT_SCHEME,
+            dummy_recipient_digest(),
+        );
+        let swap_note_type = NoteType::Public;
+        let swap_note = SwapNote::builder()
+            .sender(sender)
+            .offered_asset(fungible_asset())
+            .requested_asset(non_fungible_asset())
+            .note_type(swap_note_type)
+            .payback_note_type(payback_note_type)
+            .attachment(attachment.clone())
+            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .build()?;
+
+        let serial_number = swap_note.serial_number();
+        let storage = swap_note.storage().clone();
+        let payback_note = swap_note.payback_note_details();
+        let note = Note::from(swap_note);
+
+        assert_eq!(note.metadata().sender(), sender);
+        assert_eq!(note.metadata().note_type(), swap_note_type);
+        assert_eq!(
+            note.metadata().tag(),
+            SwapNote::create_tag(swap_note_type, &fungible_asset(), &non_fungible_asset())
+        );
+        assert_eq!(note.assets().num_assets(), 1);
+        assert_eq!(note.assets().iter().next(), Some(&fungible_asset()));
+        assert_eq!(note.attachments().get(0), Some(&attachment));
+        assert_eq!(note.recipient().script().root(), SwapNote::script_root());
+        assert_eq!(
+            SwapNoteStorage::try_from(note.recipient().storage().items())?,
+            storage,
+            "the note's storage must match the one derived from the SWAP note"
+        );
+        assert_eq!(storage.payback_tag(), NoteTag::with_account_target(sender));
+
+        assert_eq!(payback_note.assets().iter().next(), Some(&non_fungible_asset()));
+        assert_eq!(payback_note.recipient().serial_num(), payback_serial_from_swap(serial_number));
+        assert_eq!(payback_note.recipient().script().root(), P2idNote::script_root());
+
+        // Both payback modes must resolve to the payback note the creator was handed: privately
+        // through the embedded recipient digest, publicly by reconstructing it from the target ID.
+        match (payback_note_type, storage.payback()) {
+            (NoteType::Private, SwapPayback::Private { recipient }) => {
+                assert_eq!(*recipient, payback_note.recipient().digest());
+            },
+            (NoteType::Public, SwapPayback::Public { payback_target_id }) => {
+                assert_eq!(*payback_target_id, sender);
+            },
+            (note_type, payback) => panic!("payback {payback:?} does not match {note_type:?}"),
+        }
+
+        Ok(())
     }
 
     #[test]
@@ -577,7 +783,7 @@ mod tests {
         let expected_asset_pair = 0xcdab;
 
         let note_type = NoteType::Public;
-        let actual_tag = SwapNote::build_tag(note_type, &offered_asset, &requested_asset);
+        let actual_tag = SwapNote::create_tag(note_type, &offered_asset, &requested_asset);
 
         assert_eq!(actual_tag.as_u32() as u16, expected_asset_pair, "asset pair should match");
         assert_eq!((actual_tag.as_u32() >> 31) as u8, note_type as u8, "note type should match");
