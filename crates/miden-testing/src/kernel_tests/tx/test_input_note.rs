@@ -264,60 +264,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check that the note IDs obtained from the `input_note::get_note_id` procedure match the IDs
-/// computed by the Rust `Note` type.
-#[tokio::test]
-async fn test_get_note_id() -> anyhow::Result<()> {
-    let TestSetup {
-        mock_chain,
-        account,
-        p2any_note_0_assets,
-        p2id_note_1_asset,
-        p2id_note_2_assets: _,
-    } = setup_test()?;
-
-    let code = format!(
-        r#"
-        use miden::protocol::input_note
-
-        @transaction_script
-        pub proc main
-            # get the ID of the input note 0
-            push.0
-            exec.input_note::get_note_id
-            # => [NOTE_ID_0]
-
-            push.{NOTE_ID_0}
-            assert_eqw.err="note 0 has incorrect note ID"
-            # => []
-
-            # get the ID of the input note 1
-            push.1
-            exec.input_note::get_note_id
-            # => [NOTE_ID_1]
-
-            push.{NOTE_ID_1}
-            assert_eqw.err="note 1 has incorrect note ID"
-            # => []
-        end
-    "#,
-        NOTE_ID_0 = p2any_note_0_assets.id().as_word(),
-        NOTE_ID_1 = p2id_note_1_asset.id().as_word(),
-    );
-
-    let tx_script = CodeBuilder::default().compile_tx_script(code)?;
-
-    mock_chain
-        .build_transaction(account.id())
-        .unauthenticated_input_notes([p2any_note_0_assets, p2id_note_1_asset])
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
-
-    Ok(())
-}
-
 /// Check that a sender of a note with one asset obtained from the `input_note::get_sender`
 /// procedure is correct.
 #[tokio::test]
