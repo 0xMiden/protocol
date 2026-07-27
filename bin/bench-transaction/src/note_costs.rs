@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use miden_agglayer::AgglayerNote;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::note::StandardNote;
+use miden_standards::note::costs::NoteCost;
 
 #[cfg(test)]
 use crate::context_setups::build_benchmark_context;
@@ -137,11 +138,19 @@ impl PricedNote {
         }
     }
 
-    /// The compiled-in cost constant for this note, read through the universal cost lookup.
+    /// The compiled-in cost of this note, read from its own crate's lookup.
+    fn note_cost(&self) -> NoteCost {
+        let root = self.script_root();
+        match self {
+            PricedNote::Standard(_) => StandardNote::note_cost(root),
+            PricedNote::Agglayer(_) => AgglayerNote::note_cost(root),
+        }
+        .expect("every priced note has a checked-in cost")
+    }
+
+    /// The compiled-in cost constant for this note.
     pub fn committed_cycles(&self) -> u32 {
-        AgglayerNote::note_cost(self.script_root())
-            .expect("every priced note has a checked-in cost")
-            .cycles()
+        self.note_cost().cycles()
     }
 
     /// The note's name (e.g. "P2ID").
@@ -340,11 +349,10 @@ mod tests {
     const DRIFT_TOLERANCE_PERCENT: u64 = 5;
 
     /// Every priced note must price end-to-end through the pricer: each root its consumption
-    /// declares as created has to resolve through the pricer's lookup
-    /// ([`AgglayerNote::note_cost`]), or fee-schedule construction would fail at runtime with
-    /// `UnknownNoteScriptRoot`.
+    /// declares as created has to resolve through the pricer's built-in lookup, or
+    /// fee-schedule construction would fail at runtime with `UnknownNoteScriptRoot`.
     #[test]
-    fn every_priced_note_prices_through_the_agglayer_lookup() {
+    fn every_priced_note_prices_end_to_end() {
         let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing faucet ID should be valid");
         let pricer = NetworkNotePricer::builder()
@@ -379,12 +387,8 @@ mod tests {
     #[tokio::test]
     async fn created_notes_cover_executed_output_notes() -> Result<()> {
         for &note in PricedNote::all() {
-            let declared: BTreeSet<NoteScriptRoot> = AgglayerNote::note_cost(note.script_root())
-                .expect("every priced note must have a cost")
-                .created_notes()
-                .iter()
-                .copied()
-                .collect();
+            let declared: BTreeSet<NoteScriptRoot> =
+                note.note_cost().created_notes().iter().copied().collect();
 
             let mut observed = BTreeSet::new();
             for &bench in note.scenarios() {

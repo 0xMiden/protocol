@@ -1,5 +1,4 @@
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
-use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
 // ================================================================================================
 
 /// The enum holding the types of notes provided by `miden-agglayer`, mirroring
-/// [`StandardNote`].
+/// [`StandardNote`](miden_standards::note::StandardNote).
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgglayerNote {
@@ -32,8 +31,7 @@ impl AgglayerNote {
     // --------------------------------------------------------------------------------------------
 
     /// Returns an [`AgglayerNote`] instance based on the provided script root. Returns `None`
-    /// if the provided root does not match any agglayer note script - unlike
-    /// [`Self::note_cost`], which falls back to the standard notes for unmatched roots.
+    /// if the provided root does not match any agglayer note script.
     pub fn from_script_root(root: NoteScriptRoot) -> Option<Self> {
         match root {
             r if r == ClaimNote::script_root() => Some(Self::CLAIM),
@@ -97,17 +95,13 @@ impl AgglayerNote {
         }
     }
 
-    /// Returns the benchmarked consumption cost of the note with the given script root,
-    /// resolving the agglayer notes first and falling back to the standard notes
-    /// ([`StandardNote::note_cost`]).
+    /// Returns the benchmarked consumption cost of the agglayer note with the given script
+    /// root, or `None` if the root does not match an agglayer note.
     ///
-    /// This lookup covers agglayer and standard notes; the `NetworkNotePricer` in `miden-tx`
-    /// resolves all costs through it.
+    /// The `NetworkNotePricer` in `miden-tx` combines this lookup with the standard notes'
+    /// (`StandardNote::note_cost`) to resolve the cost of any priced note.
     pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
-        match Self::from_script_root(root) {
-            Some(note) => Some(note.cost()),
-            None => StandardNote::note_cost(root),
-        }
+        Some(Self::from_script_root(root)?.cost())
     }
 }
 
@@ -116,7 +110,6 @@ impl AgglayerNote {
 
 #[cfg(test)]
 mod tests {
-    use miden_standards::note::costs::P2ID_CONSUMPTION_CYCLES;
     use miden_standards::note::{MintNote, P2idNote};
 
     use super::*;
@@ -159,19 +152,17 @@ mod tests {
             assert_eq!(cost.cycles(), expected_cycles, "cost mismatch for {}", note.name());
         }
 
-        // A standard-note root is not an agglayer note; only `note_cost` falls back to it.
+        // A standard-note root is not an agglayer note.
         assert_eq!(AgglayerNote::from_script_root(P2idNote::script_root()), None);
     }
 
     #[test]
-    fn note_cost_resolves_agglayer_notes_and_falls_back_to_standards() {
+    fn note_cost_resolves_only_agglayer_notes() {
         let claim_cost =
             AgglayerNote::note_cost(ClaimNote::script_root()).expect("CLAIM should have a cost");
         assert_eq!(claim_cost.cycles(), CLAIM_CONSUMPTION_CYCLES);
         assert_eq!(claim_cost.created_notes(), [MintNote::script_root()]);
 
-        let p2id_cost =
-            AgglayerNote::note_cost(P2idNote::script_root()).expect("P2ID should resolve here too");
-        assert_eq!(p2id_cost.cycles(), P2ID_CONSUMPTION_CYCLES);
+        assert!(AgglayerNote::note_cost(P2idNote::script_root()).is_none());
     }
 }

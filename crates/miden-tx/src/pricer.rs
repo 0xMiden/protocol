@@ -6,6 +6,7 @@ use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
+use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
 
 // NETWORK NOTE PRICER
@@ -34,6 +35,13 @@ pub enum NotePricingError {
 /// The lookup resolving a note script root to its benchmarked consumption cost.
 type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 
+/// Resolves a note script root to its benchmarked consumption cost, consulting the standard
+/// and agglayer cost tables (their script-root domains are disjoint, so the order is
+/// irrelevant).
+fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
+    StandardNote::note_cost(root).or_else(|| AgglayerNote::note_cost(root))
+}
+
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
@@ -42,8 +50,8 @@ type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
 /// twice its measured cycles.
 ///
 /// The chain's current [`FeeParameters`] provide the verification base fee. Costs are
-/// resolved through [`AgglayerNote::note_cost`], so agglayer and standard notes are priced
-/// alike.
+/// resolved from the standard and agglayer cost tables ([`StandardNote::note_cost`] and
+/// [`AgglayerNote::note_cost`]), so both families of notes are priced alike.
 ///
 /// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
 /// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
@@ -57,9 +65,9 @@ pub struct NetworkNotePricer {
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
-    /// The cost lookup resolving note script roots; always [`AgglayerNote::note_cost`],
-    /// swapped out only by tests.
-    #[builder(skip = AgglayerNote::note_cost)]
+    /// The cost lookup resolving note script roots; always `resolve_note_cost`, swapped out
+    /// only by tests.
+    #[builder(skip = resolve_note_cost)]
     lookup: CostLookupFn,
 }
 
