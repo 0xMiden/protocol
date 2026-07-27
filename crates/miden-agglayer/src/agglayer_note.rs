@@ -101,8 +101,8 @@ impl AgglayerNote {
     /// resolving the agglayer notes first and falling back to the standard notes
     /// ([`StandardNote::note_cost`]).
     ///
-    /// This is the widest cost lookup: pass it as the `NetworkNotePricer` lookup to price
-    /// agglayer and standard notes through a single pricer.
+    /// This is the widest cost lookup, pricing agglayer and standard notes through a single
+    /// pricer: the `NetworkNotePricer` in `miden-tx` uses it as its default lookup.
     pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
         match Self::from_script_root(root) {
             Some(note) => Some(note.cost()),
@@ -116,15 +116,7 @@ impl AgglayerNote {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::AccountId;
-    use miden_protocol::block::FeeParameters;
-    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-    use miden_protocol::transaction::TransactionFee;
-    use miden_standards::note::costs::{
-        MINT_CONSUMPTION_CYCLES,
-        NetworkNotePricer,
-        P2ID_CONSUMPTION_CYCLES,
-    };
+    use miden_standards::note::costs::P2ID_CONSUMPTION_CYCLES;
     use miden_standards::note::{MintNote, P2idNote};
 
     use super::*;
@@ -171,18 +163,6 @@ mod tests {
         assert_eq!(AgglayerNote::from_script_root(P2idNote::script_root()), None);
     }
 
-    /// Builds a pricer over the agglayer-aware lookup - the way a network account operator
-    /// prices agglayer and standard notes through a single pricer.
-    fn pricer() -> NetworkNotePricer {
-        let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .expect("testing faucet ID should be valid");
-        NetworkNotePricer::builder()
-            .fee_parameters(FeeParameters::new(fee_faucet_id, 500))
-            .safety_margin_verification_cycles(0)
-            .lookup(AgglayerNote::note_cost)
-            .build()
-    }
-
     #[test]
     fn note_cost_resolves_agglayer_notes_and_falls_back_to_standards() {
         let claim_cost =
@@ -193,21 +173,5 @@ mod tests {
         let p2id_cost =
             AgglayerNote::note_cost(P2idNote::script_root()).expect("P2ID should resolve here too");
         assert_eq!(p2id_cost.cycles(), P2ID_CONSUMPTION_CYCLES);
-    }
-
-    fn fee(pricer: &NetworkNotePricer, cycles: u32) -> u64 {
-        let fee_inputs = TransactionFee::new(cycles).expect("cycle counts are non-zero");
-        pricer.fee(fee_inputs).expect("fee should be representable").as_u64()
-    }
-
-    #[test]
-    fn claim_price_includes_the_mint_and_p2id_legs() {
-        let pricer = pricer();
-
-        // A CLAIM's price covers the whole chain it triggers: CLAIM + MINT + P2ID.
-        let expected = fee(&pricer, CLAIM_CONSUMPTION_CYCLES)
-            + fee(&pricer, MINT_CONSUMPTION_CYCLES)
-            + fee(&pricer, P2ID_CONSUMPTION_CYCLES);
-        assert_eq!(pricer.price(ClaimNote::script_root()).unwrap().as_u64(), expected);
     }
 }

@@ -32,6 +32,9 @@ pub use prover::{
     TransactionProverHost,
 };
 
+mod pricer;
+pub use pricer::{CostLookupFn, NetworkNotePricer, NotePricingError};
+
 mod errors;
 pub use errors::{
     AuthenticationError,

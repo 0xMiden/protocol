@@ -5,7 +5,7 @@
 ### Features
 
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
-- [BREAKING] Added `NetworkNotePricer` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
+- [BREAKING] Added `NetworkNotePricer` in `miden-tx` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 
 ### Changes
 

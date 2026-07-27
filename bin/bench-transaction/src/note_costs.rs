@@ -323,7 +323,7 @@ mod tests {
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
     use miden_protocol::transaction::RawOutputNote;
     use miden_standards::note::TxFeeNote;
-    use miden_standards::note::costs::NetworkNotePricer;
+    use miden_tx::NetworkNotePricer;
     use rstest::rstest;
 
     use super::*;
@@ -339,16 +339,16 @@ mod tests {
     /// dwarfs the tolerated drift.
     const DRIFT_TOLERANCE_PERCENT: u64 = 5;
 
-    /// Every priced note must price end-to-end through the widest lookup: each root its
-    /// consumption declares as created has to resolve through that lookup, or fee-schedule
-    /// construction would fail at runtime with `UnknownNoteScriptRoot`.
+    /// Every priced note must price end-to-end through the pricer's default lookup (the widest
+    /// one, [`AgglayerNote::note_cost`]): each root its consumption declares as created has to
+    /// resolve through that lookup, or fee-schedule construction would fail at runtime with
+    /// `UnknownNoteScriptRoot`.
     #[test]
     fn every_priced_note_prices_through_the_agglayer_lookup() {
         let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing faucet ID should be valid");
         let pricer = NetworkNotePricer::builder()
             .fee_parameters(FeeParameters::new(fee_faucet_id, 500))
-            .lookup(AgglayerNote::note_cost)
             .build();
 
         for &note in PricedNote::all() {
