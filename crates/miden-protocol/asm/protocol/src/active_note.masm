@@ -1,5 +1,5 @@
 use miden::protocol_utils::mem
-use {INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_NOTE_ID_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET}
+use {INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::protocol::note
 use miden::protocol::input_note
@@ -245,22 +245,11 @@ end
 #!
 #! Invocation: exec
 pub proc get_note_id() -> NoteId
-    # pad the stack
-    padw padw padw push.0.0
-    # => [pad(14)]
+    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    push.0.1
+    # => [is_active_note = 1, note_index = 0]
 
-    # push the flag indicating that we want to request the note ID from the active note
-    push.1
-    # => [is_active_note = 1, pad(14)]
-
-    push.INPUT_NOTE_GET_NOTE_ID_OFFSET
-    # => [offset, is_active_note = 1, pad(14)]
-
-    syscall.exec_kernel_proc
-    # => [NOTE_ID, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
+    exec.input_note::get_note_id_raw
     # => [NOTE_ID]
 end
 
