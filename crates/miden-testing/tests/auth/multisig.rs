@@ -28,7 +28,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
-use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_standards::tx_script::{ExpirationTransactionScript, SendNotesTransactionScript};
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -362,6 +362,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
+    let ref_block = mock_chain.latest_block_header().block_num();
 
     // Build base mock transaction
     let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
@@ -398,10 +399,14 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
     mock_chain.add_pending_executed_transaction(&mock_tx_execute)?;
     mock_chain.prove_next_block()?;
 
-    // Attempt to execute the same transaction again - should fail due to replay protection
-    // Must rebuild from the updated mock chain to pick up the new account state
+    // Attempt to execute the same transaction again - should fail due to replay protection.
+    // Must rebuild from the updated mock chain to pick up the new account state. The reference
+    // block is pinned to the original one because the signed message commits to the reference
+    // block commitment: against a newer reference block the signatures would not verify and the
+    // transaction would fail authentication before the replay protection check is reached.
     let mock_tx_replay = mock_chain
         .build_transaction(multisig_account.id())
+        .reference_block(ref_block)
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)
@@ -410,6 +415,106 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
     // This should fail due to replay protection
     let result = mock_tx_replay.execute().await;
     assert_transaction_executor_error!(result, ERR_TX_ALREADY_EXECUTED);
+
+    Ok(())
+}
+
+/// Tests that multisig signatures go stale once the chain moves past the signed reference block.
+///
+/// Approvers sign a valid 2/3 transaction summary that sets an expiration delta. The chain then
+/// advances past that delta, and re-executing against the newer reference block fails
+/// authentication because the signatures are bound to the original block commitment and
+/// expiration.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the expiration delta
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_stale_signatures_fail_after_expiration(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new_unchecked(5); 4]);
+    let expiration_delta = core::num::NonZeroU16::new(3).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let ref_block = mock_chain.latest_block_header().block_num();
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .auth_args(salt);
+
+    // Execute without signatures to obtain the transaction summary to sign.
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    // The summary binds the expiration delta set by the transaction script.
+    assert_eq!(tx_summary.expiration_delta(), expiration_delta.get());
+    let original_block_commitment = tx_summary.block_commitment();
+
+    let msg = tx_summary.to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    // Sanity check: against the signed reference block the signatures authenticate the tx.
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .build()?
+        .execute()
+        .await?;
+
+    // Advance the chain past the expiration window of the signed transaction.
+    mock_chain.prove_until_block(ref_block + 5)?;
+
+    // Re-executing against the newer reference block fails authentication: the summary now
+    // commits to a different block commitment, so the collected signatures do not cover it.
+    let stale_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_ne!(stale_summary.block_commitment(), original_block_commitment);
+    assert_ne!(stale_summary.to_commitment(), msg);
 
     Ok(())
 }
