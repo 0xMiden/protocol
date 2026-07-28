@@ -23,9 +23,8 @@ use super::eth_address::{AddressConversionError, EthAddress};
 /// `Felt::new_unchecked(u64)` does not reduce mod p (checked explicitly in
 /// [`Self::try_from_eth_address`]).
 ///
-/// This type is used by integrators (Gateway, claim managers) to convert between Miden AccountIds
-/// and the Ethereum address format when constructing CLAIM notes or calling the AggLayer Bridge
-/// `bridgeAsset()` function.
+/// This type is used by bridge integrators to convert between Miden AccountIds and the Ethereum
+/// address format, e.g. when constructing claim notes or calling an EVM bridge contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EthEmbeddedAccountId(AccountId);
 

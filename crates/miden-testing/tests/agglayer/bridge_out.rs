@@ -11,7 +11,6 @@ use miden_agglayer::{
     B2AggNote,
     ConfigAggBridgeNote,
     ConversionMetadata,
-    EthAddress,
     ExitRoot,
     Keccak256Output,
     MetadataHash,
@@ -35,6 +34,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicy;
+use miden_standards::interop::EthAddress;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;

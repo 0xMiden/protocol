@@ -15,8 +15,6 @@ use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     ConversionMetadata,
-    EthAddress,
-    EthEmbeddedAccountId,
     ExitRoot,
     LeafValue,
     RemoveGerNote,
@@ -38,6 +36,7 @@ use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
+use miden_standards::interop::{EthAddress, EthEmbeddedAccountId};
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;

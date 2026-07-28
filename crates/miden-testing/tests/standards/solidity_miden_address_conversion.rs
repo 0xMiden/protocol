@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_agglayer::{EthEmbeddedAccountId, agglayer_package};
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
@@ -25,6 +24,8 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::{Felt, ProtocolLib};
+use miden_standards::StandardsLib;
+use miden_standards::interop::EthEmbeddedAccountId;
 
 /// Execute a program with default host
 async fn execute_program_with_default_host(
@@ -45,8 +46,8 @@ async fn execute_program_with_default_host(
     let protocol_lib = ProtocolLib::default();
     host.load_library(protocol_lib.mast_forest()).unwrap();
 
-    let asset_conversion_package = agglayer_package();
-    host.load_library(asset_conversion_package.mast_forest()).unwrap();
+    let standards_lib = StandardsLib::default();
+    host.load_library(standards_lib.mast_forest()).unwrap();
 
     let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = AdviceInputs::default();
@@ -140,7 +141,7 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let script_code = format!(
             r#"
             use miden::core::sys
-            use agglayer::common::eth_address
+            use miden::standards::interop::eth_address
 
             begin
                 push.{}.{}.{}.{}.{}
@@ -154,9 +155,9 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
             .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .unwrap()
-            .with_package(Arc::new(agglayer_package()), Linkage::Dynamic)
+            .with_package(StandardsLib::default().package(), Linkage::Dynamic)
             .unwrap()
-            .assemble_program("agglayer-test-script", &script_code)
+            .assemble_program("interop-test-script", &script_code)
             .unwrap()
             .try_into_program()
             .unwrap();

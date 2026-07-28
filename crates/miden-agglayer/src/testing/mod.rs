@@ -18,14 +18,13 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::interop::{EthAddress, EthAmount};
 use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
 use crate::{
     BridgeRoles,
     CgiChainHash,
-    EthAddress,
-    EthAmount,
     ExitRoot,
     GlobalIndex,
     LeafData,

@@ -1,9 +1,9 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
-use agglayer::common::utils
-use agglayer::common::asset_conversion
-use agglayer::common::eth_address
+use miden::standards::utils
+use miden::standards::assets::conversion
+use miden::standards::interop::eth_address
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
@@ -478,7 +478,7 @@ proc verify_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
     # Step 4: Verify that y = floor(x / 10^scale)
-    exec.asset_conversion::verify_u256_to_native_amount_conversion
+    exec.conversion::verify_u256_to_native_amount_conversion
     # => []
 end
 

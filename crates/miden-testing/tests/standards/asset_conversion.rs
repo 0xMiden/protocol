@@ -1,16 +1,16 @@
 extern crate alloc;
 
-use miden_agglayer::errors::{
+use miden_processor::utils::packed_u32_elements_to_bytes;
+use miden_protocol::Felt;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::errors::MasmError;
+use miden_standards::errors::standards::{
     ERR_REMAINDER_TOO_LARGE,
     ERR_SCALE_AMOUNT_EXCEEDED_LIMIT,
     ERR_UNDERFLOW,
     ERR_X_TOO_LARGE,
 };
-use miden_agglayer::eth_types::amount::EthAmount;
-use miden_processor::utils::packed_u32_elements_to_bytes;
-use miden_protocol::Felt;
-use miden_protocol::asset::FungibleAsset;
-use miden_protocol::errors::MasmError;
+use miden_standards::interop::EthAmount;
 use primitive_types::U256;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -30,11 +30,11 @@ async fn test_scale_up_helper(
     let script_code = format!(
         "
         use miden::core::sys
-        use agglayer::common::asset_conversion
+        use miden::standards::assets::conversion
         
         begin
             push.{}.{}
-            exec.asset_conversion::scale_native_amount_to_u256
+            exec.conversion::scale_native_amount_to_u256
             exec.sys::truncate_stack
         end
         ",
@@ -101,11 +101,11 @@ async fn test_scale_up_exceeds_max_scale() {
     // scale_exp = 19 should fail
     let script_code = "
         use miden::core::sys
-        use agglayer::common::asset_conversion
+        use miden::standards::assets::conversion
         
         begin
             push.19.1
-            exec.asset_conversion::scale_native_amount_to_u256
+            exec.conversion::scale_native_amount_to_u256
             exec.sys::truncate_stack
         end
     ";
@@ -123,11 +123,11 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
     format!(
         r#"
         use miden::core::sys
-        use agglayer::common::asset_conversion
+        use miden::standards::assets::conversion
         
         begin
             push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::verify_u256_to_native_amount_conversion
+            exec.conversion::verify_u256_to_native_amount_conversion
             exec.sys::truncate_stack
         end
         "#,
@@ -313,7 +313,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     let script_code = format!(
         r#"
         use miden::core::sys
-        use agglayer::common::asset_conversion
+        use miden::standards::assets::conversion
         
         begin
             # Push expected quotient y used for verification (not returned as an output)
@@ -326,7 +326,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
             push.{}.{}.{}.{}.{}.{}.{}.{}
             
             # Call the scale down procedure (verifies conversion and may panic on failure)
-            exec.asset_conversion::verify_u256_to_native_amount_conversion
+            exec.conversion::verify_u256_to_native_amount_conversion
             
             # Truncate stack so the program returns with no public outputs (Outputs: [])
             exec.sys::truncate_stack

@@ -3,9 +3,13 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
-use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
+use miden_protocol::utils::{
+    HexParseError,
+    bytes_to_hex_string,
+    bytes_to_packed_u32_elements,
+    hex_to_bytes,
+};
 
 // ================================================================================================
 // ETHEREUM ADDRESS

@@ -25,10 +25,11 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use miden_standards::interop::EthAddress;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::{EthAddress, MetadataHash, note_script};
+use crate::{MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================

@@ -9,12 +9,12 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_agglayer::errors::ERR_MSB_NONZERO;
-use miden_agglayer::eth_types::{AddressConversionError, EthAddress, EthEmbeddedAccountId};
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::errors::protocol::ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+use miden_standards::errors::standards::ERR_MSB_NONZERO;
+use miden_standards::interop::{AddressConversionError, EthAddress, EthEmbeddedAccountId};
 
 use super::test_utils::assert_execution_fails_with;
 
@@ -26,7 +26,7 @@ fn to_account_id_script(addr: &EthAddress) -> String {
     let limbs: Vec<u64> = addr.to_elements().iter().map(|f| f.as_canonical_u64()).collect();
     format!(
         "use miden::core::sys
-use agglayer::common::eth_address
+use miden::standards::interop::eth_address
 
 begin
     push.{}.{}.{}.{}.{}

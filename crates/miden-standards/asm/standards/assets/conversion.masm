@@ -1,13 +1,13 @@
 use miden::core::math::u64
 use miden::core::word
-use agglayer::common::utils
+use miden::standards::utils
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 
 # ERRORS
 # =================================================================================================
 
 const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT="maximum scaling factor is 18"
-const ERR_X_TOO_LARGE="the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
+const ERR_X_TOO_LARGE="the u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
 const ERR_UNDERFLOW="x < y*10^s (underflow detected)"
 const ERR_REMAINDER_TOO_LARGE="remainder z must be < 10^s"
 const ERR_Y_TOO_LARGE="y exceeds max fungible token amount"
@@ -27,7 +27,7 @@ const MAX_SCALING_FACTOR=18
 #!
 #! Panics if:
 #! - scale > 18 (overflow protection)
-proc pow10
+pub proc pow10
     u32assert.err=ERR_SCALE_AMOUNT_EXCEEDED_LIMIT
     # => [scale]
 
@@ -61,7 +61,7 @@ proc pow10
     # => [result]
 end
 
-#! Convert an asset amount to a scaled U256 representation for bridging to Agglayer.
+#! Convert an asset amount to a scaled U256 representation for bridging to an EVM chain.
 #!
 #! This procedure is used to convert Miden asset amounts to EVM asset amounts.
 #! It multiplies the input amount by 10^target_scale to adjust for decimal differences
@@ -332,7 +332,7 @@ pub proc verify_u128_to_native_amount_conversion
     # => []
 end
 
-#! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
+#! Verify conversion from a U256 amount to a Miden native amount (Felt)
 #!
 #! This procedure first checks that the U256 value fits in 128 bits (x4..x7 == 0),
 #! then delegates to verify_u128_to_native_amount_conversion for the actual verification.
@@ -360,7 +360,7 @@ end
 #! Outputs: []
 #!
 #! Where:
-#!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
+#!   - x: The original amount as an unsigned 256-bit integer (U256).
 #!        It is provided on the operand stack as 8 big-endian u32 limbs:
 #!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
 #!   - x0..x7: 32-bit limbs of x in big-endian order (x0 is least significant).

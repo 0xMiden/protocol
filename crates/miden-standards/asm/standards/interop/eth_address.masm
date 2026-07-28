@@ -1,4 +1,4 @@
-use agglayer::common::utils
+use miden::standards::utils
 use miden::protocol::account_id
 
 # TYPE ALIASES
@@ -93,7 +93,7 @@ end
 #!
 #! Inputs:  [lo, hi]
 #! Outputs: [felt]
-proc build_felt
+pub proc build_felt
     # --- validate u32 limbs ---
     u32assert2.err=ERR_NOT_U32
     # => [lo_be, hi_be]

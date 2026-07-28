@@ -378,7 +378,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (read from the bridge's `faucet_metadata_map` via
    `bridge_config::get_faucet_scale`), using
-   `asset_conversion::verify_u256_to_native_amount_conversion`.
+   `miden::standards::assets::conversion::verify_u256_to_native_amount_conversion`.
 8. If the faucet is not native, builds a MINT output note targeting the faucet (see
    [Section 4.9](#49-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
    asset from the bridge's vault and emits a `P2ID` note directly to the recipient
@@ -1111,7 +1111,7 @@ extract the recipient's `AccountId` from the embedded Ethereum address and e.g. 
 
 #### 6.4.3 Ethereum Address → `AccountId` (MASM)
 
-`eth_address::to_account_id` — Module: `agglayer::common::eth_address`
+`eth_address::to_account_id` — Module: `miden::standards::interop::eth_address`
 
 This is the in-VM counterpart of the Rust `to_account_id`, invoked during CLAIM note
 consumption to decode the recipient's address from the leaf data, and eventually for building the P2ID note for the recipient.
