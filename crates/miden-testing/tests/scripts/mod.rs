@@ -23,3 +23,23 @@ mod send_note;
 mod swap;
 mod tx_fee;
 mod warden;
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Consumes an owner-authored admin note in a faucet transaction.
+async fn consume_note(
+    mock_chain: &mut miden_testing::MockChain,
+    account_id: miden_protocol::account::AccountId,
+    note: &miden_protocol::note::Note,
+) -> anyhow::Result<()> {
+    let executed = mock_chain
+        .build_transaction(account_id)
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+    Ok(())
+}

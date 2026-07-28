@@ -26,6 +26,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{ERR_FEE_ASSET_ID_MISMATCH, ERR_SENDER_NOT_OWNER};
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
+use super::consume_note;
 use super::fee_manager::{FEE_AMOUNT, fee_faucet_id, priced_root};
 use super::rbac::{build_note, test_account_id};
 
@@ -96,24 +97,6 @@ fn build_manageable_fee_account(
         .build_existing()?)
 }
 
-/// Consumes an admin note against the network account and commits the block, so the fee schedule
-/// write is visible in the account's committed state.
-async fn consume_admin_note(
-    mock_chain: &mut MockChain,
-    account_id: AccountId,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let executed = mock_chain
-        .build_transaction(account_id)
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
-}
-
 /// Reads the fee schedule entry stored for `lookup_key` in the account's committed state.
 fn committed_fee_schedule_entry(
     mock_chain: &MockChain,
@@ -145,7 +128,7 @@ async fn owner_set_note_fee_writes_schedule_entry() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, account.id(), &set_note).await?;
+    consume_note(&mut mock_chain, account.id(), &set_note).await?;
 
     let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
     assert_eq!(entry, Word::from([FEE_AMOUNT as u32, 0, 0, 1]));
@@ -167,7 +150,7 @@ async fn owner_set_note_fee_zero_schedules_free_note() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, account.id(), &set_note).await?;
+    consume_note(&mut mock_chain, account.id(), &set_note).await?;
 
     let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
     assert_eq!(entry, Word::from([0u32, 0, 0, 1]));
@@ -194,8 +177,8 @@ async fn owner_set_note_fee_overwrites_existing_entry() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, account.id(), &first).await?;
-    consume_admin_note(&mut mock_chain, account.id(), &second).await?;
+    consume_note(&mut mock_chain, account.id(), &first).await?;
+    consume_note(&mut mock_chain, account.id(), &second).await?;
 
     let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
     assert_eq!(entry, Word::from([updated_fee as u32, 0, 0, 1]));
