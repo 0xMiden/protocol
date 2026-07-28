@@ -29,7 +29,7 @@ async fn p2id_script_rejects_too_many_assets() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let assets = (0..=P2idNote::MAX_NUM_ASSETS)
-        .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()).into())
+        .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()))
         .collect();
     let recipient = P2idNoteStorage::new(target.id()).into_recipient(Word::empty());
     let metadata = PartialNoteMetadata::new(sender.id(), NoteType::Public)

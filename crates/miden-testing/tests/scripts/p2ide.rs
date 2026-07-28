@@ -26,7 +26,7 @@ async fn p2ide_script_rejects_too_many_assets() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
     let assets = (0..=P2ideNote::MAX_NUM_ASSETS)
-        .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()).into())
+        .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()))
         .collect();
     let recipient =
         P2ideNoteStorage::new(sender.id(), target.id(), None, None).into_recipient(Word::empty());
