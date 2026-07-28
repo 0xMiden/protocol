@@ -8,7 +8,7 @@
 
 ### Changes
 
-- [BREAKING] Extended the signed transaction summary to bind the reference block commitment, the transaction expiration delta and seven user-defined parameters. `auth::create_tx_summary` now takes `user_params: [felt; 7]`, `auth::hash_tx_summary` is replaced by `auth::hash_and_insert_tx_summary`, and `TransactionSummaryParams` is replaced by `TransactionSummaryUserParams` ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
+- [BREAKING] Transaction summaries now bind the reference block, expiration delta, and seven user parameters; the Rust and MASM APIs changed accordingly ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
 - Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#3412](https://github.com/0xMiden/protocol/pull/3412)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
