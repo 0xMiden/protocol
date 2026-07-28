@@ -9,7 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word, ZERO};
+use crate::{Felt, Hasher, Word};
 
 // ORDERED TRANSACTION HEADERS
 // ================================================================================================
@@ -63,15 +63,19 @@ impl OrderedTransactionHeaders {
     /// Computes a commitment to the provided list of transactions.
     ///
     /// Each transaction is represented by a transaction ID and an account ID which it was executed
-    /// against. The commitment is a sequential hash over (transaction_id, account_id) tuples.
-    pub fn compute_commitment(
-        transactions: impl Iterator<Item = (TransactionId, AccountId)>,
+    /// against. The commitment is a sequential hash over (TRANSACTION_ID, ACCOUNT_ID) tuples.
+    pub(crate) fn compute_commitment(
+        transactions: impl IntoIterator<Item = (TransactionId, AccountId)>,
     ) -> Word {
         let mut elements = vec![];
         for (transaction_id, account_id) in transactions {
-            let [account_id_prefix, account_id_suffix] = <[Felt; 2]>::from(account_id);
             elements.extend_from_slice(transaction_id.as_elements());
-            elements.extend_from_slice(&[account_id_prefix, account_id_suffix, ZERO, ZERO]);
+            elements.extend_from_slice(&[
+                account_id.suffix(),
+                account_id.prefix().as_felt(),
+                Felt::ZERO,
+                Felt::ZERO,
+            ]);
         }
 
         Hasher::hash_elements(&elements)
