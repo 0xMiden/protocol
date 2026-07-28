@@ -3,13 +3,13 @@
 #
 # The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
 # parameters (the payload) from the advice map, so a single script root covers every possible
-# set of output notes. See the parent `send_notes` module for the payload layout.
+# set of output notes. See `send_notes::common` for the payload layout.
 
 use miden::protocol::asset
 use miden::standards::note::note_creator
-use miden::standards::tx_scripts::send_notes
+use miden::standards::tx_scripts::send_notes::common
 use miden::standards::wallets::basic
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes::common
 
 # CONSTANTS
 # =================================================================================================
@@ -43,7 +43,7 @@ const PROCESS_NOTES_ITEM_PTR_LOC = 2
 #! Invocation: call
 @transaction_script
 pub proc main
-    exec.send_notes::load_payload
+    exec.common::load_payload
     # => [pad(16)]
 
     exec.process_notes
@@ -64,7 +64,7 @@ end
 #! Outputs:
 #!   Operand stack: [pad(16)]
 #!
-#! The payload counts are validated by `send_notes::load_payload`, so this procedure trusts them.
+#! The payload counts are validated by `common::load_payload`, so this procedure trusts them.
 #!
 #! Panics if:
 #! - the account does not expose the basic wallet interface.
@@ -161,7 +161,7 @@ proc process_notes
         loc_load.PROCESS_NOTES_NOTE_IDX_LOC
         # => [note_idx, attachments_ptr, num_attachments, notes_left, pad(16)]
 
-        exec.send_notes::add_attachments
+        exec.common::add_attachments
         # => [end_ptr, notes_left, pad(16)]
 
         # the next note record starts right after the last item
