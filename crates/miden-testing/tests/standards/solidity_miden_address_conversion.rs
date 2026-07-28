@@ -13,6 +13,7 @@ use miden_processor::{
     Program,
     StackInputs,
 };
+use miden_protocol::ProtocolLib;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
@@ -23,7 +24,6 @@ use miden_protocol::testing::account_id::{
     AccountIdBuilder,
 };
 use miden_protocol::transaction::TransactionKernel;
-use miden_protocol::{Felt, ProtocolLib};
 use miden_standards::StandardsLib;
 use miden_standards::interop::EthEmbeddedAccountId;
 
@@ -134,10 +134,6 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
 
         assert_eq!(limb0, 0, "test {}: expected msb limb (limb0) to be zero", idx);
 
-        let account_id_felts: [Felt; 2] = (*original_account_id).into();
-        let expected_prefix = account_id_felts[0];
-        let expected_suffix = account_id_felts[1];
-
         let script_code = format!(
             r#"
             use miden::core::sys
@@ -167,8 +163,13 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let actual_suffix = exec_output.stack[0];
         let actual_prefix = exec_output.stack[1];
 
-        assert_eq!(actual_prefix, expected_prefix, "test {}: prefix mismatch", idx);
-        assert_eq!(actual_suffix, expected_suffix, "test {}: suffix mismatch", idx);
+        assert_eq!(
+            actual_prefix,
+            original_account_id.prefix().as_felt(),
+            "test {}: prefix mismatch",
+            idx
+        );
+        assert_eq!(actual_suffix, original_account_id.suffix(), "test {}: suffix mismatch", idx);
 
         let reconstructed_account_id = AccountId::try_from_elements(actual_suffix, actual_prefix)?;
 
