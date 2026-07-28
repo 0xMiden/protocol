@@ -1,12 +1,14 @@
 # miden::standards::fees::policies::basic_constant_fee_manager
 #
-# Authority-gated admin for the `basic_constant_fee` fee schedule: exposes `set_note_fee`, which
-# updates a single note-script-root -> fee entry in the `BasicConstantFeePolicy` fee schedule after
-# deployment. It writes the policy's own `fee_schedule` slot by name (the policy owns the slot; this
-# module only references it), so it must be installed on the same account as the policy. Because the
+# Authority-gated admin for a constant-fee schedule: exposes `set_note_fee`, which updates a single
+# note-script-root -> fee entry in the managed fee schedule map after deployment. The map slot is
+# not hardcoded: this component owns a value slot holding the ID of the fee schedule slot to write
+# (populated at construction from the managed policy's slot name), so it can manage any constant-fee
+# policy's schedule (e.g. `BasicConstantFeePolicy`) without sharing a slot name with it. Because the
 # fee asset ID is read from the network account's storage, that account must be an
 # `AuthNetworkAccount`.
 
+use miden::protocol::active_account
 use miden::protocol::native_account
 
 use miden::standards::access::authority
@@ -17,9 +19,9 @@ use {Asset} from miden::protocol::types
 # CONSTANTS
 # =================================================================================================
 
-# The `BasicConstantFeePolicy` fee schedule slot. Keep in sync with `basic_constant_fee.masm`.
-# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
-const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::basic_constant_fee::fee_schedule")
+# This component's own value slot, holding the ID (as [slot_id_suffix, slot_id_prefix, 0, 0]) of the
+# fee schedule map slot this manager updates. Populated at construction.
+const FEE_SCHEDULE_SLOT_ID_SLOT = word("miden::standards::fees::policies::basic_constant_fee_manager::fee_schedule_slot_id")
 
 # ERRORS
 # =================================================================================================
@@ -78,7 +80,12 @@ pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
     swapw
     # => [NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
 
-    push.FEE_SCHEDULE_SLOT[0..2]
+    # read the managed fee schedule slot ID from this component's own storage
+    push.FEE_SCHEDULE_SLOT_ID_SLOT[0..2] exec.active_account::get_item
+    # => [FEE_SCHEDULE_SLOT_ID, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+
+    # the stored value is [slot_id_suffix, slot_id_prefix, 0, 0]; keep the id felts, drop the zeros
+    movup.2 drop movup.2 drop
     # => [slot_id_suffix, slot_id_prefix, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
 
     exec.native_account::set_map_item

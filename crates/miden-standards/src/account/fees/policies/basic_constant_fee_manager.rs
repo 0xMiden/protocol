@@ -1,6 +1,20 @@
-use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use miden_protocol::account::component::{
+    AccountComponentCode,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
+};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountProcedureRoot,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
+use super::BasicConstantFeePolicy;
 use crate::account::account_component_code;
 use crate::procedure_root;
 
@@ -19,14 +33,26 @@ procedure_root!(
     BasicConstantFeeManager::code()
 );
 
+/// The value slot this component owns, holding the ID of the fee schedule slot it manages.
+static FEE_SCHEDULE_SLOT_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::fees::policies::basic_constant_fee_manager::fee_schedule_slot_id",
+    )
+    .expect("storage slot name should be valid")
+});
+
 /// Account component that exposes the `set_note_fee` admin procedure gated by the account-wide
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
-/// `set_note_fee` updates the fee schedule map of a companion
-/// [`crate::account::fees::BasicConstantFeePolicy`] after deployment, replacing the scheduled fee
-/// for a note lookup key (the note's script root) with the amount of the supplied fee asset. The
-/// supplied asset's ID must match the account's configured fee asset ID. This makes an otherwise
-/// static fee schedule updatable by an authorized party.
+/// `set_note_fee` updates the fee schedule map of a constant-fee policy after deployment, replacing
+/// the scheduled fee for a note lookup key (the note's script root) with the amount of the supplied
+/// fee asset. The supplied asset's ID must match the account's configured fee asset ID. This makes
+/// an otherwise static fee schedule updatable by an authorized party.
+///
+/// The managed fee schedule slot is not hardcoded: the manager owns a value slot holding the ID of
+/// the fee schedule slot to write, populated at construction from the managed policy's slot name
+/// (see [`Self::new`] and [`Self::for_basic_constant_fee_policy`]). It can therefore manage any
+/// constant-fee policy's schedule without sharing a slot name with the policy.
 ///
 /// Because the fee schedule policy and the fee asset ID both live on an `AuthNetworkAccount`, this
 /// manager is only usable on a network account.
@@ -42,10 +68,13 @@ procedure_root!(
 /// - [`crate::account::auth::AuthNetworkAccount`] — provides the fee asset ID slot and the fee
 ///   manager the schedule is priced against.
 /// - [`crate::account::access::Authority`] — provides the mode-aware auth dispatch.
-/// - [`crate::account::fees::BasicConstantFeePolicy`] (installed as the network account's active or
-///   allowed fee policy) — owns the `fee_schedule` storage slot this component writes.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BasicConstantFeeManager;
+/// - The constant-fee policy whose `fee_schedule` slot this manager writes (installed as the
+///   network account's active or allowed fee policy) — typically [`BasicConstantFeePolicy`].
+#[derive(Debug, Clone)]
+pub struct BasicConstantFeeManager {
+    /// Name of the fee schedule map slot this manager updates.
+    fee_schedule_slot: StorageSlotName,
+}
 
 impl BasicConstantFeeManager {
     /// The name of the component.
@@ -53,6 +82,26 @@ impl BasicConstantFeeManager {
         "miden::standards::components::fees::policies::basic_constant_fee_manager";
 
     const SET_NOTE_FEE_PROC_NAME: &'static str = "set_note_fee";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a manager that updates the fee schedule map stored under `fee_schedule_slot`.
+    ///
+    /// The slot must belong to a constant-fee policy installed on the same account whose entries
+    /// are `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]` (as written by `set_note_fee` and read by
+    /// the policy's `compute_note_fee`).
+    pub fn new(fee_schedule_slot: StorageSlotName) -> Self {
+        Self { fee_schedule_slot }
+    }
+
+    /// Creates a manager for the fee schedule of the standard [`BasicConstantFeePolicy`].
+    pub fn for_basic_constant_fee_policy() -> Self {
+        Self::new(BasicConstantFeePolicy::fee_schedule_slot_name().clone())
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -66,21 +115,81 @@ impl BasicConstantFeeManager {
         *BASIC_CONSTANT_FEE_MANAGER_SET_NOTE_FEE
     }
 
+    /// Returns the [`StorageSlotName`] of the value slot this component owns, holding the ID of the
+    /// managed fee schedule slot.
+    pub fn fee_schedule_slot_id_slot_name() -> &'static StorageSlotName {
+        &FEE_SCHEDULE_SLOT_ID_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] of the fee schedule slot this manager updates.
+    pub fn fee_schedule_slot(&self) -> &StorageSlotName {
+        &self.fee_schedule_slot
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description(
-            "Authority-gated basic-constant-fee schedule admin: exposes `set_note_fee` to update a \
-             BasicConstantFeePolicy fee schedule, gated by the account-wide Authority component.",
-        )
+        let storage_schema = StorageSchema::new([(
+            FEE_SCHEDULE_SLOT_ID_SLOT_NAME.clone(),
+            StorageSlotSchema::value(
+                "ID of the fee schedule slot this manager updates",
+                SchemaType::native_word(),
+            ),
+        )])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME)
+            .with_description(
+                "Authority-gated constant-fee schedule admin: exposes `set_note_fee` to update the \
+                 fee schedule slot recorded in its storage, gated by the account-wide Authority \
+                 component.",
+            )
+            .with_storage_schema(storage_schema)
     }
 }
 
 impl From<BasicConstantFeeManager> for AccountComponent {
-    fn from(_: BasicConstantFeeManager) -> Self {
-        let metadata = BasicConstantFeeManager::component_metadata();
-        AccountComponent::new(BasicConstantFeeManager::code().clone(), vec![], metadata).expect(
-            "authority-gated basic-constant-fee schedule admin component should satisfy the \
+    fn from(manager: BasicConstantFeeManager) -> Self {
+        // Store the managed fee schedule slot's ID as [slot_id_suffix, slot_id_prefix, 0, 0], which
+        // `set_note_fee` reads to locate the schedule map.
+        let id = manager.fee_schedule_slot.id();
+        let slot_id_word = Word::from([id.suffix(), id.prefix(), Felt::ZERO, Felt::ZERO]);
+        let slot = StorageSlot::with_value(FEE_SCHEDULE_SLOT_ID_SLOT_NAME.clone(), slot_id_word);
+
+        AccountComponent::new(
+            BasicConstantFeeManager::code().clone(),
+            vec![slot],
+            BasicConstantFeeManager::component_metadata(),
+        )
+        .expect(
+            "authority-gated constant-fee schedule admin component should satisfy the \
              requirements of a valid account component",
         )
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::StorageSlotContent;
+
+    use super::*;
+
+    /// The component stores the managed fee schedule slot's ID as `[suffix, prefix, 0, 0]`.
+    #[test]
+    fn stores_managed_fee_schedule_slot_id() {
+        let policy_slot = BasicConstantFeePolicy::fee_schedule_slot_name().clone();
+        let component: AccountComponent = BasicConstantFeeManager::new(policy_slot.clone()).into();
+
+        let slot = component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == BasicConstantFeeManager::fee_schedule_slot_id_slot_name())
+            .expect("manager should declare the fee schedule slot ID slot");
+
+        let id = policy_slot.id();
+        let expected = Word::from([id.suffix(), id.prefix(), Felt::ZERO, Felt::ZERO]);
+        assert_eq!(slot.content(), &StorageSlotContent::Value(expected));
     }
 }

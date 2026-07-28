@@ -100,7 +100,7 @@ fn build_manageable_fee_account(
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_component(BasicConstantFeeManager)
+        .with_component(BasicConstantFeeManager::for_basic_constant_fee_policy())
         .build_existing()?)
 }
 
