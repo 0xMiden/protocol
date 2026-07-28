@@ -1,6 +1,13 @@
 use core::fmt::Display;
 
 use crate::Felt;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// The [`AssetClass`] in an [`AssetId`](crate::asset::AssetId) distinguishes different
 /// assets issued by the same faucet.
@@ -11,6 +18,9 @@ pub struct AssetClass {
 }
 
 impl AssetClass {
+    /// The serialized size of an [`AssetClass`] in bytes.
+    pub const SERIALIZED_SIZE: usize = 2 * core::mem::size_of::<u64>();
+
     /// Constructs an asset class from its parts.
     pub fn new(suffix: Felt, prefix: Felt) -> Self {
         Self { suffix, prefix }
@@ -39,5 +49,28 @@ impl Display for AssetClass {
             self.prefix().as_canonical_u64(),
             self.suffix().as_canonical_u64()
         ))
+    }
+}
+
+// SERIALIZATION
+// ================================================================================================
+
+impl Serializable for AssetClass {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        target.write(self.suffix);
+        target.write(self.prefix);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Self::SERIALIZED_SIZE
+    }
+}
+
+impl Deserializable for AssetClass {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let suffix: Felt = source.read()?;
+        let prefix: Felt = source.read()?;
+
+        Ok(AssetClass::new(suffix, prefix))
     }
 }

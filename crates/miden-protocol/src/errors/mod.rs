@@ -1064,8 +1064,13 @@ pub enum ProvenTransactionError {
     },
     #[error("proven transaction neither changed the account state, nor consumed any notes")]
     EmptyTransaction,
-    #[error("failed to validate account patch in transaction account update")]
-    AccountPatchCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error(
+        "expected account patch commitment {expected_patch_commitment} but found {actual_patch_commitment}"
+    )]
+    AccountPatchCommitmentMismatch {
+        expected_patch_commitment: Word,
+        actual_patch_commitment: Word,
+    },
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
 }
