@@ -1,8 +1,8 @@
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::note::{Note, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -13,11 +13,42 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
+use miden_standards::errors::standards::{ERR_P2ID_TARGET_ACCT_MISMATCH, ERR_P2ID_TOO_MANY_ASSETS};
 use miden_standards::note::{P2idNote, P2idNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction;
+
+#[tokio::test]
+async fn p2id_script_rejects_too_many_assets() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let target = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let assets = (0..=P2idNote::MAX_NUM_ASSETS)
+        .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()).into())
+        .collect();
+    let recipient = P2idNoteStorage::new(target.id()).into_recipient(Word::empty());
+    let metadata = PartialNoteMetadata::new(sender.id(), NoteType::Public)
+        .with_tag(NoteTag::with_account_target(target.id()));
+    let note = Note::new(NoteAssets::new(assets)?, metadata, recipient);
+    let note_id = note.id();
+    builder.add_output_note(RawOutputNote::Full(note));
+
+    let result = builder
+        .build()?
+        .build_transaction(target.id())
+        .authenticated_input_note(note_id)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_P2ID_TOO_MANY_ASSETS);
+    Ok(())
+}
 
 /// We test the Pay to script with 2 assets to test the loop inside the script.
 /// So we create a note containing two assets that can only be consumed by the target account.

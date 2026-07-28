@@ -12,10 +12,13 @@ const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 2 n
 
 const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transaction address do not match"
 
+const ERR_P2ID_TOO_MANY_ASSETS="P2ID note contains more than 16 assets"
+
 # CONSTANTS
 # =================================================================================================
 
 const STORAGE_PTR = 0
+const MAX_NUM_ASSETS = 16
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
 const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 
@@ -42,6 +45,9 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 #!   greater than 2^63.
 @note_script
 pub proc main
+    exec.active_note::get_initial_num_assets lte.MAX_NUM_ASSETS
+    assert.err=ERR_P2ID_TOO_MANY_ASSETS
+
     # store the note storage to memory starting at address 0
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items]

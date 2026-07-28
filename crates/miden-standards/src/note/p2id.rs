@@ -64,8 +64,8 @@ impl P2idNote {
     ///
     /// Returns an error if:
     /// - No assets were provided.
-    /// - The assets or attachments exceed their protocol limits (see [`NoteAssets::new`] and
-    ///   [`NoteAttachments::new`]).
+    /// - More than [`P2idNote::MAX_NUM_ASSETS`] assets were provided.
+    /// - The attachments exceed their protocol limits (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] assets: Vec<Asset>,
@@ -78,6 +78,12 @@ impl P2idNote {
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
             return Err(NoteError::other("a P2ID note must contain at least one asset"));
+        }
+        if assets.len() > Self::MAX_NUM_ASSETS {
+            return Err(NoteError::TooManyAssetsForScript {
+                num_assets: assets.len(),
+                max_assets: Self::MAX_NUM_ASSETS,
+            });
         }
 
         let assets = NoteAssets::new(assets)?;
@@ -100,6 +106,9 @@ impl P2idNote {
 
     /// Expected number of storage items of the P2ID note.
     pub const NUM_STORAGE_ITEMS: usize = P2idNoteStorage::NUM_ITEMS;
+
+    /// Maximum number of assets that a P2ID note may contain.
+    pub const MAX_NUM_ASSETS: usize = 16;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -281,7 +290,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::{AccountId, AccountType};
-    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
     use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::errors::NoteError;
     use miden_protocol::{Felt, Word};
@@ -406,5 +415,28 @@ mod tests {
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
             assert!(error_msg.contains("note must contain at least one asset"))
         });
+    }
+
+    #[test]
+    fn builder_rejects_too_many_assets() {
+        let assets = (0..=P2idNote::MAX_NUM_ASSETS)
+            .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()))
+            .map(Asset::from);
+
+        let err = P2idNote::builder()
+            .sender(sender())
+            .target(target())
+            .serial_number(Word::empty())
+            .assets(assets)
+            .build()
+            .expect_err("a note exceeding the P2ID asset limit must be rejected");
+
+        assert_matches!(
+            err,
+            NoteError::TooManyAssetsForScript {
+                num_assets,
+                max_assets: P2idNote::MAX_NUM_ASSETS,
+            } if num_assets == P2idNote::MAX_NUM_ASSETS + 1
+        );
     }
 }

@@ -8,6 +8,7 @@ use miden::standards::wallets::basic as basic_wallet
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=6
+const MAX_NUM_ASSETS=16
 
 # Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
 # - reclaimer_suffix        [0]  : suffix of the account allowed to reclaim the note
@@ -38,6 +39,8 @@ const ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED="failed to reclaim P2IDE note because
 const ERR_P2IDE_RECLAIM_DISABLED="P2IDE reclaim is disabled"
 
 const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED="failed to consume P2IDE note because the note is still timelocked"
+
+const ERR_P2IDE_TOO_MANY_ASSETS="P2IDE note contains more than 16 assets"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -128,6 +131,9 @@ end
 #!   greater than 2^63.
 @note_script
 pub proc main
+    exec.active_note::get_initial_num_assets lte.MAX_NUM_ASSETS
+    assert.err=ERR_P2IDE_TOO_MANY_ASSETS
+
     # store the note storage to memory starting at STORAGE_PTR
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items]

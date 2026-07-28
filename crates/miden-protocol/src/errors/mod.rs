@@ -767,6 +767,8 @@ pub enum NoteError {
     NoteScriptDeserializationError(#[source] DeserializationError),
     #[error("note contains {0} assets which exceeds the maximum of {max}", max = NoteAssets::MAX_NUM_ASSETS)]
     TooManyAssets(usize),
+    #[error("note contains {num_assets} assets which exceeds the script maximum of {max_assets}")]
+    TooManyAssetsForScript { num_assets: usize, max_assets: usize },
     #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
     TooManyStorageItems(usize),
     #[error("invalid note storage length: expected {expected} items, got {actual}")]
