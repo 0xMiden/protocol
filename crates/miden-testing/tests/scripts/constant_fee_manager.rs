@@ -39,8 +39,16 @@ use crate::consume_note;
 // HELPERS
 // ================================================================================================
 
+pub(super) fn owner_id() -> AccountId {
+    test_account_id(70)
+}
+
+pub(super) fn non_owner_id() -> AccountId {
+    test_account_id(71)
+}
+
 /// The fee asset the account is configured with, carrying `amount`.
-fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
+pub(super) fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?)
 }
 
@@ -95,7 +103,7 @@ fn build_set_note_fee_note(
 /// `priced_root()` is intentionally left unscheduled — the manager is the only way it gets a fee.
 /// Each `admin_note_root` is allowlisted and scheduled at a 0 fee so the network account can
 /// consume the admin notes for free.
-fn build_manageable_fee_account(
+pub(super) fn build_manageable_fee_account(
     owner: AccountId,
     admin_note_roots: BTreeSet<NoteScriptRoot>,
 ) -> anyhow::Result<Account> {
@@ -117,7 +125,7 @@ fn build_manageable_fee_account(
 }
 
 /// Reads the fee schedule entry stored for `lookup_key` in the account's committed state.
-fn committed_fee_schedule_entry(
+pub(super) fn committed_fee_schedule_entry(
     mock_chain: &MockChain,
     account_id: AccountId,
     lookup_key: NoteScriptRoot,

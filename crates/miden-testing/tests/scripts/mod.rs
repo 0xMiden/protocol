@@ -1,5 +1,6 @@
 mod allowlist;
 mod authority;
+mod basic_constant_fee_policy_config;
 mod blocklist;
 mod code_inspection;
 mod constant_fee_manager;
