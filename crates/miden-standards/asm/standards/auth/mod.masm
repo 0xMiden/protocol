@@ -47,7 +47,7 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 #!
 #! Invocation: exec
-pub proc create_tx_summary(user_params: [felt; 7])
+pub proc create_tx_summary(user_params: [felt; 7]) -> (word, word, word, word, word, word)
     exec.tx::get_expiration_block_delta
     # => [PARAMS_HEAD, PARAMS_TAIL]
 
@@ -92,7 +92,14 @@ end
 #!
 #! Invocation: exec
 @locals(24)
-pub proc hash_and_insert_tx_summary
+pub proc hash_and_insert_tx_summary(
+    account_delta_commitment: word,
+    input_notes_commitment: word,
+    output_notes_commitment: word,
+    block_commitment: word,
+    params_head: word,
+    params_tail: word
+) -> word
     # save the first pair of rate words to the locals for the advice map insertion below
     loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
     swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
