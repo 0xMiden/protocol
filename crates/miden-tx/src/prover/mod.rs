@@ -135,6 +135,7 @@ impl LocalTransactionProver {
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
+            ref_block.commitment(),
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
