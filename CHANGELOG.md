@@ -21,6 +21,7 @@
 - [BREAKING] Replaced `SwapNote::create` with `SwapNote::builder()` ([#3414](https://github.com/0xMiden/protocol/pull/3414)).
 - [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
 - [BREAKING] Removed the redundant zero-nomination check and the `ERR_NO_NOMINATED_OWNER` error constant from `ownable2step::accept_ownership`; since a note sender can never be the zero address stored when no transfer is nominated, accepting ownership without a pending nomination now fails with `ERR_SENDER_NOT_NOMINATED_OWNER` ([#3416](https://github.com/0xMiden/protocol/pull/3416)).
+- Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
 
 ### Fixes
