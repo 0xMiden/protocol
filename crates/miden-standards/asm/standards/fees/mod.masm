@@ -162,16 +162,15 @@ pub proc collect_sponsored_fees(fee_asset_id: AssetId) -> felt
         dup exec.input_note::get_script_root
         # => [FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
 
-        procref.fee_sponsorship::main exec.word::test_eq
-        # => [is_sponsorship, SPONSORSHIP_ROOT, FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
+        procref.fee_sponsorship::main exec.word::eq
+        # => [is_sponsorship, note_idx, num_input_notes, total_fee_amount]
 
         # reject unpaired sponsorship notes
         assertz.err=ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE
-        dropw
-        # => [FEATURE_NOTE_SCRIPT_ROOT, note_idx, num_input_notes, total_fee_amount]
+        # => [note_idx, num_input_notes, total_fee_amount]
 
         # price the feature note through the active fee policy
-        dup.4 movdn.4 exec.estimate_input_note_fee
+        dup exec.estimate_input_note_fee
         # => [required_fee_amount, note_idx, num_input_notes, total_fee_amount]
 
         dup eq.0
@@ -293,39 +292,19 @@ end
 
 #! Prices the input note at the given index through the active fee policy.
 #!
-#! The note's script root is supplied by the caller (which already fetched it for the sponsorship
-#! check) so it is not fetched a second time here. The note's recipient is recomputed from its
-#! serial number, script root, and storage commitment, inserting the recipient preimages into the
-#! advice map so the policy can recover the script root and storage commitment from the recipient.
-#! The remaining note parameters are read from the note and forwarded to the policy along with a
-#! timeframe and priority of 0.
+#! The note's parameters are read from the note and forwarded to the policy along with a timeframe
+#! and priority of 0.
 #!
-#! Inputs:  [NOTE_SCRIPT_ROOT, note_index]
+#! Inputs:  [note_index]
 #! Outputs: [required_fee_amount]
 #!
 #! Where:
-#! - NOTE_SCRIPT_ROOT is the script root of the input note at note_index.
 #! - note_index is the index of the input note whose fee is priced.
 #! - required_fee_amount is the fee amount charged for the note, or 0 if the policy prices it to 0.
 #!
 #! Invocation: exec
 proc estimate_input_note_fee
-    # gather the storage commitment and serial number of the recipient preimage
-    dup.4 exec.input_note::get_storage_info movup.4 drop swapw
-    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
-
-    dup.8 exec.input_note::get_serial_number padw swapw
-    # => [SERIAL_NUM, EMPTY_WORD, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
-
-    # compute the note's recipient, inserting the recipient preimages into the advice map so the
-    # fee policy can recover the script root and storage commitment from the recipient
-    adv.insert_hdword exec.poseidon2::merge
-    # => [SERIAL_COMMITMENT, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, note_index]
-
-    adv.insert_hdword exec.poseidon2::merge
-    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, note_index]
-
-    adv.insert_hdword exec.poseidon2::merge
+    dup exec.input_note::get_recipient
     # => [RECIPIENT, note_index]
 
     # pass a timeframe and priority of 0, along with the fee policy padding
@@ -335,24 +314,19 @@ proc estimate_input_note_fee
     dup.8 exec.input_note::get_attachments_commitment swapw
     # => [RECIPIENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2), note_index]
 
-    dup.12 exec.input_note::get_initial_assets_info movup.4 drop swapw
-    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2),
-    #     note_index]
+    movup.12 exec.input_note::get_initial_assets_info movup.4 drop swapw
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     exec.fee_manager::estimate_note_fee_internal
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8), note_index]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 
     # drop the policy's call-boundary padding
     movupw.3 dropw movupw.2 dropw
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_index]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
 
     # the manager asserts the estimate is denominated in its configured fee asset, so only the
     # fee amount is needed here
     dropw exec.fungible_asset::value_into_amount
-    # => [required_fee_amount, note_index]
-
-    # drop note_index, which the caller tracks itself
-    swap drop
     # => [required_fee_amount]
 end
 
