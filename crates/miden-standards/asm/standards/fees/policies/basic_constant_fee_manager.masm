@@ -34,8 +34,8 @@ const ERR_FEE_ASSET_ID_MISMATCH = "provided fee asset ID does not match the fee 
 #! Sets the scheduled fee for the given note lookup key, gated by the account-wide `Authority`
 #! component.
 #!
-#! Writes the fee schedule entry `[fee_amount, 0, 0, 1]` at `note_lookup_key` in the
-#! `BasicConstantFeePolicy` fee schedule map, replacing any previous entry; the last element is the
+#! Writes the fee schedule entry `[fee_amount, 0, 0, 1]` at `note_lookup_key` in the fee schedule
+#! map of the managed constant policy, replacing any previous entry; the last element is the
 #! set-marker `compute_note_fee` asserts is present. The lookup key is the note's script root.
 #! Scheduling an explicit fee of 0 makes matching notes free.
 #!
@@ -67,30 +67,30 @@ pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
     # => [CONFIGURED_FEE_ASSET_ID, FEE_ASSET_ID, NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
 
     assert_eqw.err=ERR_FEE_ASSET_ID_MISMATCH
-    # => [NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+    # => [NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(8)]
 
     # build the fee schedule entry [fee_amount, 0, 0, 1] from the asset value by setting its last
     # element to the set-marker
     swapw
-    # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(4)]
+    # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(8)]
 
     push.1 swap.4 drop
-    # => [FEE_SCHEDULE_ENTRY, NOTE_LOOKUP_KEY, pad(4)]
+    # => [FEE_SCHEDULE_ENTRY, NOTE_LOOKUP_KEY, pad(8)]
 
     swapw
-    # => [NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+    # => [NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(8)]
 
     # read the managed fee schedule slot ID from this component's own storage
     push.FEE_SCHEDULE_SLOT_ID_SLOT[0..2] exec.active_account::get_item
-    # => [FEE_SCHEDULE_SLOT_ID, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+    # => [FEE_SCHEDULE_SLOT_ID, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(8)]
 
     # the stored value is [slot_id_suffix, slot_id_prefix, 0, 0]; keep the id felts, drop the zeros
     movup.2 drop movup.2 drop
-    # => [slot_id_suffix, slot_id_prefix, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+    # => [slot_id_suffix, slot_id_prefix, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(8)]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(4)]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
-    # => [pad(4)]
+    # => [pad(16)]
 end

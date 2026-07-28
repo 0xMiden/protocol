@@ -89,8 +89,7 @@ impl BasicConstantFeeManager {
     /// Creates a manager that updates the fee schedule map stored under `fee_schedule_slot`.
     ///
     /// The slot must belong to a constant-fee policy installed on the same account whose entries
-    /// are `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]` (as written by `set_note_fee` and read by
-    /// the policy's `compute_note_fee`).
+    /// are `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]`.
     pub fn new(fee_schedule_slot: StorageSlotName) -> Self {
         Self { fee_schedule_slot }
     }

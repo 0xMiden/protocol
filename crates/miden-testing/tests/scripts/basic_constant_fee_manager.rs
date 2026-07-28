@@ -32,14 +32,6 @@ use super::rbac::{build_note, test_account_id};
 // HELPERS
 // ================================================================================================
 
-fn owner_id() -> AccountId {
-    test_account_id(70)
-}
-
-fn non_owner_id() -> AccountId {
-    test_account_id(71)
-}
-
 /// The fee asset the account is configured with, carrying `amount`.
 fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?)
@@ -143,7 +135,7 @@ fn committed_fee_schedule_entry(
 /// fee schedule map as the set-marked entry `[fee, 0, 0, 1]`.
 #[tokio::test]
 async fn owner_set_note_fee_writes_schedule_entry() -> anyhow::Result<()> {
-    let owner = owner_id();
+    let owner = test_account_id(70);
     let set_note = build_set_note_fee_note(owner, priced_root(), fee_asset(FEE_AMOUNT)?)?;
     let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
 
@@ -165,7 +157,7 @@ async fn owner_set_note_fee_writes_schedule_entry() -> anyhow::Result<()> {
 /// from an unset key (which reads as the zero word).
 #[tokio::test]
 async fn owner_set_note_fee_zero_schedules_free_note() -> anyhow::Result<()> {
-    let owner = owner_id();
+    let owner = test_account_id(70);
     let set_note = build_set_note_fee_note(owner, priced_root(), fee_asset(0)?)?;
     let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
 
@@ -186,7 +178,7 @@ async fn owner_set_note_fee_zero_schedules_free_note() -> anyhow::Result<()> {
 /// A later `set_note_fee` for the same key replaces the previously scheduled fee.
 #[tokio::test]
 async fn owner_set_note_fee_overwrites_existing_entry() -> anyhow::Result<()> {
-    let owner = owner_id();
+    let owner = test_account_id(70);
     let updated_fee = FEE_AMOUNT + 123;
     let first = build_set_note_fee_note(owner, priced_root(), fee_asset(FEE_AMOUNT)?)?;
     let second = build_set_note_fee_note(owner, priced_root(), fee_asset(updated_fee)?)?;
@@ -215,9 +207,9 @@ async fn owner_set_note_fee_overwrites_existing_entry() -> anyhow::Result<()> {
 /// `authority::assert_authorized`, which fails when the note sender is not the Ownable2Step owner.
 #[tokio::test]
 async fn non_owner_set_note_fee_is_rejected() -> anyhow::Result<()> {
-    let owner = owner_id();
+    let owner = test_account_id(70);
     let attacker_note =
-        build_set_note_fee_note(non_owner_id(), priced_root(), fee_asset(FEE_AMOUNT)?)?;
+        build_set_note_fee_note(test_account_id(71), priced_root(), fee_asset(FEE_AMOUNT)?)?;
     let account =
         build_manageable_fee_account(owner, BTreeSet::from([attacker_note.script().root()]))?;
 
@@ -243,7 +235,7 @@ async fn non_owner_set_note_fee_is_rejected() -> anyhow::Result<()> {
 /// the owner schedules a fee in a different faucet's asset, which the fee-asset-ID check aborts.
 #[tokio::test]
 async fn set_note_fee_with_wrong_fee_asset_is_rejected() -> anyhow::Result<()> {
-    let owner = owner_id();
+    let owner = test_account_id(70);
     let wrong_asset =
         FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, FEE_AMOUNT)?;
     let set_note = build_set_note_fee_note(owner, priced_root(), wrong_asset)?;
