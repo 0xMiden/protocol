@@ -17,7 +17,7 @@ const ERR_BYTES32_PADDING_NONZERO="leading 12 bytes must be zero for a bytes32-e
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Converts an Ethereum address format (address[5] type) back into an AccountId [prefix, suffix] type.
+#! Converts an Ethereum address format (address[5] type) back into an AccountId [suffix, prefix] type.
 #!
 #! The Ethereum address format is represented as 5 u32 limbs (20 bytes total) in *big-endian limb order*
 #! (matching Solidity ABI encoding). Each limb encodes its 4 bytes in little-endian order:
@@ -78,7 +78,7 @@ pub proc to_account_id
     # => [suffix, prefix]
 end
 
-#! Converts a bytes32-embedded Ethereum address format back into an AccountId [prefix, suffix] type.
+#! Converts a bytes32-embedded Ethereum address format back into an AccountId [suffix, prefix] type.
 #!
 #! In EVM ABI encoding, a bytes32-embedded address is the 20-byte Ethereum address format
 #! left-padded to 32 bytes: bytes[0..12] are zero and bytes[12..32] hold the address. The bytes32
