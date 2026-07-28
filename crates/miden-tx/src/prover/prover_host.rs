@@ -42,6 +42,7 @@ where
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        ref_block_commitment: Word,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -49,6 +50,7 @@ where
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
+            ref_block_commitment,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,

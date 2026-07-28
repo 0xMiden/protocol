@@ -310,12 +310,6 @@ impl AccountIdV1 {
 // CONVERSIONS FROM ACCOUNT ID
 // ================================================================================================
 
-impl From<AccountIdV1> for [Felt; 2] {
-    fn from(id: AccountIdV1) -> Self {
-        [id.prefix, id.suffix]
-    }
-}
-
 impl From<AccountIdV1> for [u8; 15] {
     fn from(id: AccountIdV1) -> Self {
         let mut result = [0_u8; 15];
