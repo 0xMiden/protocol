@@ -65,7 +65,8 @@ impl FeePolicy {
 }
 
 impl From<BasicConstantFeePolicy> for FeePolicy {
-    /// Returns a fee policy charging the constant fee scheduled for the note's script root.
+    /// Returns a fee policy charging the base fee scheduled for the note's script root plus its
+    /// configured per-asset fee.
     fn from(policy: BasicConstantFeePolicy) -> Self {
         Self {
             root: BasicConstantFeePolicy::root(),

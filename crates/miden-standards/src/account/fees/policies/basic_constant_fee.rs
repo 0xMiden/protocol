@@ -44,6 +44,11 @@ static FEE_SCHEDULE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+static COST_PER_ASSET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fees::policies::basic_constant_fee::cost_per_asset")
+        .expect("storage slot name should be valid")
+});
+
 /// Set-marker element of a fee schedule entry, distinguishing scheduled entries (including
 /// explicit 0 fees) from unset keys: storage maps prune zero-word values and return the zero
 /// word for unset keys, so a scheduled entry must be a non-zero word. The MASM
@@ -61,20 +66,22 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 
 /// The `basic_constant_fee` fee policy account component.
 ///
-/// This is a simple baseline constant fee policy: the fee depends only on the note's script root.
+/// This is a simple baseline constant fee policy: the fee depends on the note's script root and
+/// number of assets.
 /// More sophisticated constant fee policies can be derived from it by swapping the lookup-key
 /// computation of its `compute_note_fee` procedure, which yields a policy with a new root. A
-/// derived policy must also rename its `fee_schedule` storage slot, since two components
-/// installed on the same account cannot share a slot name.
+/// derived policy must also rename its `fee_schedule` and `cost_per_asset` storage slots, since
+/// two components installed on the same account cannot share a slot name.
 ///
 /// Register with a [`crate::account::fees::FeePolicyManager`], whose allowed fee-policies map then
 /// includes [`BasicConstantFeePolicy::root`]. When active, `estimate_note_fee` dispatches to this
 /// policy's `compute_note_fee` procedure, which returns the fee as a fee asset (asset ID and
-/// value words): the amount is looked up in the fee schedule under the note's script root
-/// (recovered from the note's recipient via the advice provider), and note scripts without a
-/// schedule entry abort fee estimation. To make a note script free, schedule an explicit 0 fee
-/// for it via [`BasicConstantFeePolicy::with_fee`]. The remaining note parameters, including the
-/// timeframe and priority, are ignored by this policy. The fee asset ID is read from the
+/// value words): the base amount is looked up in the fee schedule under the note's script root
+/// (recovered from the note's recipient via the advice provider), then the number of note assets
+/// times [`Self::cost_per_asset`] is added. Note scripts without a schedule entry abort fee
+/// estimation. To make an asset-less note script free, schedule an explicit 0 fee for it via
+/// [`BasicConstantFeePolicy::with_fee`]. The remaining note parameters, including timeframe and
+/// priority, are ignored by this policy. The fee asset ID is read from the
 /// fee-policy storage, so the fee is always charged in the configured asset and the policy
 /// requires an [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] component on the
 /// same account.
@@ -83,10 +90,13 @@ fn fee_schedule_entry(fee: AssetAmount) -> Word {
 ///
 /// - [`Self::fee_schedule_slot_name`] map slot: `NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]`, where
 ///   the last element is a set-marker distinguishing scheduled entries from unset keys.
+/// - [`Self::cost_per_asset_slot_name`] value slot: `[cost_per_asset, 0, 0, 0]`.
 #[derive(Debug, Clone, Default)]
 pub struct BasicConstantFeePolicy {
     /// The fee charged per note script root.
     fee_schedule: BTreeMap<NoteScriptRoot, AssetAmount>,
+    /// The additional fee charged for each asset in a note.
+    cost_per_asset: AssetAmount,
 }
 
 impl BasicConstantFeePolicy {
@@ -107,10 +117,14 @@ impl BasicConstantFeePolicy {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new `basic_constant_fee` fee policy with an empty fee schedule, charging fees in
-    /// the fungible asset its [`crate::account::fees::FeePolicyManager`] is configured with.
+    /// Creates a new `basic_constant_fee` fee policy with an empty fee schedule and zero cost per
+    /// asset, charging fees in the fungible asset its
+    /// [`crate::account::fees::FeePolicyManager`] is configured with.
     pub fn new() -> Self {
-        Self { fee_schedule: BTreeMap::new() }
+        Self {
+            fee_schedule: BTreeMap::new(),
+            cost_per_asset: AssetAmount::ZERO,
+        }
     }
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
@@ -120,6 +134,13 @@ impl BasicConstantFeePolicy {
     #[must_use]
     pub fn with_fee(mut self, script_root: NoteScriptRoot, fee: AssetAmount) -> Self {
         self.fee_schedule.insert(script_root, fee);
+        self
+    }
+
+    /// Sets the additional fee charged for each asset in a note.
+    #[must_use]
+    pub fn with_cost_per_asset(mut self, cost_per_asset: AssetAmount) -> Self {
+        self.cost_per_asset = cost_per_asset;
         self
     }
 
@@ -141,26 +162,45 @@ impl BasicConstantFeePolicy {
         &FEE_SCHEDULE_SLOT_NAME
     }
 
+    /// Returns the [`StorageSlotName`] of the slot holding the cost per asset.
+    pub fn cost_per_asset_slot_name() -> &'static StorageSlotName {
+        &COST_PER_ASSET_SLOT_NAME
+    }
+
     /// Returns the fee charged per note script root.
     pub fn fee_schedule(&self) -> &BTreeMap<NoteScriptRoot, AssetAmount> {
         &self.fee_schedule
     }
 
+    /// Returns the additional fee charged for each asset in a note.
+    pub fn cost_per_asset(&self) -> AssetAmount {
+        self.cost_per_asset
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([(
-            Self::fee_schedule_slot_name().clone(),
-            StorageSlotSchema::map(
-                "Fee charged per note script root",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
+        let storage_schema = StorageSchema::new([
+            (
+                Self::fee_schedule_slot_name().clone(),
+                StorageSlotSchema::map(
+                    "Base fee charged per note script root",
+                    SchemaType::native_word(),
+                    SchemaType::native_word(),
+                ),
             ),
-        )])
+            (
+                Self::cost_per_asset_slot_name().clone(),
+                StorageSlotSchema::value(
+                    "Additional fee charged per note asset",
+                    SchemaType::native_word(),
+                ),
+            ),
+        ])
         .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
             .with_description(
-                "`basic_constant_fee` fee policy charging a constant per-note-script fee",
+                "`basic_constant_fee` fee policy charging a per-script base fee plus a per-asset fee",
             )
             .with_storage_schema(storage_schema)
     }
@@ -168,6 +208,7 @@ impl BasicConstantFeePolicy {
 
 impl From<BasicConstantFeePolicy> for AccountComponent {
     fn from(policy: BasicConstantFeePolicy) -> Self {
+        let cost_per_asset = policy.cost_per_asset;
         let entries = policy
             .fee_schedule
             .into_iter()
@@ -178,10 +219,14 @@ impl From<BasicConstantFeePolicy> for AccountComponent {
             BasicConstantFeePolicy::fee_schedule_slot_name().clone(),
             fee_schedule_map,
         );
+        let cost_per_asset_slot = StorageSlot::with_value(
+            BasicConstantFeePolicy::cost_per_asset_slot_name().clone(),
+            cost_per_asset.to_word(),
+        );
 
         AccountComponent::new(
             BasicConstantFeePolicy::code().clone(),
-            vec![fee_schedule_slot],
+            vec![fee_schedule_slot, cost_per_asset_slot],
             BasicConstantFeePolicy::component_metadata(),
         )
         .expect(
@@ -199,16 +244,18 @@ mod tests {
 
     use super::*;
 
-    /// Check that the policy's storage slot contains the fee schedule entries.
+    /// Check that the policy's storage slots contain the fee schedule entries and cost per asset.
     #[test]
     fn storage_slots_contain_expected_entries() -> anyhow::Result<()> {
         let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let fee = AssetAmount::new(500)?;
         let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
+        let cost_per_asset = AssetAmount::new(25)?;
         let policy = BasicConstantFeePolicy::new()
             .with_fee(script_root, fee)
-            .with_fee(free_script_root, AssetAmount::ZERO);
+            .with_fee(free_script_root, AssetAmount::ZERO)
+            .with_cost_per_asset(cost_per_asset);
 
         let component = AccountComponent::from(policy);
         let slot = component
@@ -229,6 +276,16 @@ mod tests {
             map.get(&StorageMapKey::new(free_script_root.as_word())),
             Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
             "an explicit 0-fee entry should survive as a non-zero word"
+        );
+
+        let cost_per_asset_slot = component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == BasicConstantFeePolicy::cost_per_asset_slot_name())
+            .expect("cost-per-asset slot should exist");
+        assert_eq!(
+            cost_per_asset_slot.content(),
+            &StorageSlotContent::Value(cost_per_asset.to_word()),
         );
 
         Ok(())

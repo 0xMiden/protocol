@@ -1,9 +1,10 @@
 # miden::standards::fees::policies::basic_constant_fee
 #
-# Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is a
-# simple baseline; more sophisticated constant fee policies can be derived from it by swapping
-# the lookup-key computation. Note that a derived policy must also rename the `fee_schedule`
-# storage slot, since two components on the same account cannot share a slot name. Designed to be
+# Basic constant fee policy: derives the fee from a per-note-script fee schedule and the number of
+# assets in the note. It is a simple baseline; more sophisticated constant fee policies can be
+# derived from it by swapping the lookup-key computation. Note that a derived policy must also
+# rename the `fee_schedule` and `cost_per_asset` storage slots, since two components on the same
+# account cannot share a slot name. Designed to be
 # registered as a fee policy of an `AuthNetworkAccount`, whose fee manager
 # (see `miden::standards::fees::fee_manager`) dispatches fee estimation to `compute_note_fee` via
 # `dyncall`. The fee is charged in the fee asset the network account is configured with, read from
@@ -13,9 +14,15 @@
 # - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]. The last element is a
 #   set-marker distinguishing scheduled entries (including explicit 0 fees) from the zero word
 #   returned for unset keys; note scripts without a schedule entry abort fee computation.
+# - `cost_per_asset` value: [cost_per_asset, 0, 0, 0].
 
+use miden::core::math::u64
+use miden::core::mem
+use miden::core::word
 use miden::protocol::active_account
 
+use miden::standards::assets::fungible_asset
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::fees::fee_manager
 use miden::standards::note
 
@@ -28,29 +35,49 @@ use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 # Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
 const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::basic_constant_fee::fee_schedule")
 
+# Slot holding the fee charged for each asset in a note: [cost_per_asset, 0, 0, 0].
+const COST_PER_ASSET_SLOT = word("miden::standards::fees::policies::basic_constant_fee::cost_per_asset")
+
+# Each asset is represented by an ID word and a value word in the assets commitment preimage.
+const ASSET_NUM_ELEMENTS = 8
+
+const MAX_ASSETS_PER_NOTE = 64
+
+# Multiplier recombining a u64's limbs into a felt (2^32).
+const U32_LIMB_MULTIPLIER = 0x0000000100000000
+
+# Bounding the high u32 limb by 2^31 makes it safe to recombine the amount into a felt before
+# checking it against the maximum fungible asset amount.
+const MAX_ASSET_AMOUNT_HI_LIMB = 0x80000000
+
 # ERRORS
 # =================================================================================================
 
 const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule entry"
 
+const ERR_ASSETS_PREIMAGE_INVALID_LENGTH = "assets preimage length is not a valid number of assets"
+
+const ERR_NOTE_FEE_AMOUNT_OVERFLOW = "note fee exceeds the maximum fungible asset amount"
+
 # POLICY PROCEDURES
 # =================================================================================================
 
-#! Fee policy returning the constant fee scheduled for the note's script root.
+#! Fee policy returning the fee scheduled for the note's script root plus a per-asset fee.
 #!
 #! The fee amount is looked up in the fee schedule under a key built from the note parameters.
 #! This policy derives the key from just the note's script root, which it recovers from RECIPIENT
-#! via the advice provider, and ignores the remaining parameters, including timeframe and
-#! priority. Note scripts without a schedule entry abort; to make one free, schedule an explicit
-#! 0 fee. The fee asset ID is read from the network account's storage, so this policy must be
-#! installed on an `AuthNetworkAccount`.
+#! via the advice provider. It opens ASSETS_COMMITMENT via the advice provider and adds the number
+#! of assets times the configured cost per asset. The remaining parameters, including timeframe
+#! and priority, are ignored. Note scripts without a schedule entry abort; to make asset-less
+#! notes free, schedule an explicit 0 fee. The fee asset ID is read from the network account's
+#! storage, so this policy must be installed on an `AuthNetworkAccount`.
 #!
 #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - RECIPIENT is the recipient of the note whose fee is estimated.
-#! - ASSETS_COMMITMENT is the commitment to the note's assets (ignored by this policy).
+#! - ASSETS_COMMITMENT is the commitment to the note's assets.
 #! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments (ignored by this
 #!   policy).
 #! - timeframe is the timeframe the fee is estimated for (ignored by this policy).
@@ -60,11 +87,14 @@ const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule ent
 #!
 #! Panics if:
 #! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a non-empty assets commitment has no preimage in the advice map.
 #! - a preimage does not hash to the commitment it claims to open.
 #! - the note's script root has no fee schedule entry.
+#! - the computed fee exceeds the maximum fungible asset amount.
 #!
 #! Invocation: call
 @account_procedure
+@locals(1)
 pub proc compute_note_fee(
     recipient: NoteRecipient,
     assets_commitment: word,
@@ -72,6 +102,10 @@ pub proc compute_note_fee(
     timeframe: u32,
     priority: u32
 ) -> Asset
+    # Recover and cache the asset count before the lookup-key helper drops ASSETS_COMMITMENT.
+    dupw.1 exec.get_num_assets loc_store.0
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+
     exec.build_note_fee_lookup_key
     # => [LOOKUP_KEY, pad(12)]
 
@@ -89,6 +123,26 @@ pub proc compute_note_fee(
     assert.err=ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE
     # => [FEE_ASSET_VALUE, pad(12)]
 
+    # Extract the scheduled base fee.
+    exec.fungible_asset::value_into_amount
+    # => [scheduled_fee, pad(15)]
+
+    # Read and extract the configured per-asset cost.
+    push.COST_PER_ASSET_SLOT[0..2] exec.active_account::get_item
+    exec.fungible_asset::value_into_amount
+    # => [cost_per_asset, scheduled_fee, pad(15)]
+
+    # Compute scheduled_fee + num_assets * cost_per_asset with checked u64 arithmetic.
+    loc_load.0 exec.compute_fee_amount
+    # => [fee_amount, pad(15)]
+
+    exec.fungible_asset::create_value
+    # => [FEE_ASSET_VALUE, pad(15)]
+
+    # Restoring an amount to its value word adds three elements; discard the excess call padding.
+    movup.15 drop movup.15 drop movup.15 drop
+    # => [FEE_ASSET_VALUE, pad(12)]
+
     exec.fee_manager::read_fee_asset_id
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
 
@@ -99,6 +153,82 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Returns the number of assets committed by ASSETS_COMMITMENT.
+#! Empty notes use the empty word and return 0 without requiring an advice-map entry. Otherwise,
+#! the procedure derives the count from the exact preimage length and re-hashes the preimage while
+#! piping it into local memory, aborting if it does not match ASSETS_COMMITMENT.
+#! Inputs:  [ASSETS_COMMITMENT]
+#! Outputs: [num_assets]
+#! Invocation: exec
+@locals(512)
+proc get_num_assets(assets_commitment: word) -> u32
+    dupw padw exec.word::eq
+    # => [is_empty, ASSETS_COMMITMENT]
+
+    if.true
+        dropw push.0
+        # => [num_assets = 0]
+    else
+        adv.push_mapvaln
+        # OS => [ASSETS_COMMITMENT]
+        # AS => [num_elements, [ASSETS_DATA]]
+
+        adv_push u32assert.err=ERR_ASSETS_PREIMAGE_INVALID_LENGTH
+        u32divmod.ASSET_NUM_ELEMENTS
+        # => [remainder, num_assets, ASSETS_COMMITMENT]
+
+        eq.0 assert.err=ERR_ASSETS_PREIMAGE_INVALID_LENGTH
+        dup u32lte.MAX_ASSETS_PER_NOTE assert.err=ERR_ASSETS_PREIMAGE_INVALID_LENGTH
+        # => [num_assets, ASSETS_COMMITMENT]
+
+        # Preserve num_assets while validating the preimage against ASSETS_COMMITMENT.
+        dup movdn.5
+        # pipe_preimage_to_memory consumes a word count; each asset occupies two words.
+        mul.2
+        locaddr.0 swap
+        # => [num_words, dest_ptr, ASSETS_COMMITMENT, num_assets]
+
+        exec.mem::pipe_preimage_to_memory drop
+        # => [num_assets]
+    end
+end
+
+#! Computes scheduled_fee + num_assets * cost_per_asset and returns it as a valid fungible asset
+#! amount. All arithmetic is performed on u64 limbs so field overflow cannot wrap the result.
+#! Inputs:  [num_assets, cost_per_asset, scheduled_fee]
+#! Outputs: [fee_amount]
+#! Invocation: exec
+proc compute_fee_amount(num_assets: u32, cost_per_asset: felt, scheduled_fee: felt) -> felt
+    u32split
+    # => [num_assets_lo, num_assets_hi = 0, cost_per_asset, scheduled_fee]
+
+    movup.2 u32split
+    # => [cost_lo, cost_hi, num_assets_lo, num_assets_hi, scheduled_fee]
+
+    exec.u64::widening_mul
+    # => [product0, product1, product2, product3, scheduled_fee]
+
+    # The scaled cost must fit into a u64.
+    movup.3 movup.3 add assertz.err=ERR_NOTE_FEE_AMOUNT_OVERFLOW
+    # => [product0, product1, scheduled_fee]
+
+    movup.2 u32split
+    # => [scheduled_lo, scheduled_hi, product0, product1]
+
+    exec.u64::overflowing_add
+    # => [overflow, fee_lo, fee_hi]
+
+    assertz.err=ERR_NOTE_FEE_AMOUNT_OVERFLOW
+    # => [fee_lo, fee_hi]
+
+    # Ensure recombination cannot overflow the field, then enforce the fungible-asset bound.
+    dup.1 push.MAX_ASSET_AMOUNT_HI_LIMB u32lt
+    assert.err=ERR_NOTE_FEE_AMOUNT_OVERFLOW
+    swap mul.U32_LIMB_MULTIPLIER add
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_NOTE_FEE_AMOUNT_OVERFLOW
+    # => [fee_amount]
+end
 
 #! Builds the fee schedule lookup key from the note parameters.
 #!
