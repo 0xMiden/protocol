@@ -66,6 +66,24 @@ impl EthAddress {
         Ok(Self(bytes))
     }
 
+    /// Creates an [`EthAddress`] from a 32-byte (bytes32) value embedding a left-padded address.
+    ///
+    /// In EVM ABI encoding, a bytes32-embedded address has bytes 0..12 zero and the 20-byte
+    /// address in bytes 12..32. This is the encoding used by bridges that carry an address in a
+    /// full bytes32 field.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the leading 12 padding bytes are non-zero.
+    pub fn try_from_bytes32(bytes: [u8; 32]) -> Result<Self, AddressConversionError> {
+        if bytes[0..12] != [0; 12] {
+            return Err(AddressConversionError::NonZeroBytes32Padding);
+        }
+
+        let addr: [u8; 20] = bytes[12..32].try_into().expect("slice is exactly 20 bytes");
+        Ok(Self(addr))
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -125,6 +143,7 @@ impl From<EthAddress> for [u8; 20] {
 pub enum AddressConversionError {
     NonZeroWordPadding,
     NonZeroBytePrefix,
+    NonZeroBytes32Padding,
     InvalidHexLength,
     InvalidHexChar(char),
     HexParseError,
@@ -138,6 +157,9 @@ impl fmt::Display for AddressConversionError {
             AddressConversionError::NonZeroWordPadding => write!(f, "non-zero word padding"),
             AddressConversionError::NonZeroBytePrefix => {
                 write!(f, "address has non-zero 4-byte prefix")
+            },
+            AddressConversionError::NonZeroBytes32Padding => {
+                write!(f, "leading 12 bytes must be zero for a bytes32-embedded address")
             },
             AddressConversionError::InvalidHexLength => {
                 write!(f, "invalid hex length (expected 40 hex chars)")
