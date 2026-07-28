@@ -1,15 +1,17 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, LoadedMastForest, MastForestStore, ProcessorState};
-use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
+use miden_protocol::note::NoteId;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 use miden_protocol::vm::{EventId, EventName};
+use miden_protocol::{Felt, Word};
 use miden_prover::SyncHost;
 
 use crate::host::{
@@ -29,6 +31,9 @@ where
 {
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
+
+    /// Maps each input note ID to its index for on-demand advice requests.
+    input_note_indices: BTreeMap<NoteId, Felt>,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -47,6 +52,11 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
     ) -> Self {
+        let input_note_indices = input_notes
+            .iter()
+            .enumerate()
+            .map(|(note_idx, input_note)| (input_note.id(), Felt::from(note_idx as u32)))
+            .collect();
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -56,7 +66,7 @@ where
             acct_procedure_index_map,
         );
 
-        Self { base_host }
+        Self { base_host, input_note_indices }
     }
 
     // PUBLIC ACCESSORS
@@ -65,6 +75,16 @@ where
     /// Consumes `self` and returns the account delta, input and output notes.
     pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         self.base_host.into_parts()
+    }
+
+    /// Pushes an input note's index and a presence flag onto the advice stack.
+    fn on_input_note_index_requested(&self, note_id: NoteId) -> Vec<AdviceMutation> {
+        let (note_idx, is_found) = self
+            .input_note_indices
+            .get(&note_id)
+            .map_or((Felt::ZERO, Felt::ZERO), |note_idx| (*note_idx, Felt::ONE));
+
+        vec![AdviceMutation::extend_stack([note_idx, is_found])]
     }
 }
 
@@ -188,8 +208,9 @@ where
                 .on_note_before_add_attachment(note_idx, attachment)
                 .map(|_| Vec::new()),
 
-            // Input note indices requested during execution are already in the advice provider.
-            TransactionEvent::InputNoteIndexRequest { .. } => Ok(Vec::new()),
+            TransactionEvent::InputNoteIndexRequest { note_id } => {
+                Ok(self.on_input_note_index_requested(note_id))
+            },
 
             TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
                 if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {

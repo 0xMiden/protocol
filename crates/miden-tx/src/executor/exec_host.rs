@@ -177,17 +177,18 @@ where
         &self.foreign_account_slot_names
     }
 
-    /// Inserts an input note's index into the advice map under its note ID, when present.
+    /// Pushes an input note's index and a presence flag onto the advice stack.
     ///
-    /// The index is an unauthenticated hint. Consumers must compare the note ID at the advised
-    /// index against the ID they requested before relying on it.
+    /// When the note is absent, index zero is returned as a safe fallback with a cleared presence
+    /// flag. The index is an unauthenticated hint. Consumers must compare the note ID at the
+    /// advised index against the ID they requested before relying on it.
     fn on_input_note_index_requested(&self, note_id: NoteId) -> Vec<AdviceMutation> {
-        let Some(note_idx) = self.input_note_indices.get(&note_id) else {
-            return Vec::new();
-        };
+        let (note_idx, is_found) = self
+            .input_note_indices
+            .get(&note_id)
+            .map_or((Felt::ZERO, Felt::ZERO), |note_idx| (*note_idx, Felt::ONE));
 
-        let note_index = AdviceMap::from_iter([(note_id.as_word(), vec![*note_idx])]);
-        vec![AdviceMutation::extend_map(note_index)]
+        vec![AdviceMutation::extend_stack([note_idx, is_found])]
     }
 
     // EVENT HANDLERS

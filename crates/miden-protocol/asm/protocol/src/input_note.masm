@@ -7,7 +7,8 @@ use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteSc
 # EVENTS
 # =================================================================================================
 
-#! Requests that the transaction host index the specified input note ID in the advice map.
+#! Requests that the transaction host resolve the specified input note ID through the advice
+#! provider.
 pub const INPUT_NOTE_INDEX_REQUEST_EVENT = event("miden::protocol::input_note::index_request")
 
 # PROCEDURES

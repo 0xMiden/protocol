@@ -143,7 +143,7 @@ pub(crate) enum TransactionEvent {
         attachment: NoteAttachment,
     },
 
-    /// A request to insert the index of an input note into the advice map under its note ID.
+    /// A request to resolve an input note ID to its index through the advice provider.
     InputNoteIndexRequest {
         note_id: NoteId,
     },
