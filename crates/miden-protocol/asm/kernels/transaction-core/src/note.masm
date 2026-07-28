@@ -10,7 +10,7 @@ pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WOR
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 64"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 16"
 
 # CONSTANTS
 # =================================================================================================
