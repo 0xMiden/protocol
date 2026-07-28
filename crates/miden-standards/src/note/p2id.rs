@@ -66,7 +66,7 @@ impl P2idNote {
     /// - No assets were provided.
     /// - More than [`P2idNote::MAX_NUM_ASSETS`] assets were provided, exceeding the P2ID standard's
     ///   limit.
-    /// - The attachments exceed their protocol-wide limits (see [`NoteAttachments::new`]).
+    /// - The attachments exceed the maximum accepted by [`NoteAttachments::new`].
     #[builder]
     pub fn new(
         #[builder(field)] assets: Vec<Asset>,
