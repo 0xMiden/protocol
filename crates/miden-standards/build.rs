@@ -49,31 +49,6 @@ fn main() -> Result<()> {
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
     // The miden-core library is provided through an in-memory registry
-    let mut registry = build_registry()?;
-
-    // compile standards library (includes note scripts and transaction scripts) and seed it into
-    // the registry
-    compile_standards_lib(&source_dir, &target_dir, &mut registry)?;
-
-    // compile account components (each member of the components workspace becomes its own package)
-    assemble_workspace(
-        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
-        &mut registry,
-        &target_dir.join(ASM_COMPONENTS_DIR),
-    )?;
-
-    generate_error_constants(&source_dir, &build_dir)?;
-
-    Ok(())
-}
-
-// ASSEMBLER & REGISTRY
-// ================================================================================================
-
-/// Builds a package registry seeded with the protocol library and its transitive `miden-tx-kernel`
-/// and `miden-core` dependencies, so that the `miden-protocol` dependency declared by the standards
-/// projects can be resolved during project assembly.
-fn build_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
 
     // The protocol package declares dependencies on the kernel and core packages, so all three
@@ -86,25 +61,25 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
         registry.cache_package(package).into_diagnostic()?;
     }
 
-    Ok(registry)
-}
-
-// COMPILE STANDARDS LIB
-// ================================================================================================
-
-/// Assembles the standards library project in "{source_dir}/standards" into a package, saves it to
-/// the `target_dir`, and seeds it into the `registry`.
-fn compile_standards_lib(
-    source_dir: &Path,
-    target_dir: &Path,
-    registry: &mut InMemoryPackageRegistry,
-) -> Result<()> {
+    // compile standards library (includes note scripts and transaction scripts) and seed it into
+    // the registry
     let manifest_path = source_dir.join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST);
-
-    let package =
-        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
-
+    let package = assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Library,
+        &mut registry,
+        &target_dir,
+    )?;
     registry.cache_package(package).into_diagnostic()?;
+
+    // compile account components (each member of the components workspace becomes its own package)
+    assemble_workspace(
+        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
+        &mut registry,
+        &target_dir.join(ASM_COMPONENTS_DIR),
+    )?;
+
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
