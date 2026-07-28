@@ -134,7 +134,8 @@ impl Serializable for AccountVaultPatch {
     }
 
     fn get_size_hint(&self) -> usize {
-        let removed_size = AssetId::SERIALIZED_SIZE * self.removed_asset_ids().count();
+        let removed_size: usize =
+            self.removed_asset_ids().map(|asset_id| asset_id.get_size_hint()).sum();
         let updated_size: usize = self.updated_assets().map(|asset| asset.get_size_hint()).sum();
 
         2 * 0usize.get_size_hint() + removed_size + updated_size
