@@ -79,6 +79,76 @@ use crate::{
     assert_transaction_executor_error,
 };
 
+/// Recomputing an output note's ID in MASM must match `Note::id()` in Rust.
+///
+/// The note is built in Rust and then reconstructed in MASM via `create` + `add_asset` +
+/// `add_word_attachment`, so the assets and attachments commitments are both non-empty.
+#[tokio::test]
+async fn compute_note_id_matches_rust() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let asset: Asset = FungibleAsset::mock(150);
+    let attachment_scheme = NoteAttachmentScheme::new(10)?;
+    let attachment_word = Word::from([3, 4, 5, 6u32]);
+
+    let expected_note = NoteBuilder::new(account.id(), rng)
+        .note_type(NoteType::Public)
+        .add_assets(vec![asset])
+        .attachment(NoteAttachment::with_word(attachment_scheme, attachment_word))
+        .build()?;
+    let tag = expected_note.metadata().tag();
+
+    let mock_tx = TestTransactionBuilder::new(account).build()?;
+
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::output_note
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx]
+
+            dup push.{asset_value} push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+            exec.output_note::add_asset
+            # => [note_idx]
+
+            dup push.{attachment_word} push.{attachment_scheme}
+            # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::compute_note_id
+            # => [NOTE_ID]
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        recipient = expected_note.recipient().digest(),
+        note_type = NoteType::Public as u8,
+        tag = tag,
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+        attachment_word = attachment_word,
+        attachment_scheme = attachment_scheme.as_u16(),
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word(0), expected_note.id().as_word());
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_create_note() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;

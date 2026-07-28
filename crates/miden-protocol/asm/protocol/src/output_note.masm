@@ -1,7 +1,7 @@
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use {Asset, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteTag, NoteType}
+use {Asset, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteTag, NoteType}
     from miden::protocol::types
 use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET}
     from miden::protocol::kernel_proc_offsets
@@ -410,6 +410,51 @@ pub proc get_metadata(note_index: u16) -> NoteMetadata
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [METADATA]
+end
+
+#! Computes the ID of the output note at the provided index.
+#!
+#! The returned ID is only final once the note has been fully constructed, that is, once all of its
+#! assets and attachments have been added.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_idx is the index of the output note whose ID should be computed.
+#! - NOTE_ID is the ID of the specified output note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: exec
+pub proc compute_note_id(note_idx: u16) -> NoteId
+    dup exec.get_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, note_idx]
+
+    movup.4 drop movup.4
+    # => [note_idx, ASSETS_COMMITMENT]
+
+    dup exec.get_recipient movup.4
+    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
+
+    dup exec.get_attachments_commitment movup.4
+    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
+
+    exec.get_metadata
+    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
+
+    exec.poseidon2::merge
+    # => [NOTE_METADATA_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
+
+    movdnw.2
+    # => [RECIPIENT, ASSETS_COMMITMENT, NOTE_METADATA_COMMITMENT]
+
+    exec.poseidon2::merge
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT]
+
+    exec.poseidon2::merge
+    # => [NOTE_ID]
 end
 
 #! Searches the metadata of the output note with the specified index for the specified
