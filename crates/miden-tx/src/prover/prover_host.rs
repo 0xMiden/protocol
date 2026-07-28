@@ -188,6 +188,9 @@ where
                 .on_note_before_add_attachment(note_idx, attachment)
                 .map(|_| Vec::new()),
 
+            // Input note indices requested during execution are already in the advice provider.
+            TransactionEvent::InputNoteIndexRequest { .. } => Ok(Vec::new()),
+
             TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
                 if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {
                     Ok(self.base_host.on_auth_requested(signature))

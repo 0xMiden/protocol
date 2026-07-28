@@ -143,6 +143,11 @@ pub(crate) enum TransactionEvent {
         attachment: NoteAttachment,
     },
 
+    /// A request to insert the index of an input note into the advice map under its note ID.
+    InputNoteIndexRequest {
+        note_id: NoteId,
+    },
+
     /// The data necessary to handle an auth request.
     AuthRequest {
         pub_key_commitment: PublicKeyCommitment,
@@ -475,6 +480,12 @@ impl TransactionEvent {
                 )?;
 
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
+            },
+
+            TransactionEventId::InputNoteIndexRequest => {
+                // Expected stack state: [event, NOTE_ID]
+                let note_id = NoteId::from_raw(process.get_stack_word(1));
+                Some(TransactionEvent::InputNoteIndexRequest { note_id })
             },
 
             TransactionEventId::AuthRequest => {

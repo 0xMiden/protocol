@@ -1,10 +1,13 @@
+use miden::core::word
+
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::input_note
 use miden::protocol::note
 use miden::protocol::tx
+use {INPUT_NOTE_INDEX_REQUEST_EVENT} from miden::protocol::input_note
 
-use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
 
 use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from miden::protocol::types
@@ -151,14 +154,23 @@ pub proc main
 
     # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
     # script rather than in the consuming account because the sponsor trusts neither the consuming
-    # account nor the transaction builder. The search takes no index hint from the note args: an
-    # incorrect hint would revert a transaction whose feature note is in fact present, handing
-    # the builder a griefing vector.
-    exec.note_id::find_input_note_by_id
-    # => [is_found, note_idx, pad(16)]
+    # account nor the transaction builder. The host indexes input note IDs in the advice map after
+    # an on-demand request; if the bound note is present, authenticate the advised index against
+    # the prologue-cached note ID.
+    emit.INPUT_NOTE_INDEX_REQUEST_EVENT
+    adv.has_mapkey adv_push
+    # => [is_found, FEATURE_NOTE_ID, pad(16)]
 
-    swap drop
-    # => [is_found, pad(16)]
+    if.true
+        adv.push_mapval adv_push
+        # => [feature_note_idx, FEATURE_NOTE_ID, pad(16)]
+
+        exec.input_note::get_note_id exec.word::eq
+        # => [is_found, pad(16)]
+    else
+        dropw push.0
+        # => [is_found = 0, pad(16)]
+    end
 
     # with the feature note present, the sponsorship path is a no-op: the assets stay in the note
     # for the consuming account to collect, and who may get here is decided by the feature note's

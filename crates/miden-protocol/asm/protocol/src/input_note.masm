@@ -4,6 +4,12 @@ use miden::protocol::note
 use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteScriptRoot}
     from miden::protocol::types
 
+# EVENTS
+# =================================================================================================
+
+#! Requests that the transaction host index the specified input note ID in the advice map.
+pub const INPUT_NOTE_INDEX_REQUEST_EVENT = event("miden::protocol::input_note::index_request")
+
 # PROCEDURES
 # =================================================================================================
 
