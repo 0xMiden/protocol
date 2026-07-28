@@ -421,8 +421,7 @@ mod tests {
     #[test]
     fn builder_rejects_too_many_assets() {
         let assets = (0..=P2idNote::MAX_NUM_ASSETS)
-            .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()))
-            .map(Asset::from);
+            .map(|i| NonFungibleAsset::mock(&(i as u64).to_le_bytes()));
 
         let err = P2idNote::builder()
             .sender(sender())
