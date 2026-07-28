@@ -26,9 +26,9 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{ERR_FEE_ASSET_ID_MISMATCH, ERR_SENDER_NOT_OWNER};
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
-use super::consume_note;
 use super::fee_manager::{FEE_AMOUNT, fee_faucet_id, priced_root};
 use super::rbac::{build_note, test_account_id};
+use crate::consume_note;
 
 // HELPERS
 // ================================================================================================

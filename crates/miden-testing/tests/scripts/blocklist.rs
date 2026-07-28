@@ -43,8 +43,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-use super::consume_note;
 use super::rbac::{build_grant_role_note, role, test_account_id};
+use crate::consume_note;
 
 // HELPERS
 // ================================================================================================
