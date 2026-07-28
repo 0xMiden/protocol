@@ -51,10 +51,15 @@ pub struct AssetId {
 }
 
 impl AssetId {
-    /// The serialized size of an [`AssetId`] in bytes.
+    /// The serialized size of an [`AssetId`] with [`AssetComposition::Fungible`] in bytes.
     ///
-    /// Serialized as its [`Word`] representation (4 field elements).
-    pub const SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
+    /// The asset class of a fungible asset is always empty and so it is not serialized.
+    const FUNGIBLE_SERIALIZED_SIZE: usize =
+        AssetComposition::SERIALIZED_SIZE + AccountId::SERIALIZED_SIZE;
+
+    /// The serialized size of an [`AssetId`] with any other [`AssetComposition`] in bytes.
+    const NON_FUNGIBLE_SERIALIZED_SIZE: usize =
+        Self::FUNGIBLE_SERIALIZED_SIZE + AssetClass::SERIALIZED_SIZE;
 
     // BIT LAYOUT CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -278,19 +283,40 @@ impl From<NonFungibleAsset> for AssetId {
 // ================================================================================================
 
 impl Serializable for AssetId {
+    /// Serializes the ID from its parts rather than from its [`Word`] representation. Because the
+    /// asset class of a fungible asset is always empty, it is not written, saving
+    /// [`AssetClass::SERIALIZED_SIZE`] bytes per fungible ID.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.to_word().write_into(target);
+        // Lead with the asset composition byte.
+        target.write(self.composition);
+        target.write(self.faucet_id);
+
+        if !self.composition.is_fungible() {
+            target.write(self.asset_class);
+        }
     }
 
     fn get_size_hint(&self) -> usize {
-        Self::SERIALIZED_SIZE
+        if self.composition.is_fungible() {
+            Self::FUNGIBLE_SERIALIZED_SIZE
+        } else {
+            Self::NON_FUNGIBLE_SERIALIZED_SIZE
+        }
     }
 }
 
 impl Deserializable for AssetId {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word: Word = source.read()?;
-        Self::try_from(word).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let composition: AssetComposition = source.read()?;
+        let faucet_id: AccountId = source.read()?;
+        let asset_class = if composition.is_fungible() {
+            AssetClass::default()
+        } else {
+            source.read()?
+        };
+
+        Self::new(asset_class, faucet_id, composition)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -320,6 +346,8 @@ mod tests {
         let roundtripped = AssetId::try_from(id.to_word())?;
         assert_eq!(id, roundtripped);
         assert_eq!(id, AssetId::read_from_bytes(&id.to_bytes())?);
+        assert_eq!(id.to_bytes().len(), AssetId::FUNGIBLE_SERIALIZED_SIZE);
+        assert_eq!(id.to_bytes().len(), id.get_size_hint());
 
         // Non-fungible: asset_class can be non-zero.
         let id = AssetId::new(
@@ -331,6 +359,8 @@ mod tests {
         let roundtripped = AssetId::try_from(id.to_word())?;
         assert_eq!(id, roundtripped);
         assert_eq!(id, AssetId::read_from_bytes(&id.to_bytes())?);
+        assert_eq!(id.to_bytes().len(), AssetId::NON_FUNGIBLE_SERIALIZED_SIZE);
+        assert_eq!(id.to_bytes().len(), id.get_size_hint());
 
         Ok(())
     }

@@ -329,13 +329,20 @@ impl Serializable for FungibleAssetDelta {
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
         //   We should update this code (and deserialization as well) once it supports signed
         //   integers.
-        // TODO: If we keep this code, optimize by not serializing asset class (which is always 0).
         target.write_many(self.0.iter().map(|(asset_id, &delta)| (*asset_id, delta as u64)));
     }
 
     fn get_size_hint(&self) -> usize {
-        const ENTRY_SIZE: usize = AssetId::SERIALIZED_SIZE + core::mem::size_of::<u64>();
-        self.0.len().get_size_hint() + self.0.len() * ENTRY_SIZE
+        let entries_size: usize = self
+            .0
+            .keys()
+            .map(|id| {
+                // amount is serialized as a u64
+                id.get_size_hint() + core::mem::size_of::<u64>()
+            })
+            .sum();
+
+        self.0.len().get_size_hint() + entries_size
     }
 }
 
