@@ -9,12 +9,12 @@
 
 use std::collections::BTreeSet;
 
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{
@@ -23,8 +23,14 @@ use miden_standards::account::fees::{
     FeePolicyManager,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::errors::standards::{ERR_FEE_ASSET_ID_MISMATCH, ERR_SENDER_NOT_OWNER};
+use miden_standards::errors::standards::{
+    ERR_FEE_AMOUNT_EXCEEDS_MAX,
+    ERR_FEE_ASSET_ID_MISMATCH,
+    ERR_FEE_ASSET_VALUE_MALFORMED,
+    ERR_SENDER_NOT_OWNER,
+};
 use miden_testing::{MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 use super::fee_manager::{FEE_AMOUNT, fee_faucet_id, priced_root};
 use super::rbac::{build_note, test_account_id};
@@ -38,13 +44,14 @@ fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?)
 }
 
-/// Builds a `sender`-authored note whose script schedules `fee_asset` for `lookup_key` by calling
-/// `basic_constant_fee_manager::set_note_fee`. The sender must be the account owner under
-/// `Authority::OwnerControlled`.
-fn build_set_note_fee_note(
+/// Builds a `sender`-authored note whose script calls `set_note_fee` with the given fee asset ID
+/// and value words. The sender must be the account owner under `Authority::OwnerControlled`. Taking
+/// raw words lets tests pass a hand-crafted value that the `FungibleAsset` builder could not emit.
+fn build_set_note_fee_note_raw(
     sender: AccountId,
     lookup_key: NoteScriptRoot,
-    fee_asset: FungibleAsset,
+    fee_asset_id: Word,
+    fee_asset_value: Word,
 ) -> anyhow::Result<Note> {
     build_note(
         sender,
@@ -63,10 +70,22 @@ fn build_set_note_fee_note(
             dropw dropw dropw
         end
         "#,
-            fee_asset_value = fee_asset.to_value_word(),
-            fee_asset_id = fee_asset.to_id_word(),
             lookup_key = lookup_key.as_word(),
         ),
+    )
+}
+
+/// Builds a `sender`-authored note scheduling `fee_asset` for `lookup_key`.
+fn build_set_note_fee_note(
+    sender: AccountId,
+    lookup_key: NoteScriptRoot,
+    fee_asset: FungibleAsset,
+) -> anyhow::Result<Note> {
+    build_set_note_fee_note_raw(
+        sender,
+        lookup_key,
+        fee_asset.to_id_word(),
+        fee_asset.to_value_word(),
     )
 }
 
@@ -109,6 +128,11 @@ fn committed_fee_schedule_entry(
         StorageMapKey::new(lookup_key.as_word()),
     )?;
     Ok(entry)
+}
+
+/// Returns the account's configured fee asset ID word.
+fn fee_asset_id_word() -> anyhow::Result<Word> {
+    Ok(fee_asset(0)?.to_id_word())
 }
 
 // TESTS
@@ -238,6 +262,101 @@ async fn set_note_fee_with_wrong_fee_asset_is_rejected() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_ASSET_ID_MISMATCH);
+
+    Ok(())
+}
+
+/// `set_note_fee` rejects a fee asset value word that is not a well-formed fungible value: a
+/// hand-crafted note carries the correct fee asset ID but a value with a non-zero padding element
+/// (any of the three), which the value-word validation aborts before it can poison the fee
+/// schedule.
+#[rstest]
+#[case::element_1(1)]
+#[case::element_2(2)]
+#[case::element_3(3)]
+#[tokio::test]
+async fn set_note_fee_with_malformed_fee_asset_value_is_rejected(
+    #[case] dirty_element: usize,
+) -> anyhow::Result<()> {
+    let owner = test_account_id(70);
+    // A value word with a non-zero element where a fungible value must be zero-padded.
+    let mut value = [FEE_AMOUNT as u32, 0, 0, 0];
+    value[dirty_element] = 1;
+    let set_note =
+        build_set_note_fee_note_raw(owner, priced_root(), fee_asset_id_word()?, Word::from(value))?;
+    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_ASSET_VALUE_MALFORMED);
+
+    Ok(())
+}
+
+/// `set_note_fee` rejects a fee amount that exceeds the maximum fungible asset amount, before it
+/// can be scheduled as an unpayable fee.
+#[tokio::test]
+async fn set_note_fee_with_amount_over_max_is_rejected() -> anyhow::Result<()> {
+    let owner = test_account_id(70);
+    // One above the maximum fungible asset amount; still a valid field element.
+    let over_max =
+        Word::from([Felt::from(AssetAmount::MAX) + Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let set_note =
+        build_set_note_fee_note_raw(owner, priced_root(), fee_asset_id_word()?, over_max)?;
+    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_AMOUNT_EXCEEDS_MAX);
+
+    Ok(())
+}
+
+/// The maximum fungible asset amount is the inclusive upper bound: scheduling exactly `MAX_AMOUNT`
+/// is accepted and lands as the set-marked entry `[MAX_AMOUNT, 0, 0, 1]`.
+#[tokio::test]
+async fn owner_set_note_fee_at_max_amount_is_accepted() -> anyhow::Result<()> {
+    let owner = test_account_id(70);
+    let max_value = Word::from([Felt::from(AssetAmount::MAX), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let set_note =
+        build_set_note_fee_note_raw(owner, priced_root(), fee_asset_id_word()?, max_value)?;
+    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    consume_note(&mut mock_chain, account.id(), &set_note).await?;
+
+    let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
+    assert_eq!(
+        entry,
+        Word::from([Felt::from(AssetAmount::MAX), Felt::ZERO, Felt::ZERO, Felt::ONE])
+    );
 
     Ok(())
 }

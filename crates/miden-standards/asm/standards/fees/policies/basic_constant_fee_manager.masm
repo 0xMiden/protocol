@@ -15,6 +15,7 @@ use miden::standards::access::authority
 use miden::standards::fees::fee_manager
 
 use {Asset} from miden::protocol::types
+use {MAX_AMOUNT} from miden::standards::assets::fungible_asset
 
 # CONSTANTS
 # =================================================================================================
@@ -27,6 +28,10 @@ const FEE_SCHEDULE_SLOT_ID_SLOT = word("miden::standards::fees::policies::basic_
 # =================================================================================================
 
 const ERR_FEE_ASSET_ID_MISMATCH = "provided fee asset ID does not match the fee manager's configured fee asset ID"
+
+const ERR_FEE_ASSET_VALUE_MALFORMED = "provided fee asset value is not a well-formed fungible asset value"
+
+const ERR_FEE_AMOUNT_EXCEEDS_MAX = "provided fee amount exceeds the maximum allowed fungible asset amount"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -52,6 +57,8 @@ const ERR_FEE_ASSET_ID_MISMATCH = "provided fee asset ID does not match the fee 
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
 #! - the fee asset's ID does not match the fee manager's configured fee asset ID.
+#! - the fee asset value is not a well-formed fungible asset value (an amount not exceeding
+#!   `MAX_AMOUNT` followed by zero padding).
 #!
 #! Invocation: call
 @account_procedure
@@ -69,12 +76,28 @@ pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
     assert_eqw.err=ERR_FEE_ASSET_ID_MISMATCH
     # => [NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(8)]
 
-    # build the fee schedule entry [fee_amount, 0, 0, 1] from the asset value by setting its last
-    # element to the set-marker
     swapw
     # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(8)]
 
-    push.1 swap.4 drop
+    # The value word is not trusted: `set_note_fee` is a `call` entrypoint, so the operand stack is
+    # caller-controlled and the typed `Asset` parameter is not validated at the call boundary. Assert
+    # it is a well-formed fungible asset value [amount, 0, 0, 0] before scheduling it, otherwise
+    # `compute_note_fee` would emit a malformed fee asset.
+
+    # assert the amount does not exceed the maximum fungible asset amount
+    dup lte.MAX_AMOUNT assert.err=ERR_FEE_AMOUNT_EXCEEDS_MAX
+    # => [amount, e1, e2, e3, NOTE_LOOKUP_KEY, pad(8)]
+
+    # assert the remaining value elements are zero
+    movdn.3
+    # => [e1, e2, e3, amount, NOTE_LOOKUP_KEY, pad(8)]
+    assertz.err=ERR_FEE_ASSET_VALUE_MALFORMED
+    assertz.err=ERR_FEE_ASSET_VALUE_MALFORMED
+    assertz.err=ERR_FEE_ASSET_VALUE_MALFORMED
+    # => [amount, NOTE_LOOKUP_KEY, pad(8)]
+
+    # build the fee schedule entry [amount, 0, 0, 1] with the set-marker as the last element
+    push.0.0.1 swap.3
     # => [FEE_SCHEDULE_ENTRY, NOTE_LOOKUP_KEY, pad(8)]
 
     swapw

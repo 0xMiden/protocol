@@ -57,12 +57,18 @@ static FEE_SCHEDULE_SLOT_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 /// Because the fee schedule policy and the fee asset ID both live on an `AuthNetworkAccount`, this
 /// manager is only usable on a network account.
 ///
-/// `BasicConstantFeeManager` works uniformly with every standard access scheme:
-/// - [`crate::account::access::Authority::AuthControlled`] — gates the admin procedure via the
-///   account's own auth component.
-/// - [`crate::account::access::Authority::OwnerControlled`] — requires the Ownable2Step owner.
-/// - [`crate::account::access::Authority::RbacControlled`] — resolves a role for the procedure. Map
-///   [`Self::set_note_fee_root`] to a role symbol (e.g. a `FEE_ADMIN` role) to gate the operation.
+/// `set_note_fee` must be gated by an [`Authority`](crate::account::access::Authority) component in
+/// one of these modes:
+/// - [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) — requires the
+///   Ownable2Step owner.
+/// - [`RbacControlled`](crate::account::access::Authority::RbacControlled) — resolves a role for
+///   the procedure. Map [`Self::set_note_fee_root`] to a role symbol (e.g. a `FEE_ADMIN` role) to
+///   gate the operation.
+///
+/// Do NOT use [`AuthControlled`](crate::account::access::Authority::AuthControlled): it makes
+/// `assert_authorized` a no-op, deferring to the account's own auth scheme, which on an
+/// `AuthNetworkAccount` is permissionless for allowlisted notes — that would leave `set_note_fee`
+/// callable by anyone, letting an unauthorized party rewrite the fee schedule.
 ///
 /// Companion components required:
 /// - [`crate::account::auth::AuthNetworkAccount`] — provides the fee asset ID slot and the fee

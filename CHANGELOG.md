@@ -5,7 +5,7 @@
 ### Features
 
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
-- Added the `BasicConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
+- Added the `BasicConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 
 ### Changes
 
