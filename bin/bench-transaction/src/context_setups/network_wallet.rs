@@ -327,9 +327,8 @@ pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<MockTran
             .add_advice_map_entry(auth_args, advice_value)
             .build()
     } else {
-        // Sponsorship path: the network account consumes the fee-unaware feature note directly
-        // followed by the FEE_SPONSORSHIP note prepaying its fee (the order
-        // collect_sponsored_fees requires); the auth procedure collects the sponsored fee
+        // Sponsorship path: the network account consumes the fee-unaware feature note along with
+        // the FEE_SPONSORSHIP note prepaying its fee; the auth procedure collects the sponsored fee
         // natively. The account's fee policy prices the feature note at the sponsored amount.
         let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
         // The feature note is completely fee-unaware; P2ANY stands in for a real network note.
