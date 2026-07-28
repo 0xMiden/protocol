@@ -23,6 +23,11 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(salt: word)
+    # zero the leading user params (not exposed through this component's interface); the SALT
+    # occupies the trailing four
+    push.0.0.0
+    # => [0, 0, 0, SALT]
+
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 

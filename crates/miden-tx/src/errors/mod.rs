@@ -220,6 +220,10 @@ pub enum TransactionKernelError {
     SignatureGenerationFailed(#[source] AuthenticationError),
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]
     TransactionSummaryCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error(
+        "transaction summary binds expiration delta {actual} but the transaction's expiration delta is {expected}"
+    )]
+    TransactionSummaryExpirationDeltaMismatch { expected: u16, actual: u16 },
     #[error("failed to construct transaction summary")]
     TransactionSummaryConstructionFailed(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("asset data extracted from the stack by event handler `{handler}` is not well formed")]
