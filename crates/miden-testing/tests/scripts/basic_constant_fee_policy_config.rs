@@ -5,13 +5,25 @@
 
 use std::collections::BTreeSet;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountId;
+use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::errors::standards::ERR_SENDER_NOT_OWNER;
-use miden_standards::note::BasicConstantFeePolicyConfigNote;
+use miden_protocol::{Felt, Word};
+use miden_standards::errors::standards::{
+    ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH,
+    ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_NETWORK_ACCOUNT_TARGET_MISSING,
+    ERR_SENDER_NOT_OWNER,
+};
+use miden_standards::note::{
+    BasicConstantFeePolicyConfigNote,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 use super::basic_constant_fee_manager::{
     build_manageable_fee_account,
@@ -28,6 +40,9 @@ use crate::consume_note;
 
 /// Builds a `BasicConstantFeePolicyConfigNote` scheduling `fee` (in the account's fee asset) for
 /// `priced_root()` on `account`, authored by `sender`, and converts it to a protocol [`Note`].
+///
+/// `serial_seed` distinguishes otherwise-identical notes so that several can coexist in one chain
+/// without sharing a note ID.
 fn build_config_note(
     sender: AccountId,
     account: AccountId,
@@ -42,6 +57,25 @@ fn build_config_note(
         .serial_number(Word::from([serial_seed, 0, 0, 0]))
         .build()?;
     Ok(Note::from(note))
+}
+
+/// Builds a note carrying the config-note script (so its root is allowlisted and priced like a real
+/// config note) but with `num_items` storage felts instead of the required `NUM_STORAGE_ITEMS`, to
+/// exercise the script's storage-count guard. It targets `account` (via a `NetworkAccountTarget`
+/// attachment, like a real config note) so the note passes the target check and reaches the guard.
+fn build_wrong_storage_config_note(
+    sender: AccountId,
+    account: AccountId,
+    num_items: usize,
+) -> anyhow::Result<Note> {
+    let mut rng = RandomCoin::new(Word::from([7u32, 0, 0, 0]));
+    let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)?;
+    let note = NoteBuilder::new(sender, &mut rng)
+        .script(BasicConstantFeePolicyConfigNote::script())
+        .note_storage(vec![Felt::from(1u32); num_items])?
+        .attachment(target)
+        .build()?;
+    Ok(note)
 }
 
 // TESTS
@@ -100,6 +134,118 @@ async fn non_owner_config_note_is_rejected() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// A note carrying the config-note script but a storage item count other than `NUM_STORAGE_ITEMS`
+/// (too few, empty, or too many) is rejected by the script's storage-count guard before it can call
+/// `set_note_fee`. The note's script root is unchanged by the storage, so it is still allowlisted,
+/// priced, and account-targeted like a real config note; only the storage layout is malformed.
+#[rstest]
+#[case::empty(0)]
+#[case::too_few(BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS - 4)]
+#[case::too_many(BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS + 4)]
+#[tokio::test]
+async fn config_note_with_wrong_storage_item_count_is_rejected(
+    #[case] num_items: usize,
+) -> anyhow::Result<()> {
+    let owner = owner_id();
+    let account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let malformed_note = build_wrong_storage_config_note(owner, account.id(), num_items)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(malformed_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(malformed_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    );
+
+    Ok(())
+}
+
+/// A config note targeted at one account cannot be consumed (and burned) by a different account:
+/// the script's `NetworkAccountTarget` check rejects it before `set_note_fee` runs, even though the
+/// consuming account allowlists the note's root and its `Authority` would accept the sender. This
+/// prevents a third party from hijacking a public config note away from its intended account.
+#[tokio::test]
+async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
+    let owner = owner_id();
+    // The note targets a different (public) account than the one that will consume it.
+    let target_account =
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([80; 32]);
+    let consuming_account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let config_note = build_config_note(owner, target_account, FEE_AMOUNT, 3)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(consuming_account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(consuming_account.id())
+        .authenticated_input_note(config_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
+    );
+
+    Ok(())
+}
+
+/// A hand-crafted note reusing the config-note script but WITHOUT a `NetworkAccountTarget`
+/// attachment is rejected: the target check fails closed on the missing attachment before the
+/// storage-count guard or `set_note_fee`. The storage count is valid here, so only the absent
+/// attachment can cause the failure.
+#[tokio::test]
+async fn config_note_without_target_attachment_is_rejected() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let mut rng = RandomCoin::new(Word::from([9u32, 0, 0, 0]));
+    let note = NoteBuilder::new(owner, &mut rng)
+        .script(BasicConstantFeePolicyConfigNote::script())
+        .note_storage(vec![Felt::from(1u32); BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS])?
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TARGET_MISSING);
 
     Ok(())
 }

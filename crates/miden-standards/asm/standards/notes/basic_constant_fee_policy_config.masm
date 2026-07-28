@@ -1,4 +1,5 @@
 use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
 use miden::standards::fees::policies::basic_constant_fee_manager
 
 # CONSTANTS
@@ -22,6 +23,8 @@ const NUM_STORAGE_ITEMS = 12
 
 const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "basic constant fee policy config note storage item count is not the expected count"
 
+const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "basic constant fee policy config note is not targeted at the consuming account"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -32,27 +35,42 @@ const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = 
 #! authorization is bound to the note sender):
 #! - `[NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE]`.
 #!
+#! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
+#! script asserts the consuming account matches that target before doing anything else, so the note
+#! cannot be consumed (and burned) by any other account that happens to accept its sender.
+#!
 #! Authorization is enforced by the called `set_note_fee` procedure via the account-wide
 #! `Authority` component, which resolves the note sender against the configured owner or role; this
 #! script only forwards the stored payload to it. The fee asset's ID must match the account's
 #! configured fee asset ID (also enforced by `set_note_fee`).
 #!
-#! Requires that the account exposes:
-#! - `miden::standards::fees::policies::basic_constant_fee_manager::set_note_fee` (the
+#! Requires that the consuming account:
+#! - exposes `miden::standards::fees::policies::basic_constant_fee_manager::set_note_fee` (the
 #!   `BasicConstantFeeManager` component), installed on an `AuthNetworkAccount` whose active fee
-#!   policy is a `BasicConstantFeePolicy` (which owns the `fee_schedule` slot), backed by an
-#!   `Authority` companion component.
+#!   policy is a constant-fee policy (e.g. `BasicConstantFeePolicy`, which owns the `fee_schedule`
+#!   slot), backed by an `Authority` companion component gating `set_note_fee` to the owner or a
+#!   role (not `AuthControlled`, which would make it permissionless).
+#! - allowlists this note's own script root and already has a set-marked fee schedule entry for it
+#!   (typically a 0 fee), so the network account can price and consume this note.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is missing its `NetworkAccountTarget` attachment or carries a malformed one (e.g. a
+#!   hand-crafted note reusing this script), or the consuming account is not the target account.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
 #! - the note sender is not authorized, or the fee asset ID does not match (per `set_note_fee`).
 @note_script
 pub proc main
     # drop the note script args
     dropw
+    # => [pad(16)]
+
+    # assert the consuming account is the account the note is targeted at, so it cannot be consumed
+    # and burned by an unrelated account (the note's `set_note_fee` call only checks the sender)
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
