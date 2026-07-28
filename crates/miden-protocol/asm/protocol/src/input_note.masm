@@ -9,6 +9,8 @@ use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteSc
 
 #! Requests that the transaction host resolve the specified input note ID through the advice
 #! provider.
+#! The host places [note_idx, is_found] on the advice stack. Because this response is
+#! unauthenticated, callers must validate both reported matches and misses.
 pub const INPUT_NOTE_INDEX_REQUEST_EVENT = event("miden::protocol::input_note::index_request")
 
 # PROCEDURES

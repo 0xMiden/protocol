@@ -1,13 +1,10 @@
-use miden::core::word
-
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
-use miden::protocol::input_note
 use miden::protocol::note
 use miden::protocol::tx
-use {INPUT_NOTE_INDEX_REQUEST_EVENT} from miden::protocol::input_note
 
+use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
 
 use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from miden::protocol::types
@@ -154,14 +151,12 @@ pub proc main
 
     # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
     # script rather than in the consuming account because the sponsor trusts neither the consuming
-    # account nor the transaction builder. The host resolves the bound note ID on demand and
-    # returns a safe index together with a presence flag through the advice provider. Authenticate
-    # the advised index against the prologue-cached note ID before using the presence result.
-    emit.INPUT_NOTE_INDEX_REQUEST_EVENT
-    adv_push adv_push movdn.5
-    # => [feature_note_idx, FEATURE_NOTE_ID, is_found, pad(16)]
+    # account nor the transaction builder. The lookup authenticates a host-reported match against
+    # the prologue-cached note ID and scans all input notes to validate a reported miss.
+    exec.note_id::find_input_note_by_id
+    # => [is_found, feature_note_idx, pad(16)]
 
-    exec.input_note::get_note_id exec.word::eq and
+    swap drop
     # => [is_found, pad(16)]
 
     # with the feature note present, the sponsorship path is a no-op: the assets stay in the note

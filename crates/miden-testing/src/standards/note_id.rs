@@ -3,18 +3,19 @@
 //! Output note IDs are computed from the four commitments the kernel exposes. These tests pin that
 //! computation against the Rust [`NoteId`](miden_protocol::note::NoteId) so they cannot drift.
 
-use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+use miden_protocol::{Felt, Word};
+use miden_standards::errors::standards::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{Auth, MockTransaction, TestTransactionBuilder};
+use crate::{Auth, MockTransaction, TestTransactionBuilder, assert_execution_error};
 
 /// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
 /// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
@@ -104,6 +105,39 @@ async fn find_input_note_by_id_reports_missing_note() -> anyhow::Result<()> {
     let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), Word::empty());
+
+    Ok(())
+}
+
+/// Invalid host claims are rejected: a reported match must identify the requested note, and a
+/// reported miss must survive a full scan of all input notes.
+#[rstest]
+#[case::incorrect_match([Felt::ONE, Felt::ONE])]
+#[case::incorrect_miss([Felt::ZERO, Felt::ZERO])]
+#[tokio::test]
+async fn find_input_note_by_id_rejects_invalid_host_claim(
+    #[case] response: [Felt; 2],
+) -> anyhow::Result<()> {
+    let mock_tx = two_note_tx()?;
+    let note_id = mock_tx.input_notes().get_note(0).note().id();
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::prologue
+        use miden::standards::note::note_id
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{note_id}
+            exec.note_id::find_input_note_by_id
+        end
+        "#,
+        note_id = note_id.as_word(),
+    );
+
+    let result = mock_tx.execute_code_with_input_note_index_response(&code, response).await;
+
+    assert_execution_error!(result, ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID);
 
     Ok(())
 }
