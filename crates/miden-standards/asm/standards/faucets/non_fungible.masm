@@ -17,7 +17,6 @@
 
 use miden::core::word
 use miden::protocol::active_account
-use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::faucet
 use miden::protocol::native_account
@@ -42,12 +41,10 @@ const STATUS_BURNED = 2
 
 # The local memory address holding the asset commitment across the mint flow.
 const ASSET_VALUE_LOCAL = 0
-# The memory address at which a note's assets are written by `active_note::remove_all_assets`.
 const ASSET_PTR = 0
 
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
-const ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
 
 # =================================================================================================
@@ -247,32 +244,26 @@ end
 # RECEIVE AND BURN
 # =================================================================================================
 
-#! Receives a non-fungible asset from the active note and burns it.
+#! Burns the non-fungible asset supplied by the caller.
 #!
 #! Burning removes the asset from circulation and marks the commitment BURNED in the status
 #! registry (asserting it was ISSUED). A burned commitment is permanently consumed and can never
 #! be issued again.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the active burn policy validation fails.
-#! - the procedure is not called from a note context.
-#! - the note does not contain exactly one asset.
 #! - the asset was not issued by this faucet.
 #! - the asset is not in the issued state.
 #!
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # get the single asset from the note (fails if not called from a note context)
-    push.ASSET_PTR exec.active_note::remove_all_assets
-    # => [num_assets, pad(16)]
-
-    eq.1 assert.err=ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [pad(16)]
-
+    # Consume the supplied asset into memory, then load it into the same stack shape used by the
+    # burn flow.
+    push.ASSET_PTR exec.asset::store
     push.ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
@@ -281,7 +272,6 @@ pub proc receive_and_burn
     exec.non_fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
-    # run the active burn policy on a copy of the asset
     dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 

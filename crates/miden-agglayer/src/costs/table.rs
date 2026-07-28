@@ -5,8 +5,8 @@
 /// Cycles of consuming a CLAIM note: L1 origin 54449, L2 origin 67430 (maximum).
 pub const CLAIM_CONSUMPTION_CYCLES: u32 = 67430;
 
-/// Cycles of consuming a B2AGG note: empty frontier 151670 (maximum), 2^31-1 leaves 87068.
-pub const B2AGG_CONSUMPTION_CYCLES: u32 = 151670;
+/// Cycles of consuming a B2AGG note: empty frontier 151678 (maximum), 2^31-1 leaves 87076.
+pub const B2AGG_CONSUMPTION_CYCLES: u32 = 151678;
 
 /// Cycles of consuming a CONFIG_AGG_BRIDGE note (single benchmarked path).
 pub const CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 31524;

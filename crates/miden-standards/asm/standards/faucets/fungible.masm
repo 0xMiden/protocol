@@ -8,11 +8,10 @@
 # mutability config word live in the parent `miden::standards::faucets` namespace.
 
 use miden::protocol::active_account
-use miden::protocol::active_note
+use miden::protocol::asset
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
-use miden::protocol::asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::access::authority
 use miden::standards::assets::fungible_asset
@@ -46,7 +45,6 @@ const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max sup
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
 const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
-const ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 
 # =================================================================================================
 # PRIVATE HELPERS — token config slot access
@@ -387,21 +385,18 @@ end
 # RECEIVE AND BURN
 # =================================================================================================
 
-#! Receives a fungible asset from the active note and burns it.
+#! Burns the fungible asset supplied by the caller.
 #!
 #! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
 #!
-#! This procedure retrieves the asset from the active note, executes the active burn policy
-#! against it, and burns it. The note must contain exactly one asset, which must be a fungible
-#! asset issued by this faucet.
+#! This procedure executes the active burn policy against the supplied asset and burns it. The
+#! asset must be a fungible asset issued by this faucet.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - active burn policy validation fails.
-#! - the procedure is not called from a note context (active_note::remove_all_assets will fail).
-#! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
 #! - the amount about to be burned is greater than the token_supply of the faucet.
@@ -409,17 +404,9 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # Get the asset from the note.
-    # ---------------------------------------------------------------------------------------------
-
-    # this will fail if not called from a note context.
-    push.ASSET_PTR exec.active_note::remove_all_assets
-    # => [num_assets, pad(16)]
-
-    # Verify we have exactly one asset
-    assert.err=ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [pad(16)]
-
+    # Consume the supplied asset into memory, then load it into the same stack shape used by the
+    # burn flow.
+    push.ASSET_PTR exec.asset::store
     push.ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 

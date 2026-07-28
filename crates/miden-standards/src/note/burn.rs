@@ -22,6 +22,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::StandardsLib;
+use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -40,7 +41,8 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // BURN NOTE
 // ================================================================================================
 
-/// A BURN note: instructs a faucet to burn the asset carried by the note.
+/// A BURN note: instructs a faucet to burn the asset carried by the note and embedded in its
+/// storage.
 ///
 /// When consumed by the faucet that issued the asset, the note's asset is destroyed via the
 /// faucet's `receive_and_burn` procedure. The single BURN script works against both fungible and
@@ -75,7 +77,12 @@ impl BurnNote {
         #[builder(into)] asset: Asset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        let attachments = NoteAttachments::new(attachments)?;
+        let network_target =
+            NetworkAccountTarget::new(asset.faucet_id(), NoteExecutionHint::Always)
+                .expect("an asset faucet ID is always public");
+        let attachments = NoteAttachments::new(
+            core::iter::once(network_target.into()).chain(attachments).collect(),
+        )?;
 
         Ok(Self {
             sender,
@@ -90,8 +97,8 @@ impl BurnNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Expected number of storage items of the BURN note.
-    pub const NUM_STORAGE_ITEMS: usize = 0;
+    /// Expected number of storage items of the BURN note: ASSET_ID(4) + ASSET_VALUE(4).
+    pub const NUM_STORAGE_ITEMS: usize = 8;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -170,12 +177,14 @@ where
 
 impl From<BurnNote> for Note {
     fn from(note: BurnNote) -> Self {
-        // BURN notes are always public for network execution and carry no storage. The tag routes
-        // the note to the asset's issuing faucet.
+        // BURN notes are always public for network execution. The tag and NetworkAccountTarget
+        // attachment route the note to the asset's issuing faucet, while storage binds the script
+        // to the asset it must burn.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.asset.faucet_id()));
-        let recipient =
-            NoteRecipient::new(note.serial_number, BurnNote::script(), NoteStorage::default());
+        let storage = NoteStorage::new(note.asset.as_elements().to_vec())
+            .expect("an asset always fits in BURN note storage");
+        let recipient = NoteRecipient::new(note.serial_number, BurnNote::script(), storage);
 
         let assets = NoteAssets::new(vec![note.asset])
             .expect("a single asset never exceeds the note asset limit");
@@ -193,6 +202,7 @@ mod tests {
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
+    use crate::note::NetworkAccountTarget;
 
     fn sender() -> AccountId {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
@@ -224,5 +234,10 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(faucet()));
         assert_eq!(note.assets().num_assets(), 1);
+        assert_eq!(note.recipient().storage().items(), Asset::from(asset).as_elements());
+
+        let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
+        assert_eq!(target.target_id(), faucet());
+        assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
     }
 }
