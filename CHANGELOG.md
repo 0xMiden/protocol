@@ -8,6 +8,7 @@
 
 ### Changes
 
+- Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#3412](https://github.com/0xMiden/protocol/pull/3412)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
 - [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
