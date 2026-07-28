@@ -2,8 +2,16 @@ use core::num::NonZeroU16;
 use core::slice;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountCodeInterface, AccountComponentCode, AccountId};
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountCodeInterface,
+    AccountComponentCode,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
     Note,
@@ -26,7 +34,14 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::faucets::FungibleFaucet;
+use miden_standards::account::access::{Authority, Pausable};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
+use miden_standards::account::policies::{
+    BurnPolicy,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -34,10 +49,23 @@ use miden_standards::errors::standards::{
     ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH,
 };
 use miden_standards::note::P2idNote;
-use miden_standards::tx_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
+use miden_standards::tx_script::{
+    SendFungibleFaucetNotesTransactionScript,
+    SendNonFungibleFaucetNotesTransactionScript,
+    SendNotesTransactionScript,
+    SendNotesTransactionScriptError,
+    SendWalletNotesTransactionScript,
+};
 use miden_testing::utils::create_p2any_note;
-use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
+};
 use miden_tx::TransactionExecutorError;
+use rand::RngExt;
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
@@ -286,10 +314,19 @@ fn test_send_note_script_root_is_independent_of_payload() -> anyhow::Result<()> 
     let note = create_assetless_note(wallet_interface.id())?;
 
     let script = SendNotesTransactionScript::new(&wallet_interface, &[note.clone().into()])?;
+    assert!(
+        matches!(script, SendNotesTransactionScript::Wallet(_)),
+        "a wallet interface should select the wallet script"
+    );
     assert_eq!(
         script.tx_script().root(),
-        SendNotesTransactionScript::wallet_script_root(),
+        SendWalletNotesTransactionScript::script_root(),
         "the embedded payload must not change the script root"
+    );
+    assert!(
+        SendNotesTransactionScript::script_roots()
+            .contains(&SendWalletNotesTransactionScript::script_root()),
+        "the canonical roots should include the wallet script"
     );
 
     // A different payload must still produce the same root.
@@ -303,6 +340,116 @@ fn test_send_note_script_root_is_independent_of_payload() -> anyhow::Result<()> 
         script.tx_script_args(),
         other.tx_script_args(),
         "a different payload should still change the script arguments"
+    );
+
+    Ok(())
+}
+
+/// Builds an existing non-fungible faucet with allow-all policies and auth-controlled minting, so
+/// it is not treated as a network faucet.
+fn build_nft_faucet(builder: &mut MockChainBuilder, symbol: &str) -> anyhow::Result<Account> {
+    let faucet = NonFungibleFaucet::builder()
+        .name(TokenName::new(symbol)?)
+        .symbol(TokenSymbol::new(symbol)?)
+        .build();
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
+
+    builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )
+}
+
+/// Tests the execution of the `send_notes` script in case the sending account has the
+/// [`NonFungibleFaucet`] interface, which mints the note's asset from its commitment alone.
+#[tokio::test]
+async fn test_send_note_script_non_fungible_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet_account = build_nft_faucet(&mut builder, "NFT")?;
+    let mock_chain = builder.build()?;
+
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"token #1", Word::from([7, 8, 9, 10u32]));
+    let asset = Asset::NonFungible(NonFungibleAsset::from_parts(faucet_account.id(), commitment));
+
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let note = create_p2any_note(faucet_account.id(), NoteType::Public, [asset], &mut rng);
+
+    let script =
+        SendNotesTransactionScript::new(&faucet_account.code_interface(), &[note.clone().into()])?;
+    assert!(
+        matches!(script, SendNotesTransactionScript::NonFungible(_)),
+        "a non-fungible faucet interface should select the non-fungible script"
+    );
+    assert_eq!(
+        script.tx_script().root(),
+        SendNonFungibleFaucetNotesTransactionScript::script_root()
+    );
+
+    let executed_transaction = mock_chain
+        .build_transaction(faucet_account.id())
+        .send_notes_script(&script)
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+    assert_eq!(executed_transaction.output_notes().get_note(0), &RawOutputNote::Full(note));
+
+    Ok(())
+}
+
+/// Tests that each dedicated script type rejects an interface it does not apply to, so building
+/// one directly is as safe as letting [`SendNotesTransactionScript`] dispatch, and that the
+/// dispatch picks the variant matching the interface.
+#[test]
+fn test_dedicated_send_notes_scripts_validate_their_interface() -> anyhow::Result<()> {
+    let wallet_interface =
+        code_interface(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, BasicWallet::code())?;
+    let faucet_interface =
+        code_interface(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, FungibleFaucet::code())?;
+
+    // The faucet script needs a faucet interface.
+    let wallet_note = create_assetless_note(wallet_interface.id())?;
+    assert!(matches!(
+        SendFungibleFaucetNotesTransactionScript::new(&wallet_interface, &[wallet_note.into()]),
+        Err(SendNotesTransactionScriptError::UnsupportedAccountInterface)
+    ));
+
+    // The wallet script needs the wallet procedures.
+    let own_asset = Asset::Fungible(FungibleAsset::new(faucet_interface.id(), 10)?);
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let faucet_note =
+        create_p2any_note(faucet_interface.id(), NoteType::Private, [own_asset], &mut rng);
+    assert!(matches!(
+        SendWalletNotesTransactionScript::new(&faucet_interface, &[faucet_note.clone().into()]),
+        Err(SendNotesTransactionScriptError::UnsupportedAccountInterface)
+    ));
+
+    // A faucet interface dispatches to the fungible faucet script.
+    let dispatched = SendNotesTransactionScript::new(&faucet_interface, &[faucet_note.into()])?;
+    assert!(matches!(dispatched, SendNotesTransactionScript::Fungible(_)));
+    assert_eq!(
+        dispatched.tx_script().root(),
+        SendFungibleFaucetNotesTransactionScript::script_root()
     );
 
     Ok(())

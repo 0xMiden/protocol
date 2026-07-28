@@ -7,7 +7,13 @@ mod expiration_script;
 pub use expiration_script::ExpirationTransactionScript;
 
 mod send_notes_script;
-pub use send_notes_script::{SendNotesTransactionScript, SendNotesTransactionScriptError};
+pub use send_notes_script::{
+    SendFungibleFaucetNotesTransactionScript,
+    SendNonFungibleFaucetNotesTransactionScript,
+    SendNotesTransactionScript,
+    SendNotesTransactionScriptError,
+    SendWalletNotesTransactionScript,
+};
 
 /// Resolves the transaction script exported at `path` from the standards library.
 ///

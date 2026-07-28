@@ -17,9 +17,11 @@
 # An `expiration_delta` of 0 means the transaction's expiration delta is left unchanged.
 
 use miden::core::mem
+use miden::protocol::output_note
 use miden::protocol::tx
 
-pub mod faucet
+pub mod fungible_faucet
+pub mod non_fungible_faucet
 pub mod wallet
 
 # CONSTANTS
@@ -54,6 +56,10 @@ const LOAD_PAYLOAD_NUM_WORDS_LOC = 0
 
 # validate_note_records locals
 const VALIDATE_RECORDS_READ_PTR_LOC = 0
+
+# add_attachments locals
+const ADD_ATTACHMENTS_NOTE_IDX_LOC = 0
+const ADD_ATTACHMENTS_READ_PTR_LOC = 1
 
 # ERRORS
 # =================================================================================================
@@ -156,6 +162,73 @@ pub proc load_payload(payload_commitment: word)
         drop
     end
     # => [pad(16)]
+end
+
+#! Adds the `num_attachments` attachments starting at `attachments_ptr` to the output note at
+#! `note_idx`, and returns the element right after the last attachment.
+#!
+#! Every `send_notes` script shares this loop; the returned pointer is where the next note record
+#! begins, since attachments are the last items in a record.
+#!
+#! Inputs:
+#!   Operand stack: [note_idx, attachments_ptr, num_attachments]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment added
+#!   }
+#! Outputs:
+#!   Operand stack: [end_ptr]
+#!
+#! Where:
+#! - note_idx is the index of the output note to add the attachments to.
+#! - attachments_ptr is the address of the first attachment item.
+#! - num_attachments is the number of attachment items to add.
+#! - end_ptr is `attachments_ptr` advanced past every attachment item.
+#!
+#! Panics if:
+#! - an attachment's elements are missing from the advice map.
+#!
+#! Locals:
+#! 0: index of the output note being added to
+#! 1: pointer to the current attachment item
+#!
+#! Invocation: exec
+@locals(2)
+pub proc add_attachments(note_idx: u32, attachments_ptr: u32, num_attachments: u32) -> u32
+    loc_store.ADD_ATTACHMENTS_NOTE_IDX_LOC
+    # => [attachments_ptr, num_attachments]
+
+    loc_store.ADD_ATTACHMENTS_READ_PTR_LOC
+    # => [num_attachments]
+
+    dup neq.0
+    while.true
+        # => [attachments_left]
+
+        loc_load.ADD_ATTACHMENTS_NOTE_IDX_LOC
+        # => [note_idx, attachments_left]
+
+        padw loc_load.ADD_ATTACHMENTS_READ_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
+        # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left]
+
+        loc_load.ADD_ATTACHMENTS_READ_PTR_LOC mem_load
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left]
+
+        exec.output_note::add_attachment
+        # => [attachments_left]
+
+        # advance to the next attachment
+        loc_load.ADD_ATTACHMENTS_READ_PTR_LOC add.ITEM_NUM_ELEMENTS
+        loc_store.ADD_ATTACHMENTS_READ_PTR_LOC
+        # => [attachments_left]
+
+        sub.1 dup neq.0
+        # => [attachments_left != 0, attachments_left]
+    end
+    drop
+    # => []
+
+    loc_load.ADD_ATTACHMENTS_READ_PTR_LOC
+    # => [end_ptr]
 end
 
 # HELPER PROCEDURES

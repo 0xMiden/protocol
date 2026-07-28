@@ -9,10 +9,9 @@
 # note creation.
 
 use miden::protocol::asset
-use miden::protocol::output_note
 use miden::standards::faucets::fungible
 use miden::standards::tx_scripts::send_notes
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes
 
 # CONSTANTS
 # =================================================================================================
@@ -23,12 +22,9 @@ const ATTACHMENTS_OFFSET = ITEMS_OFFSET + ITEM_NUM_ELEMENTS
 # process_notes locals
 const PROCESS_NOTES_READ_PTR_LOC = 0
 const PROCESS_NOTES_NOTE_IDX_LOC = 1
-const PROCESS_NOTES_ATTACHMENT_PTR_LOC = 2
 
 # ERRORS
 # =================================================================================================
-
-
 
 const ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET = "faucet note must contain exactly one asset"
 
@@ -82,10 +78,9 @@ end
 #! Locals:
 #! 0: pointer to the current note record
 #! 1: index of the currently processed output note
-#! 2: pointer to the current attachment item
 #!
 #! Invocation: exec
-@locals(3)
+@locals(2)
 proc process_notes
     push.NOTES_START_ADDR loc_store.PROCESS_NOTES_READ_PTR_LOC
     # => [pad(16)]
@@ -128,42 +123,22 @@ proc process_notes
         dropw dropw dropw drop drop drop
         # => [notes_left, pad(16)]
 
-        # add the record's attachments to the note
+        # add the record's attachments to the note, landing on the next record
         # -----------------------------------------------------------------------------------------
-        loc_load.PROCESS_NOTES_READ_PTR_LOC add.ATTACHMENTS_OFFSET loc_store.PROCESS_NOTES_ATTACHMENT_PTR_LOC
-
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
-        # => [attachments_left, notes_left, pad(16)]
+        # => [num_attachments, notes_left, pad(16)]
 
-        dup neq.0
-        while.true
-            # => [attachments_left, notes_left, pad(16)]
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.ATTACHMENTS_OFFSET
+        # => [attachments_ptr, num_attachments, notes_left, pad(16)]
 
-            loc_load.PROCESS_NOTES_NOTE_IDX_LOC
-            # => [note_idx, attachments_left, notes_left, pad(16)]
+        loc_load.PROCESS_NOTES_NOTE_IDX_LOC
+        # => [note_idx, attachments_ptr, num_attachments, notes_left, pad(16)]
 
-            padw loc_load.PROCESS_NOTES_ATTACHMENT_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
-            # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left, notes_left, pad(16)]
+        exec.send_notes::add_attachments
+        # => [end_ptr, notes_left, pad(16)]
 
-            loc_load.PROCESS_NOTES_ATTACHMENT_PTR_LOC mem_load
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left, notes_left, pad(16)]
-
-            exec.output_note::add_attachment
-            # => [attachments_left, notes_left, pad(16)]
-
-            # advance to the next attachment
-            loc_load.PROCESS_NOTES_ATTACHMENT_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.PROCESS_NOTES_ATTACHMENT_PTR_LOC
-            # => [attachments_left, notes_left, pad(16)]
-
-            sub.1 dup neq.0
-            # => [attachments_left != 0, attachments_left, notes_left, pad(16)]
-        end
-        drop
-        # => [notes_left, pad(16)]
-
-        # advance to the next note record, which starts right after the last item
-        # -----------------------------------------------------------------------------------------
-        loc_load.PROCESS_NOTES_ATTACHMENT_PTR_LOC loc_store.PROCESS_NOTES_READ_PTR_LOC
+        # the next note record starts right after the last item
+        loc_store.PROCESS_NOTES_READ_PTR_LOC
         # => [notes_left, pad(16)]
 
         sub.1 dup neq.0
