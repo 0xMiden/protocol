@@ -4,11 +4,10 @@
 //! files, and set up the registry and assembler used to build and write MAST packages.
 
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::fmt::Write;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
-use std::{env, io};
 
 use fs_err as fs;
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
@@ -86,55 +85,6 @@ pub fn assemble_workspace(
     }
 
     Ok(packages)
-}
-
-/// Writes the package to a fixed path: `<target>/<profile>/<name>.masp`.
-pub fn write_release_package(package: &Package) -> Result<()> {
-    let out_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
-    let out_path = Path::new(&out_dir);
-    let profile_dir = profile_dir(out_path)?;
-
-    let name: &str = &package.name;
-    let final_path = profile_dir.join(name).with_extension(Package::EXTENSION);
-
-    let unique = out_path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
-    // Because multiple build-script runs may write this same path, the package is created as a temp
-    // file and atomically renamed into place.
-    let tmp_path = profile_dir.join(format!(".{name}.{unique}.masp.tmp"));
-
-    package.write_to_file(&tmp_path).into_diagnostic()?;
-    fs::rename(&tmp_path, &final_path).into_diagnostic()
-}
-
-/// Returns the cargo profile directory (e.g. `<target>/release`) that the current build script's
-/// `OUT_DIR` lives under.
-fn profile_dir(out_dir: &Path) -> Result<&Path> {
-    // The profile directory is the parent of the `build` directory holding this build script's
-    // output, located by name so the depth of `OUT_DIR` (a cargo implementation detail) doesn't
-    // matter.
-    let by_build_dir = out_dir
-        .ancestors()
-        .find(|dir| dir.file_name() == Some(OsStr::new("build")))
-        .and_then(Path::parent);
-
-    // Should cargo stop nesting build script outputs under a `build` directory, fall back to the
-    // profile name. Note that `PROFILE` only ever holds `debug` or `release`, so this cannot find
-    // the directory of a custom profile such as `test-dev`, whose `PROFILE` is `debug`.
-    let by_profile_name = || {
-        let profile = env::var("PROFILE").expect("PROFILE is always set for build scripts");
-        out_dir.ancestors().find(|dir| dir.file_name() == Some(OsStr::new(&profile)))
-    };
-
-    by_build_dir.or_else(by_profile_name).ok_or_else(|| {
-        Report::msg(format!(
-            "failed to locate the profile directory containing OUT_DIR `{}`",
-            out_dir.display()
-        ))
-    })
 }
 
 // ERROR CONSTANTS EXTRACTION

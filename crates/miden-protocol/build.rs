@@ -17,7 +17,6 @@ use miden_protocol_build_utils::{
     extract_all_masm_events,
     generate_error_file,
     generate_event_file,
-    write_release_package,
 };
 use regex::Regex;
 
@@ -90,37 +89,23 @@ fn main() -> Result<()> {
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
 
     // compile protocol library
-    compile_protocol_lib(&source_dir, &target_dir, &mut store)?;
+    let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
+    assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
 
     // compile batch kernel
-    compile_batch_kernel(&source_dir, &target_dir.join("kernels"), &mut store)?;
+    let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
+    assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
+        &mut store,
+        &target_dir.join("kernels"),
+    )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
     // extract the event definitions from the MASM sources and generate their constants
     let events = extract_all_masm_events(&source_dir)?;
     generate_event_file(target_dir.join(TX_EVENTS_RS_FILE), &events)?;
-
-    Ok(())
-}
-
-// COMPILE BATCH KERNEL
-// ================================================================================================
-
-/// Assembles the batch kernel project in `{source_dir}/kernels/batch` and saves the resulting
-/// executable package to the `target_dir`.
-fn compile_batch_kernel(
-    source_dir: &Path,
-    target_dir: &Path,
-    store: &mut InMemoryPackageRegistry,
-) -> Result<()> {
-    let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
-    assemble_project(
-        manifest_path,
-        ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
-        store,
-        target_dir,
-    )?;
 
     Ok(())
 }
@@ -158,8 +143,6 @@ fn compile_tx_kernel(
     // assemble the kernel library and write its package to the `target_dir`
     let kernel_package =
         assemble_project(&manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
-
-    write_release_package(&kernel_package)?;
 
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
@@ -294,23 +277,6 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
     }
 
     Ok(result)
-}
-
-// COMPILE PROTOCOL LIB
-// ================================================================================================
-
-/// Assembles the protocol library project in `{source_dir}/protocol` and saves the resulting
-/// library package to `target_dir`.
-fn compile_protocol_lib(
-    source_dir: &Path,
-    target_dir: &Path,
-    store: &mut InMemoryPackageRegistry,
-) -> Result<()> {
-    let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
-    let protocol_package =
-        assemble_project(manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
-
-    write_release_package(&protocol_package)
 }
 
 // HELPER FUNCTIONS

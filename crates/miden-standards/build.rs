@@ -14,7 +14,6 @@ use miden_protocol_build_utils::{
     assemble_workspace,
     extract_all_masm_errors,
     generate_error_file,
-    write_release_package,
 };
 
 // CONSTANTS
@@ -104,8 +103,6 @@ fn compile_standards_lib(
 
     let package =
         assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
-
-    write_release_package(&package)?;
 
     registry.cache_package(package).into_diagnostic()?;
 
