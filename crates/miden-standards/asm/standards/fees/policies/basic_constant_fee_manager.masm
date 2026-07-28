@@ -1,0 +1,89 @@
+# miden::standards::fees::policies::basic_constant_fee_manager
+#
+# Authority-gated admin for the `basic_constant_fee` fee schedule: exposes `set_note_fee`, which
+# updates a single note-script-root -> fee entry in the `BasicConstantFeePolicy` fee schedule after
+# deployment. It writes the policy's own `fee_schedule` slot by name (the policy owns the slot; this
+# module only references it), so it must be installed on the same account as the policy. Because the
+# fee asset ID is read from the network account's storage, that account must be an
+# `AuthNetworkAccount`.
+
+use miden::protocol::native_account
+
+use miden::standards::access::authority
+use miden::standards::fees::fee_manager
+
+use {Asset} from miden::protocol::types
+
+# CONSTANTS
+# =================================================================================================
+
+# The `BasicConstantFeePolicy` fee schedule slot. Keep in sync with `basic_constant_fee.masm`.
+# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
+const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::basic_constant_fee::fee_schedule")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FEE_ASSET_ID_MISMATCH = "provided fee asset ID does not match the fee manager's configured fee asset ID"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Sets the scheduled fee for the given note lookup key, gated by the account-wide `Authority`
+#! component.
+#!
+#! Writes the fee schedule entry `[fee_amount, 0, 0, 1]` at `note_lookup_key` in the
+#! `BasicConstantFeePolicy` fee schedule map, replacing any previous entry; the last element is the
+#! set-marker `compute_note_fee` asserts is present. The lookup key is the note's script root.
+#! Scheduling an explicit fee of 0 makes matching notes free.
+#!
+#! The provided fee asset's ID must match the fee asset ID the account's fee manager is configured
+#! with (see `fee_manager::read_fee_asset_id`); only its amount is stored.
+#!
+#! Inputs:  [NOTE_LOOKUP_KEY, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - NOTE_LOOKUP_KEY is the fee schedule key (the note's script root) to set the fee for.
+#! - FEE_ASSET is the fungible fee asset whose amount is scheduled for the key.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the fee asset's ID does not match the fee manager's configured fee asset ID.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
+    exec.authority::assert_authorized
+    # => [NOTE_LOOKUP_KEY, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]
+
+    # assert the provided fee asset ID matches the fee manager's configured fee asset ID
+    swapw
+    # => [FEE_ASSET_ID, NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+
+    exec.fee_manager::read_fee_asset_id
+    # => [CONFIGURED_FEE_ASSET_ID, FEE_ASSET_ID, NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+
+    assert_eqw.err=ERR_FEE_ASSET_ID_MISMATCH
+    # => [NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+
+    # build the fee schedule entry [fee_amount, 0, 0, 1] from the asset value by setting its last
+    # element to the set-marker
+    swapw
+    # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(4)]
+
+    push.1 swap.4 drop
+    # => [FEE_SCHEDULE_ENTRY, NOTE_LOOKUP_KEY, pad(4)]
+
+    swapw
+    # => [NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(4)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(4)]
+
+    dropw
+    # => [pad(4)]
+end
