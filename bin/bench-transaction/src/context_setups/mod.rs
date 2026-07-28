@@ -61,6 +61,13 @@ fn fee_funding_asset() -> Result<Asset> {
     Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, FEE_FUNDING_AMOUNT)?.into())
 }
 
+/// Returns the native fee asset carrying `amount`, whose ID matches the fee asset a network
+/// account is configured with (used as the scheduled fee of a BASIC_CONSTANT_FEE_POLICY_CONFIG
+/// note).
+fn native_fee_asset(amount: u64) -> Result<FungibleAsset> {
+    Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, amount)?)
+}
+
 /// Returns network-account authentication allowlisting the given note script roots (and no
 /// transaction scripts), with a fee policy manager pricing each `(root, amount)` in `priced`
 /// through a [`BasicConstantFeePolicy`] and every other allowlisted root at an explicit 0 fee.
@@ -189,6 +196,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         },
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_action::tx_consume_network_account_config_note_network()
+        },
+        ExecutionBenchmark::ConsumeBasicConstantFeePolicyConfigNetwork => {
+            network_action::tx_consume_basic_constant_fee_policy_config_note_network()
         },
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)

@@ -30,6 +30,7 @@ use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::fees::BasicConstantFeeManager;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -38,6 +39,7 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
+    BasicConstantFeePolicyConfigNote,
     FaucetPolicyAction,
     FaucetPolicyActionNote,
     NetworkAccountConfig,
@@ -283,6 +285,54 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
         .action(NetworkAccountConfig::AddAllowedNoteScript {
             script_root: NoteScriptRoot::from_array([1, 2, 3, 4]),
         })
+        .serial_number(Word::from([1u32, 0, 0, 0]))
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// BASIC CONSTANT FEE POLICY CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context in which a network account consumes a
+/// BASIC_CONSTANT_FEE_POLICY_CONFIG note.
+///
+/// The account carries `BasicConstantFeeManager` (managing a `BasicConstantFeePolicy`'s fee
+/// schedule) gated by the Ownable2Step owner via `Authority::OwnerControlled`, mirroring
+/// `build_manageable_fee_account` in the `basic_constant_fee_manager` test suite. The consumed
+/// note's own script root is allowlisted and 0-fee-scheduled via `network_auth`; the note schedules
+/// a non-zero fee for an unrelated target root.
+pub fn tx_consume_basic_constant_fee_policy_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner authorized to send config notes; only its ID is needed
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
+
+    let account_builder = AccountBuilder::new([7; 32])
+        .account_type(AccountType::Public)
+        .with_component(BasicWallet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_component(BasicConstantFeeManager::for_basic_constant_fee_policy())
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([BasicConstantFeePolicyConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let note: Note = BasicConstantFeePolicyConfigNote::builder()
+        .sender(owner)
+        .account(account.id())
+        .note_script_root(NoteScriptRoot::from_array([1, 2, 3, 4]))
+        .fee_asset(super::native_fee_asset(100)?)
         .serial_number(Word::from([1u32, 0, 0, 0]))
         .build()?
         .into();

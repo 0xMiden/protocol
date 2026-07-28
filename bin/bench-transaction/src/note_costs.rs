@@ -33,6 +33,7 @@ pub enum PricedNote {
     OwnerAction,
     RbacAction,
     NetworkAccountConfig,
+    BasicConstantFeePolicyConfig,
     FeeSponsorship,
     Claim,
     B2agg,
@@ -57,6 +58,7 @@ impl PricedNote {
             PricedNote::OwnerAction,
             PricedNote::RbacAction,
             PricedNote::NetworkAccountConfig,
+            PricedNote::BasicConstantFeePolicyConfig,
             PricedNote::FeeSponsorship,
             PricedNote::Claim,
             PricedNote::B2agg,
@@ -103,6 +105,9 @@ impl PricedNote {
             PricedNote::NetworkAccountConfig => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
             },
+            PricedNote::BasicConstantFeePolicyConfig => {
+                &[ExecutionBenchmark::ConsumeBasicConstantFeePolicyConfigNetwork]
+            },
             PricedNote::FeeSponsorship => {
                 &[ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork]
             },
@@ -145,6 +150,9 @@ impl PricedNote {
             PricedNote::NetworkAccountConfig => {
                 miden_standards::note::costs::NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES
             },
+            PricedNote::BasicConstantFeePolicyConfig => {
+                miden_standards::note::costs::BASIC_CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES
+            },
             PricedNote::FeeSponsorship => {
                 miden_standards::note::costs::FEE_SPONSORSHIP_CONSUMPTION_CYCLES
             },
@@ -175,6 +183,9 @@ impl PricedNote {
             PricedNote::OwnerAction => "OWNER_ACTION_CONSUMPTION_CYCLES",
             PricedNote::RbacAction => "RBAC_ACTION_CONSUMPTION_CYCLES",
             PricedNote::NetworkAccountConfig => "NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES",
+            PricedNote::BasicConstantFeePolicyConfig => {
+                "BASIC_CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES"
+            },
             PricedNote::FeeSponsorship => "FEE_SPONSORSHIP_CONSUMPTION_CYCLES",
             PricedNote::Claim => "CLAIM_CONSUMPTION_CYCLES",
             PricedNote::B2agg => "B2AGG_CONSUMPTION_CYCLES",
@@ -199,6 +210,7 @@ impl PricedNote {
             PricedNote::OwnerAction => "an OWNER_ACTION",
             PricedNote::RbacAction => "an RBAC_ACTION",
             PricedNote::NetworkAccountConfig => "a NETWORK_ACCOUNT_CONFIG",
+            PricedNote::BasicConstantFeePolicyConfig => "a BASIC_CONSTANT_FEE_POLICY_CONFIG",
             PricedNote::FeeSponsorship => "a FEE_SPONSORSHIP",
             PricedNote::Claim => "a CLAIM",
             PricedNote::B2agg => "a B2AGG",
@@ -392,6 +404,7 @@ mod tests {
     #[case::owner_action(PricedNote::OwnerAction)]
     #[case::rbac_action(PricedNote::RbacAction)]
     #[case::network_account_config(PricedNote::NetworkAccountConfig)]
+    #[case::basic_constant_fee_policy_config(PricedNote::BasicConstantFeePolicyConfig)]
     #[case::fee_sponsorship(PricedNote::FeeSponsorship)]
     #[case::claim(PricedNote::Claim)]
     #[case::b2agg(PricedNote::B2agg)]
