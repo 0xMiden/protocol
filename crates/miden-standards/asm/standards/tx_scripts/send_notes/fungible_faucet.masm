@@ -1,4 +1,4 @@
-# The canonical `send_notes` transaction script for accounts exposing the basic fungible faucet
+# The canonical `send_notes` transaction script for accounts exposing the fungible faucet
 # interface.
 #
 # The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
@@ -32,7 +32,7 @@ const ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET = "faucet note must contain 
 # =================================================================================================
 
 #! Sends freshly minted notes described by the advice-provided payload from an account exposing
-#! the basic fungible faucet interface.
+#! the fungible faucet interface.
 #!
 #! Inputs:
 #!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
@@ -71,7 +71,7 @@ end
 #!
 #! Panics if:
 #! - any note record does not contain exactly one asset.
-#! - the account does not expose the basic fungible faucet interface.
+#! - the account does not expose the fungible faucet interface.
 #! - an asset is not issued by this faucet or exceeds its maximum supply.
 #! - an attachment's elements are missing from the advice map.
 #!

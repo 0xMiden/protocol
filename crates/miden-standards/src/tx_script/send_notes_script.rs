@@ -494,13 +494,13 @@ impl SendNotesScript {
 pub enum SendNotesTransactionScriptError {
     #[error("note asset is not issued by faucet {0}")]
     IssuanceFaucetMismatch(AccountId),
-    #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
+    #[error("note created by the faucet doesn't contain exactly one asset")]
     FaucetNoteUnexpectedNumAssets,
     #[error("invalid sender account: {0}")]
     InvalidSenderAccount(AccountId),
     #[error(
-        "account does not contain the basic fungible faucet or basic wallet interfaces \
-         which are needed to support the send_notes script generation"
+        "account does not contain the basic wallet, fungible faucet or non-fungible faucet \
+         interfaces which are needed to support the send_notes script generation"
     )]
     UnsupportedAccountInterface,
 }

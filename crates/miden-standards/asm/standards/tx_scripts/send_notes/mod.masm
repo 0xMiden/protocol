@@ -1,5 +1,6 @@
 # Shared payload handling for the canonical `send_notes` transaction scripts, which live in the
-# [`send_notes::wallet`] and [`send_notes::faucet`] submodules.
+# [`send_notes::wallet`], [`send_notes::fungible_faucet`] and [`send_notes::non_fungible_faucet`]
+# submodules.
 #
 # The `send_notes` scripts receive a commitment to their parameters as `TX_SCRIPT_ARGS` and load
 # the actual parameters (the payload) from the advice map, so a single script root covers every
