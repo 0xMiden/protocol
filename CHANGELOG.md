@@ -5,7 +5,7 @@
 ### Features
 
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
-- Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it, authorized against the note sender through the account-wide `Authority` component ([#3046](https://github.com/0xMiden/protocol/issues/3046)).
+- Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it ([#3438](https://github.com/0xMiden/protocol/pull/3438)).
 
 ### Features
 
