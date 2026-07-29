@@ -10,7 +10,7 @@ use miden_standards::errors::standards::{
     ERR_UNDERFLOW,
     ERR_X_TOO_LARGE,
 };
-use miden_standards::interop::EthAmount;
+use miden_standards::interop::eth::EthAmount;
 use primitive_types::U256;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};

@@ -16,7 +16,7 @@ use miden_protocol::errors::protocol::ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BY
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::bytes_to_packed_u32_elements;
 use miden_standards::errors::standards::{ERR_BYTES32_PADDING_NONZERO, ERR_MSB_NONZERO};
-use miden_standards::interop::{AddressConversionError, EthAddress, EthEmbeddedAccountId};
+use miden_standards::interop::eth::{AddressConversionError, EthAddress, EthEmbeddedAccountId};
 
 use super::test_utils::{assert_execution_fails_with, execute_masm_script};
 
@@ -28,11 +28,11 @@ fn to_account_id_script(addr: &EthAddress) -> String {
     let limbs: Vec<u64> = addr.to_elements().iter().map(|f| f.as_canonical_u64()).collect();
     format!(
         "use miden::core::sys
-use miden::standards::interop::eth_address
+use miden::standards::interop::eth
 
 begin
     push.{}.{}.{}.{}.{}
-    exec.eth_address::to_account_id
+    exec.eth::to_account_id
     exec.sys::truncate_stack
 end",
         limbs[4], limbs[3], limbs[2], limbs[1], limbs[0]
@@ -48,11 +48,11 @@ fn bytes32_to_account_id_script(bytes: &[u8; 32]) -> String {
         .collect();
     format!(
         "use miden::core::sys
-use miden::standards::interop::eth_address
+use miden::standards::interop::eth
 
 begin
     push.{}.{}.{}.{}.{}.{}.{}.{}
-    exec.eth_address::bytes32_to_account_id
+    exec.eth::bytes32_to_account_id
     exec.sys::truncate_stack
 end",
         limbs[7], limbs[6], limbs[5], limbs[4], limbs[3], limbs[2], limbs[1], limbs[0]

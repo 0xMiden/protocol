@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     AccountIdBuilder,
 };
-use miden_standards::interop::EthEmbeddedAccountId;
+use miden_standards::interop::eth::EthEmbeddedAccountId;
 
 use super::test_utils::execute_masm_script;
 
@@ -92,11 +92,11 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let script_code = format!(
             r#"
             use miden::core::sys
-            use miden::standards::interop::eth_address
+            use miden::standards::interop::eth
 
             begin
                 push.{}.{}.{}.{}.{}
-                exec.eth_address::to_account_id
+                exec.eth::to_account_id
                 exec.sys::truncate_stack
             end
             "#,

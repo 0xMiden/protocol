@@ -16,7 +16,7 @@ use miden::standards::assets::asset_amount
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use {EthereumAddress} from miden::standards::interop::eth_address
+use {EthereumAddress} from miden::standards::interop::eth
 
 # ERRORS
 # =================================================================================================

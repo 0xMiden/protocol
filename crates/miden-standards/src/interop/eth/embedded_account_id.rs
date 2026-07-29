@@ -5,7 +5,7 @@ use core::fmt;
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 
-use super::eth_address::{AddressConversionError, EthAddress};
+use super::address::{AddressConversionError, EthAddress};
 
 // ================================================================================================
 // ETH EMBEDDED ACCOUNT ID

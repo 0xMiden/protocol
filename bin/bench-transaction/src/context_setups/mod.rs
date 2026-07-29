@@ -26,7 +26,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::interop::EthAddress;
+use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;

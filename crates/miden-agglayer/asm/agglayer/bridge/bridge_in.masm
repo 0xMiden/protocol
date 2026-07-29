@@ -3,7 +3,7 @@ use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
 use miden::standards::utils
 use miden::standards::assets::asset_amount
-use miden::standards::interop::eth_address
+use miden::standards::interop::eth
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
@@ -187,7 +187,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.load_destination_address
-    exec.eth_address::to_account_id
+    exec.eth::to_account_id
     loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [pad(16)]
 
