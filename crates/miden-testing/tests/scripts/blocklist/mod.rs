@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+mod config;
+
 use alloc::collections::BTreeMap;
 use std::sync::Arc;
 

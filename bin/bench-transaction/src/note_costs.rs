@@ -29,6 +29,7 @@ pub enum PricedNote {
     Mint,
     Burn,
     FaucetPolicyAction,
+    BlocklistConfig,
     PauseAction,
     OwnerAction,
     RbacAction,
@@ -53,6 +54,7 @@ impl PricedNote {
             PricedNote::Mint,
             PricedNote::Burn,
             PricedNote::FaucetPolicyAction,
+            PricedNote::BlocklistConfig,
             PricedNote::PauseAction,
             PricedNote::OwnerAction,
             PricedNote::RbacAction,
@@ -97,6 +99,7 @@ impl PricedNote {
             PricedNote::FaucetPolicyAction => {
                 &[ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork]
             },
+            PricedNote::BlocklistConfig => &[ExecutionBenchmark::ConsumeBlocklistConfigNetwork],
             PricedNote::PauseAction => &[ExecutionBenchmark::ConsumePauseActionNetwork],
             PricedNote::OwnerAction => &[ExecutionBenchmark::ConsumeOwnerActionNetwork],
             PricedNote::RbacAction => &[ExecutionBenchmark::ConsumeRbacActionNetwork],
@@ -135,6 +138,9 @@ impl PricedNote {
             PricedNote::FaucetPolicyAction => {
                 miden_standards::note::costs::FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES
             },
+            PricedNote::BlocklistConfig => {
+                miden_standards::note::costs::BLOCKLIST_CONFIG_CONSUMPTION_CYCLES
+            },
             PricedNote::PauseAction => {
                 miden_standards::note::costs::PAUSE_ACTION_CONSUMPTION_CYCLES
             },
@@ -171,6 +177,7 @@ impl PricedNote {
             PricedNote::Mint => "MINT_CONSUMPTION_CYCLES",
             PricedNote::Burn => "BURN_CONSUMPTION_CYCLES",
             PricedNote::FaucetPolicyAction => "FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES",
+            PricedNote::BlocklistConfig => "BLOCKLIST_CONFIG_CONSUMPTION_CYCLES",
             PricedNote::PauseAction => "PAUSE_ACTION_CONSUMPTION_CYCLES",
             PricedNote::OwnerAction => "OWNER_ACTION_CONSUMPTION_CYCLES",
             PricedNote::RbacAction => "RBAC_ACTION_CONSUMPTION_CYCLES",
@@ -195,6 +202,7 @@ impl PricedNote {
             PricedNote::Mint => "a MINT",
             PricedNote::Burn => "a BURN",
             PricedNote::FaucetPolicyAction => "a FAUCET_POLICY_ACTION",
+            PricedNote::BlocklistConfig => "a BLOCKLIST_CONFIG",
             PricedNote::PauseAction => "a PAUSE_ACTION",
             PricedNote::OwnerAction => "an OWNER_ACTION",
             PricedNote::RbacAction => "an RBAC_ACTION",
@@ -388,6 +396,7 @@ mod tests {
     #[case::mint(PricedNote::Mint)]
     #[case::burn(PricedNote::Burn)]
     #[case::faucet_policy_action(PricedNote::FaucetPolicyAction)]
+    #[case::blocklist_config(PricedNote::BlocklistConfig)]
     #[case::pause_action(PricedNote::PauseAction)]
     #[case::owner_action(PricedNote::OwnerAction)]
     #[case::rbac_action(PricedNote::RbacAction)]
