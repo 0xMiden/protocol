@@ -1,6 +1,5 @@
 pub mod burn
 pub mod faucet_policy_action
-pub mod fee_policy_manager_config
 pub mod fee_sponsorship
 pub mod mint
 pub mod mint_fungible

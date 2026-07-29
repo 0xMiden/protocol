@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added the standardized `FeePolicyManagerConfigNote`, which adds or removes an allowed fee policy root via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures, enabling post-deployment management of the allowed fee policies ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
+- Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 
 ### Changes
 
