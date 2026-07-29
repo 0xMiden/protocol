@@ -39,7 +39,7 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
-    BasicConstantFeePolicyConfigNote,
+    ConstantFeePolicyConfigNote,
     FaucetPolicyAction,
     FaucetPolicyActionNote,
     NetworkAccountConfig,
@@ -298,18 +298,18 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
         .build()
 }
 
-// BASIC CONSTANT FEE POLICY CONFIG NOTE SETUP
+// CONSTANT FEE POLICY CONFIG NOTE SETUP
 // ================================================================================================
 
 /// Returns the transaction context in which a network account consumes a
-/// BASIC_CONSTANT_FEE_POLICY_CONFIG note.
+/// CONSTANT_FEE_POLICY_CONFIG note.
 ///
 /// The account carries `ConstantFeeManager` (managing a `BasicConstantFeePolicy`'s fee
 /// schedule) gated by the Ownable2Step owner via `Authority::OwnerControlled`, mirroring
 /// `build_manageable_fee_account` in the `constant_fee_manager` test suite. The consumed
 /// note's own script root is allowlisted and 0-fee-scheduled via `network_auth`; the note schedules
 /// a non-zero fee for an unrelated target root.
-pub fn tx_consume_basic_constant_fee_policy_config_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_constant_fee_policy_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the owner authorized to send config notes; only its ID is needed
@@ -323,12 +323,12 @@ pub fn tx_consume_basic_constant_fee_policy_config_note_network() -> Result<Mock
         .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([BasicConstantFeePolicyConfigNote::script_root()])?,
+        super::network_auth([ConstantFeePolicyConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = BasicConstantFeePolicyConfigNote::builder()
+    let note: Note = ConstantFeePolicyConfigNote::builder()
         .sender(owner)
         .account(account.id())
         .note_script_root(NoteScriptRoot::from_array([1, 2, 3, 4]))

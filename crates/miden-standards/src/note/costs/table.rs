@@ -36,8 +36,8 @@ pub const RBAC_ACTION_CONSUMPTION_CYCLES: u32 = 19568;
 /// Cycles of consuming a NETWORK_ACCOUNT_CONFIG note (single benchmarked path).
 pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 17206;
 
-/// Cycles of consuming a BASIC_CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
-pub const BASIC_CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 18947;
+/// Cycles of consuming a CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
+pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 18947;
 
 /// Cycles of consuming a FEE_SPONSORSHIP note (single benchmarked path).
 pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 20625;

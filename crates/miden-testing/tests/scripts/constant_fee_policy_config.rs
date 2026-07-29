@@ -1,4 +1,4 @@
-//! Tests for the [`miden_standards::note::BasicConstantFeePolicyConfigNote`] standardized note,
+//! Tests for the [`miden_standards::note::ConstantFeePolicyConfigNote`] standardized note,
 //! which schedules a fee for a note script root by calling the consuming network account's
 //! [`ConstantFeeManager`](miden_standards::account::fees::ConstantFeeManager)
 //! `set_note_fee` procedure.
@@ -11,16 +11,12 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::errors::standards::{
-    ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH,
-    ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH,
+    ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_NETWORK_ACCOUNT_TARGET_MISSING,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{
-    BasicConstantFeePolicyConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::{ConstantFeePolicyConfigNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -38,7 +34,7 @@ use crate::consume_note;
 // HELPERS
 // ================================================================================================
 
-/// Builds a `BasicConstantFeePolicyConfigNote` scheduling `fee` (in the account's fee asset) for
+/// Builds a `ConstantFeePolicyConfigNote` scheduling `fee` (in the account's fee asset) for
 /// `priced_root()` on `account`, authored by `sender`, and converts it to a protocol [`Note`].
 ///
 /// `serial_seed` distinguishes otherwise-identical notes so that several can coexist in one chain
@@ -49,7 +45,7 @@ fn build_config_note(
     fee: u64,
     serial_seed: u32,
 ) -> anyhow::Result<Note> {
-    let note = BasicConstantFeePolicyConfigNote::builder()
+    let note = ConstantFeePolicyConfigNote::builder()
         .sender(sender)
         .account(account)
         .note_script_root(priced_root())
@@ -71,7 +67,7 @@ fn build_wrong_storage_config_note(
     let mut rng = RandomCoin::new(Word::from([7u32, 0, 0, 0]));
     let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)?;
     let note = NoteBuilder::new(sender, &mut rng)
-        .script(BasicConstantFeePolicyConfigNote::script())
+        .script(ConstantFeePolicyConfigNote::script())
         .note_storage(vec![Felt::from(1u32); num_items])?
         .attachment(target)
         .build()?;
@@ -81,7 +77,7 @@ fn build_wrong_storage_config_note(
 // TESTS
 // ================================================================================================
 
-/// Consuming an owner-authored `BasicConstantFeePolicyConfigNote` schedules the carried fee for the
+/// Consuming an owner-authored `ConstantFeePolicyConfigNote` schedules the carried fee for the
 /// target note script root; the write lands in the fee schedule as the set-marked entry
 /// `[fee, 0, 0, 1]`. This exercises the standardized note's script and builder end-to-end.
 #[tokio::test]
@@ -90,7 +86,7 @@ async fn config_note_schedules_fee() -> anyhow::Result<()> {
     // The config note's script root is fixed, so allowlist and 0-fee-schedule it up front.
     let account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
     let config_note = build_config_note(owner, account.id(), FEE_AMOUNT, 1)?;
 
@@ -108,7 +104,7 @@ async fn config_note_schedules_fee() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A `BasicConstantFeePolicyConfigNote` authored by a non-owner is rejected: the account's
+/// A `ConstantFeePolicyConfigNote` authored by a non-owner is rejected: the account's
 /// `set_note_fee` runs `authority::assert_authorized`, which fails when the note sender is not the
 /// Ownable2Step owner.
 #[tokio::test]
@@ -116,7 +112,7 @@ async fn non_owner_config_note_is_rejected() -> anyhow::Result<()> {
     let owner = owner_id();
     let account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
     let attacker_note = build_config_note(non_owner_id(), account.id(), FEE_AMOUNT, 2)?;
 
@@ -144,8 +140,8 @@ async fn non_owner_config_note_is_rejected() -> anyhow::Result<()> {
 /// priced, and account-targeted like a real config note; only the storage layout is malformed.
 #[rstest]
 #[case::empty(0)]
-#[case::too_few(BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS - 4)]
-#[case::too_many(BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS + 4)]
+#[case::too_few(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS - 4)]
+#[case::too_many(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS + 4)]
 #[tokio::test]
 async fn config_note_with_wrong_storage_item_count_is_rejected(
     #[case] num_items: usize,
@@ -153,7 +149,7 @@ async fn config_note_with_wrong_storage_item_count_is_rejected(
     let owner = owner_id();
     let account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
     let malformed_note = build_wrong_storage_config_note(owner, account.id(), num_items)?;
 
@@ -172,7 +168,7 @@ async fn config_note_with_wrong_storage_item_count_is_rejected(
 
     assert_transaction_executor_error!(
         result,
-        ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
 
     Ok(())
@@ -190,7 +186,7 @@ async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([80; 32]);
     let consuming_account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
     let config_note = build_config_note(owner, target_account, FEE_AMOUNT, 3)?;
 
@@ -207,10 +203,7 @@ async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
-    );
+    assert_transaction_executor_error!(result, ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH);
 
     Ok(())
 }
@@ -224,12 +217,12 @@ async fn config_note_without_target_attachment_is_rejected() -> anyhow::Result<(
     let owner = owner_id();
     let account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([BasicConstantFeePolicyConfigNote::script_root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
     let mut rng = RandomCoin::new(Word::from([9u32, 0, 0, 0]));
     let note = NoteBuilder::new(owner, &mut rng)
-        .script(BasicConstantFeePolicyConfigNote::script())
-        .note_storage(vec![Felt::from(1u32); BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS])?
+        .script(ConstantFeePolicyConfigNote::script())
+        .note_storage(vec![Felt::from(1u32); ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS])?
         .build()?;
 
     let mut builder = MockChain::builder();

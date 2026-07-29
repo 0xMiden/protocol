@@ -669,7 +669,7 @@
       }
     }
   },
-  "consume BASIC_CONSTANT_FEE_POLICY_CONFIG note (network account)": {
+  "consume CONSTANT_FEE_POLICY_CONFIG note (network account)": {
     "prologue": 3223,
     "notes_processing": 3687,
     "note_execution": {

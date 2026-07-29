@@ -27,22 +27,22 @@ use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the BASIC_CONSTANT_FEE_POLICY_CONFIG note script procedure in the standards library.
-const BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT_PATH: &str =
-    "::miden::standards::notes::basic_constant_fee_policy_config::main";
+/// Path to the CONSTANT_FEE_POLICY_CONFIG note script procedure in the standards library.
+const CONSTANT_FEE_POLICY_CONFIG_SCRIPT_PATH: &str =
+    "::miden::standards::notes::constant_fee_policy_config::main";
 
-// Initialize the BASIC_CONSTANT_FEE_POLICY_CONFIG note script only once.
-static BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the CONSTANT_FEE_POLICY_CONFIG note script only once.
+static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT_PATH);
+    let path = Path::new(CONSTANT_FEE_POLICY_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains BASIC_CONSTANT_FEE_POLICY_CONFIG note script procedure")
+        .expect("Standards library contains CONSTANT_FEE_POLICY_CONFIG note script procedure")
 });
 
-// BASIC CONSTANT FEE POLICY CONFIG NOTE
+// CONSTANT FEE POLICY CONFIG NOTE
 // ================================================================================================
 
-/// A BasicConstantFeePolicyConfig note: schedules a fee for a note script root in a
+/// A ConstantFeePolicyConfig note: schedules a fee for a note script root in a
 /// [`BasicConstantFeePolicy`](crate::account::fees::BasicConstantFeePolicy)'s fee schedule by
 /// calling the [`ConstantFeeManager`](crate::account::fees::ConstantFeeManager)'s
 /// `set_note_fee` procedure on the account that consumes it.
@@ -93,7 +93,7 @@ static BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock:
 ///   fee management unless the account also exposes a transaction-script path to `set_note_fee`.
 ///   Keep this note's own root scheduled at 0.
 #[derive(Debug, Clone)]
-pub struct BasicConstantFeePolicyConfigNote {
+pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,
     account: AccountId,
     note_script_root: NoteScriptRoot,
@@ -103,8 +103,8 @@ pub struct BasicConstantFeePolicyConfigNote {
 }
 
 #[bon::bon]
-impl BasicConstantFeePolicyConfigNote {
-    /// Builds a new [`BasicConstantFeePolicyConfigNote`] scheduling `fee_asset` for
+impl ConstantFeePolicyConfigNote {
+    /// Builds a new [`ConstantFeePolicyConfigNote`] scheduling `fee_asset` for
     /// `note_script_root` on `account`.
     ///
     /// # Errors
@@ -147,11 +147,11 @@ impl BasicConstantFeePolicyConfigNote {
     }
 }
 
-impl BasicConstantFeePolicyConfigNote {
+impl ConstantFeePolicyConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a BasicConstantFeePolicyConfig note: the note script root word
+    /// Number of storage items of a ConstantFeePolicyConfig note: the note script root word
     /// plus the fee asset (its ID and value words).
     ///
     /// Must be kept in sync with `NUM_STORAGE_ITEMS` in the note script, which asserts the count.
@@ -160,14 +160,14 @@ impl BasicConstantFeePolicyConfigNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the BasicConstantFeePolicyConfig note.
+    /// Returns the script of the ConstantFeePolicyConfig note.
     pub fn script() -> NoteScript {
-        BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT.clone()
+        CONSTANT_FEE_POLICY_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the BasicConstantFeePolicyConfig note script root.
+    /// Returns the ConstantFeePolicyConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT.root()
+        CONSTANT_FEE_POLICY_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -218,9 +218,7 @@ impl BasicConstantFeePolicyConfigNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: basic_constant_fee_policy_config_note_builder::State>
-    BasicConstantFeePolicyConfigNoteBuilder<S>
-{
+impl<S: constant_fee_policy_config_note_builder::State> ConstantFeePolicyConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     ///
     /// The note reserves one attachment slot for its bound `NetworkAccountTarget`, so callers can
@@ -245,17 +243,16 @@ impl<S: basic_constant_fee_policy_config_note_builder::State>
     }
 }
 
-impl<S: basic_constant_fee_policy_config_note_builder::State>
-    BasicConstantFeePolicyConfigNoteBuilder<S>
+impl<S: constant_fee_policy_config_note_builder::State> ConstantFeePolicyConfigNoteBuilder<S>
 where
-    S::SerialNumber: basic_constant_fee_policy_config_note_builder::IsUnset,
+    S::SerialNumber: constant_fee_policy_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> BasicConstantFeePolicyConfigNoteBuilder<
-        basic_constant_fee_policy_config_note_builder::SetSerialNumber<S>,
+    ) -> ConstantFeePolicyConfigNoteBuilder<
+        constant_fee_policy_config_note_builder::SetSerialNumber<S>,
     > {
         self.serial_number(rng.draw_word())
     }
@@ -264,19 +261,16 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<BasicConstantFeePolicyConfigNote> for Note {
-    fn from(note: BasicConstantFeePolicyConfigNote) -> Self {
-        // BasicConstantFeePolicyConfig notes carry no assets and are always public for network
+impl From<ConstantFeePolicyConfigNote> for Note {
+    fn from(note: ConstantFeePolicyConfigNote) -> Self {
+        // ConstantFeePolicyConfig notes carry no assets and are always public for network
         // execution; the note script root and fee asset live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let storage = NoteStorage::new(note.to_storage_values())
             .expect("number of storage items should not exceed max storage items");
-        let recipient = NoteRecipient::new(
-            note.serial_number,
-            BasicConstantFeePolicyConfigNote::script(),
-            storage,
-        );
+        let recipient =
+            NoteRecipient::new(note.serial_number, ConstantFeePolicyConfigNote::script(), storage);
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
     }
@@ -311,12 +305,12 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_basic_constant_fee_policy_config_note() {
+    fn builder_builds_constant_fee_policy_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let account = account_id(1);
         let sender = account_id(2);
 
-        let note = BasicConstantFeePolicyConfigNote::builder()
+        let note = ConstantFeePolicyConfigNote::builder()
             .sender(sender)
             .account(account)
             .note_script_root(note_root(10))
@@ -339,7 +333,7 @@ mod tests {
     #[test]
     fn note_is_bound_to_target_account() {
         let account = account_id(1);
-        let note = BasicConstantFeePolicyConfigNote::builder()
+        let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
             .account(account)
             .note_script_root(note_root(10))
@@ -362,7 +356,7 @@ mod tests {
         let other = account_id(3);
         let rogue_target = NetworkAccountTarget::new(other, NoteExecutionHint::Always).unwrap();
 
-        let note = BasicConstantFeePolicyConfigNote::builder()
+        let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
             .account(account)
             .note_script_root(note_root(10))
@@ -384,7 +378,7 @@ mod tests {
         let private_account =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-        let result = BasicConstantFeePolicyConfigNote::builder()
+        let result = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
             .account(private_account)
             .note_script_root(note_root(10))
@@ -399,7 +393,7 @@ mod tests {
     /// caller supplying `MAX_COUNT` attachments of their own overflows the limit.
     #[test]
     fn caller_attachments_beyond_limit_are_rejected() {
-        let mut builder = BasicConstantFeePolicyConfigNote::builder()
+        let mut builder = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
             .account(account_id(1))
             .note_script_root(note_root(10))
@@ -420,7 +414,7 @@ mod tests {
         let root = note_root(10);
         let asset = fee_asset(777);
 
-        let note = BasicConstantFeePolicyConfigNote::builder()
+        let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
             .account(account_id(1))
             .note_script_root(root)
@@ -434,10 +428,7 @@ mod tests {
         expected.extend_from_slice(asset.to_id_word().as_elements());
         expected.extend_from_slice(asset.to_value_word().as_elements());
         assert_eq!(built.storage().items(), expected.as_slice());
-        assert_eq!(
-            built.storage().items().len(),
-            BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS
-        );
+        assert_eq!(built.storage().items().len(), ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS);
     }
 
     /// The config-note script root is registered in the [`StandardNote`](crate::note::StandardNote)
@@ -446,9 +437,8 @@ mod tests {
     fn script_root_is_registered_standard_note() {
         use crate::note::StandardNote;
 
-        let standard =
-            StandardNote::from_script_root(BasicConstantFeePolicyConfigNote::script_root())
-                .expect("config note script root should be a registered standard note");
-        assert_eq!(standard.name(), "BASIC_CONSTANT_FEE_POLICY_CONFIG");
+        let standard = StandardNote::from_script_root(ConstantFeePolicyConfigNote::script_root())
+            .expect("config note script root should be a registered standard note");
+        assert_eq!(standard.name(), "CONSTANT_FEE_POLICY_CONFIG");
     }
 }

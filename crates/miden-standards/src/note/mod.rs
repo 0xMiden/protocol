@@ -9,11 +9,11 @@ use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
 pub mod costs;
 
-mod basic_constant_fee_policy_config;
-pub use basic_constant_fee_policy_config::BasicConstantFeePolicyConfigNote;
-
 mod burn;
 pub use burn::BurnNote;
+
+mod constant_fee_policy_config;
+pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
 
 mod faucet_policy_action;
 pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
@@ -78,7 +78,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    BASIC_CONSTANT_FEE_POLICY_CONFIG,
+    CONSTANT_FEE_POLICY_CONFIG,
     FAUCET_POLICY_ACTION,
     PAUSE_ACTION,
     OWNER_ACTION,
@@ -119,8 +119,8 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
-        if root == BasicConstantFeePolicyConfigNote::script_root() {
-            return Some(Self::BASIC_CONSTANT_FEE_POLICY_CONFIG);
+        if root == ConstantFeePolicyConfigNote::script_root() {
+            return Some(Self::CONSTANT_FEE_POLICY_CONFIG);
         }
         if root == FaucetPolicyActionNote::script_root() {
             return Some(Self::FAUCET_POLICY_ACTION);
@@ -159,7 +159,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
-            Self::BASIC_CONSTANT_FEE_POLICY_CONFIG => "BASIC_CONSTANT_FEE_POLICY_CONFIG",
+            Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
             Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
             Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
@@ -179,9 +179,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
-            Self::BASIC_CONSTANT_FEE_POLICY_CONFIG => {
-                BasicConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS
-            },
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
             // OwnerAction storage is variable per action; this returns the upper bound.
@@ -203,7 +201,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
-            Self::BASIC_CONSTANT_FEE_POLICY_CONFIG => BasicConstantFeePolicyConfigNote::script(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
             Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
@@ -223,9 +221,7 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-            Self::BASIC_CONSTANT_FEE_POLICY_CONFIG => {
-                BasicConstantFeePolicyConfigNote::script_root()
-            },
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),

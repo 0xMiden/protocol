@@ -8,7 +8,7 @@ use miden::standards::fees::policies::constant_fee_manager
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the BasicConstantFeePolicyConfig note storage: the note script root word
+# Memory addresses of the ConstantFeePolicyConfig note storage: the note script root word
 # (offsets 0..4), followed by the fee asset as its ID word (offsets 4..8) and value word
 # (offsets 8..12).
 const SCRIPT_ROOT_PTR = STORAGE_PTR
@@ -21,14 +21,14 @@ const NUM_STORAGE_ITEMS = 12
 # ERRORS
 # =================================================================================================
 
-const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "basic constant fee policy config note storage item count is not the expected count"
+const ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "constant fee policy config note storage item count is not the expected count"
 
-const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "basic constant fee policy config note is not targeted at the consuming account"
+const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy config note is not targeted at the consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! BasicConstantFeePolicyConfig script: schedules a fee for a note script root against the consuming
+#! ConstantFeePolicyConfig script: schedules a fee for a note script root against the consuming
 #! account by calling the `ConstantFeeManager`'s `set_note_fee` procedure.
 #!
 #! The note script root and fee asset are read from the note storage (fixed at note creation, so
@@ -68,7 +68,7 @@ pub proc main
     # assert the consuming account is the account the note is targeted at, so it cannot be consumed
     # and burned by an unrelated account (the note's `set_note_fee` call only checks the sender)
     exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
+    assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
@@ -76,7 +76,7 @@ pub proc main
     # => [num_storage_items, pad(16)]
 
     eq.NUM_STORAGE_ITEMS
-    assert.err=ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
     # rebuild the `set_note_fee` input [NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]

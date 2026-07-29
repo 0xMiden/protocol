@@ -196,8 +196,8 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_action::tx_consume_network_account_config_note_network()
         },
-        ExecutionBenchmark::ConsumeBasicConstantFeePolicyConfigNetwork => {
-            network_action::tx_consume_basic_constant_fee_policy_config_note_network()
+        ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork => {
+            network_action::tx_consume_constant_fee_policy_config_note_network()
         },
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)
