@@ -59,7 +59,7 @@ impl BlocklistConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
+    // Config note selectors stored in the first storage item. Keep in sync with
     // `blocklist_config.masm`.
     const SELECTOR_BLOCK_ACCOUNT: u8 = 0;
     const SELECTOR_UNBLOCK_ACCOUNT: u8 = 1;
@@ -111,14 +111,6 @@ impl From<BlocklistConfig> for NoteStorage {
 /// `BlocklistManager` component whose blocklist is being managed. The `sender` is the account
 /// authorized for the action per the account's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
-///
-/// Unlike [`OwnerActionNote`](crate::note::OwnerActionNote) and
-/// [`RbacActionNote`](crate::note::RbacActionNote), this note does not derive a
-/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment from `account`:
-/// `BlocklistManager` is installed on faucets, which are not necessarily network accounts, so an
-/// implicit attachment would be dead weight on a faucet that authenticates with its own auth
-/// component. Attach one explicitly through the builder when the managed faucet is a network
-/// account.
 ///
 /// Construct one with the [builder](BlocklistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
