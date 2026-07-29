@@ -18,13 +18,14 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use miden_standards::interop::eth::{EthAddress, EthAmount};
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
 use crate::costs::CLAIM_CONSUMPTION_CYCLES;
 use crate::utils::Keccak256Output;
-use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, note_script};
+use crate::{GlobalIndex, MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================

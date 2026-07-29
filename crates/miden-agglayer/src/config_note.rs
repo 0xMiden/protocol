@@ -25,12 +25,13 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
 use crate::costs::CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES;
-use crate::{EthAddress, MetadataHash, note_script};
+use crate::{MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
