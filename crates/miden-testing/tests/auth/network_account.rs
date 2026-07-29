@@ -620,6 +620,38 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
     Ok(())
 }
 
+/// A network account manages its allowed fee policies through the same config note: the owner sends
+/// an `AddAllowedFeePolicy` config note (always allowlisted, and fee-scheduled by
+/// `build_owner_controlled_account`), and the account-exposed `add_allowed_fee_policy` runs under
+/// the owner authority.
+#[tokio::test]
+async fn test_owner_can_add_allowed_fee_policy_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    // A procedure of the account that is not in the initial allowed fee policy roots map.
+    let new_root = AuthNetworkAccount::get_fee_policy_root();
+    let admin_note = build_action_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedFeePolicy { policy_root: new_root },
+        6,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The network account consumes the config note; the owner-authorized `add_allowed_fee_policy`
+    // runs to completion.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    Ok(())
+}
+
 /// A transaction that consumes a mix of allowed and disallowed input notes must be rejected: the
 /// allowlist check must fail as soon as any single consumed note is not in the allowlist, even if
 /// the others are.
