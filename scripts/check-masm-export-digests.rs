@@ -168,18 +168,29 @@ mod current {
         // separately.
         collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
 
-        // Also collect the kernel commitment since the order of the kernel procedure roots it
+        // Collect the kernel commitment since the order of the kernel procedure roots it
         // hashes is not covered by the library.
         roots.insert(
             "transaction_kernel::TX_KERNEL_COMMITMENT".to_string(),
             TransactionKernel.to_commitment().to_hex(),
         );
 
+        // Collect the kernel programs since they include the prologue and epilogue that are not
+        // covered by the kernel library exports.
+        roots.insert(
+            "transaction_kernel::MAIN_PROGRAM_ROOT".to_string(),
+            TransactionKernel::main().hash().to_hex(),
+        );
+        roots.insert(
+            "transaction_kernel::TX_SCRIPT_MAIN_PROGRAM_ROOT".to_string(),
+            TransactionKernel::tx_script_main().hash().to_hex(),
+        );
+
         collect_library(StandardsLib::default().as_ref(), &mut roots);
 
         collect_library(&agglayer_library(), &mut roots);
 
-        // Also collect the agglayer account code commitments since they are not covered by the
+        // Collect the agglayer account code commitments since they are not covered by the
         // library root.
         roots.insert(
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
@@ -332,18 +343,29 @@ mod previous {
         // separately.
         collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
 
-        // Also collect the kernel commitment since the order of the kernel procedure roots it
+        // Collect the kernel commitment since the order of the kernel procedure roots it
         // hashes is not covered by the library.
         roots.insert(
             "transaction_kernel::TX_KERNEL_COMMITMENT".to_string(),
             TransactionKernel.to_commitment().to_hex(),
         );
 
+        // Collect the kernel programs since they include the prologue and epilogue that are not
+        // covered by the kernel library exports.
+        roots.insert(
+            "transaction_kernel::MAIN_PROGRAM_ROOT".to_string(),
+            TransactionKernel::main().hash().to_hex(),
+        );
+        roots.insert(
+            "transaction_kernel::TX_SCRIPT_MAIN_PROGRAM_ROOT".to_string(),
+            TransactionKernel::tx_script_main().hash().to_hex(),
+        );
+
         collect_library(StandardsLib::default().as_ref(), &mut roots);
 
         collect_library(&agglayer_library(), &mut roots);
 
-        // Also collect the agglayer account code commitments since they are not covered by the
+        // Collect the agglayer account code commitments since they are not covered by the
         // library root.
         roots.insert(
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
