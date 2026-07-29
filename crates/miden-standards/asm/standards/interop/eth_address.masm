@@ -90,7 +90,7 @@ end
 #!   limb3..limb7 = bytes[12..32] (the embedded address[5] limbs)
 #!
 #! The three padding limbs are asserted to be zero directly on their raw packed form: a limb
-#! byte-swaps to zero iff it is zero, so no byte reordering is needed for the check. The remaining
+#! byte-swaps to zero if it is zero, so no byte reordering is needed for the check. The remaining
 #! 5 limbs are exactly the address[5] format (most-significant address limb on top) and are
 #! delegated to to_account_id for the AccountId conversion and validation.
 #!
