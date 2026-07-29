@@ -151,8 +151,7 @@ pub proc main
 
     # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
     # script rather than in the consuming account because the sponsor trusts neither the consuming
-    # account nor the transaction builder. The lookup authenticates a host-reported match against
-    # the prologue-cached note ID and scans all input notes to validate a reported miss.
+    # account nor the transaction builder.
     exec.input_note::find_note
     # => [is_found, feature_note_idx, pad(16)]
 

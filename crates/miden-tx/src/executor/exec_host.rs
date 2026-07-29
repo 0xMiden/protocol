@@ -22,7 +22,6 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
-    NoteId,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -83,9 +82,6 @@ where
     /// The reference block of the transaction.
     ref_block: BlockNumber,
 
-    /// Maps each input note ID to its index for on-demand advice requests.
-    input_note_indices: BTreeMap<NoteId, Felt>,
-
     /// The foreign account code that was lazy loaded during transaction execution.
     ///
     /// This is required for re-executing the transaction, e.g. as part of transaction proving.
@@ -136,11 +132,6 @@ where
         ref_block_commitment: Word,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        let input_note_indices = input_notes
-            .iter()
-            .enumerate()
-            .map(|(note_idx, input_note)| (input_note.id(), Felt::from(note_idx as u32)))
-            .collect();
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -155,7 +146,6 @@ where
             tx_progress: TransactionProgress::default(),
             authenticator,
             ref_block,
-            input_note_indices,
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
@@ -175,20 +165,6 @@ where
     /// Returns a reference to the foreign account slot names collected during execution.
     pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
         &self.foreign_account_slot_names
-    }
-
-    /// Pushes an input note's index and a presence flag onto the advice stack.
-    ///
-    /// When the note is absent, index zero is returned as a safe fallback with a cleared presence
-    /// flag. The index is an unauthenticated hint. Consumers must compare the note ID at the
-    /// advised index against the ID they requested before relying on it.
-    fn on_input_note_index_requested(&self, note_id: NoteId) -> Vec<AdviceMutation> {
-        let (note_idx, is_found) = self
-            .input_note_indices
-            .get(&note_id)
-            .map_or((Felt::ZERO, Felt::ZERO), |note_idx| (*note_idx, Felt::ONE));
-
-        vec![AdviceMutation::extend_stack([note_idx, is_found])]
     }
 
     // EVENT HANDLERS
@@ -617,8 +593,8 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::InputNoteIndexRequest { note_id } => {
-                    Ok(self.on_input_note_index_requested(note_id))
+                TransactionEvent::InputNoteIndexLookup { note_id } => {
+                    Ok(self.base_host.on_input_note_index_lookup(note_id))
                 },
 
                 TransactionEvent::AuthRequest {

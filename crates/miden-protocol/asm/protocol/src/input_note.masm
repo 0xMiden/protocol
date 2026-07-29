@@ -13,13 +13,7 @@ use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteSc
 #! provider.
 #! The host places [note_idx, is_found] on the advice stack. Because this response is
 #! unauthenticated, callers must validate both reported matches and misses.
-pub const INPUT_NOTE_INDEX_REQUEST_EVENT = event("miden::protocol::input_note::index_request")
-
-# CONSTANTS
-# =================================================================================================
-
-#! Local memory offset at which `find_note` stages the note ID it searches for.
-const TARGET_NOTE_ID_LOC = 0
+pub const INPUT_NOTE_INDEX_LOOKUP_EVENT = event("miden::protocol::input_note::index_lookup")
 
 # ERRORS
 # =================================================================================================
@@ -530,24 +524,22 @@ end
 #! - the host reports that NOTE_ID is absent when it is present among the input notes.
 #!
 #! Invocation: exec
-@locals(4)
 pub proc find_note(note_id: NoteId) -> (Bool, u16)
-    loc_storew_le.TARGET_NOTE_ID_LOC
+    # Keep the target ID on the stack and emit a copy as the event payload.
+    dupw emit.INPUT_NOTE_INDEX_LOOKUP_EVENT dropw
     # => [NOTE_ID]
 
-    emit.INPUT_NOTE_INDEX_REQUEST_EVENT dropw
-    # => []
-
     adv_push adv_push
-    # => [is_found, note_idx]
+    # => [is_found, note_idx, TARGET_NOTE_ID]
 
     if.true
         # Authenticate a reported match against the note ID cached by the prologue.
         dup exec.get_note_id
-        # => [NOTE_ID, note_idx]
+        # => [NOTE_ID, note_idx, TARGET_NOTE_ID]
 
-        padw loc_loadw_le.TARGET_NOTE_ID_LOC
-        # => [TARGET_NOTE_ID, NOTE_ID, note_idx]
+        # Move note_idx below the two IDs so it survives the equality check.
+        movup.4 movdn.8
+        # => [NOTE_ID, TARGET_NOTE_ID, note_idx]
 
         exec.word::eq assert.err=ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID
         # => [note_idx]
@@ -557,10 +549,10 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
     else
         # The host-reported index is meaningless when no match was reported.
         drop
-        # => []
+        # => [TARGET_NOTE_ID]
 
         exec.tx::get_num_input_notes
-        # => [num_notes]
+        # => [num_notes, TARGET_NOTE_ID]
 
         dup neq.0
         # => [should_loop, num_notes]
@@ -569,23 +561,25 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
             # The counter holds the number of notes not yet inspected; the note at counter - 1 is
             # inspected next, so after sub.1 the value doubles as that note's index.
             sub.1
-            # => [note_idx]
+            # => [note_idx, TARGET_NOTE_ID]
 
             dup exec.get_note_id
-            # => [NOTE_ID, note_idx]
+            # => [NOTE_ID, note_idx, TARGET_NOTE_ID]
 
-            padw loc_loadw_le.TARGET_NOTE_ID_LOC
-            # => [TARGET_NOTE_ID, NOTE_ID, note_idx]
+            # Keep both the target ID and counter while testing the current note ID.
+            movup.4 movdn.8 exec.word::test_eq
+            # => [is_match, NOTE_ID, TARGET_NOTE_ID, note_idx]
 
-            exec.word::eq not assert.err=ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID
-            # => [note_idx]
+            not assert.err=ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID
+            dropw movup.4
+            # => [note_idx, TARGET_NOTE_ID]
 
             dup neq.0
             # => [should_loop, note_idx]
         end
-        # => [note_idx]
+        # => [note_idx, TARGET_NOTE_ID]
 
-        drop push.0 push.0
+        drop dropw push.0 push.0
         # => [is_found = 0, note_idx = 0]
     end
     # => [is_found, note_idx]

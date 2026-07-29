@@ -143,8 +143,8 @@ pub(crate) enum TransactionEvent {
         attachment: NoteAttachment,
     },
 
-    /// A request to resolve an input note ID to its index through the advice provider.
-    InputNoteIndexRequest {
+    /// A lookup that resolves an input note ID to its index through the advice provider.
+    InputNoteIndexLookup {
         note_id: NoteId,
     },
 
@@ -482,10 +482,10 @@ impl TransactionEvent {
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
-            TransactionEventId::InputNoteIndexRequest => {
+            TransactionEventId::InputNoteIndexLookup => {
                 // Expected stack state: [event, NOTE_ID]
                 let note_id = NoteId::from_raw(process.get_stack_word(1));
-                Some(TransactionEvent::InputNoteIndexRequest { note_id })
+                Some(TransactionEvent::InputNoteIndexLookup { note_id })
             },
 
             TransactionEventId::AuthRequest => {

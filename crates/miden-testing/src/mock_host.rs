@@ -58,7 +58,7 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
-                &TransactionEventId::InputNoteIndexRequest,
+                &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]
@@ -126,7 +126,7 @@ impl<'store> Host for MockHost<'store> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 
         async move {
-            if event_id == TransactionEventId::InputNoteIndexRequest.event_id()
+            if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
                 && let Some(response) = self.input_note_index_response
             {
                 return Ok(vec![AdviceMutation::extend_stack(response)]);

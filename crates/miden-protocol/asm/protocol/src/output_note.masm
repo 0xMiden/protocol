@@ -432,16 +432,16 @@ pub proc compute_note_id(note_idx: u16) -> NoteId
     dup exec.get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
-    movup.4 drop movup.4
-    # => [note_idx, ASSETS_COMMITMENT]
+    movup.4 drop
+    # => [ASSETS_COMMITMENT, note_idx]
 
-    dup exec.get_recipient movup.4
-    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
+    dup.4 exec.get_recipient
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_idx]
 
-    dup exec.get_attachments_commitment movup.4
-    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
+    dup.8 exec.get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT, note_idx]
 
-    exec.get_metadata
+    movup.12 exec.get_metadata
     # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
     exec.poseidon2::merge

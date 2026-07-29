@@ -56,7 +56,7 @@ pub enum TransactionEventId {
 
     NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
 
-    InputNoteIndexRequest = INPUT_NOTE_INDEX_REQUEST_ID,
+    InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
 
     AuthRequest = AUTH_REQUEST_ID,
 
@@ -91,7 +91,7 @@ impl TransactionEventId {
     /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
         let is_unprivileged =
-            matches!(self, Self::AuthRequest | Self::InputNoteIndexRequest | Self::Unauthorized);
+            matches!(self, Self::AuthRequest | Self::InputNoteIndexLookup | Self::Unauthorized);
         !is_unprivileged
     }
 
@@ -128,7 +128,7 @@ impl TransactionEventId {
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
-            Self::InputNoteIndexRequest => &INPUT_NOTE_INDEX_REQUEST_NAME,
+            Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
@@ -221,7 +221,7 @@ impl TryFrom<EventId> for TransactionEventId {
 
             NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
 
-            INPUT_NOTE_INDEX_REQUEST_ID => Ok(TransactionEventId::InputNoteIndexRequest),
+            INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 
