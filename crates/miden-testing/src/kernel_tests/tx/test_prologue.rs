@@ -15,7 +15,10 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
+use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
+    ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT,
+};
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -77,7 +80,7 @@ use miden_protocol::transaction::memory::{
     VERIFICATION_BASE_FEE_IDX,
 };
 use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
-use miden_protocol::{EMPTY_WORD, WORD_SIZE};
+use miden_protocol::{EMPTY_WORD, MAX_ASSETS_PER_NOTE, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -147,6 +150,54 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     kernel_data_memory_assertions(exec_output);
     account_data_memory_assertions(exec_output, &mock_tx);
     input_notes_memory_assertions(exec_output, &mock_tx, &note_args_map);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_transaction_prologue_rejects_too_many_note_assets() -> anyhow::Result<()> {
+    const NOTE_DATA_NUM_ASSETS_IDX: usize = 7 * WORD_SIZE + 1;
+
+    let assets: Vec<_> = (0..MAX_ASSETS_PER_NOTE)
+        .map(|i| NonFungibleAsset::mock(&(i as u32).to_le_bytes()))
+        .collect();
+    let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, assets);
+    let mut mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(input_note)
+        .build()?;
+
+    // Start with the valid input-note advice generated from a note at the protocol limit, then
+    // forge one additional asset into it. This bypasses `NoteAssets::new` and exercises the
+    // transaction kernel's independent input-note validation.
+    let input_notes_commitment = mock_tx.input_notes().commitment();
+    let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
+    let mut note_data = advice_inputs
+        .as_advice_inputs()
+        .map
+        .get(&input_notes_commitment)
+        .context("input-note advice should be present")?
+        .as_ref()
+        .to_vec();
+
+    note_data[NOTE_DATA_NUM_ASSETS_IDX] = Felt::from((MAX_ASSETS_PER_NOTE + 1) as u32);
+    let assets_end_idx = NOTE_DATA_NUM_ASSETS_IDX + 1 + MAX_ASSETS_PER_NOTE * ASSET_SIZE as usize;
+    let extra_asset = NonFungibleAsset::mock(&(MAX_ASSETS_PER_NOTE as u32).to_le_bytes());
+    note_data.splice(assets_end_idx..assets_end_idx, extra_asset.as_elements());
+
+    mock_tx.set_tx_args(TransactionArgs::new(
+        BTreeMap::from([(input_notes_commitment, note_data)]).into(),
+    ));
+
+    let code = "
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+        end
+        ";
+
+    let result = mock_tx.execute_code(code).await;
+    assert_execution_error!(result, ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT);
 
     Ok(())
 }
