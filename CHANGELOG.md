@@ -5,6 +5,7 @@
 ### Features
 
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- Added the `AllowlistConfigNote` standard note, which dispatches the `AllowlistManager` admin procedures (`allow_account`, `disallow_account`) on the account that consumes it, authorized against the note sender through the account-wide `Authority` component ([#3046](https://github.com/0xMiden/protocol/issues/3046)).
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 
 ### Changes
