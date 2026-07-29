@@ -26,9 +26,66 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
-use super::{TestSetup, setup_test};
+use super::{ExecutionOutputExt, TestSetup, setup_test};
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TestTransactionBuilder, assert_execution_error};
+
+/// A note's ID read from MASM must match `Note::id()` in Rust through both the indexed and active
+/// note accessors.
+#[rstest]
+#[tokio::test]
+async fn active_and_input_note_id_matches_rust(
+    #[values(0, 1, 2)] note_index: u8,
+    #[values("active_note", "input_note")] module: &str,
+) -> anyhow::Result<()> {
+    let TestSetup {
+        mock_chain,
+        account,
+        p2any_note_0_assets,
+        p2id_note_1_asset,
+        p2id_note_2_assets,
+    } = setup_test()?;
+    let input_notes = [p2any_note_0_assets, p2id_note_1_asset, p2id_note_2_assets];
+    let expected_note_id = input_notes[note_index as usize].id();
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(input_notes)
+        .build()?;
+
+    // The input variant takes the note index from the stack; the active variant reads the active
+    // note, so the test points the active-note pointer at the note under test instead.
+    let setup_code = if module == "active_note" {
+        format!(
+            "push.{note_index} exec.memory::get_input_note_ptr exec.memory::set_active_input_note_ptr"
+        )
+    } else {
+        format!("push.{note_index}")
+    };
+
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::{module}
+
+        begin
+            exec.prologue::prepare_transaction
+
+            {setup_code}
+            exec.{module}::get_note_id
+            # => [NOTE_ID]
+
+            # truncate the stack
+            swapw dropw
+        end
+        "#
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await?;
+    assert_eq!(exec_output.get_stack_word(0), expected_note_id.as_word());
+
+    Ok(())
+}
 
 /// Check that the initial assets number and assets commitment obtained from the
 /// `input_note::get_initial_assets_info` and `input_note::get_initial_num_assets` procedures are

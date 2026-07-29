@@ -385,9 +385,16 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [SALT]
+#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
+#!                   user_param6]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!
+#! Where:
+#! - user_param0 through user_param6 are arbitrary, user-defined inputs folded into the signed
+#!   message. Binding them enforces no meaning, so any semantics must be implemented by the calling
+#!   component. The components calling this procedure pass a cryptographically random salt in
+#!   user_param3 through user_param6 for replay protection.
 #!
 #! Locals:
 #! 0: policy_threshold
@@ -407,18 +414,17 @@ end
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
 @locals(2)
-pub proc auth_tx(salt: word)
+pub proc auth_tx(user_params: [felt; 7])
     exec.native_account::incr_nonce drop
-    # => [SALT]
+    # => [user_params(7)]
 
     # ------ Computing transaction summary ------
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
-    adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-    exec.auth::hash_tx_summary
+    # the commitment to the tx summary is the message that is signed; the preimage is inserted
+    # into the advice map for extraction by the host
+    exec.auth::hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Reading threshold config (default + num_approvers) ------
