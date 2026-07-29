@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79649,
       "chiplets_rows": 64650,
-      "range_rows": 20383,
+      "range_rows": 20389,
       "chiplets_shape": {
         "hasher_rows": 61568,
         "bitwise_rows": 640,
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 11463,
       "chiplets_rows": 22476,
-      "range_rows": 1281,
+      "range_rows": 1307,
       "chiplets_shape": {
         "hasher_rows": 21024,
         "bitwise_rows": 640,
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83178,
       "chiplets_rows": 67650,
-      "range_rows": 20357,
+      "range_rows": 20503,
       "chiplets_shape": {
         "hasher_rows": 64080,
         "bitwise_rows": 984,
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 14992,
       "chiplets_rows": 25476,
-      "range_rows": 1241,
+      "range_rows": 1219,
       "chiplets_shape": {
         "hasher_rows": 23536,
         "bitwise_rows": 984,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 78911,
       "chiplets_rows": 63101,
-      "range_rows": 20429,
+      "range_rows": 20317,
       "chiplets_shape": {
         "hasher_rows": 60128,
         "bitwise_rows": 616,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 10725,
       "chiplets_rows": 20895,
-      "range_rows": 1093,
+      "range_rows": 1063,
       "chiplets_shape": {
         "hasher_rows": 19552,
         "bitwise_rows": 616,
@@ -573,6 +573,30 @@
       }
     }
   },
+  "consume BLOCKLIST_CONFIG note (network account)": {
+    "prologue": 5363,
+    "notes_processing": 2167,
+    "note_execution": {
+      "0xecbbacdf71fdacaad8226c868d061ded2d262940e14f4605d78d05e418968bf7": 2125
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 17190,
+      "auth_procedure": 8864
+    },
+    "trace": {
+      "core_rows": 24806,
+      "chiplets_rows": 35092,
+      "range_rows": 2401,
+      "chiplets_shape": {
+        "hasher_rows": 32768,
+        "bitwise_rows": 568,
+        "memory_rows": 1693,
+        "kernel_rom_rows": 62,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume PAUSE_ACTION note (network account)": {
     "prologue": 3233,
     "notes_processing": 1608,
@@ -708,7 +732,7 @@
     "trace": {
       "core_rows": 16314,
       "chiplets_rows": 29308,
-      "range_rows": 1399,
+      "range_rows": 1391,
       "chiplets_shape": {
         "hasher_rows": 27392,
         "bitwise_rows": 960,

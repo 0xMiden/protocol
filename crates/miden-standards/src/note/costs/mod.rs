@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 use miden_protocol::note::NoteScriptRoot;
 
 use crate::note::{
+    BlocklistConfigNote,
     BurnNote,
     FaucetPolicyActionNote,
     FeeSponsorshipNote,
@@ -118,6 +119,7 @@ impl StandardNote {
             StandardNote::MINT => Some(NoteCost::of::<MintNote>()),
             StandardNote::BURN => Some(NoteCost::of::<BurnNote>()),
             StandardNote::FAUCET_POLICY_ACTION => Some(NoteCost::of::<FaucetPolicyActionNote>()),
+            StandardNote::BLOCKLIST_CONFIG => Some(NoteCost::of::<BlocklistConfigNote>()),
             StandardNote::PAUSE_ACTION => Some(NoteCost::of::<PauseActionNote>()),
             StandardNote::OWNER_ACTION => Some(NoteCost::of::<OwnerActionNote>()),
             StandardNote::RBAC_ACTION => Some(NoteCost::of::<RbacActionNote>()),
@@ -151,6 +153,7 @@ mod tests {
             (MintNote::script_root(), MINT_CONSUMPTION_CYCLES),
             (BurnNote::script_root(), BURN_CONSUMPTION_CYCLES),
             (FaucetPolicyActionNote::script_root(), FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES),
+            (BlocklistConfigNote::script_root(), BLOCKLIST_CONFIG_CONSUMPTION_CYCLES),
             (PauseActionNote::script_root(), PAUSE_ACTION_CONSUMPTION_CYCLES),
             (OwnerActionNote::script_root(), OWNER_ACTION_CONSUMPTION_CYCLES),
             (RbacActionNote::script_root(), RBAC_ACTION_CONSUMPTION_CYCLES),
