@@ -619,9 +619,14 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 /// Tests that callbacks cannot redistribute value between output notes while preserving the
 /// transaction-wide total.
 ///
-/// Without a callback-boundary equality check, the callback below could turn additions of 100 and
-/// 200 units into 150 units each. The epilogue's aggregate asset-conservation check would still see
-/// 300 input and 300 output units, so it cannot enforce the per-callback invariant.
+/// Without a callback-boundary equality check, the callback below turns additions of 200 and 100
+/// units into 150 units each. The epilogue's aggregate asset-conservation check would still see 300
+/// input and 300 output units, so it cannot enforce the per-callback invariant.
+///
+/// The executor also notices the rewrite today: `NOTE_BEFORE_ADD_ASSET_EVENT` is emitted before the
+/// callback runs, so the host records the pre-callback amounts and its output-notes commitment ends
+/// up disagreeing with the kernel's. That reconciliation is not proof-enforced, which is why this
+/// test asserts on the kernel error rather than on the resulting commitment mismatch.
 #[tokio::test]
 async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -642,8 +647,8 @@ async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyho
 
     let faucet = add_faucet_with_callbacks(&mut builder, None, Some(note_callback_masm))?;
     let input_asset = FungibleAsset::new(faucet.id(), 300)?;
-    let first_moved_asset = FungibleAsset::new(faucet.id(), 100)?;
-    let second_moved_asset = FungibleAsset::new(faucet.id(), 200)?;
+    let first_moved_asset = FungibleAsset::new(faucet.id(), 200)?;
+    let second_moved_asset = FungibleAsset::new(faucet.id(), 100)?;
     let input_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
