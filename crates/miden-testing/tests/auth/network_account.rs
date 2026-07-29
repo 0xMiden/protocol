@@ -14,6 +14,7 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
@@ -664,6 +665,51 @@ async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
     // The network account consumes the config note; the owner-authorized fee-policy mutator runs to
     // completion.
     consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    Ok(())
+}
+
+/// Security (issue #3433): a config note is bound to its target account by a `NetworkAccountTarget`
+/// attachment, so a decoy account cannot burn a note meant for another account. The decoy is owned
+/// by the note's sender - so it passes both the note-script allowlist (the config note is always
+/// allowlisted) and the owner authority - yet consuming a note targeted at a different account
+/// aborts at the target-account check before any action runs.
+#[tokio::test]
+async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
+    let owner = owner_id();
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    // The decoy account, owned by the same `owner` (so it authorizes the sender's notes) and
+    // allowlisting the config note by default.
+    let decoy = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    // A config note targeted at `target` (not the decoy), sent by `owner`.
+    let admin_note = build_action_note(
+        owner,
+        target,
+        NetworkAccountConfig::AddAllowedFeePolicy {
+            policy_root: AuthNetworkAccount::get_fee_policy_root(),
+        },
+        8,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The decoy consumes the note; the target-account check aborts before any action runs.
+    let result = mock_chain
+        .build_transaction(decoy.id())
+        .authenticated_input_note(admin_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
 
     Ok(())
 }

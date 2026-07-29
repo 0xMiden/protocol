@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountProcedureRoot};
@@ -22,6 +23,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -154,18 +156,31 @@ pub struct NetworkAccountConfigNote {
 impl NetworkAccountConfigNote {
     /// Builds a new [`NetworkAccountConfigNote`] that triggers `action` on `account`.
     ///
+    /// The note is bound to `account` with a [`NetworkAccountTarget`] attachment, so that only
+    /// `account` can consume it. This attachment is folded into the note commitment and verified
+    /// on-chain by the note script: without it, a decoy network account authorized to accept the
+    /// sender's identity could consume (and burn) the note, denying `account` the update (see
+    /// [issue #3433](https://github.com/0xMiden/protocol/issues/3433)).
+    ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `account` does not have [`AccountType::Public`](miden_protocol::account::AccountType).
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
         action: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // Bind consumption to the target account. Prepended so it is the canonical
+        // `NetworkAccountTarget` the note script reads.
+        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
+            .map_err(|err| NoteError::other(err.to_string()))?;
+        attachments.insert(0, NoteAttachment::from(target));
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
@@ -330,6 +345,12 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(account));
         assert_eq!(note.assets().num_assets(), 0);
+
+        // The note is bound to its target account by a NetworkAccountTarget attachment (issue
+        // #3433).
+        let target = NetworkAccountTarget::try_from(note.attachments())
+            .expect("note must carry a network account target attachment");
+        assert_eq!(target.target_id(), account);
     }
 
     /// Storage is `[ROOT, selector]` with the selector matching the action kind.

@@ -1,4 +1,5 @@
 use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
 use miden::standards::auth::network_account
 use miden::standards::fees::fee_manager
 
@@ -32,6 +33,8 @@ const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR = "network account config note
 
 const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account config note does not match the expected number"
 
+const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account config note attachment target account does not match the consuming account"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -60,10 +63,16 @@ const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage i
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
 #!
+#! The note carries a `NetworkAccountTarget` attachment naming the account it is meant for, and is
+#! consumable only by that account: the script rejects any other consuming account before running
+#! any action, so a decoy network account authorized to accept the sender's identity cannot burn the
+#! note (see issue #3433).
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized (per the `AuthNetworkAccount` procedures).
@@ -71,6 +80,12 @@ const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage i
 pub proc main
     # drop the note script args
     dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted network account: reject if the consuming account is not the
+    # note's target account (issue #3433)
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
