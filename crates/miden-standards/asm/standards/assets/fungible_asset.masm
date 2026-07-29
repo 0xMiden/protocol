@@ -12,9 +12,11 @@ pub use {fungible_value_into_amount as value_into_amount} from miden::protocol::
 # ERRORS
 # ================================================================================================
 
-const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
+const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET = "get_balance can only be called on a fungible asset"
 
-const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT="fungible asset build operation called with amount that exceeds the maximum allowed asset amount"
+const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT = "fungible asset build operation called with amount that exceeds the maximum allowed asset amount"
+
+const ERR_FUNGIBLE_ASSET_VALUE_MALFORMED = "fungible asset value is not well-formed"
 
 # PROCEDURES
 # ================================================================================================
@@ -163,8 +165,40 @@ end
 #! Where:
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - amount is the amount of the fungible asset.
+#!
+#! Invocation: exec
 pub proc to_amount
     # => [ASSET_ID, [amount, 0, 0, 0]]
     dup.4
     # => [amount, ASSET_ID, ASSET_VALUE]
+end
+
+#! Validates the provided asset value and returns its amount.
+#!
+#! This procedure checks that the provided asset value is well-formed (first, second and third
+#! elements are zeros) and checks that the amount doesn't exceed the maximum.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [amount]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - amount is the amount of the fungible asset.
+#!
+#! Panics if:
+#! - the asset value is not well-formed: first, second and third elements are not zeros.
+#! - the asset amount exceeds maximum allowed amount.
+#!
+#! Invocation: exec
+pub proc try_value_to_amount
+    # assert the amount does not exceed the maximum fungible asset amount
+    dup lte.MAX_AMOUNT assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
+    # => [amount, e1, e2, e3]
+
+    # assert the remaining value elements are zero
+    movdn.3
+    assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
+    assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
+    assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
+    # => [amount]
 end

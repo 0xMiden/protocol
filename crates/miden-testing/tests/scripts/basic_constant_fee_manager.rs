@@ -24,9 +24,9 @@ use miden_standards::account::fees::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
-    ERR_FEE_AMOUNT_EXCEEDS_MAX,
     ERR_FEE_ASSET_ID_MISMATCH,
-    ERR_FEE_ASSET_VALUE_MALFORMED,
+    ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT,
+    ERR_FUNGIBLE_ASSET_VALUE_MALFORMED,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -299,7 +299,7 @@ async fn set_note_fee_with_malformed_fee_asset_value_is_rejected(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_ASSET_VALUE_MALFORMED);
+    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_VALUE_MALFORMED);
 
     Ok(())
 }
@@ -329,7 +329,10 @@ async fn set_note_fee_with_amount_over_max_is_rejected() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_AMOUNT_EXCEEDS_MAX);
+    assert_transaction_executor_error!(
+        result,
+        ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
+    );
 
     Ok(())
 }
