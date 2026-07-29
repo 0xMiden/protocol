@@ -158,9 +158,7 @@ impl NetworkAccountConfigNote {
     ///
     /// The note is bound to `account` with a [`NetworkAccountTarget`] attachment, so that only
     /// `account` can consume it. This attachment is folded into the note commitment and verified
-    /// on-chain by the note script: without it, a decoy network account authorized to accept the
-    /// sender's identity could consume (and burn) the note, denying `account` the update (see
-    /// [issue #3433](https://github.com/0xMiden/protocol/issues/3433)).
+    /// on-chain by the note script.
     ///
     /// # Errors
     ///
@@ -346,8 +344,7 @@ mod tests {
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(account));
         assert_eq!(note.assets().num_assets(), 0);
 
-        // The note is bound to its target account by a NetworkAccountTarget attachment (issue
-        // #3433).
+        // The note is bound to its target account by a NetworkAccountTarget attachment
         let target = NetworkAccountTarget::try_from(note.attachments())
             .expect("note must carry a network account target attachment");
         assert_eq!(target.target_id(), account);

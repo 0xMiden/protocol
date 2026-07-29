@@ -53,6 +53,10 @@ const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account conf
 #! Authorization is enforced by the called `AuthNetworkAccount` procedures via the account-wide
 #! `Authority` component, which resolves the note sender against the configured owner or role.
 #!
+#! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
+#! script asserts the consuming account matches that target before doing anything else, so the note
+#! cannot be consumed (and burned) by any other account that happens to accept its sender.
+#!
 #! Requires that the account exposes the `miden::standards::auth::network_account` allowlist
 #! procedures and the `miden::standards::fees::fee_manager` allowed-fee-policy procedures (as the
 #! `AuthNetworkAccount` component does), namely:
@@ -62,11 +66,6 @@ const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account conf
 #! - `miden::standards::auth::network_account::remove_allowed_tx_script`
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
-#!
-#! The note carries a `NetworkAccountTarget` attachment naming the account it is meant for, and is
-#! consumable only by that account: the script rejects any other consuming account before running
-#! any action, so a decoy network account authorized to accept the sender's identity cannot burn the
-#! note (see issue #3433).
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -83,7 +82,7 @@ pub proc main
     # => [pad(16)]
 
     # bind consumption to the targeted network account: reject if the consuming account is not the
-    # note's target account (issue #3433)
+    # note's target account
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
