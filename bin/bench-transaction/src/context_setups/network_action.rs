@@ -31,6 +31,7 @@ use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    BlocklistManager,
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
@@ -38,6 +39,8 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
+    BlocklistConfig,
+    BlocklistConfigNote,
     FaucetPolicyAction,
     FaucetPolicyActionNote,
     NetworkAccountConfig,
@@ -103,6 +106,68 @@ pub fn tx_consume_faucet_policy_action_note_network() -> Result<MockTransaction>
         .action(FaucetPolicyAction::SetMintPolicy {
             policy_root: MintPolicy::owner_only().root(),
         })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// BLOCKLIST CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming a BLOCKLIST_CONFIG note.
+///
+/// The faucet carries the basic blocklist transfer policy on send and receive plus the
+/// `BlocklistManager` admin component, gated by the owner wallet via `Authority::OwnerControlled`
+/// (mirrors `add_faucet_with_owner_blocklist_transfer` in the `blocklist` test suite). The
+/// benchmarked action is `BlockAccount`, adding an account to the initially empty blocklist.
+pub fn tx_consume_blocklist_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send blocklist config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let blocked = AccountIdBuilder::new().build_with_seed([3; 32]);
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::empty_basic_blocklist())
+        .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+        .build();
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
+        .with_components(token_policy_manager)
+        .with_component(BlocklistManager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([BlocklistConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let note: Note = BlocklistConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .config(BlocklistConfig::BlockAccount { account: blocked })
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
