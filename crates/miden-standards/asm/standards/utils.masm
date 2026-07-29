@@ -18,7 +18,15 @@ pub const ONE_WORD = [1, 0, 0, 0]
 # "unset" flag or an all-zero key.
 pub const ZERO_WORD = [0, 0, 0, 0]
 
-# BYTE MANIPULATION
+# 2^32, the place value of the high u32 limb when merging two limbs into a field element.
+const TWO_POW_32 = 4294967296
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MERGE_OVERFLOW="merged u32 limbs do not fit in a field element"
+
+# U32 LIMB OPERATIONS
 # =================================================================================================
 
 #! Swaps byte order in a u32 limb (LE <-> BE).
@@ -44,6 +52,41 @@ pub proc swap_u32_bytes
 
     swap drop
     # => [swapped]
+end
+
+#! Merges two u32 limbs into a single field element as felt = hi * 2^32 + lo.
+#!
+#! Verifies the merge is lossless by splitting the result back with u32split and comparing the
+#! limbs against the inputs; this traps if an input is not a valid u32 or if the combined value
+#! was reduced modulo the field prime.
+#!
+#! Inputs:  [lo, hi]
+#! Outputs: [felt]
+#!
+#! Panics if:
+#! - the merged value does not split back into the input limbs (an input is not a valid u32, or
+#!   the combined value was reduced modulo the field prime).
+pub proc merge_u32_limbs
+    # keep copies for the round-trip check
+    dup.1 dup.1
+    # => [lo, hi, lo, hi]
+
+    # felt = (hi * 2^32) + lo
+    swap
+    push.TWO_POW_32 mul
+    add
+    # => [felt, lo, hi]
+
+    # ensure no reduction mod p happened:
+    # split felt back into (lo, hi) and compare to inputs
+    dup u32split
+    # => [lo2, hi2, felt, lo, hi]
+
+    movup.3 assert_eq.err=ERR_MERGE_OVERFLOW
+    # => [hi2, felt, hi]
+
+    movup.2 assert_eq.err=ERR_MERGE_OVERFLOW
+    # => [felt]
 end
 
 # DOUBLE WORD MEMORY OPERATIONS
