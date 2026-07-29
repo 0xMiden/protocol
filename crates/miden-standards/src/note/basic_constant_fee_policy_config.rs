@@ -92,9 +92,6 @@ static BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock:
 ///   notes unpayable, and since the manager is only reachable through a consumed note, that bricks
 ///   fee management unless the account also exposes a transaction-script path to `set_note_fee`.
 ///   Keep this note's own root scheduled at 0.
-///
-/// Construct one with the [builder](BasicConstantFeePolicyConfigNote::builder); convert it into a
-/// protocol [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct BasicConstantFeePolicyConfigNote {
     sender: AccountId,
@@ -127,9 +124,7 @@ impl BasicConstantFeePolicyConfigNote {
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
-        // the consuming account matches this `NetworkAccountTarget`. Without it the note is only
-        // best-effort tagged and any account whose `Authority` accepts the sender could consume and
-        // burn it. Prepend it so it is the canonical target even if the caller adds attachments.
+        // the consuming account matches this `NetworkAccountTarget`.
         let target =
             NetworkAccountTarget::new(account, NoteExecutionHint::Always).map_err(|err| {
                 NoteError::other_with_source(
@@ -159,8 +154,7 @@ impl BasicConstantFeePolicyConfigNote {
     /// Number of storage items of a BasicConstantFeePolicyConfig note: the note script root word
     /// plus the fee asset (its ID and value words).
     ///
-    /// Must be kept in sync with `NUM_STORAGE_ITEMS` in the note script
-    /// (`asm/standards/notes/basic_constant_fee_policy_config.masm`), which asserts the count.
+    /// Must be kept in sync with `NUM_STORAGE_ITEMS` in the note script, which asserts the count.
     pub const NUM_STORAGE_ITEMS: usize = 12;
 
     // PUBLIC ACCESSORS

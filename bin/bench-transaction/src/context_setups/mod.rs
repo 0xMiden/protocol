@@ -62,8 +62,7 @@ fn fee_funding_asset() -> Result<Asset> {
 }
 
 /// Returns the native fee asset carrying `amount`, whose ID matches the fee asset a network
-/// account is configured with (used as the scheduled fee of a BASIC_CONSTANT_FEE_POLICY_CONFIG
-/// note).
+/// account is configured with.
 fn native_fee_asset(amount: u64) -> Result<FungibleAsset> {
     Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, amount)?)
 }

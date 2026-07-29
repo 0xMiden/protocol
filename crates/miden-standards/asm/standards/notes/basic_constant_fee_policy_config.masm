@@ -45,13 +45,11 @@ const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "basic constant fe
 #! configured fee asset ID (also enforced by `set_note_fee`).
 #!
 #! Requires that the consuming account:
-#! - exposes `miden::standards::fees::policies::constant_fee_manager::set_note_fee` (the
-#!   `ConstantFeeManager` component), installed on an `AuthNetworkAccount` whose active fee
-#!   policy is a constant-fee policy (e.g. `BasicConstantFeePolicy`, which owns the `fee_schedule`
-#!   slot), backed by an `Authority` companion component gating `set_note_fee` to the owner or a
-#!   role (not `AuthControlled`, which would make it permissionless).
-#! - allowlists this note's own script root and already has a set-marked fee schedule entry for it
-#!   (typically a 0 fee), so the network account can price and consume this note.
+#! - exposes `miden::standards::fees::policies::constant_fee_manager::set_note_fee`, installed on an
+#!   `AuthNetworkAccount` whose active fee policy is a constant-fee policy, backed by an `Authority`
+#!   companion component gating `set_note_fee` to the owner or a role.
+#! - allowlists this note's own script root and already has a set-marked fee schedule entry for it,
+#!   so the network account can price and consume this note.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
