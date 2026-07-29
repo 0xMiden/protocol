@@ -5,7 +5,11 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
+use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::{
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED,
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -35,8 +39,22 @@ use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
+/// Active note accessors must refuse to run from a transaction script, where no note is being
+/// processed.
+#[rstest]
+#[case::get_sender(
+    "get_sender",
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED
+)]
+#[case::get_note_id(
+    "get_note_id",
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED
+)]
 #[tokio::test]
-async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
+async fn test_active_note_accessor_fails_from_tx_script(
+    #[case] procedure: &str,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::BasicAuth {
@@ -51,15 +69,17 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let code = "
+    let code = format!(
+        "
         use miden::protocol::active_note
 
         @transaction_script
         pub proc main
-            # try to get the sender from transaction script
-            exec.active_note::get_sender
+            # try to access the active note from the transaction script
+            exec.active_note::{procedure}
         end
-        ";
+        "
+    );
     let tx_script = CodeBuilder::default()
         .compile_tx_script(code)
         .context("failed to parse tx script")?;
@@ -71,10 +91,7 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
         .build()?;
 
     let result = mock_tx.execute().await;
-    assert_transaction_executor_error!(
-        result,
-        ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED
-    );
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

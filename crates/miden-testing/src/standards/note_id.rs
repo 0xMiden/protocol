@@ -1,8 +1,7 @@
 //! Tests for the `miden::standards::note::note_id` module.
 //!
-//! The kernel derives note IDs internally but exposes no accessor for them, so the standards module
-//! recomputes them from the four commitments that *are* exposed. These tests pin that recomputation
-//! against the Rust [`NoteId`](miden_protocol::note::NoteId) so the two cannot drift.
+//! Output note IDs are computed from the four commitments the kernel exposes. These tests pin that
+//! computation against the Rust [`NoteId`](miden_protocol::note::NoteId) so they cannot drift.
 
 use miden_protocol::Word;
 use miden_protocol::account::Account;
@@ -40,54 +39,6 @@ fn two_note_tx() -> anyhow::Result<MockTransaction> {
     TestTransactionBuilder::new(account)
         .input_notes(vec![bare_note, rich_note])
         .build()
-}
-
-/// Recomputing a note's ID in MASM must match `Note::id()` in Rust, for both notes of the fixture
-/// (note 0 is bare, note 1 carries an asset and attachments) through both the indexed and the
-/// active-note procedure.
-#[rstest]
-#[tokio::test]
-async fn compute_active_and_input_note_id_matches_rust(
-    #[values(0, 1)] note_index: u8,
-    #[values("compute_active_note_id", "compute_input_note_id")] procedure: &str,
-) -> anyhow::Result<()> {
-    let mock_tx = two_note_tx()?;
-
-    // The input variant takes the note index from the stack; the active variant reads the active
-    // note, so the test points the active-note pointer at the note under test instead.
-    let setup_code = if procedure == "compute_active_note_id" {
-        format!(
-            "push.{note_index} exec.memory::get_input_note_ptr exec.memory::set_active_input_note_ptr"
-        )
-    } else {
-        format!("push.{note_index}")
-    };
-
-    let code = format!(
-        r#"
-        use miden::tx_kernel_core::memory
-        use miden::tx_kernel_core::prologue
-        use miden::standards::note::note_id
-
-        begin
-            exec.prologue::prepare_transaction
-
-            {setup_code}
-            exec.note_id::{procedure}
-            # => [NOTE_ID]
-
-            # truncate the stack
-            swapw dropw
-        end
-        "#
-    );
-
-    let exec_output = mock_tx.execute_code(&code).await?;
-
-    let expected = mock_tx.input_notes().get_note(note_index as usize).note().id();
-    assert_eq!(exec_output.get_stack_word(0), expected.as_word());
-
-    Ok(())
 }
 
 /// Finding an input note by its ID returns the note's index; both fixture notes must be found at
