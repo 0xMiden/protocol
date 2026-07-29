@@ -6,10 +6,10 @@ use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use thiserror::Error;
 
 mod basic_constant_fee;
-mod basic_constant_fee_manager;
+mod constant_fee_manager;
 
 pub use basic_constant_fee::BasicConstantFeePolicy;
-pub use basic_constant_fee_manager::BasicConstantFeeManager;
+pub use constant_fee_manager::ConstantFeeManager;
 
 // FEE POLICY ERROR
 // ================================================================================================

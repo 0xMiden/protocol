@@ -1,4 +1,4 @@
-//! Tests for the [`miden_standards::account::fees::BasicConstantFeeManager`] authority-gated admin
+//! Tests for the [`miden_standards::account::fees::ConstantFeeManager`] authority-gated admin
 //! component, which mutates the fee schedule map owned by
 //! [`miden_standards::account::fees::BasicConstantFeePolicy`] after deployment via the owner-gated
 //! `set_note_fee` procedure.
@@ -18,8 +18,8 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{
-    BasicConstantFeeManager,
     BasicConstantFeePolicy,
+    ConstantFeeManager,
     FeePolicyManager,
 };
 use miden_standards::account::wallets::BasicWallet;
@@ -57,7 +57,7 @@ fn build_set_note_fee_note_raw(
         sender,
         format!(
             r#"
-        use miden::standards::fees::policies::basic_constant_fee_manager
+        use miden::standards::fees::policies::constant_fee_manager
 
         @note_script
         pub proc main
@@ -65,7 +65,7 @@ fn build_set_note_fee_note_raw(
             push.{fee_asset_value}
             push.{fee_asset_id}
             push.{lookup_key}
-            call.basic_constant_fee_manager::set_note_fee
+            call.constant_fee_manager::set_note_fee
 
             dropw dropw dropw
         end
@@ -90,7 +90,7 @@ fn build_set_note_fee_note(
 }
 
 /// Builds a network account composing `BasicConstantFeePolicy` (via the `FeePolicyManager`) +
-/// `BasicConstantFeeManager` + `Ownable2Step(owner)` + `Authority::OwnerControlled`.
+/// `ConstantFeeManager` + `Ownable2Step(owner)` + `Authority::OwnerControlled`.
 ///
 /// `priced_root()` is intentionally left unscheduled — the manager is the only way it gets a fee.
 /// Each `admin_note_root` is allowlisted and scheduled at a 0 fee so the network account can
@@ -112,7 +112,7 @@ fn build_manageable_fee_account(
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_component(BasicConstantFeeManager::for_basic_constant_fee_policy())
+        .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
         .build_existing()?)
 }
 

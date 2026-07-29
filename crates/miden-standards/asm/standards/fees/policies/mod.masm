@@ -1,2 +1,2 @@
 pub mod basic_constant_fee
-pub mod basic_constant_fee_manager
+pub mod constant_fee_manager

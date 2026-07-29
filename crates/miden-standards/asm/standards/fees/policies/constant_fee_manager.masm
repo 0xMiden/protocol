@@ -1,4 +1,4 @@
-# miden::standards::fees::policies::basic_constant_fee_manager
+# miden::standards::fees::policies::constant_fee_manager
 #
 # Authority-gated admin for a constant-fee schedule: exposes `set_note_fee`, which updates a single
 # note-script-root -> fee entry in the managed fee schedule map after deployment. The map slot is
@@ -22,7 +22,7 @@ use miden::standards::assets::fungible_asset
 
 # This component's own value slot, holding the ID (as [slot_id_suffix, slot_id_prefix, 0, 0]) of the
 # fee schedule map slot this manager updates. Populated at construction.
-const FEE_SCHEDULE_SLOT_ID_SLOT = word("miden::standards::fees::policies::basic_constant_fee_manager::fee_schedule_slot_id")
+const FEE_SCHEDULE_SLOT_ID_SLOT = word("miden::standards::fees::policies::constant_fee_manager::fee_schedule_slot_id")
 
 # ERRORS
 # =================================================================================================

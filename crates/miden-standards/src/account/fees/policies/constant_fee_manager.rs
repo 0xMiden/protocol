@@ -18,25 +18,25 @@ use super::BasicConstantFeePolicy;
 use crate::account::account_component_code;
 use crate::procedure_root;
 
-// BASIC CONSTANT FEE MANAGER
+// CONSTANT FEE MANAGER
 // ================================================================================================
 
 account_component_code!(
-    BASIC_CONSTANT_FEE_MANAGER_CODE,
-    "miden-standards-fees-policies-basic-constant-fee-manager.masp"
+    CONSTANT_FEE_MANAGER_CODE,
+    "miden-standards-fees-policies-constant-fee-manager.masp"
 );
 
 procedure_root!(
-    BASIC_CONSTANT_FEE_MANAGER_SET_NOTE_FEE,
-    BasicConstantFeeManager::NAME,
-    BasicConstantFeeManager::SET_NOTE_FEE_PROC_NAME,
-    BasicConstantFeeManager::code()
+    CONSTANT_FEE_MANAGER_SET_NOTE_FEE,
+    ConstantFeeManager::NAME,
+    ConstantFeeManager::SET_NOTE_FEE_PROC_NAME,
+    ConstantFeeManager::code()
 );
 
 /// The value slot this component owns, holding the ID of the fee schedule slot it manages.
 static FEE_SCHEDULE_SLOT_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
-        "miden::standards::fees::policies::basic_constant_fee_manager::fee_schedule_slot_id",
+        "miden::standards::fees::policies::constant_fee_manager::fee_schedule_slot_id",
     )
     .expect("storage slot name should be valid")
 });
@@ -77,15 +77,15 @@ static FEE_SCHEDULE_SLOT_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 /// - The constant-fee policy whose `fee_schedule` slot this manager writes (installed as the
 ///   network account's active or allowed fee policy) — typically [`BasicConstantFeePolicy`].
 #[derive(Debug, Clone)]
-pub struct BasicConstantFeeManager {
+pub struct ConstantFeeManager {
     /// Name of the fee schedule map slot this manager updates.
     fee_schedule_slot: StorageSlotName,
 }
 
-impl BasicConstantFeeManager {
+impl ConstantFeeManager {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::fees::policies::basic_constant_fee_manager";
+        "miden::standards::components::fees::policies::constant_fee_manager";
 
     const SET_NOTE_FEE_PROC_NAME: &'static str = "set_note_fee";
 
@@ -110,14 +110,14 @@ impl BasicConstantFeeManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_CONSTANT_FEE_MANAGER_CODE
+        &CONSTANT_FEE_MANAGER_CODE
     }
 
     /// Returns the procedure root of the `set_note_fee` procedure exposed by this component.
     ///
     /// Use it to key the [`crate::account::access::Authority::RbacControlled`] role map.
     pub fn set_note_fee_root() -> AccountProcedureRoot {
-        *BASIC_CONSTANT_FEE_MANAGER_SET_NOTE_FEE
+        *CONSTANT_FEE_MANAGER_SET_NOTE_FEE
     }
 
     /// Returns the [`StorageSlotName`] of the value slot this component owns, holding the ID of the
@@ -152,8 +152,8 @@ impl BasicConstantFeeManager {
     }
 }
 
-impl From<BasicConstantFeeManager> for AccountComponent {
-    fn from(manager: BasicConstantFeeManager) -> Self {
+impl From<ConstantFeeManager> for AccountComponent {
+    fn from(manager: ConstantFeeManager) -> Self {
         // Store the managed fee schedule slot's ID as [slot_id_suffix, slot_id_prefix, 0, 0], which
         // `set_note_fee` reads to locate the schedule map.
         let id = manager.fee_schedule_slot.id();
@@ -161,9 +161,9 @@ impl From<BasicConstantFeeManager> for AccountComponent {
         let slot = StorageSlot::with_value(FEE_SCHEDULE_SLOT_ID_SLOT_NAME.clone(), slot_id_word);
 
         AccountComponent::new(
-            BasicConstantFeeManager::code().clone(),
+            ConstantFeeManager::code().clone(),
             vec![slot],
-            BasicConstantFeeManager::component_metadata(),
+            ConstantFeeManager::component_metadata(),
         )
         .expect(
             "authority-gated constant-fee schedule admin component should satisfy the \
@@ -185,12 +185,12 @@ mod tests {
     #[test]
     fn stores_managed_fee_schedule_slot_id() {
         let policy_slot = BasicConstantFeePolicy::fee_schedule_slot_name().clone();
-        let component: AccountComponent = BasicConstantFeeManager::new(policy_slot.clone()).into();
+        let component: AccountComponent = ConstantFeeManager::new(policy_slot.clone()).into();
 
         let slot = component
             .storage_slots()
             .iter()
-            .find(|slot| slot.name() == BasicConstantFeeManager::fee_schedule_slot_id_slot_name())
+            .find(|slot| slot.name() == ConstantFeeManager::fee_schedule_slot_id_slot_name())
             .expect("manager should declare the fee schedule slot ID slot");
 
         let id = policy_slot.id();
