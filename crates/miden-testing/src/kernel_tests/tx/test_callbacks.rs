@@ -30,6 +30,7 @@ use miden_protocol::asset::{
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -611,6 +612,79 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Tests that callbacks cannot redistribute value between output notes while preserving the
+/// transaction-wide total.
+///
+/// Without a callback-boundary equality check, the callback below could turn additions of 100 and
+/// 200 units into 150 units each. The epilogue's aggregate asset-conservation check would still see
+/// 300 input and 300 output units, so it cannot enforce the per-callback invariant.
+#[tokio::test]
+async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let note_callback_masm = r#"
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc on_before_asset_added_to_note
+        # Drop the asset ID and replace the input amount with 150.
+        dropw
+        push.150 swap drop
+        # => [PROCESSED_ASSET_VALUE, note_idx, pad(7)]
+    end
+    "#;
+
+    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(note_callback_masm))?;
+    let input_asset = FungibleAsset::new(faucet.id(), 300)?;
+    let first_moved_asset = FungibleAsset::new(faucet.id(), 100)?;
+    let second_moved_asset = FungibleAsset::new(faucet.id(), 200)?;
+    let input_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[input_asset.into()],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        r#"
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            push.{first_asset_value}
+            push.{asset_id}
+            exec.util::create_default_note_with_moved_asset
+
+            push.{second_asset_value}
+            push.{asset_id}
+            exec.util::create_default_note_with_moved_asset
+        end
+        "#,
+        first_asset_value = first_moved_asset.to_value_word(),
+        second_asset_value = second_moved_asset.to_value_word(),
+        asset_id = first_moved_asset.to_id_word(),
+    ))?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(input_note.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT);
 
     Ok(())
 }

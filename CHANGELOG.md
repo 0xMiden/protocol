@@ -29,6 +29,7 @@
 
 ### Fixes
 
+- [BREAKING] The transaction kernel now asserts that asset callbacks return the asset value they received, aborting with `ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT` otherwise; previously, offsetting callback transformations could redistribute value between outputs while passing the epilogue's aggregate conservation check. The kernel commitment changes ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
 - Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 
