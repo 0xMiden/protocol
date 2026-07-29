@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
@@ -116,7 +117,7 @@ impl ConstantFeePolicyConfigNote {
     ///   target attachment occupies one of the available slots.
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
         note_script_root: NoteScriptRoot,
@@ -125,16 +126,11 @@ impl ConstantFeePolicyConfigNote {
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
         // the consuming account matches this `NetworkAccountTarget`.
-        let target =
-            NetworkAccountTarget::new(account, NoteExecutionHint::Always).map_err(|err| {
-                NoteError::other_with_source(
-                    "failed to build network account target attachment",
-                    err,
-                )
-            })?;
-        let mut all_attachments = attachments;
-        all_attachments.insert(0, NoteAttachment::from(target));
-        let attachments = NoteAttachments::new(all_attachments)?;
+        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
+            .map_err(|err| NoteError::other(err.to_string()))?;
+        attachments.insert(0, NoteAttachment::from(target));
+
+        let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
