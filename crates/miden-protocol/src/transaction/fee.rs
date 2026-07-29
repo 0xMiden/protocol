@@ -1,6 +1,7 @@
 use crate::MAX_TX_EXECUTION_CYCLES;
 use crate::asset::AssetAmount;
 use crate::block::FeeParameters;
+use crate::errors::AssetError;
 
 // TRANSACTION FEE
 // ================================================================================================
@@ -16,6 +17,9 @@ pub enum TransactionFeeError {
     /// `compute_fee` enforces.
     #[error("total cycle count {0} exceeds the maximum of {MAX_TX_EXECUTION_CYCLES} cycles")]
     TotalCyclesExceedsMax(u32),
+    /// The computed fee exceeds the maximum representable asset amount.
+    #[error("computed fee exceeds the maximum asset amount")]
+    FeeExceedsMaxAssetAmount(#[source] AssetError),
 }
 
 /// The inputs from which a transaction's fee is computed, mirroring the transaction kernel's
@@ -57,15 +61,35 @@ impl TransactionFee {
         self.log_verification_cycles
     }
 
+    /// Returns fee inputs charging `extra_verification_cycles` on top of the formula's
+    /// verification cycles, e.g. as a safety margin when the fee is derived from an estimated
+    /// rather than a measured cycle count.
+    ///
+    /// The addition saturates at `u32::MAX` verification cycles; a fee that large is rejected
+    /// by [`Self::compute_fee`] for any base fee above `2^31`.
+    pub fn with_safety_margin(self, extra_verification_cycles: u32) -> Self {
+        Self {
+            log_verification_cycles: self
+                .log_verification_cycles
+                .saturating_add(extra_verification_cycles),
+        }
+    }
+
     /// Computes the fee under the given fee parameters.
-    pub fn compute_fee(&self, fee_parameters: &FeeParameters) -> AssetAmount {
+    ///
+    /// Returns an error if the fee exceeds [`AssetAmount::MAX`]: the formula's own
+    /// verification cycles keep the fee far below it, but a large [`Self::with_safety_margin`]
+    /// can push it beyond.
+    pub fn compute_fee(
+        &self,
+        fee_parameters: &FeeParameters,
+    ) -> Result<AssetAmount, TransactionFeeError> {
         // Multiply in u64: the kernel multiplies in the field, so a u32 product would wrap
-        // where the kernel does not. The product is at most `u32::MAX * 30`, far below
-        // `AssetAmount::MAX`.
+        // where the kernel does not. A product of two u32 values cannot wrap a u64.
         let fee_amount = u64::from(fee_parameters.verification_base_fee())
             * u64::from(self.log_verification_cycles);
 
-        AssetAmount::new(fee_amount).expect("fee is bounded far below AssetAmount::MAX")
+        AssetAmount::new(fee_amount).map_err(TransactionFeeError::FeeExceedsMaxAssetAmount)
     }
 }
 
@@ -110,13 +134,36 @@ mod tests {
         ));
     }
 
-    /// The maximal fee (`u32::MAX` base fee, 30 verification cycles) must neither wrap nor
-    /// exceed `AssetAmount::MAX`.
+    /// The maximal margin-free fee (`u32::MAX` base fee, 30 verification cycles) must neither
+    /// wrap nor exceed `AssetAmount::MAX`.
     #[test]
     fn compute_fee_does_not_wrap_at_the_maximal_base_fee() {
         let fee = TransactionFee::new(MAX_TX_EXECUTION_CYCLES)
             .unwrap()
-            .compute_fee(&fee_parameters(u32::MAX));
+            .compute_fee(&fee_parameters(u32::MAX))
+            .unwrap();
         assert_eq!(fee.as_u64(), u64::from(u32::MAX) * 30);
+    }
+
+    /// The safety margin adds verification cycles before the base-fee multiplication.
+    #[test]
+    fn safety_margin_adds_verification_cycles() {
+        let fee = TransactionFee::new(1 << 16)
+            .unwrap()
+            .with_safety_margin(3)
+            .compute_fee(&fee_parameters(500))
+            .unwrap();
+        assert_eq!(fee.as_u64(), 500 * (17 + 3));
+    }
+
+    /// An oversized margin pushes the fee beyond `AssetAmount::MAX`, which `compute_fee`
+    /// rejects.
+    #[test]
+    fn fee_exceeding_max_asset_amount_is_rejected() {
+        let result = TransactionFee::new(1)
+            .unwrap()
+            .with_safety_margin(u32::MAX - 1)
+            .compute_fee(&fee_parameters(u32::MAX));
+        assert!(matches!(result, Err(TransactionFeeError::FeeExceedsMaxAssetAmount(_))));
     }
 }

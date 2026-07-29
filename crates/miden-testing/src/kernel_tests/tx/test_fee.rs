@@ -192,7 +192,7 @@ async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
     let captured_clk = u32::try_from(exec_output.get_stack_element(1).as_canonical_u64())?;
 
     let expected_fee = TransactionFee::new(captured_clk)?
-        .compute_fee(mock_tx.tx_inputs().block_header().fee_parameters());
+        .compute_fee(mock_tx.tx_inputs().block_header().fee_parameters())?;
 
     // This assertion is somewhat brittle. If it fails, it is likely because log2(captured clock)
     // and log2(actual clock) differ, which shouldn't happen most of the time.

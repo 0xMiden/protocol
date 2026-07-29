@@ -16,17 +16,17 @@ use miden_standards::note::costs::NoteCost;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum NotePricingError {
-    /// A note's cycle cost could not form valid transaction fee inputs (zero or above the
-    /// kernel's maximum); the cost tables never contain such values, so this indicates a
+    /// The kernel fee computation rejected a note's fee inputs or the resulting fee. The cost
+    /// tables never contain out-of-range cycle counts, so a cycle-count error indicates a
     /// broken cost table.
-    #[error("a note's cycle cost does not form valid transaction fee inputs")]
-    InvalidCycles(#[source] TransactionFeeError),
-    /// The computed fee overflowed during accumulation.
-    #[error("computed fee overflows u64")]
-    FeeOverflow,
-    /// The computed fee exceeds the maximum representable asset amount.
-    #[error("computed fee exceeds the maximum asset amount")]
-    FeeExceedsMaxAssetAmount(#[source] AssetError),
+    #[error("cannot compute the fee for a note")]
+    Fee(#[source] TransactionFeeError),
+    /// The prices accumulated across a note's created notes overflowed u64.
+    #[error("accumulated note price overflows u64")]
+    PriceOverflow,
+    /// The accumulated price exceeds the maximum representable asset amount.
+    #[error("accumulated note price exceeds the maximum asset amount")]
+    PriceExceedsMaxAssetAmount(#[source] AssetError),
     /// The priced script root has no known consumption cost.
     #[error("no consumption cost is known for note script root {0}")]
     UnknownNoteScriptRoot(NoteScriptRoot),
@@ -81,13 +81,15 @@ impl NetworkNotePricer {
     /// Returns the fee charged for a network transaction with the given fee inputs, including
     /// the configured safety margin.
     ///
-    /// The kernel fee is computed entirely by [`TransactionFee::compute_fee`] under the
-    /// pricer's [`FeeParameters`], so fee terms added to the kernel formula in the future flow
-    /// through without changes here; the safety margin is charged on top as
-    /// `verification_base_fee * safety_margin_verification_cycles`.
+    /// The fee is computed entirely by [`TransactionFee::compute_fee`] under the pricer's
+    /// [`FeeParameters`], with the safety margin folded into the fee inputs
+    /// ([`TransactionFee::with_safety_margin`]), so fee terms added to the kernel formula in
+    /// the future flow through without changes here.
     pub fn fee(&self, fee_inputs: TransactionFee) -> Result<AssetAmount, NotePricingError> {
-        let fee = self.fee_raw(fee_inputs)?;
-        AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
+        fee_inputs
+            .with_safety_margin(self.safety_margin_verification_cycles)
+            .compute_fee(&self.fee_parameters)
+            .map_err(NotePricingError::Fee)
     }
 
     /// Prices the consumption by a network account of the note with the given script root.
@@ -107,17 +109,8 @@ impl NetworkNotePricer {
     /// a partially filled PSWAP is priced for one fill level, and the paybacks of any further
     /// partial fills are not covered.
     pub fn price(&self, root: NoteScriptRoot) -> Result<AssetAmount, NotePricingError> {
-        let fee = self.price_recursive(root, &mut Vec::new())?;
-        AssetAmount::new(fee).map_err(NotePricingError::FeeExceedsMaxAssetAmount)
-    }
-
-    /// Returns the fee for the given fee inputs as a raw `u64`.
-    fn fee_raw(&self, fee_inputs: TransactionFee) -> Result<u64, NotePricingError> {
-        let kernel_fee = fee_inputs.compute_fee(&self.fee_parameters).as_u64();
-        // A u32 * u32 product widened to u64 cannot overflow; the sum with the kernel fee can.
-        let margin_fee = u64::from(self.fee_parameters.verification_base_fee())
-            * u64::from(self.safety_margin_verification_cycles);
-        kernel_fee.checked_add(margin_fee).ok_or(NotePricingError::FeeOverflow)
+        let price = self.price_recursive(root, &mut Vec::new())?;
+        AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
@@ -130,9 +123,8 @@ impl NetworkNotePricer {
         let cost = (self.lookup)(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
-        let fee_inputs =
-            TransactionFee::new(cost.cycles()).map_err(NotePricingError::InvalidCycles)?;
-        let own_fee = self.fee_raw(fee_inputs)?;
+        let fee_inputs = TransactionFee::new(cost.cycles()).map_err(NotePricingError::Fee)?;
+        let own_fee = self.fee(fee_inputs)?.as_u64();
 
         if pricing_stack.contains(&root) {
             return Ok(own_fee);
@@ -142,7 +134,7 @@ impl NetworkNotePricer {
         let mut total = own_fee;
         for &created in cost.created_notes() {
             let created_price = self.price_recursive(created, pricing_stack)?;
-            total = total.checked_add(created_price).ok_or(NotePricingError::FeeOverflow)?;
+            total = total.checked_add(created_price).ok_or(NotePricingError::PriceOverflow)?;
         }
         pricing_stack.pop();
 
@@ -222,17 +214,61 @@ mod tests {
         let root = NoteScriptRoot::from_array([1, 0, 0, 0]);
         for lookup in [zero_cost_lookup as CostLookupFn, oversized_cost_lookup] {
             let broken = custom_pricer(lookup);
-            assert!(matches!(broken.price(root), Err(NotePricingError::InvalidCycles(_))));
+            assert!(matches!(broken.price(root), Err(NotePricingError::Fee(_))));
         }
     }
 
     #[test]
-    fn overflowing_fee_is_rejected() {
-        // The kernel fee (u32::MAX * 30) plus the margin fee (u32::MAX * u32::MAX) overflows a
-        // u64.
+    fn fee_exceeding_max_asset_amount_is_rejected() {
+        // The margin saturates the charged verification cycles at u32::MAX; with a u32::MAX
+        // base fee the product exceeds `AssetAmount::MAX`.
         assert!(matches!(
             pricer(u32::MAX, u32::MAX).fee(fee_inputs(MAX_TX_EXECUTION_CYCLES)),
-            Err(NotePricingError::FeeOverflow)
+            Err(NotePricingError::Fee(_))
+        ));
+    }
+
+    /// Fabricated lookup where `[1, 0, 0, 0]` creates two notes and `[2, 0, 0, 0]` one;
+    /// every note costs `2^16` cycles.
+    fn creating_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
+        let triple = NoteScriptRoot::from_array([1, 0, 0, 0]);
+        let double = NoteScriptRoot::from_array([2, 0, 0, 0]);
+        let leaf = NoteScriptRoot::from_array([3, 0, 0, 0]);
+        if root == triple {
+            Some(NoteCost::new(1 << 16, vec![double, leaf]))
+        } else if root == double {
+            Some(NoteCost::new(1 << 16, vec![leaf]))
+        } else {
+            Some(NoteCost::new(1 << 16, Vec::new()))
+        }
+    }
+
+    /// Builds a pricer whose every fee lands exactly at `AssetAmount::MAX`: a `2^16`-cycle
+    /// cost is charged `17` formula cycles plus the margin, and
+    /// `u32::MAX * 2^31 = AssetAmount::MAX`.
+    fn max_fee_pricer() -> NetworkNotePricer {
+        NetworkNotePricer {
+            fee_parameters: fee_parameters(u32::MAX),
+            safety_margin_verification_cycles: (1 << 31) - 17,
+            lookup: creating_lookup,
+        }
+    }
+
+    #[test]
+    fn overflowing_accumulated_price_is_rejected() {
+        // Three maximal fees (the note and its two created notes) overflow u64.
+        assert!(matches!(
+            max_fee_pricer().price(NoteScriptRoot::from_array([1, 0, 0, 0])),
+            Err(NotePricingError::PriceOverflow)
+        ));
+    }
+
+    #[test]
+    fn accumulated_price_above_max_asset_amount_is_rejected() {
+        // Two maximal fees fit in a u64 but exceed `AssetAmount::MAX`.
+        assert!(matches!(
+            max_fee_pricer().price(NoteScriptRoot::from_array([2, 0, 0, 0])),
+            Err(NotePricingError::PriceExceedsMaxAssetAmount(_))
         ));
     }
 
