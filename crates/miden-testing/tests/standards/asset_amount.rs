@@ -21,7 +21,7 @@ use super::test_utils::{assert_execution_fails_with, execute_masm_script};
 // SCALE UP TESTS (Felt -> U256)
 // ================================================================================================
 
-/// Helper function to test scale_native_amount_to_u256 with given parameters
+/// Helper function to test scale_asset_amount_to_u256 with given parameters
 async fn test_scale_up_helper(
     miden_amount: Felt,
     scale_exponent: Felt,
@@ -30,11 +30,11 @@ async fn test_scale_up_helper(
     let script_code = format!(
         "
         use miden::core::sys
-        use miden::standards::assets::conversion
+        use miden::standards::assets::asset_amount
         
         begin
             push.{}.{}
-            exec.conversion::scale_native_amount_to_u256
+            exec.asset_amount::scale_asset_amount_to_u256
             exec.sys::truncate_stack
         end
         ",
@@ -101,11 +101,11 @@ async fn test_scale_up_exceeds_max_scale() {
     // scale_exp = 19 should fail
     let script_code = "
         use miden::core::sys
-        use miden::standards::assets::conversion
+        use miden::standards::assets::asset_amount
         
         begin
             push.19.1
-            exec.conversion::scale_native_amount_to_u256
+            exec.asset_amount::scale_asset_amount_to_u256
             exec.sys::truncate_stack
         end
     ";
@@ -117,17 +117,17 @@ async fn test_scale_up_exceeds_max_scale() {
 // SCALE DOWN TESTS (U256 -> Felt)
 // ================================================================================================
 
-/// Build MASM script for verify_u256_to_native_amount_conversion
+/// Build MASM script for verify_u256_to_asset_amount_conversion
 fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
     let x_felts = x.to_elements();
     format!(
         r#"
         use miden::core::sys
-        use miden::standards::assets::conversion
+        use miden::standards::assets::asset_amount
         
         begin
             push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.conversion::verify_u256_to_native_amount_conversion
+            exec.asset_amount::verify_u256_to_asset_amount_conversion
             exec.sys::truncate_stack
         end
         "#,
@@ -146,7 +146,7 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
 
 /// Assert that scaling down succeeds with the correct result
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
-    let y = x.scale_to_token_amount(scale).unwrap().as_canonical_u64();
+    let y = x.scale_to_asset_amount(scale).unwrap().as_canonical_u64();
     let script = build_scale_down_script(x, scale, y);
     let output = execute_masm_script(&script).await?;
     assert_eq!(output.stack.as_slice(), &[Felt::ZERO; 16], "expected empty stack");
@@ -187,7 +187,7 @@ async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
 // FUZZING TESTS
 // ================================================================================================
 
-// Fuzz test that validates verify_u256_to_native_amount_conversion (U256 → Felt)
+// Fuzz test that validates verify_u256_to_asset_amount_conversion (U256 → Felt)
 // with random realistic amounts for all scale exponents (0..=18).
 #[tokio::test]
 async fn test_scale_down_realistic_scenarios_fuzzing() -> anyhow::Result<()> {
@@ -284,8 +284,8 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let scale = 10u64.pow(scale_exp);
     let x = EthAmount::from_u256(U256::from(6u64 * scale));
 
-    // Calculate the correct y using scale_to_token_amount
-    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
+    // Calculate the correct y using scale_to_asset_amount
+    let correct_y = x.scale_to_asset_amount(scale_exp).unwrap().as_canonical_u64();
     assert_eq!(correct_y, 6);
 
     // Providing wrong_y = correct_y - 1 should fail with ERR_REMAINDER_TOO_LARGE
@@ -305,7 +305,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // y = x / 1e10 = 10000000000 (100 * 1e8)
     let x = EthAmount::from_uint_str("100000000000000000000").unwrap();
     let scale_exp = 10u32;
-    let y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
+    let y = x.scale_to_asset_amount(scale_exp).unwrap().as_canonical_u64();
 
     let x_felts = x.to_elements();
 
@@ -313,7 +313,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     let script_code = format!(
         r#"
         use miden::core::sys
-        use miden::standards::assets::conversion
+        use miden::standards::assets::asset_amount
         
         begin
             # Push expected quotient y used for verification (not returned as an output)
@@ -326,7 +326,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
             push.{}.{}.{}.{}.{}.{}.{}.{}
             
             # Call the scale down procedure (verifies conversion and may panic on failure)
-            exec.conversion::verify_u256_to_native_amount_conversion
+            exec.asset_amount::verify_u256_to_asset_amount_conversion
             
             # Truncate stack so the program returns with no public outputs (Outputs: [])
             exec.sys::truncate_stack
@@ -344,14 +344,14 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         x_felts[0].as_canonical_u64(),
     );
 
-    // Execute the script - verify_u256_to_native_amount_conversion panics on invalid
+    // Execute the script - verify_u256_to_asset_amount_conversion panics on invalid
     // conversions, so successful execution is sufficient validation
     execute_masm_script(&script_code).await?;
 
     Ok(())
 }
 
-/// Exercises u128_sub_no_underflow when x > 2^64, so x has distinct high limbs (x2 != x3).
+/// Exercises u128_safe_sub when x > 2^64, so x has distinct high limbs (x2 != x3).
 ///
 /// The u128 subtraction splits each 128-bit operand into two 64-bit halves. This test
 /// ensures the high-half subtraction and borrow propagation work correctly when x_high

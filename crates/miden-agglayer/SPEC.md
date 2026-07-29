@@ -378,7 +378,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (read from the bridge's `faucet_metadata_map` via
    `bridge_config::get_faucet_scale`), using
-   `miden::standards::assets::conversion::verify_u256_to_native_amount_conversion`.
+   `miden::standards::assets::asset_amount::verify_u256_to_asset_amount_conversion`.
 8. If the faucet is not native, builds a MINT output note targeting the faucet (see
    [Section 4.9](#49-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
    asset from the bridge's vault and emits a `P2ID` note directly to the recipient

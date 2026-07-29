@@ -12,7 +12,7 @@ use {MemoryAddress} from miden::protocol::types
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
 use miden::standards::utils
-use miden::standards::assets::conversion
+use miden::standards::assets::asset_amount
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
@@ -306,15 +306,15 @@ proc convert_asset
     exec.bridge_config::get_faucet_conversion_info
     # => [addr0, addr1, addr2, addr3, addr4, origin_network, scale, amount]
 
-    # Bring [amount, scale] to the top for scale_native_amount_to_u256.
+    # Bring [amount, scale] to the top for scale_asset_amount_to_u256.
     movup.6
     # => [scale, addr0, addr1, addr2, addr3, addr4, origin_network, amount]
 
     movup.7
     # => [amount, scale, addr0, addr1, addr2, addr3, addr4, origin_network]
 
-    exec.conversion::scale_native_amount_to_u256
-    exec.conversion::reverse_limbs_and_change_byte_endianness
+    exec.asset_amount::scale_asset_amount_to_u256
+    exec.asset_amount::reverse_limbs_and_change_byte_endianness
     # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network]
 
     # Byte-swap origin_network to match the EVM-side big-endian encoding used in the leaf layout.

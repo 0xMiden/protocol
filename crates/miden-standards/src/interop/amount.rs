@@ -123,10 +123,10 @@ impl EthAmount {
     /// # Example
     /// ```ignore
     /// let eth_amount = EthAmount::from_u64(1_000_000_000_000_000_000); // 1 ETH in wei
-    /// let miden_amount = eth_amount.scale_to_token_amount(12)?;
+    /// let miden_amount = eth_amount.scale_to_asset_amount(12)?;
     /// // Result: 1_000_000 (1e6, Miden representation)
     /// ```
-    pub fn scale_to_token_amount(&self, scale_exp: u32) -> Result<Felt, EthAmountError> {
+    pub fn scale_to_asset_amount(&self, scale_exp: u32) -> Result<Felt, EthAmountError> {
         let x = self.to_u256();
         let scale = U256::from(pow10_u64(scale_exp)?);
 

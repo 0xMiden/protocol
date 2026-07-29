@@ -220,7 +220,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // Calculate the scaled-down Miden amount using the faucet's scale factor
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let metadata_hash = leaf_data.metadata_hash;
@@ -517,7 +517,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let claim_inputs = ClaimNoteStorage {
@@ -702,7 +702,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     // CREATE CLAIM NOTE (targets the bridge)
@@ -843,7 +843,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     // Calculate the scaled-down Miden amount
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     // CREATE FIRST CLAIM NOTE
@@ -1009,7 +1009,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     // Calculate the scaled-down Miden amount
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     // CREATE CLAIM NOTE
@@ -1151,7 +1151,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // The amount the claim will attempt to unlock: scaled from the leaf's U256 amount.
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
     let miden_claim_amount_u64 = miden_claim_amount.as_canonical_u64();
 
@@ -1436,7 +1436,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
 
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
     let miden_claim_amount_u64 = miden_claim_amount.as_canonical_u64();
 
@@ -1717,7 +1717,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
 
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let claim_inputs = ClaimNoteStorage {
@@ -1857,7 +1857,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
 
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let claim_inputs = ClaimNoteStorage {

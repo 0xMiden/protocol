@@ -501,7 +501,7 @@ pub async fn tx_consume_claim_note(
     // CREATE CLAIM NOTE
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let config_metadata_hash = leaf_data.metadata_hash;
