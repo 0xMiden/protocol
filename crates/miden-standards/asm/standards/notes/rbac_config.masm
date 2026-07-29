@@ -16,8 +16,8 @@ const ACCOUNT_SUFFIX_PTR = STORAGE_PTR + 2
 const ACCOUNT_PREFIX_PTR = STORAGE_PTR + 3
 const ADMIN_ROLE_SYMBOL_PTR = STORAGE_PTR + 2
 
-# Action selectors, stored in the first storage item. Keep in sync with `RbacConfig` on the Rust
-# side.
+# Config note selectors, stored in the first storage item. Keep in sync with `RbacConfig` on the
+# Rust side.
 const SELECTOR_GRANT_ROLE = 0
 const SELECTOR_REVOKE_ROLE = 1
 const SELECTOR_SET_ROLE_ADMIN = 2

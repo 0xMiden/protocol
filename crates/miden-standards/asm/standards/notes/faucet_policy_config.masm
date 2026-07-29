@@ -15,8 +15,8 @@ const POLICY_ROOT1_PTR = STORAGE_PTR + 2
 const POLICY_ROOT2_PTR = STORAGE_PTR + 3
 const POLICY_ROOT3_PTR = STORAGE_PTR + 4
 
-# Action selectors, stored in the first storage item. Keep in sync with `FaucetPolicyConfig` on the
-# Rust side.
+# Config note selectors, stored in the first storage item. Keep in sync with
+# `FaucetPolicyConfig` on the Rust side.
 const SELECTOR_SET_MINT_POLICY = 0
 const SELECTOR_SET_BURN_POLICY = 1
 const SELECTOR_SET_SEND_POLICY = 2

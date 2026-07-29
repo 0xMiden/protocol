@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -20,12 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::note::{
-    AccountTargetNetworkNote,
-    NetworkAccountTarget,
-    NetworkAccountTargetError,
-    NoteExecutionHint,
-};
+use crate::note::{AccountTargetNetworkNote, NetworkAccountTarget};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -68,7 +64,8 @@ impl OwnerConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with `owner_config.masm`.
+    // Config note selectors stored in the first storage item. Keep in sync with
+    // `owner_config.masm`.
     const SELECTOR_TRANSFER_OWNERSHIP: u8 = 0;
     const SELECTOR_ACCEPT_OWNERSHIP: u8 = 1;
     const SELECTOR_RENOUNCE_OWNERSHIP: u8 = 2;
@@ -118,9 +115,9 @@ impl From<OwnerConfig> for NoteStorage {
 /// selected action: the current owner for `TransferOwnership` / `RenounceOwnership`, or the
 /// nominated owner for `AcceptOwnership`.
 ///
-/// OwnerConfig notes are network notes: the [`NetworkAccountTarget`] attachment routing the note to
-/// `account` is created implicitly by the builder, so the note is always a valid
-/// [`AccountTargetNetworkNote`] and carries no other attachments.
+/// OwnerConfig notes are network notes: the builder adds the [`NetworkAccountTarget`] attachment
+/// routing the note to `account` unless the caller supplies one, so the note is always a valid
+/// [`AccountTargetNetworkNote`].
 ///
 /// Construct one with the [builder](OwnerConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
@@ -130,35 +127,42 @@ pub struct OwnerConfigNote {
     account: AccountId,
     config: OwnerConfig,
     serial_number: Word,
-    network_target: NetworkAccountTarget,
+    attachments: NoteAttachments,
 }
 
 #[bon::bon]
 impl OwnerConfigNote {
     /// Builds a new [`OwnerConfigNote`] that applies `config` to `account`.
     ///
-    /// The note's [`NetworkAccountTarget`] attachment is derived from `account`, so it can neither
-    /// be omitted nor contradicted by the caller.
+    /// A [`NetworkAccountTarget`] attachment routing the note to `account` is added automatically
+    /// unless the attachments already carry one, leaving the caller free to attach their own data
+    /// or to override the target's execution hint.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account` is not a public account, since a network account must be
-    /// public (see [`NetworkAccountTarget::new`]).
+    /// Returns an error if:
+    /// - the attachments carry a network account target that does not decode, or carry none and
+    ///   `account` is not public (see [`NetworkAccountTarget::new`]).
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
         config: OwnerConfig,
         serial_number: Word,
-    ) -> Result<Self, NetworkAccountTargetError> {
-        let network_target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)?;
+    ) -> Result<Self, NoteError> {
+        NetworkAccountTarget::append_if_missing(&mut attachments, account).map_err(|err| {
+            NoteError::other_with_source("invalid network account target of OwnerConfig note", err)
+        })?;
+        let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
             account,
             config,
             serial_number,
-            network_target,
+            attachments,
         })
     }
 }
@@ -206,14 +210,32 @@ impl OwnerConfigNote {
         self.serial_number
     }
 
-    /// Returns the network target attachment routing the note to the managed account.
-    pub fn network_target(&self) -> NetworkAccountTarget {
-        self.network_target
+    /// Returns the attachments carried by the note, which always include a
+    /// [`NetworkAccountTarget`].
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
     }
 }
 
 // BUILDER EXTENSIONS
 // ================================================================================================
+
+impl<S: owner_config_note_builder::State> OwnerConfigNoteBuilder<S> {
+    /// Adds a single attachment to the note.
+    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
+        self.attachments.push(attachment.into());
+        self
+    }
+
+    /// Adds multiple attachments to the note.
+    pub fn attachments(
+        mut self,
+        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
+    ) -> Self {
+        self.attachments.extend(attachments.into_iter().map(Into::into));
+        self
+    }
+}
 
 impl<S: owner_config_note_builder::State> OwnerConfigNoteBuilder<S>
 where
@@ -242,10 +264,7 @@ impl From<OwnerConfigNote> for Note {
             OwnerConfigNote::script(),
             NoteStorage::from(note.config),
         );
-        let attachments = NoteAttachments::new(vec![NoteAttachment::from(note.network_target)])
-            .expect("a single attachment is within the protocol limit");
-
-        Note::with_attachments(NoteAssets::default(), metadata, recipient, attachments)
+        Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
     }
 }
 
@@ -264,9 +283,10 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::note::NoteAttachmentScheme;
 
     use super::*;
-    use crate::note::NetworkNoteExt;
+    use crate::note::{NetworkNoteExt, NoteExecutionHint};
 
     fn account_id(seed: u8) -> AccountId {
         typed_account_id(seed, AccountType::Public)
@@ -316,13 +336,40 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(note.network_target().target_id(), managed);
-        assert_eq!(note.network_target().execution_hint(), NoteExecutionHint::Always);
+        assert_eq!(note.attachments().num_attachments(), 1);
 
         let network_note = AccountTargetNetworkNote::from(note);
         assert_eq!(network_note.target_account_id(), managed);
-        assert_eq!(network_note.attachments().num_attachments(), 1);
+        assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
         assert!(network_note.as_note().is_network_note());
+    }
+
+    /// Caller-supplied attachments are kept, and a supplied network target takes precedence over
+    /// the one the builder would derive from the managed account.
+    #[test]
+    fn builder_keeps_caller_attachments() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let managed = account_id(1);
+        let custom_scheme = NoteAttachmentScheme::new(64).unwrap();
+        let custom = NoteAttachment::with_word(custom_scheme, Word::from([7u32, 0, 0, 0]));
+        let target = NetworkAccountTarget::new(managed, NoteExecutionHint::None).unwrap();
+
+        let note = OwnerConfigNote::builder()
+            .attachments([custom.clone(), NoteAttachment::from(target)])
+            .sender(account_id(2))
+            .account(managed)
+            .config(OwnerConfig::AcceptOwnership)
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        // The builder did not append a second network target.
+        assert_eq!(note.attachments().num_attachments(), 2);
+        assert_eq!(note.attachments().get(0), Some(&custom));
+
+        let network_note = AccountTargetNetworkNote::from(note);
+        assert_eq!(network_note.target_account_id(), managed);
+        assert_eq!(network_note.execution_hint(), NoteExecutionHint::None);
     }
 
     /// A non-public managed account cannot be a network target, so the builder rejects it.
@@ -339,7 +386,7 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_matches!(err, NetworkAccountTargetError::TargetNotPublic(id) if id == managed);
+        assert_matches!(err, NoteError::Other { .. });
     }
 
     /// `TransferOwnership` storage is `[selector, new_owner_suffix, new_owner_prefix]`.

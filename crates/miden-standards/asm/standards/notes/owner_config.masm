@@ -12,8 +12,8 @@ const SELECTOR_PTR = STORAGE_PTR
 const NEW_OWNER_SUFFIX_PTR = STORAGE_PTR + 1
 const NEW_OWNER_PREFIX_PTR = STORAGE_PTR + 2
 
-# Action selectors, stored in the first storage item. Keep in sync with `OwnerConfig` on the Rust
-# side.
+# Config note selectors, stored in the first storage item. Keep in sync with `OwnerConfig` on the
+# Rust side.
 const SELECTOR_TRANSFER_OWNERSHIP = 0
 const SELECTOR_ACCEPT_OWNERSHIP = 1
 const SELECTOR_RENOUNCE_OWNERSHIP = 2

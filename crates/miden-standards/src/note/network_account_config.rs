@@ -69,7 +69,7 @@ impl NetworkAccountConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
+    // Config note selectors stored in the first storage item. Keep in sync with
     // `network_account_config.masm`.
     const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT: u8 = 0;
     const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;

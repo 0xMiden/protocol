@@ -10,8 +10,8 @@ const STORAGE_PTR = 0
 # Memory address of the PauseConfig note storage selector.
 const SELECTOR_PTR = STORAGE_PTR
 
-# Action selectors, stored in the first storage item. Keep in sync with `PauseConfig` on the Rust
-# side.
+# Config note selectors, stored in the first storage item. Keep in sync with `PauseConfig` on the
+# Rust side.
 const SELECTOR_PAUSE = 0
 const SELECTOR_UNPAUSE = 1
 

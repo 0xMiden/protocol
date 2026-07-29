@@ -59,7 +59,8 @@ impl PauseConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with `pause_config.masm`.
+    // Config note selectors stored in the first storage item. Keep in sync with
+    // `pause_config.masm`.
     const SELECTOR_PAUSE: u8 = 0;
     const SELECTOR_UNPAUSE: u8 = 1;
 
@@ -95,13 +96,6 @@ impl From<PauseConfig> for NoteStorage {
 /// carrying the `PausableManager` component whose pause state is being managed. The `sender` is
 /// the account authorized for the action per the account's `Authority` configuration (the owner
 /// under `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
-///
-/// Unlike [`RbacConfigNote`](crate::note::RbacConfigNote) and
-/// [`OwnerConfigNote`](crate::note::OwnerConfigNote), this note does not create a
-/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment implicitly: the
-/// `PausableManager` component is also installed on accounts that are not network accounts, such as
-/// user faucets. Add the attachment through the builder when the managed account is a network
-/// account.
 ///
 /// Construct one with the [builder](PauseConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.

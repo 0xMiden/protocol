@@ -69,7 +69,7 @@ impl FaucetPolicyConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
+    // Config note selectors stored in the first storage item. Keep in sync with
     // `faucet_policy_config.masm`.
     const SELECTOR_SET_MINT_POLICY: u8 = 0;
     const SELECTOR_SET_BURN_POLICY: u8 = 1;
@@ -128,12 +128,6 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 /// carrying the `TokenPolicyManager` component whose policy is being switched. The `sender` is the
 /// account authorized for the action per the faucet's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
-///
-/// Unlike [`RbacConfigNote`](crate::note::RbacConfigNote) and
-/// [`OwnerConfigNote`](crate::note::OwnerConfigNote), this note does not create a
-/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment implicitly: the
-/// `TokenPolicyManager` component is also installed on faucets that are not network accounts. Add
-/// the attachment through the builder when the managed faucet is a network account.
 ///
 /// Construct one with the [builder](FaucetPolicyConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
