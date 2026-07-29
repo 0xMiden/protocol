@@ -166,7 +166,7 @@ pub fn tx_consume_allowlist_config_note_network() -> Result<MockTransaction> {
 
     let note: Note = AllowlistConfigNote::builder()
         .sender(owner.id())
-        .account(account.id())
+        .target(account.id())
         .config(AllowlistConfig::AllowAccount { account: allowed })
         .generate_serial_number(builder.rng_mut())
         .build()?

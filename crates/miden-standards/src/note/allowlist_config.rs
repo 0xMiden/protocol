@@ -107,9 +107,9 @@ impl From<AllowlistConfig> for NoteStorage {
 /// procedures through the account-wide `Authority` component against the note sender, so the note
 /// carries no assets and its authorization is bound to `sender` at creation time.
 ///
-/// The note is always public and tagged for `account` — the account carrying the
+/// The note is always public and tagged for `target` — the account carrying the
 /// `AllowlistManager` component whose allowlist is being managed. The `sender` is the account
-/// authorized for the action per the account's `Authority` configuration (the owner under
+/// authorized for the action per the target's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
 /// Construct one with the [builder](AllowlistConfigNote::builder); convert it into a protocol
@@ -117,7 +117,7 @@ impl From<AllowlistConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct AllowlistConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: AllowlistConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -125,7 +125,7 @@ pub struct AllowlistConfigNote {
 
 #[bon::bon]
 impl AllowlistConfigNote {
-    /// Builds a new [`AllowlistConfigNote`] that applies `config` to `account`.
+    /// Builds a new [`AllowlistConfigNote`] that applies `config` to `target`.
     ///
     /// # Errors
     ///
@@ -135,7 +135,7 @@ impl AllowlistConfigNote {
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: AllowlistConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
@@ -143,7 +143,7 @@ impl AllowlistConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -181,8 +181,8 @@ impl AllowlistConfigNote {
     }
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
-    pub fn account(&self) -> AccountId {
-        self.account
+    pub fn target(&self) -> AccountId {
+        self.target
     }
 
     /// Returns the admin action carried by the note.
@@ -242,7 +242,7 @@ impl From<AllowlistConfigNote> for Note {
         // AllowlistConfig notes carry no assets and are always public for network execution; the
         // action and its argument live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             AllowlistConfigNote::script(),
@@ -279,14 +279,14 @@ mod tests {
 
         let note = AllowlistConfigNote::builder()
             .sender(owner)
-            .account(managed)
+            .target(managed)
             .config(AllowlistConfig::AllowAccount { account: allowed })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
         assert_eq!(note.sender(), owner);
-        assert_eq!(note.account(), managed);
+        assert_eq!(note.target(), managed);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
