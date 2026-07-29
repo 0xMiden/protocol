@@ -1,15 +1,14 @@
 #! miden::standards::note::note_id
 #!
-#! Recomputes a note's ID from the components exposed by the kernel's indexed note accessors.
+#! Computes output note IDs and finds input notes by ID.
 #!
-#! The transaction kernel derives note IDs internally during the prologue but exposes no accessor
-#! for them. This module reconstructs the ID from the four commitments that are exposed, for input,
-#! output, and active notes, mirroring the kernel's own derivation.
+#! Input and active note IDs are exposed directly by `miden::protocol::input_note::get_note_id` and
+#! `miden::protocol::active_note::get_note_id`. Output notes have no such accessor, so their ID is
+#! computed from the four commitments the kernel exposes, mirroring the kernel's own derivation.
 
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
-use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::output_note
 use miden::protocol::tx
@@ -58,71 +57,6 @@ proc compute_note_id
     # => [NOTE_ID]
 end
 
-#! Computes the ID of the input note at the provided index.
-#!
-#! Inputs:  [note_idx]
-#! Outputs: [NOTE_ID]
-#!
-#! Where:
-#! - note_idx is the index of the input note whose ID should be computed.
-#! - NOTE_ID is the ID of the specified input note.
-#!
-#! Panics if:
-#! - the note index is greater or equal to the total number of input notes.
-#!
-#! Invocation: exec
-pub proc compute_input_note_id
-    dup exec.input_note::get_initial_assets_info
-    # => [ASSETS_COMMITMENT, num_assets, note_idx]
-
-    movup.4 drop movup.4
-    # => [note_idx, ASSETS_COMMITMENT]
-
-    dup exec.input_note::get_recipient movup.4
-    # => [note_idx, RECIPIENT, ASSETS_COMMITMENT]
-
-    dup exec.input_note::get_attachments_commitment movup.4
-    # => [note_idx, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.input_note::get_metadata
-    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.compute_note_id
-    # => [NOTE_ID]
-end
-
-#! Computes the ID of the active note.
-#!
-#! Inputs:  []
-#! Outputs: [NOTE_ID]
-#!
-#! Where:
-#! - NOTE_ID is the ID of the active note.
-#!
-#! Panics if:
-#! - no note is currently active.
-#!
-#! Invocation: exec
-pub proc compute_active_note_id
-    exec.active_note::get_initial_assets_info
-    # => [ASSETS_COMMITMENT, num_assets]
-
-    movup.4 drop
-    # => [ASSETS_COMMITMENT]
-
-    exec.active_note::get_recipient
-    # => [RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.active_note::get_attachments_commitment
-    # => [ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.active_note::get_metadata
-    # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
-
-    exec.compute_note_id
-    # => [NOTE_ID]
-end
-
 #! Computes the ID of the output note at the provided index.
 #!
 #! The returned ID is only final once the note has been fully constructed, that is, once all of its
@@ -161,8 +95,7 @@ end
 
 #! Finds the input note with the specified ID among the transaction's input notes.
 #!
-#! Every input note's ID is recomputed and compared against the provided ID; the search takes no
-#! index hint from the caller, so it cannot be misdirected by whoever assembles the transaction.
+#! Every input note's ID is compared against the provided ID.
 #!
 #! Inputs:  [NOTE_ID]
 #! Outputs: [is_found, note_idx]
@@ -196,7 +129,7 @@ pub proc find_input_note_by_id
         sub.1
         # => [note_idx, is_found]
 
-        dup exec.compute_input_note_id
+        dup exec.input_note::get_note_id
         # => [NOTE_ID, note_idx, is_found]
 
         padw loc_loadw_le.TARGET_NOTE_ID_LOC

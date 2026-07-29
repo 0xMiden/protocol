@@ -374,7 +374,7 @@ proc assert_neighbor_sponsors
     # => [SPONSORED_FEATURE_NOTE_ID, neighbor_note_index, note_index, num_input_notes]
 
     # assert the neighboring sponsorship note pays for the feature note at note_index
-    dup.5 exec.note_id::compute_input_note_id exec.word::eq
+    dup.5 exec.input_note::get_note_id exec.word::eq
     assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE
     # => [neighbor_note_index, note_index, num_input_notes]
 

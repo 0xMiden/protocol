@@ -49,6 +49,9 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSE
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED =
     "failed to access note attachments of active note because no note is currently being processed"
 
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
+    "failed to access note id of active note because no note is currently being processed"
+
 const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO =
     "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
@@ -1314,6 +1317,46 @@ pub proc input_note_get_serial_number
         movup.4 drop
     end
     # => [SERIAL_NUMBER, pad(12)]
+end
+
+#! Returns the note ID of the specified input note.
+#!
+#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Outputs: [NOTE_ID, pad(12)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether we should return the note ID of the
+#!   active note or of the note with the specified index.
+#! - note_index is the index of the input note whose ID should be returned. Notice that if
+#!   is_active_note is 1, note_index is ignored.
+#! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is being processed (attempted to access the note ID
+#!   from an incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_get_note_id
+    # get the input note pointer depending on whether the requested note is current or it was
+    # requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, pad(15)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, pad(15)]
+
+    # get the note ID using the note pointer
+    exec.memory::get_input_note_id
+    # => [NOTE_ID, pad(15)]
+
+    # truncate the stack
+    repeat.3
+        movup.4 drop
+    end
+    # => [NOTE_ID, pad(12)]
 end
 
 #! Returns the storage commitment and length of the specified input note.
