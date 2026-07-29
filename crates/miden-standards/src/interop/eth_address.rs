@@ -10,6 +10,7 @@ use miden_protocol::utils::{
     bytes_to_packed_u32_elements,
     hex_to_bytes,
 };
+use thiserror::Error;
 
 // ================================================================================================
 // ETHEREUM ADDRESS
@@ -111,6 +112,28 @@ impl From<[u8; 20]> for EthAddress {
     }
 }
 
+/// Creates an [`EthAddress`] from a 32-byte (bytes32) value embedding a left-padded address.
+///
+/// In EVM ABI encoding, a bytes32-embedded address has bytes 0..12 zero and the 20-byte
+/// address in bytes 12..32. This is the encoding used by bridges that carry an address in a
+/// full bytes32 field.
+///
+/// # Errors
+///
+/// Returns an error if any of the leading 12 padding bytes are non-zero.
+impl TryFrom<[u8; 32]> for EthAddress {
+    type Error = AddressConversionError;
+
+    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
+        if bytes[0..12] != [0; 12] {
+            return Err(AddressConversionError::NonZeroBytes32Padding);
+        }
+
+        let addr: [u8; 20] = bytes[12..32].try_into().expect("slice is exactly 20 bytes");
+        Ok(Self(addr))
+    }
+}
+
 impl From<EthAddress> for [u8; 20] {
     fn from(addr: EthAddress) -> Self {
         addr.0
@@ -121,35 +144,33 @@ impl From<EthAddress> for [u8; 20] {
 // ADDRESS CONVERSION ERROR
 // ================================================================================================
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Error type for Ethereum address conversions.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum AddressConversionError {
+    /// The address word has non-zero padding.
+    #[error("non-zero word padding")]
     NonZeroWordPadding,
+    /// The address has a non-zero 4-byte prefix.
+    #[error("address has non-zero 4-byte prefix")]
     NonZeroBytePrefix,
+    /// A bytes32-embedded address has non-zero leading padding bytes.
+    #[error("leading 12 bytes must be zero for a bytes32-embedded address")]
+    NonZeroBytes32Padding,
+    /// The hex string has an unexpected length.
+    #[error("invalid hex length (expected 40 hex chars)")]
     InvalidHexLength,
+    /// The hex string contains an invalid character.
+    #[error("invalid hex character: {0}")]
     InvalidHexChar(char),
+    /// The hex string could not be parsed.
+    #[error("hex parse error")]
     HexParseError,
+    /// A packed 8-byte value does not fit in the field.
+    #[error("packed 8-byte value does not fit in the field")]
     FeltOutOfField,
+    /// The decoded value is not a valid AccountId.
+    #[error("invalid AccountId")]
     InvalidAccountId,
-}
-
-impl fmt::Display for AddressConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AddressConversionError::NonZeroWordPadding => write!(f, "non-zero word padding"),
-            AddressConversionError::NonZeroBytePrefix => {
-                write!(f, "address has non-zero 4-byte prefix")
-            },
-            AddressConversionError::InvalidHexLength => {
-                write!(f, "invalid hex length (expected 40 hex chars)")
-            },
-            AddressConversionError::InvalidHexChar(c) => write!(f, "invalid hex character: {}", c),
-            AddressConversionError::HexParseError => write!(f, "hex parse error"),
-            AddressConversionError::FeltOutOfField => {
-                write!(f, "packed 64-bit word does not fit in the field")
-            },
-            AddressConversionError::InvalidAccountId => write!(f, "invalid AccountId"),
-        }
-    }
 }
 
 impl From<HexParseError> for AddressConversionError {
