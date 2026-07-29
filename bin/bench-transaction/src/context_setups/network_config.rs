@@ -1,5 +1,5 @@
 //! Benchmark scenarios where a network account carrying the required management components
-//! consumes a standard action note.
+//! consumes a standard config note.
 //!
 //! Each scenario mirrors the account fixture of the corresponding note test suite in
 //! `crates/miden-testing/tests/scripts/`, changing only what the canonical network-account
@@ -38,30 +38,30 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
-    FaucetPolicyAction,
-    FaucetPolicyActionNote,
+    FaucetPolicyConfig,
+    FaucetPolicyConfigNote,
     NetworkAccountConfig,
     NetworkAccountConfigNote,
-    OwnerAction,
-    OwnerActionNote,
-    PauseAction,
-    PauseActionNote,
-    RbacAction,
-    RbacActionNote,
+    OwnerConfig,
+    OwnerConfigNote,
+    PauseConfig,
+    PauseConfigNote,
+    RbacConfig,
+    RbacConfigNote,
 };
 use miden_testing::{AccountState, Auth, MockTransaction};
 
-// FAUCET POLICY ACTION NOTE SETUP
+// FAUCET POLICY CONFIG NOTE SETUP
 // ================================================================================================
 
-/// Returns the transaction context for a network faucet consuming a FAUCET_POLICY_ACTION note.
+/// Returns the transaction context for a network faucet consuming a FAUCET_POLICY_CONFIG note.
 ///
 /// The faucet carries a `TokenPolicyManager` with an `owner_only` mint and burn policy registered
 /// as allowed alternatives to the active `allow_all` policies, gated by the owner wallet via
 /// `Authority::OwnerControlled` (mirrors `create_faucet_with_policies` in the
-/// `faucet_policy_action` test suite). The benchmarked action is `SetMintPolicy`, switching the
+/// `faucet_policy_config` test suite). The benchmarked action is `SetMintPolicy`, switching the
 /// active mint policy to the allowed `owner_only` alternative.
-pub fn tx_consume_faucet_policy_action_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the owner wallet authorized to send policy actions
@@ -92,15 +92,15 @@ pub fn tx_consume_faucet_policy_action_note_network() -> Result<MockTransaction>
         .with_components(token_policy_manager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([FaucetPolicyActionNote::script_root()])?,
+        super::network_auth([FaucetPolicyConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = FaucetPolicyActionNote::builder()
+    let note: Note = FaucetPolicyConfigNote::builder()
         .sender(owner.id())
         .account(account.id())
-        .action(FaucetPolicyAction::SetMintPolicy {
+        .config(FaucetPolicyConfig::SetMintPolicy {
             policy_root: MintPolicy::owner_only().root(),
         })
         .generate_serial_number(builder.rng_mut())
@@ -116,16 +116,16 @@ pub fn tx_consume_faucet_policy_action_note_network() -> Result<MockTransaction>
         .build()
 }
 
-// PAUSE ACTION NOTE SETUP
+// PAUSE CONFIG NOTE SETUP
 // ================================================================================================
 
-/// Returns the transaction context for a network pausable account consuming a PAUSE_ACTION note.
+/// Returns the transaction context for a network pausable account consuming a PAUSE_CONFIG note.
 ///
 /// The account carries `PausableManager` gated by the owner wallet via `Authority::OwnerControlled`
 /// (installed by `AccessControl::Ownable2Step`), plus the `Pausable` storage component (mirrors
-/// `create_pausable_account` in the `pause_action` test suite). The benchmarked action is `Pause`
+/// `create_pausable_account` in the `pause_config` test suite). The benchmarked action is `Pause`
 /// on the initially unpaused account.
-pub fn tx_consume_pause_action_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_pause_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the owner wallet authorized to send pause actions
@@ -138,15 +138,15 @@ pub fn tx_consume_pause_action_note_network() -> Result<MockTransaction> {
         .with_component(PausableManager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([PauseActionNote::script_root()])?,
+        super::network_auth([PauseConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = PauseActionNote::builder()
+    let note: Note = PauseConfigNote::builder()
         .sender(owner.id())
         .account(account.id())
-        .action(PauseAction::Pause)
+        .config(PauseConfig::Pause)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
@@ -160,15 +160,15 @@ pub fn tx_consume_pause_action_note_network() -> Result<MockTransaction> {
         .build()
 }
 
-// OWNER ACTION NOTE SETUP
+// OWNER CONFIG NOTE SETUP
 // ================================================================================================
 
-/// Returns the transaction context for a network ownable account consuming an OWNER_ACTION note.
+/// Returns the transaction context for a network ownable account consuming an OWNER_CONFIG note.
 ///
 /// The account carries the `Ownable2Step` component owned by the owner wallet (mirrors
 /// `create_ownable_account` in the `ownable2step` test suite). The benchmarked action is
 /// `TransferOwnership`, nominating a new owner.
-pub fn tx_consume_owner_action_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_owner_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the owner wallet authorized to send owner actions
@@ -180,15 +180,15 @@ pub fn tx_consume_owner_action_note_network() -> Result<MockTransaction> {
         .with_component(Ownable2Step::new(owner.id()))
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([OwnerActionNote::script_root()])?,
+        super::network_auth([OwnerConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = OwnerActionNote::builder()
+    let note: Note = OwnerConfigNote::builder()
         .sender(owner.id())
         .account(account.id())
-        .action(OwnerAction::TransferOwnership { new_owner: Some(new_owner) })
+        .config(OwnerConfig::TransferOwnership { new_owner: Some(new_owner) })
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
@@ -202,15 +202,15 @@ pub fn tx_consume_owner_action_note_network() -> Result<MockTransaction> {
         .build()
 }
 
-// RBAC ACTION NOTE SETUP
+// RBAC CONFIG NOTE SETUP
 // ================================================================================================
 
-/// Returns the transaction context for a network RBAC account consuming an RBAC_ACTION note.
+/// Returns the transaction context for a network RBAC account consuming an RBAC_CONFIG note.
 ///
 /// The account carries `AccessControl::Rbac` with the admin wallet seeded as the initial `ADMIN`
 /// role member (mirrors `create_rbac_account_with_admin` in the `rbac` test suite). The
 /// benchmarked action is `GrantRole`, granting the `MINTER` role to a member account.
-pub fn tx_consume_rbac_action_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_rbac_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the admin wallet authorized to send role administration actions
@@ -225,15 +225,15 @@ pub fn tx_consume_rbac_action_note_network() -> Result<MockTransaction> {
         })
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([RbacActionNote::script_root()])?,
+        super::network_auth([RbacConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = RbacActionNote::builder()
+    let note: Note = RbacConfigNote::builder()
         .sender(admin.id())
         .account(account.id())
-        .action(RbacAction::GrantRole {
+        .config(RbacConfig::GrantRole {
             role: RoleSymbol::new("MINTER")?,
             account: member,
         })
@@ -280,7 +280,7 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
     let note: Note = NetworkAccountConfigNote::builder()
         .sender(owner)
         .account(account.id())
-        .action(NetworkAccountConfig::AddAllowedNoteScript {
+        .config(NetworkAccountConfig::AddAllowedNoteScript {
             script_root: NoteScriptRoot::from_array([1, 2, 3, 4]),
         })
         .serial_number(Word::from([1u32, 0, 0, 0]))

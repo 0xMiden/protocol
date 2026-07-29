@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountId, RoleSymbol};
 use miden_protocol::assembly::Path;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -21,34 +20,40 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::{
+    AccountTargetNetworkNote,
+    NetworkAccountTarget,
+    NetworkAccountTargetError,
+    NoteExecutionHint,
+};
 
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the RBAC_ACTION note script procedure in the standards library.
-const RBAC_ACTION_SCRIPT_PATH: &str = "::miden::standards::notes::rbac_action::main";
+/// Path to the RBAC_CONFIG note script procedure in the standards library.
+const RBAC_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::rbac_config::main";
 
-// Initialize the RBAC_ACTION note script only once.
-static RBAC_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the RBAC_CONFIG note script only once.
+static RBAC_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(RBAC_ACTION_SCRIPT_PATH);
+    let path = Path::new(RBAC_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains RBAC_ACTION note script procedure")
+        .expect("Standards library contains RBAC_CONFIG note script procedure")
 });
 
-// RBAC ACTION
+// RBAC CONFIG
 // ================================================================================================
 
 /// A management action of the
 /// [`RoleBasedAccessControl`](crate::account::access::RoleBasedAccessControl) component that an
-/// [`RbacActionNote`] triggers on the account that consumes it.
+/// [`RbacConfigNote`] triggers on the account that consumes it.
 ///
 /// The action, together with its arguments, is encoded into the note's storage (see
 /// [`NoteStorage`] conversion below). Because the storage is fixed at note creation and bound into
 /// the note commitment, the authorized party is the note sender: the consuming account's `rbac`
 /// procedures authorize against `active_note::get_sender`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RbacAction {
+pub enum RbacConfig {
     /// Grant `role` to `account`. Only a member of the role's effective admin role is authorized.
     GrantRole { role: RoleSymbol, account: AccountId },
     /// Revoke `role` from `account`. Only a member of the role's effective admin role is
@@ -65,11 +70,11 @@ pub enum RbacAction {
     RenounceRole { role: RoleSymbol },
 }
 
-impl RbacAction {
+impl RbacConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with `rbac_action.masm`.
+    // Action selectors stored in the first storage item. Keep in sync with `rbac_config.masm`.
     const SELECTOR_GRANT_ROLE: u8 = 0;
     const SELECTOR_REVOKE_ROLE: u8 = 1;
     const SELECTOR_SET_ROLE_ADMIN: u8 = 2;
@@ -78,7 +83,7 @@ impl RbacAction {
     /// Returns the note storage values encoding this action, laid out as `[selector, ..args]`.
     fn to_storage_values(&self) -> Vec<Felt> {
         match self {
-            RbacAction::GrantRole { role, account } => {
+            RbacConfig::GrantRole { role, account } => {
                 vec![
                     Felt::from(Self::SELECTOR_GRANT_ROLE),
                     role.as_element(),
@@ -86,7 +91,7 @@ impl RbacAction {
                     account.prefix().as_felt(),
                 ]
             },
-            RbacAction::RevokeRole { role, account } => {
+            RbacConfig::RevokeRole { role, account } => {
                 vec![
                     Felt::from(Self::SELECTOR_REVOKE_ROLE),
                     role.as_element(),
@@ -94,30 +99,30 @@ impl RbacAction {
                     account.prefix().as_felt(),
                 ]
             },
-            RbacAction::SetRoleAdmin { role, admin_role } => {
+            RbacConfig::SetRoleAdmin { role, admin_role } => {
                 // A missing admin role is encoded as 0, the value `rbac::set_role_admin` treats as
                 // "revert to the default ADMIN role".
                 let admin_role = admin_role.as_ref().map_or(Felt::ZERO, RoleSymbol::as_element);
                 vec![Felt::from(Self::SELECTOR_SET_ROLE_ADMIN), role.as_element(), admin_role]
             },
-            RbacAction::RenounceRole { role } => {
+            RbacConfig::RenounceRole { role } => {
                 vec![Felt::from(Self::SELECTOR_RENOUNCE_ROLE), role.as_element()]
             },
         }
     }
 }
 
-impl From<RbacAction> for NoteStorage {
-    fn from(action: RbacAction) -> Self {
-        NoteStorage::new(action.to_storage_values())
+impl From<RbacConfig> for NoteStorage {
+    fn from(config: RbacConfig) -> Self {
+        NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// RBAC ACTION NOTE
+// RBAC CONFIG NOTE
 // ================================================================================================
 
-/// An RbacAction note: triggers a
+/// An RbacConfig note: triggers a
 /// [`RoleBasedAccessControl`](crate::account::access::RoleBasedAccessControl) management action on
 /// the account that consumes it.
 ///
@@ -126,55 +131,61 @@ impl From<RbacAction> for NoteStorage {
 /// authorization is enforced by those procedures against the note sender, so the note carries no
 /// assets and its authorization is bound to `sender` at creation time.
 ///
-/// The note is always public (for network execution) and tagged for `account` — the account
-/// carrying the `RoleBasedAccessControl` component whose role graph is being managed. The `sender`
-/// is the account authorized for the selected action: a member of the role's effective admin role
-/// for `GrantRole` / `RevokeRole` / `SetRoleAdmin`, or the role holder itself for `RenounceRole`.
+/// The note is always public and tagged for `account` — the account carrying the
+/// `RoleBasedAccessControl` component whose role graph is being managed. The `sender` is the
+/// account authorized for the selected action: a member of the role's effective admin role for
+/// `GrantRole` / `RevokeRole` / `SetRoleAdmin`, or the role holder itself for `RenounceRole`.
 ///
-/// Construct one with the [builder](RbacActionNote::builder); convert it into a protocol [`Note`]
+/// RbacConfig notes are network notes: the [`NetworkAccountTarget`] attachment routing the note to
+/// `account` is created implicitly by the builder, so the note is always a valid
+/// [`AccountTargetNetworkNote`] and carries no other attachments.
+///
+/// Construct one with the [builder](RbacConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct RbacActionNote {
+pub struct RbacConfigNote {
     sender: AccountId,
     account: AccountId,
-    action: RbacAction,
+    config: RbacConfig,
     serial_number: Word,
-    attachments: NoteAttachments,
+    network_target: NetworkAccountTarget,
 }
 
 #[bon::bon]
-impl RbacActionNote {
-    /// Builds a new [`RbacActionNote`] that triggers `action` on `account`.
+impl RbacConfigNote {
+    /// Builds a new [`RbacConfigNote`] that applies `config` to `account`.
+    ///
+    /// The note's [`NetworkAccountTarget`] attachment is derived from `account`, so it can neither
+    /// be omitted nor contradicted by the caller.
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if `account` is not a public account, since a network account must be
+    /// public (see [`NetworkAccountTarget::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: RbacAction,
+        config: RbacConfig,
         serial_number: Word,
-    ) -> Result<Self, NoteError> {
-        let attachments = NoteAttachments::new(attachments)?;
+    ) -> Result<Self, NetworkAccountTargetError> {
+        let network_target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)?;
 
         Ok(Self {
             sender,
             account,
-            action,
+            config,
             serial_number,
-            attachments,
+            network_target,
         })
     }
 }
 
-impl RbacActionNote {
+impl RbacConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Upper bound on the number of storage items of an RbacAction note.
+    /// Upper bound on the number of storage items of an RbacConfig note.
     ///
     /// The layout is variable: `GrantRole` / `RevokeRole` use 4 items (`[selector, role_symbol,
     /// account_suffix, account_prefix]`), `SetRoleAdmin` uses 3, and `RenounceRole` uses 2.
@@ -183,14 +194,14 @@ impl RbacActionNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the RbacAction note.
+    /// Returns the script of the RbacConfig note.
     pub fn script() -> NoteScript {
-        RBAC_ACTION_SCRIPT.clone()
+        RBAC_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the RbacAction note script root.
+    /// Returns the RbacConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        RBAC_ACTION_SCRIPT.root()
+        RBAC_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -204,8 +215,8 @@ impl RbacActionNote {
     }
 
     /// Returns the management action carried by the note.
-    pub fn action(&self) -> &RbacAction {
-        &self.action
+    pub fn config(&self) -> &RbacConfig {
+        &self.config
     }
 
     /// Returns the note's serial number.
@@ -213,41 +224,24 @@ impl RbacActionNote {
         self.serial_number
     }
 
-    /// Returns the attachments carried by the note.
-    pub fn attachments(&self) -> &NoteAttachments {
-        &self.attachments
+    /// Returns the network target attachment routing the note to the managed account.
+    pub fn network_target(&self) -> NetworkAccountTarget {
+        self.network_target
     }
 }
 
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: rbac_action_note_builder::State> RbacActionNoteBuilder<S> {
-    /// Adds a single attachment to the note.
-    pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
-        self.attachments.push(attachment.into());
-        self
-    }
-
-    /// Adds multiple attachments to the note.
-    pub fn attachments(
-        mut self,
-        attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
-    ) -> Self {
-        self.attachments.extend(attachments.into_iter().map(Into::into));
-        self
-    }
-}
-
-impl<S: rbac_action_note_builder::State> RbacActionNoteBuilder<S>
+impl<S: rbac_config_note_builder::State> RbacConfigNoteBuilder<S>
 where
-    S::SerialNumber: rbac_action_note_builder::IsUnset,
+    S::SerialNumber: rbac_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> RbacActionNoteBuilder<rbac_action_note_builder::SetSerialNumber<S>> {
+    ) -> RbacConfigNoteBuilder<rbac_config_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -255,19 +249,28 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<RbacActionNote> for Note {
-    fn from(note: RbacActionNote) -> Self {
-        // RbacAction notes carry no assets and are always public for network execution; the action
+impl From<RbacConfigNote> for Note {
+    fn from(note: RbacConfigNote) -> Self {
+        // RbacConfig notes carry no assets and are always public for network execution; the action
         // and its arguments live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            RbacActionNote::script(),
-            NoteStorage::from(note.action),
+            RbacConfigNote::script(),
+            NoteStorage::from(note.config),
         );
+        let attachments = NoteAttachments::new(vec![NoteAttachment::from(note.network_target)])
+            .expect("a single attachment is within the protocol limit");
 
-        Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
+        Note::with_attachments(NoteAssets::default(), metadata, recipient, attachments)
+    }
+}
+
+impl From<RbacConfigNote> for AccountTargetNetworkNote {
+    fn from(note: RbacConfigNote) -> Self {
+        AccountTargetNetworkNote::new(Note::from(note))
+            .expect("RbacConfig note is public and carries a network account target attachment")
     }
 }
 
@@ -276,15 +279,19 @@ impl From<RbacActionNote> for Note {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
+    use crate::note::NetworkNoteExt;
 
     fn account_id(seed: u8) -> AccountId {
-        AccountId::builder()
-            .account_type(AccountType::Public)
-            .build_with_seed([seed; 32])
+        typed_account_id(seed, AccountType::Public)
+    }
+
+    fn typed_account_id(seed: u8, account_type: AccountType) -> AccountId {
+        AccountId::builder().account_type(account_type).build_with_seed([seed; 32])
     }
 
     fn role(name: &str) -> RoleSymbol {
@@ -293,16 +300,16 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_rbac_action_note() {
+    fn builder_builds_rbac_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
         let admin = account_id(2);
         let grantee = account_id(3);
 
-        let note = RbacActionNote::builder()
+        let note = RbacConfigNote::builder()
             .sender(admin)
             .account(managed)
-            .action(RbacAction::GrantRole { role: role("MINTER"), account: grantee })
+            .config(RbacConfig::GrantRole { role: role("MINTER"), account: grantee })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -316,18 +323,59 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
+    /// The builder attaches the network target for the managed account, so the note is a network
+    /// note without the caller having to add the attachment.
+    #[test]
+    fn builder_attaches_network_target() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let managed = account_id(1);
+
+        let note = RbacConfigNote::builder()
+            .sender(account_id(2))
+            .account(managed)
+            .config(RbacConfig::RenounceRole { role: role("MINTER") })
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        assert_eq!(note.network_target().target_id(), managed);
+        assert_eq!(note.network_target().execution_hint(), NoteExecutionHint::Always);
+
+        let network_note = AccountTargetNetworkNote::from(note);
+        assert_eq!(network_note.target_account_id(), managed);
+        assert_eq!(network_note.attachments().num_attachments(), 1);
+        assert!(network_note.as_note().is_network_note());
+    }
+
+    /// A non-public managed account cannot be a network target, so the builder rejects it.
+    #[test]
+    fn builder_rejects_non_public_account() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let managed = typed_account_id(1, AccountType::Private);
+
+        let err = RbacConfigNote::builder()
+            .sender(account_id(2))
+            .account(managed)
+            .config(RbacConfig::RenounceRole { role: role("MINTER") })
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap_err();
+
+        assert_matches!(err, NetworkAccountTargetError::TargetNotPublic(id) if id == managed);
+    }
+
     /// `GrantRole` storage is `[selector, role_symbol, account_suffix, account_prefix]`.
     #[test]
     fn grant_role_storage_layout() {
         let grantee = account_id(3);
         let minter = role("MINTER");
         let storage =
-            NoteStorage::from(RbacAction::GrantRole { role: minter.clone(), account: grantee });
+            NoteStorage::from(RbacConfig::GrantRole { role: minter.clone(), account: grantee });
 
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(RbacAction::SELECTOR_GRANT_ROLE),
+                Felt::from(RbacConfig::SELECTOR_GRANT_ROLE),
                 minter.as_element(),
                 grantee.suffix(),
                 grantee.prefix().as_felt(),
@@ -340,11 +388,11 @@ mod tests {
     fn set_role_admin_default_storage_layout() {
         let minter = role("MINTER");
         let storage =
-            NoteStorage::from(RbacAction::SetRoleAdmin { role: minter.clone(), admin_role: None });
+            NoteStorage::from(RbacConfig::SetRoleAdmin { role: minter.clone(), admin_role: None });
 
         assert_eq!(
             storage.items(),
-            &[Felt::from(RbacAction::SELECTOR_SET_ROLE_ADMIN), minter.as_element(), Felt::ZERO]
+            &[Felt::from(RbacConfig::SELECTOR_SET_ROLE_ADMIN), minter.as_element(), Felt::ZERO]
         );
     }
 
@@ -353,7 +401,7 @@ mod tests {
     fn set_role_admin_delegated_storage_layout() {
         let minter = role("MINTER");
         let admin = role("MINT_ADMIN");
-        let storage = NoteStorage::from(RbacAction::SetRoleAdmin {
+        let storage = NoteStorage::from(RbacConfig::SetRoleAdmin {
             role: minter.clone(),
             admin_role: Some(admin.clone()),
         });
@@ -361,7 +409,7 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(RbacAction::SELECTOR_SET_ROLE_ADMIN),
+                Felt::from(RbacConfig::SELECTOR_SET_ROLE_ADMIN),
                 minter.as_element(),
                 admin.as_element(),
             ]
@@ -372,11 +420,11 @@ mod tests {
     #[test]
     fn renounce_role_storage_layout() {
         let minter = role("MINTER");
-        let storage = NoteStorage::from(RbacAction::RenounceRole { role: minter.clone() });
+        let storage = NoteStorage::from(RbacConfig::RenounceRole { role: minter.clone() });
 
         assert_eq!(
             storage.items(),
-            &[Felt::from(RbacAction::SELECTOR_RENOUNCE_ROLE), minter.as_element()]
+            &[Felt::from(RbacConfig::SELECTOR_RENOUNCE_ROLE), minter.as_element()]
         );
     }
 }

@@ -25,64 +25,64 @@ use crate::StandardsLib;
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the PAUSE_ACTION note script procedure in the standards library.
-const PAUSE_ACTION_SCRIPT_PATH: &str = "::miden::standards::notes::pause_action::main";
+/// Path to the PAUSE_CONFIG note script procedure in the standards library.
+const PAUSE_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::pause_config::main";
 
-// Initialize the PAUSE_ACTION note script only once.
-static PAUSE_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the PAUSE_CONFIG note script only once.
+static PAUSE_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(PAUSE_ACTION_SCRIPT_PATH);
+    let path = Path::new(PAUSE_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains PAUSE_ACTION note script procedure")
+        .expect("Standards library contains PAUSE_CONFIG note script procedure")
 });
 
-// PAUSE ACTION
+// PAUSE CONFIG
 // ================================================================================================
 
 /// A management action of the
 /// [`PausableManager`](crate::account::access::pausable::PausableManager) component that a
-/// [`PauseActionNote`] triggers on the account that consumes it.
+/// [`PauseConfigNote`] triggers on the account that consumes it.
 ///
 /// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
 /// is the note sender: the consuming account's `PausableManager` procedures authorize the sender
 /// through the account-wide `Authority` component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PauseAction {
+pub enum PauseConfig {
     /// Pause the account, blocking pause-gated procedures until a matching unpause.
     Pause,
     /// Unpause the account.
     Unpause,
 }
 
-impl PauseAction {
+impl PauseConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with `pause_action.masm`.
+    // Action selectors stored in the first storage item. Keep in sync with `pause_config.masm`.
     const SELECTOR_PAUSE: u8 = 0;
     const SELECTOR_UNPAUSE: u8 = 1;
 
     /// Returns the note storage values encoding this action, laid out as `[selector]`.
     fn to_storage_values(self) -> Vec<Felt> {
         match self {
-            PauseAction::Pause => vec![Felt::from(Self::SELECTOR_PAUSE)],
-            PauseAction::Unpause => vec![Felt::from(Self::SELECTOR_UNPAUSE)],
+            PauseConfig::Pause => vec![Felt::from(Self::SELECTOR_PAUSE)],
+            PauseConfig::Unpause => vec![Felt::from(Self::SELECTOR_UNPAUSE)],
         }
     }
 }
 
-impl From<PauseAction> for NoteStorage {
-    fn from(action: PauseAction) -> Self {
-        NoteStorage::new(action.to_storage_values())
+impl From<PauseConfig> for NoteStorage {
+    fn from(config: PauseConfig) -> Self {
+        NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// PAUSE ACTION NOTE
+// PAUSE CONFIG NOTE
 // ================================================================================================
 
-/// A PauseAction note: triggers a
+/// A PauseConfig note: triggers a
 /// [`PausableManager`](crate::account::access::pausable::PausableManager) admin action on the
 /// account that consumes it.
 ///
@@ -96,20 +96,27 @@ impl From<PauseAction> for NoteStorage {
 /// the account authorized for the action per the account's `Authority` configuration (the owner
 /// under `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
-/// Construct one with the [builder](PauseActionNote::builder); convert it into a protocol [`Note`]
+/// Unlike [`RbacConfigNote`](crate::note::RbacConfigNote) and
+/// [`OwnerConfigNote`](crate::note::OwnerConfigNote), this note does not create a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment implicitly: the
+/// `PausableManager` component is also installed on accounts that are not network accounts, such as
+/// user faucets. Add the attachment through the builder when the managed account is a network
+/// account.
+///
+/// Construct one with the [builder](PauseConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct PauseActionNote {
+pub struct PauseConfigNote {
     sender: AccountId,
     account: AccountId,
-    action: PauseAction,
+    config: PauseConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl PauseActionNote {
-    /// Builds a new [`PauseActionNote`] that triggers `action` on `account`.
+impl PauseConfigNote {
+    /// Builds a new [`PauseConfigNote`] that applies `config` to `account`.
     ///
     /// # Errors
     ///
@@ -120,7 +127,7 @@ impl PauseActionNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: PauseAction,
+        config: PauseConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -128,31 +135,31 @@ impl PauseActionNote {
         Ok(Self {
             sender,
             account,
-            action,
+            config,
             serial_number,
             attachments,
         })
     }
 }
 
-impl PauseActionNote {
+impl PauseConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a PauseAction note: a single selector.
+    /// Number of storage items of a PauseConfig note: a single selector.
     pub const NUM_STORAGE_ITEMS: usize = 1;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the PauseAction note.
+    /// Returns the script of the PauseConfig note.
     pub fn script() -> NoteScript {
-        PAUSE_ACTION_SCRIPT.clone()
+        PAUSE_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the PauseAction note script root.
+    /// Returns the PauseConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        PAUSE_ACTION_SCRIPT.root()
+        PAUSE_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -166,8 +173,8 @@ impl PauseActionNote {
     }
 
     /// Returns the admin action carried by the note.
-    pub fn action(&self) -> PauseAction {
-        self.action
+    pub fn config(&self) -> PauseConfig {
+        self.config
     }
 
     /// Returns the note's serial number.
@@ -184,7 +191,7 @@ impl PauseActionNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: pause_action_note_builder::State> PauseActionNoteBuilder<S> {
+impl<S: pause_config_note_builder::State> PauseConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -201,15 +208,15 @@ impl<S: pause_action_note_builder::State> PauseActionNoteBuilder<S> {
     }
 }
 
-impl<S: pause_action_note_builder::State> PauseActionNoteBuilder<S>
+impl<S: pause_config_note_builder::State> PauseConfigNoteBuilder<S>
 where
-    S::SerialNumber: pause_action_note_builder::IsUnset,
+    S::SerialNumber: pause_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> PauseActionNoteBuilder<pause_action_note_builder::SetSerialNumber<S>> {
+    ) -> PauseConfigNoteBuilder<pause_config_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -217,16 +224,16 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<PauseActionNote> for Note {
-    fn from(note: PauseActionNote) -> Self {
-        // PauseAction notes carry no assets and are always public for network execution; the action
+impl From<PauseConfigNote> for Note {
+    fn from(note: PauseConfigNote) -> Self {
+        // PauseConfig notes carry no assets and are always public for network execution; the action
         // lives in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            PauseActionNote::script(),
-            NoteStorage::from(note.action),
+            PauseConfigNote::script(),
+            NoteStorage::from(note.config),
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
@@ -251,15 +258,15 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_pause_action_note() {
+    fn builder_builds_pause_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
         let sender = account_id(2);
 
-        let note = PauseActionNote::builder()
+        let note = PauseConfigNote::builder()
             .sender(sender)
             .account(managed)
-            .action(PauseAction::Pause)
+            .config(PauseConfig::Pause)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -276,10 +283,10 @@ mod tests {
     /// `Pause` / `Unpause` storage is a single selector item.
     #[test]
     fn action_storage_layout() {
-        let pause = NoteStorage::from(PauseAction::Pause);
-        assert_eq!(pause.items(), &[Felt::from(PauseAction::SELECTOR_PAUSE)]);
+        let pause = NoteStorage::from(PauseConfig::Pause);
+        assert_eq!(pause.items(), &[Felt::from(PauseConfig::SELECTOR_PAUSE)]);
 
-        let unpause = NoteStorage::from(PauseAction::Unpause);
-        assert_eq!(unpause.items(), &[Felt::from(PauseAction::SELECTOR_UNPAUSE)]);
+        let unpause = NoteStorage::from(PauseConfig::Unpause);
+        assert_eq!(unpause.items(), &[Felt::from(PauseConfig::SELECTOR_UNPAUSE)]);
     }
 }

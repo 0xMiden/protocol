@@ -28,10 +28,10 @@ pub enum PricedNote {
     Pswap,
     Mint,
     Burn,
-    FaucetPolicyAction,
-    PauseAction,
-    OwnerAction,
-    RbacAction,
+    FaucetPolicyConfig,
+    PauseConfig,
+    OwnerConfig,
+    RbacConfig,
     NetworkAccountConfig,
     FeeSponsorship,
     Claim,
@@ -52,10 +52,10 @@ impl PricedNote {
             PricedNote::Pswap,
             PricedNote::Mint,
             PricedNote::Burn,
-            PricedNote::FaucetPolicyAction,
-            PricedNote::PauseAction,
-            PricedNote::OwnerAction,
-            PricedNote::RbacAction,
+            PricedNote::FaucetPolicyConfig,
+            PricedNote::PauseConfig,
+            PricedNote::OwnerConfig,
+            PricedNote::RbacConfig,
             PricedNote::NetworkAccountConfig,
             PricedNote::FeeSponsorship,
             PricedNote::Claim,
@@ -94,12 +94,12 @@ impl PricedNote {
                 ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ],
             PricedNote::Burn => &[ExecutionBenchmark::ConsumeBurnNetwork],
-            PricedNote::FaucetPolicyAction => {
-                &[ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork]
+            PricedNote::FaucetPolicyConfig => {
+                &[ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork]
             },
-            PricedNote::PauseAction => &[ExecutionBenchmark::ConsumePauseActionNetwork],
-            PricedNote::OwnerAction => &[ExecutionBenchmark::ConsumeOwnerActionNetwork],
-            PricedNote::RbacAction => &[ExecutionBenchmark::ConsumeRbacActionNetwork],
+            PricedNote::PauseConfig => &[ExecutionBenchmark::ConsumePauseConfigNetwork],
+            PricedNote::OwnerConfig => &[ExecutionBenchmark::ConsumeOwnerConfigNetwork],
+            PricedNote::RbacConfig => &[ExecutionBenchmark::ConsumeRbacConfigNetwork],
             PricedNote::NetworkAccountConfig => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
             },
@@ -132,16 +132,16 @@ impl PricedNote {
             PricedNote::Pswap => miden_standards::note::costs::PSWAP_CONSUMPTION_CYCLES,
             PricedNote::Mint => miden_standards::note::costs::MINT_CONSUMPTION_CYCLES,
             PricedNote::Burn => miden_standards::note::costs::BURN_CONSUMPTION_CYCLES,
-            PricedNote::FaucetPolicyAction => {
-                miden_standards::note::costs::FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES
+            PricedNote::FaucetPolicyConfig => {
+                miden_standards::note::costs::FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES
             },
-            PricedNote::PauseAction => {
-                miden_standards::note::costs::PAUSE_ACTION_CONSUMPTION_CYCLES
+            PricedNote::PauseConfig => {
+                miden_standards::note::costs::PAUSE_CONFIG_CONSUMPTION_CYCLES
             },
-            PricedNote::OwnerAction => {
-                miden_standards::note::costs::OWNER_ACTION_CONSUMPTION_CYCLES
+            PricedNote::OwnerConfig => {
+                miden_standards::note::costs::OWNER_CONFIG_CONSUMPTION_CYCLES
             },
-            PricedNote::RbacAction => miden_standards::note::costs::RBAC_ACTION_CONSUMPTION_CYCLES,
+            PricedNote::RbacConfig => miden_standards::note::costs::RBAC_CONFIG_CONSUMPTION_CYCLES,
             PricedNote::NetworkAccountConfig => {
                 miden_standards::note::costs::NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES
             },
@@ -170,10 +170,10 @@ impl PricedNote {
             PricedNote::Pswap => "PSWAP_CONSUMPTION_CYCLES",
             PricedNote::Mint => "MINT_CONSUMPTION_CYCLES",
             PricedNote::Burn => "BURN_CONSUMPTION_CYCLES",
-            PricedNote::FaucetPolicyAction => "FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES",
-            PricedNote::PauseAction => "PAUSE_ACTION_CONSUMPTION_CYCLES",
-            PricedNote::OwnerAction => "OWNER_ACTION_CONSUMPTION_CYCLES",
-            PricedNote::RbacAction => "RBAC_ACTION_CONSUMPTION_CYCLES",
+            PricedNote::FaucetPolicyConfig => "FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES",
+            PricedNote::PauseConfig => "PAUSE_CONFIG_CONSUMPTION_CYCLES",
+            PricedNote::OwnerConfig => "OWNER_CONFIG_CONSUMPTION_CYCLES",
+            PricedNote::RbacConfig => "RBAC_CONFIG_CONSUMPTION_CYCLES",
             PricedNote::NetworkAccountConfig => "NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES",
             PricedNote::FeeSponsorship => "FEE_SPONSORSHIP_CONSUMPTION_CYCLES",
             PricedNote::Claim => "CLAIM_CONSUMPTION_CYCLES",
@@ -194,10 +194,10 @@ impl PricedNote {
             PricedNote::Pswap => "a PSWAP",
             PricedNote::Mint => "a MINT",
             PricedNote::Burn => "a BURN",
-            PricedNote::FaucetPolicyAction => "a FAUCET_POLICY_ACTION",
-            PricedNote::PauseAction => "a PAUSE_ACTION",
-            PricedNote::OwnerAction => "an OWNER_ACTION",
-            PricedNote::RbacAction => "an RBAC_ACTION",
+            PricedNote::FaucetPolicyConfig => "a FAUCET_POLICY_CONFIG",
+            PricedNote::PauseConfig => "a PAUSE_CONFIG",
+            PricedNote::OwnerConfig => "an OWNER_CONFIG",
+            PricedNote::RbacConfig => "an RBAC_CONFIG",
             PricedNote::NetworkAccountConfig => "a NETWORK_ACCOUNT_CONFIG",
             PricedNote::FeeSponsorship => "a FEE_SPONSORSHIP",
             PricedNote::Claim => "a CLAIM",
@@ -387,10 +387,10 @@ mod tests {
     #[case::pswap(PricedNote::Pswap)]
     #[case::mint(PricedNote::Mint)]
     #[case::burn(PricedNote::Burn)]
-    #[case::faucet_policy_action(PricedNote::FaucetPolicyAction)]
-    #[case::pause_action(PricedNote::PauseAction)]
-    #[case::owner_action(PricedNote::OwnerAction)]
-    #[case::rbac_action(PricedNote::RbacAction)]
+    #[case::faucet_policy_config(PricedNote::FaucetPolicyConfig)]
+    #[case::pause_config(PricedNote::PauseConfig)]
+    #[case::owner_config(PricedNote::OwnerConfig)]
+    #[case::rbac_config(PricedNote::RbacConfig)]
     #[case::network_account_config(PricedNote::NetworkAccountConfig)]
     #[case::fee_sponsorship(PricedNote::FeeSponsorship)]
     #[case::claim(PricedNote::Claim)]

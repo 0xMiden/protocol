@@ -1,5 +1,7 @@
 extern crate alloc;
 
+mod config;
+
 use alloc::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
@@ -20,7 +22,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 /// Builds an account carrying the `Ownable2Step` component, owned by `owner`.
 ///
-/// Shared with the `owner_action` note test suite.
+/// Shared with the child `config` note suite.
 pub(super) fn create_ownable_account(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)

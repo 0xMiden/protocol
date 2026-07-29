@@ -11,7 +11,7 @@
 //!
 //! The values are estimates from canonical scenarios, not worst cases: asset-scaling paths
 //! carry 16 callback-free assets (the P2ID/P2IDE cap planned in
-//! <https://github.com/0xMiden/protocol/issues/3381>) and action notes run one selector, so
+//! <https://github.com/0xMiden/protocol/issues/3381>) and config notes run one selector, so
 //! callback-carrying or maximally packed notes can exceed the values - do not treat them as
 //! guaranteed fee upper bounds.
 //!
