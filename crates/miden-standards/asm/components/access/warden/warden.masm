@@ -1,6 +1,0 @@
-# The MASM code of the Warden Account Component.
-#
-# See the `Warden` Rust type's documentation for more details.
-
-pub use {get_warden} from miden::standards::access::warden
-pub use {set_warden} from miden::standards::access::warden

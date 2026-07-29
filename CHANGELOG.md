@@ -5,9 +5,6 @@
 ### Features
 
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
-
-### Features
-
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 
 ### Changes
@@ -29,6 +26,7 @@
 - [BREAKING] Removed the redundant zero-nomination check and the `ERR_NO_NOMINATED_OWNER` error constant from `ownable2step::accept_ownership`; since a note sender can never be the zero address stored when no transfer is nominated, accepting ownership without a pending nomination now fails with `ERR_SENDER_NOT_NOMINATED_OWNER` ([#3416](https://github.com/0xMiden/protocol/pull/3416)).
 - Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
+- [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
 
 ### Fixes
 
