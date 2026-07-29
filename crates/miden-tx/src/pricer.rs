@@ -228,35 +228,41 @@ mod tests {
         ));
     }
 
-    /// Fabricated lookup where `[1, 0, 0, 0]` creates two notes and `[2, 0, 0, 0]` one;
-    /// every note costs `2^16` cycles.
-    fn creating_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
-        let triple = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        let double = NoteScriptRoot::from_array([2, 0, 0, 0]);
+    /// Fabricated creation graph shared by the recursion and accumulation tests, mirroring
+    /// PSWAP's self-recreation: `[1, 0, 0, 0]` (`2^16` cycles) creates `[2, 0, 0, 0]` and
+    /// itself, `[2, 0, 0, 0]` (`2^10` cycles) creates `[3, 0, 0, 0]`, and `[3, 0, 0, 0]`
+    /// (`2^16` cycles) creates nothing.
+    fn test_graph_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
+        let self_recursive = NoteScriptRoot::from_array([1, 0, 0, 0]);
+        let parent = NoteScriptRoot::from_array([2, 0, 0, 0]);
         let leaf = NoteScriptRoot::from_array([3, 0, 0, 0]);
-        if root == triple {
-            Some(NoteCost::new(1 << 16, vec![double, leaf]))
-        } else if root == double {
-            Some(NoteCost::new(1 << 16, vec![leaf]))
-        } else {
+        if root == self_recursive {
+            Some(NoteCost::new(1 << 16, vec![parent, self_recursive]))
+        } else if root == parent {
+            Some(NoteCost::new(1 << 10, vec![leaf]))
+        } else if root == leaf {
             Some(NoteCost::new(1 << 16, Vec::new()))
+        } else {
+            None
         }
     }
 
-    /// Builds a pricer whose every fee lands exactly at `AssetAmount::MAX`: a `2^16`-cycle
-    /// cost is charged `17` formula cycles plus the margin, and
-    /// `u32::MAX * 2^31 = AssetAmount::MAX`.
+    /// Builds a pricer whose fee for a `2^16`-cycle cost lands exactly at `AssetAmount::MAX`:
+    /// such a cost is charged `17` formula cycles plus the margin, and
+    /// `u32::MAX * 2^31 = AssetAmount::MAX`. The `2^10`-cycle parent's fee falls six base
+    /// fees short of that.
     fn max_fee_pricer() -> NetworkNotePricer {
         NetworkNotePricer {
             fee_parameters: fee_parameters(u32::MAX),
             safety_margin_verification_cycles: (1 << 31) - 17,
-            lookup: creating_lookup,
+            lookup: test_graph_lookup,
         }
     }
 
     #[test]
     fn overflowing_accumulated_price_is_rejected() {
-        // Three maximal fees (the note and its two created notes) overflow u64.
+        // The self-recursive root accumulates nearly three maximal fees (its own, the
+        // parent's, and the leaf's), overflowing u64.
         assert!(matches!(
             max_fee_pricer().price(NoteScriptRoot::from_array([1, 0, 0, 0])),
             Err(NotePricingError::PriceOverflow)
@@ -265,37 +271,11 @@ mod tests {
 
     #[test]
     fn accumulated_price_above_max_asset_amount_is_rejected() {
-        // Two maximal fees fit in a u64 but exceed `AssetAmount::MAX`.
+        // The parent's and leaf's fees together fit in a u64 but exceed `AssetAmount::MAX`.
         assert!(matches!(
             max_fee_pricer().price(NoteScriptRoot::from_array([2, 0, 0, 0])),
             Err(NotePricingError::PriceExceedsMaxAssetAmount(_))
         ));
-    }
-
-    /// Fabricated lookup: `[1, 0, 0, 0]` creates `[2, 0, 0, 0]`; the child creates nothing.
-    fn parent_child_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
-        let parent = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        let child = NoteScriptRoot::from_array([2, 0, 0, 0]);
-        if root == parent {
-            Some(NoteCost::new(1 << 16, vec![child]))
-        } else if root == child {
-            Some(NoteCost::new(1 << 10, Vec::new()))
-        } else {
-            None
-        }
-    }
-
-    /// Fabricated lookup mirroring PSWAP: `[1, 0, 0, 0]` re-creates itself besides the child.
-    fn self_recursive_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
-        let selfish = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        let child = NoteScriptRoot::from_array([2, 0, 0, 0]);
-        if root == selfish {
-            Some(NoteCost::new(1 << 16, vec![child, selfish]))
-        } else if root == child {
-            Some(NoteCost::new(1 << 10, Vec::new()))
-        } else {
-            None
-        }
     }
 
     /// Builds a pricer over a fabricated lookup; only tests can bypass the built-in cost
@@ -310,17 +290,19 @@ mod tests {
 
     #[test]
     fn price_includes_created_notes() {
-        let parent = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        let expected = 500 * 17 + 500 * 11;
-        assert_eq!(custom_pricer(parent_child_lookup).price(parent).unwrap().as_u64(), expected);
+        let parent = NoteScriptRoot::from_array([2, 0, 0, 0]);
+        // The parent's own fee (11 verification cycles) plus the leaf's (17).
+        let expected = 500 * 11 + 500 * 17;
+        assert_eq!(custom_pricer(test_graph_lookup).price(parent).unwrap().as_u64(), expected);
     }
 
     #[test]
     fn self_recursive_notes_are_priced_at_one_level_of_nesting() {
         let selfish = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        // Own fee + child fee + own fee again (the nested self-reference, cut off there).
-        let expected = 500 * 17 + 500 * 11 + 500 * 17;
-        assert_eq!(custom_pricer(self_recursive_lookup).price(selfish).unwrap().as_u64(), expected);
+        // Own fee + the created chain (parent + leaf) + own fee again (the nested
+        // self-reference, cut off there).
+        let expected = 500 * 17 + (500 * 11 + 500 * 17) + 500 * 17;
+        assert_eq!(custom_pricer(test_graph_lookup).price(selfish).unwrap().as_u64(), expected);
     }
 
     #[test]
