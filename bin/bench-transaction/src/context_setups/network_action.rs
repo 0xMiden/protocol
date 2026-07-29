@@ -166,7 +166,7 @@ pub fn tx_consume_blocklist_config_note_network() -> Result<MockTransaction> {
 
     let note: Note = BlocklistConfigNote::builder()
         .sender(owner.id())
-        .account(account.id())
+        .target(account.id())
         .config(BlocklistConfig::BlockAccount { account: blocked })
         .generate_serial_number(builder.rng_mut())
         .build()?
