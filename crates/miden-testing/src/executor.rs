@@ -20,7 +20,7 @@ use crate::ExecError;
 // ================================================================================================
 
 /// Helper for executing arbitrary code within arbitrary hosts.
-pub(crate) struct CodeExecutor<H> {
+pub struct CodeExecutor<H> {
     host: H,
     stack_inputs: Option<StackInputs>,
     advice_inputs: AdviceInputs,
