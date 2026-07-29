@@ -128,6 +128,14 @@ impl EthEmbeddedAccountId {
         self.to_eth_address().into_bytes()
     }
 
+    /// Returns the bytes32-embedded encoding: the 20-byte Ethereum address encoding left-padded
+    /// to 32 bytes (bytes 0..12 zero, address in bytes 12..32).
+    pub fn to_bytes32(&self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out[12..32].copy_from_slice(&self.to_bytes());
+        out
+    }
+
     /// Converts the address to a hex string (lowercase, 0x-prefixed).
     pub fn to_hex(&self) -> String {
         self.to_eth_address().to_hex()

@@ -62,11 +62,8 @@ end",
 /// Returns a valid embedded-form address (as trailing 20 bytes) left-padded into a bytes32.
 fn valid_embedded_bytes32() -> ([u8; 20], [u8; 32]) {
     let valid_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let addr_bytes = EthEmbeddedAccountId::from_account_id(valid_id).to_bytes();
-
-    let mut bytes32 = [0u8; 32];
-    bytes32[12..32].copy_from_slice(&addr_bytes);
-    (addr_bytes, bytes32)
+    let embedded = EthEmbeddedAccountId::from_account_id(valid_id);
+    (embedded.to_bytes(), embedded.to_bytes32())
 }
 
 /// Returns an embedded-form address that decodes into a structurally invalid `AccountId` (suffix
