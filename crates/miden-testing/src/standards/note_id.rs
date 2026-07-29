@@ -1,8 +1,7 @@
 //! Tests for the `miden::standards::note::note_id` module.
 //!
-//! The kernel derives note IDs internally but exposes no accessor for them, so the standards module
-//! recomputes them from the four commitments that *are* exposed. These tests pin that recomputation
-//! against the Rust [`NoteId`](miden_protocol::note::NoteId) so the two cannot drift.
+//! Output note IDs are computed from the four commitments the kernel exposes. These tests pin that
+//! computation against the Rust [`NoteId`](miden_protocol::note::NoteId) so they cannot drift.
 
 use miden_protocol::Word;
 use miden_protocol::account::Account;
@@ -42,61 +41,13 @@ fn two_note_tx() -> anyhow::Result<MockTransaction> {
         .build()
 }
 
-/// Recomputing a note's ID in MASM must match `Note::id()` in Rust, for both notes of the fixture
-/// (note 0 is bare, note 1 carries an asset and attachments) through both the indexed and the
-/// active-note procedure.
-#[rstest]
-#[tokio::test]
-async fn compute_active_and_input_note_id_matches_rust(
-    #[values(0, 1)] note_index: u8,
-    #[values("compute_active_note_id", "compute_input_note_id")] procedure: &str,
-) -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
-
-    // The input variant takes the note index from the stack; the active variant reads the active
-    // note, so the test points the active-note pointer at the note under test instead.
-    let setup_code = if procedure == "compute_active_note_id" {
-        format!(
-            "push.{note_index} exec.memory::get_input_note_ptr exec.memory::set_active_input_note_ptr"
-        )
-    } else {
-        format!("push.{note_index}")
-    };
-
-    let code = format!(
-        r#"
-        use miden::tx_kernel_core::memory
-        use miden::tx_kernel_core::prologue
-        use miden::standards::note::note_id
-
-        begin
-            exec.prologue::prepare_transaction
-
-            {setup_code}
-            exec.note_id::{procedure}
-            # => [NOTE_ID]
-
-            # truncate the stack
-            swapw dropw
-        end
-        "#
-    );
-
-    let exec_output = tx_context.execute_code(&code).await?;
-
-    let expected = tx_context.input_notes().get_note(note_index as usize).note().id();
-    assert_eq!(exec_output.get_stack_word(0), expected.as_word());
-
-    Ok(())
-}
-
 /// Finding an input note by its ID returns the note's index; both fixture notes must be found at
 /// their own index.
 #[rstest]
 #[tokio::test]
 async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
-    let note_id = tx_context.input_notes().get_note(note_index as usize).note().id();
+    let mock_tx = two_note_tx()?;
+    let note_id = mock_tx.input_notes().get_note(note_index as usize).note().id();
 
     let code = format!(
         r#"
@@ -118,7 +69,7 @@ async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> 
         note_id = note_id.as_word(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), Word::from([1, note_index as u32, 0, 0]));
 
@@ -128,7 +79,7 @@ async fn find_input_note_by_id_returns_index(#[values(0, 1)] note_index: u8) -> 
 /// An ID that matches no input note reports is_found = 0.
 #[tokio::test]
 async fn find_input_note_by_id_reports_missing_note() -> anyhow::Result<()> {
-    let tx_context = two_note_tx()?;
+    let mock_tx = two_note_tx()?;
     let unknown_id = Word::from([11, 12, 13, 14u32]);
 
     let code = format!(
@@ -150,7 +101,7 @@ async fn find_input_note_by_id_reports_missing_note() -> anyhow::Result<()> {
         "#
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), Word::empty());
 
@@ -179,7 +130,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
         .build()?;
     let tag = expected_note.metadata().tag();
 
-    let tx_context = TestTransactionBuilder::new(account).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).build()?;
 
     let code = format!(
         r#"
@@ -223,7 +174,7 @@ async fn compute_output_note_id_matches_rust() -> anyhow::Result<()> {
         attachment_scheme = attachment_scheme.as_u16(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), expected_note.id().as_word());
 

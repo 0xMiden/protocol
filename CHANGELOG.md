@@ -1,6 +1,11 @@
 # Changelog
 
-## v0.16.0-beta.2 (TBD)
+## v0.16.0 (TBD)
+
+### Features
+
+- Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 
 ### Features
 
@@ -8,10 +13,28 @@
 
 ### Changes
 
+- [BREAKING] Reduced the maximum number of assets a note can carry from 64 to 16 ([#3381](https://github.com/0xMiden/protocol/issues/3381)).
+- [BREAKING] Transaction summaries now bind the reference block, expiration delta, and seven user parameters; the Rust and MASM APIs changed accordingly ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
+- Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#3412](https://github.com/0xMiden/protocol/pull/3412)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
 - [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
+- [BREAKING] Removed the deprecated `TransactionContextBuilder` and the `MockChain::build_tx_context` / `build_tx_context_at` methods; use `MockChain::build_transaction` instead ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
+- [BREAKING] Made `MockTransaction::execute_code` and the `executor` module test-only, and removed `MockTransactionBuilder::disable_lazy_loading` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Renamed the `FeeManager` component to `FeePolicyManager` and turned it from an account component into the fee-policy configuration of the `AuthNetworkAccount` component ([#3353](https://github.com/0xMiden/protocol/pull/3353)).
+- [BREAKING] Renamed `ConstantFeePolicy` to `BasicConstantFeePolicy` ([#3391](https://github.com/0xMiden/protocol/issues/3391)).
+- [BREAKING] Changed `AssetId` serialization to omit the `AssetClass` for `AssetComposition::Fungible` ([#3413](https://github.com/0xMiden/protocol/pull/3413)).
+- [BREAKING] Replaced `SwapNote::create` with `SwapNote::builder()` ([#3414](https://github.com/0xMiden/protocol/pull/3414)).
+- [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
+- [BREAKING] Removed the redundant zero-nomination check and the `ERR_NO_NOMINATED_OWNER` error constant from `ownable2step::accept_ownership`; since a note sender can never be the zero address stored when no transfer is nominated, accepting ownership without a pending nomination now fails with `ERR_SENDER_NOT_NOMINATED_OWNER` ([#3416](https://github.com/0xMiden/protocol/pull/3416)).
+- Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
+- [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
+- [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
+
+### Fixes
+
+- Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
+- Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 

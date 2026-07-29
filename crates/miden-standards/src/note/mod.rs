@@ -7,6 +7,8 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+pub mod costs;
+
 mod burn;
 pub use burn::BurnNote;
 

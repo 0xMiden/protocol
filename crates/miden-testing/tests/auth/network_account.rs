@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -48,13 +48,14 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
 fn zero_fee_policy_manager(
     note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
 ) -> anyhow::Result<FeePolicyManager> {
-    let mut constant_fee_policy = ConstantFeePolicy::new();
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in note_script_roots {
-        constant_fee_policy = constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
     }
 
     Ok(FeePolicyManager::builder()
-        .active_fee_policy(constant_fee_policy.into())
+        .active_fee_policy(basic_constant_fee_policy.into())
         .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
         .build())
 }
@@ -65,14 +66,17 @@ fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let note_roots: BTreeSet<NoteScriptRoot> =
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
-    let fee_policy_manager = zero_fee_policy_manager(
-        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
-    )?;
+    // Add the config note to the allowlist (it may be consumed to update the allowlists, and the
+    // auth flow needs a price for the config note, too).
+    let note_roots: BTreeSet<NoteScriptRoot> = allowed_note_script_roots
+        .into_iter()
+        .map(NoteScriptRoot::from_raw)
+        .chain([NetworkAccountConfigNote::script_root()])
+        .collect();
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
 
-    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
-        .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(allowed_tx_script_roots);
 
     Ok(AccountBuilder::new([0; 32])
         .with_components(auth_component)
@@ -352,7 +356,8 @@ fn owner_id() -> AccountId {
 ///
 /// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
 /// deployment, so a note whose root is added to the allowlist post-deployment can still be
-/// consumed: a constant fee policy aborts fee estimation for note scripts without a schedule entry.
+/// consumed: the basic constant fee policy aborts fee estimation for note scripts without a
+/// schedule entry.
 fn build_owner_controlled_account(
     extra_allowed_note_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
@@ -362,8 +367,8 @@ fn build_owner_controlled_account(
     let note_roots: BTreeSet<NoteScriptRoot> =
         extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
 
-    // The config note is always allowlisted by `with_allowed_notes` and may be consumed to update
-    // the allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
+    // The config note is allowlisted explicitly below and may be consumed to update the
+    // allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
     // entry too.
     let scheduled_roots = note_roots
         .iter()
@@ -372,8 +377,15 @@ fn build_owner_controlled_account(
         .chain([NetworkAccountConfigNote::script_root()]);
     let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
 
-    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?
-        .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
+    let auth_component = AuthNetworkAccount::custom(
+        note_roots
+            .iter()
+            .copied()
+            .chain([NetworkAccountConfigNote::script_root()])
+            .collect(),
+        fee_policy_manager,
+    )?
+    .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
 
     Ok(AccountBuilder::new([7; 32])
         .with_components(auth_component)
@@ -621,22 +633,26 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
 }
 
 /// A network account manages its allowed fee policies through the same config note: the owner sends
-/// an `AddAllowedFeePolicy` config note (always allowlisted, and fee-scheduled by
-/// `build_owner_controlled_account`), and the account-exposed `add_allowed_fee_policy` runs under
-/// the owner authority.
+/// an add/remove config note (always allowlisted, and fee-scheduled by
+/// `build_owner_controlled_account`), and the account-exposed `add_allowed_fee_policy` /
+/// `remove_allowed_fee_policy` runs under the owner authority. The target root is a procedure of
+/// the account that is not the active policy, so both actions are permitted (the remove is a
+/// no-op).
+#[rstest]
+#[case::add(NetworkAccountConfig::AddAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
+#[case::remove(NetworkAccountConfig::RemoveAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
 #[tokio::test]
-async fn test_owner_can_add_allowed_fee_policy_after_deployment() -> anyhow::Result<()> {
+async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
+    #[case] action: NetworkAccountConfig,
+) -> anyhow::Result<()> {
     let owner = owner_id();
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
 
-    // A procedure of the account that is not in the initial allowed fee policy roots map.
-    let new_root = AuthNetworkAccount::get_fee_policy_root();
-    let admin_note = build_action_note(
-        owner,
-        account.id(),
-        NetworkAccountConfig::AddAllowedFeePolicy { policy_root: new_root },
-        6,
-    )?;
+    let admin_note = build_action_note(owner, account.id(), action, 6)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -645,8 +661,8 @@ async fn test_owner_can_add_allowed_fee_policy_after_deployment() -> anyhow::Res
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // The network account consumes the config note; the owner-authorized `add_allowed_fee_policy`
-    // runs to completion.
+    // The network account consumes the config note; the owner-authorized fee-policy mutator runs to
+    // completion.
     consume_note(&mut mock_chain, account.id(), &admin_note).await?;
 
     Ok(())

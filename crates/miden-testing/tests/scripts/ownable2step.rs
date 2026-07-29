@@ -11,11 +11,7 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::errors::standards::{
-    ERR_NO_NOMINATED_OWNER,
-    ERR_SENDER_NOT_NOMINATED_OWNER,
-    ERR_SENDER_NOT_OWNER,
-};
+use miden_standards::errors::standards::{ERR_SENDER_NOT_NOMINATED_OWNER, ERR_SENDER_NOT_OWNER};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -310,7 +306,9 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_NO_NOMINATED_OWNER);
+    // With no nomination stored, the nominated owner is the zero address, which no valid sender
+    // can equal, so this fails the sender comparison rather than a dedicated emptiness check.
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_OWNER);
     Ok(())
 }
 

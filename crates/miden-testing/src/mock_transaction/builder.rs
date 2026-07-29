@@ -84,7 +84,6 @@ pub struct MockTransactionBuilder<'chain> {
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
-    is_lazy_loading_enabled: bool,
 }
 
 impl<'chain> MockTransactionBuilder<'chain> {
@@ -115,7 +114,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             source_manager: None,
-            is_lazy_loading_enabled: true,
         }
     }
 
@@ -179,7 +177,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Inserts a single key-value pair into the advice inputs map.
     ///
     /// To add multiple entries, call this repeatedly or use [`Self::extend_advice_inputs`].
-    pub fn extend_advice_map(mut self, key: Word, value: Vec<Felt>) -> Self {
+    pub fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
         self.advice_inputs.map.insert(key, value);
         self
     }
@@ -253,7 +251,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Adds a note script to the context for testing.
+    /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
         self
@@ -265,15 +263,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// order to provide better error messages if an error occurs.
     pub fn with_source_manager(mut self, source_manager: Arc<dyn SourceManagerSync>) -> Self {
         self.source_manager = Some(source_manager);
-        self
-    }
-
-    /// Disables lazy loading.
-    ///
-    /// Only affects [`MockTransaction::execute_code`] and causes the host to _not_ handle lazy
-    /// loading events.
-    pub fn disable_lazy_loading(mut self) -> Self {
-        self.is_lazy_loading_enabled = false;
         self
     }
 
@@ -326,7 +315,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(tx_inputs.account().code());
         for (account, _) in self.foreign_account_inputs.values() {
-            mast_store.insert(account.code().mast());
+            mast_store.load_account_code(account.code());
         }
 
         let source_manager =
@@ -341,7 +330,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             authenticator: self.authenticator,
             source_manager,
             note_scripts: self.note_scripts,
-            is_lazy_loading_enabled: self.is_lazy_loading_enabled,
         })
     }
 }

@@ -130,10 +130,10 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    // Create transaction context and execute
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -250,9 +250,9 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

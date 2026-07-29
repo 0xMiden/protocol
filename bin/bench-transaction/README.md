@@ -9,10 +9,38 @@ The following transactions are benchmarked:
 - **P2ID notes**: Consume single P2ID notes, consume two P2ID notes, and create single P2ID note - each with both Falcon and ECDSA signing
 - **CLAIM notes (agglayer bridge-in)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
 - **B2AGG note (agglayer bridge-out)**: Consume B2AGG note for Miden-to-AggLayer bridging
+- **Network-account note consumption**: one scenario per standard note script and execution path, consumed in the canonical network-account transaction (see below)
 
 The CLAIM note benchmarks measure the full bridge-in flow: the benchmark setup executes prerequisite transactions (CONFIG_AGG_BRIDGE and UPDATE_GER) to prepare the bridge account, then benchmarks the CLAIM note consumption transaction itself.
 
 The B2AGG note benchmark measures the bridge-out flow: the benchmark setup registers a faucet in the bridge via CONFIG_AGG_BRIDGE, then benchmarks the B2AGG note consumption which validates the faucet, performs FPI to get origin asset data, computes the Keccak leaf hash for the MMR, and creates a BURN note.
+
+### Network-Account Consumption Scenarios
+
+These scenarios measure what consuming each note in `miden-standards` and `miden-agglayer` costs a network account - the basis for configuring network-account fee policies (see issue [#3344](https://github.com/0xMiden/protocol/issues/3344)). Each scenario builds the canonical network-account transaction as it exists today: the consuming account authenticates with `AuthNetworkAccount` (allowlisting exactly the consumed note's script root), carries the functional components the note requires, holds the native fee asset, and pays the transaction fee by creating a TX_FEE note during its auth procedure (the chain charges a verification base fee of 500).
+
+Covered scenarios, with one variant per distinct execution path:
+
+- standards, consumed by a network basic wallet: P2ID (1 vs 16 assets); P2IDE (claim, claim with 16 assets, reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note; the sponsor-side reclaim path is benchmarked separately on a regular wallet, since a network account cannot consume a lone sponsorship note)
+- standards, consumed by a network faucet: MINT (fungible vs non-fungible faucet); BURN
+- standards, consumed by a network account with the matching management components: FAUCET_POLICY_ACTION, PAUSE_ACTION, OWNER_ACTION, RBAC_ACTION, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path)
+- agglayer, consumed by the bridge account (a network account): CLAIM (L1 vs L2 origin, with fee payment), B2AGG (empty vs `2^31 - 1`-leaf frontier, with fee payment), CONFIG_AGG_BRIDGE, DEREGISTER_AGG_FAUCET, UPDATE_GER, REMOVE_GER
+
+The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for continuity; the `with fee payment` variants are the network-account pricing baseline.
+
+The network-account auth procedure collects sponsored fees and answers sponsorship fee estimates natively, so every fee-paying network-account scenario's cost includes the fee-collection scan and TX_FEE creation.
+
+### Note Consumption Cost Tables
+
+The network-account scenarios feed two checked-in, generated cost tables: `crates/miden-standards/src/note/costs/table.rs` and `crates/miden-agglayer/src/costs/table.rs`. Each table entry is the note's consumption cost in VM cycles - the total cycle count of the canonical network-account transaction consuming it, taken as the maximum across the note's benchmarked execution paths. The values are estimates, not guaranteed worst cases - see the caveats in `miden_standards::note::costs` (e.g. asset counts are benchmarked at the planned, not current, protocol maximum).
+
+Regenerate the tables (and `bench-tx.json`) with:
+
+```bash
+make update-note-costs
+```
+
+Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot tests in `src/note_costs.rs` re-execute every priced scenario during the regular test run and fail when a measured cost drifts more than 5% from its checked-in constant. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
 
 ### Benchmark Groups
 

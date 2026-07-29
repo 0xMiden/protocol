@@ -81,35 +81,25 @@ impl NetworkAccount {
 
     /// Creates an [`AccountBuilder`] pre-configured as a network account.
     ///
-    /// The returned builder is set to [`AccountType::Public`] and has the [`AuthNetworkAccount`]
-    /// auth component installed with the provided note allowlist, its fee-policy slots initialized
-    /// from `fee_policy_manager`. The tx-script allowlist contains the canonical
-    /// [`ExpirationTransactionScript`], which the network transaction builder attaches to every
-    /// network transaction it executes, so the built account is serviceable by the network by
-    /// construction.
-    ///
-    /// The components of the fee policies registered with `fee_policy_manager` are installed as
-    /// part of the auth component's expansion, so the active policy is dispatchable without the
-    /// caller installing it separately.
+    /// The returned builder is set to [`AccountType::Public`] with the [`AuthNetworkAccount`] auth
+    /// component installed via [`AuthNetworkAccount::new`] (see it for the default note and
+    /// tx-script configuration applied on top of `allowed_notes`), its fee-policy slots initialized
+    /// from `fee_policy_manager`. The default configuration includes the canonical
+    /// [`ExpirationTransactionScript`] tx-script root, so the built account is serviceable by the
+    /// network by construction. The components of the fee policies registered with
+    /// `fee_policy_manager` are installed as part of the auth component's expansion, so the active
+    /// policy is dispatchable without the caller installing it separately.
     ///
     /// Callers add their functional components to the returned builder and finish with
     /// [`AccountBuilder::build`]; the built account satisfies the [`NetworkAccount`] specification.
-    /// Accounts that need to allowlist additional transaction scripts should construct the
-    /// [`AuthNetworkAccount`] component manually instead.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `allowed_notes` is empty since the account could not consume any
-    /// notes.
+    /// Accounts that need a different set of allowlisted transaction scripts should construct the
+    /// [`AuthNetworkAccount`] component via [`AuthNetworkAccount::custom`] instead.
     pub fn builder(
         init_seed: [u8; 32],
         allowed_notes: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<AccountBuilder, NetworkAccountNoteAllowlistError> {
-        let auth_component = AuthNetworkAccount::new(allowed_notes, fee_policy_manager)?
-            .with_allowed_tx_scripts(
-                [ExpirationTransactionScript::script_root()].into_iter().collect(),
-            );
+        let auth_component = AuthNetworkAccount::new(allowed_notes, fee_policy_manager)?;
 
         Ok(AccountBuilder::new(init_seed)
             .account_type(AccountType::Public)
@@ -198,6 +188,7 @@ mod tests {
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
     use crate::account::wallets::BasicWallet;
+    use crate::note::FeeSponsorshipNote;
 
     fn build_account(account_type: AccountType, roots: BTreeSet<NoteScriptRoot>) -> Account {
         AccountBuilder::new([0; 32])
@@ -207,10 +198,7 @@ mod tests {
                     roots,
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
-                .expect("non-empty allowlist")
-                .with_allowed_tx_scripts(
-                    [ExpirationTransactionScript::script_root()].into_iter().collect(),
-                ),
+                .expect("non-empty allowlist"),
             )
             .with_component(BasicWallet)
             .build()
@@ -229,6 +217,7 @@ mod tests {
 
         let mut expected = roots;
         expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.insert(FeeSponsorshipNote::script_root());
         assert_eq!(actual, expected);
     }
 
@@ -266,10 +255,12 @@ mod tests {
     #[test]
     fn account_without_expiration_script_is_rejected() {
         let note_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        // `custom` applies no defaults, so the tx-script allowlist stays empty and the account
+        // lacks the canonical expiration root.
         let account = AccountBuilder::new([0; 32])
             .account_type(AccountType::Public)
             .with_components(
-                AuthNetworkAccount::new(
+                AuthNetworkAccount::custom(
                     BTreeSet::from_iter([note_root]),
                     FeePolicyManager::mock(FungibleAsset::mock_issuer()),
                 )
@@ -284,7 +275,8 @@ mod tests {
     }
 
     /// `NetworkAccount::builder` produces an account that satisfies the network account
-    /// specification and allowlists the canonical expiration tx script.
+    /// specification, allowlists the canonical expiration tx script, and allowlists the
+    /// FEE_SPONSORSHIP note script so the account can collect its fees.
     #[test]
     fn builder_produces_network_account_with_expiration_script_allowlisted() {
         let note_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
@@ -304,5 +296,12 @@ mod tests {
 
         let other_root = TransactionScriptRoot::from_raw(Word::from([9u32, 10, 11, 12]));
         assert!(!network_account.allows_tx_script(&other_root));
+
+        assert!(
+            network_account
+                .allowed_notes()
+                .allowed_script_roots()
+                .contains(&FeeSponsorshipNote::script_root())
+        );
     }
 }

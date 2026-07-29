@@ -72,6 +72,8 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
+                &TransactionEventId::AccountVaultBeforeMintAsset,
+                &TransactionEventId::AccountVaultBeforeBurnAsset,
                 &TransactionEventId::AccountStorageBeforeSetMapItem,
                 &TransactionEventId::AccountStorageBeforeGetMapItem,
             ]

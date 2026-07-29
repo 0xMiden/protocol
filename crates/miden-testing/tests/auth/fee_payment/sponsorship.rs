@@ -14,7 +14,7 @@ use miden_standards::account::auth::{
     FeeConversionInfo,
     commit_fee_conversion_info,
 };
-use miden_standards::account::fees::{ConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FeeSponsorshipNote,
@@ -50,14 +50,14 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 
 /// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` +
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
-/// through its active `ConstantFeePolicy`, and holds `assets` in its vault.
+/// through its active `BasicConstantFeePolicy`, and holds `assets` in its vault.
 fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
     assets: impl IntoIterator<Item = Asset>,
 ) -> anyhow::Result<Account> {
-    let mut policy = ConstantFeePolicy::new();
+    let mut policy = BasicConstantFeePolicy::new();
     for (root, amount) in priced {
         policy = policy.with_fee(*root, AssetAmount::new(*amount)?);
     }
@@ -153,7 +153,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         .foreign_accounts([foreign_target])
         .tx_script(tx_script)
         .auth_args(auth_args)
-        .extend_advice_map(auth_args, advice_value)
+        .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()
@@ -243,7 +243,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
         .foreign_accounts([foreign_network])
         .tx_script(tx_script)
         .auth_args(auth_args)
-        .extend_advice_map(auth_args, advice_value)
+        .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
         .build()?
         .execute()
