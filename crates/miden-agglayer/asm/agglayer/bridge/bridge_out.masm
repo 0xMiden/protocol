@@ -16,7 +16,7 @@ use miden::standards::assets::conversion
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use {EthereumAddressFormat} from miden::standards::interop::eth_address
+use {EthereumAddress} from miden::standards::interop::eth_address
 
 # ERRORS
 # =================================================================================================
@@ -553,7 +553,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFormat)
+proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddress)
     dup movdn.6 mem_store movup.4 add.1
     # => [mem_ptr+1, address(4)]
 

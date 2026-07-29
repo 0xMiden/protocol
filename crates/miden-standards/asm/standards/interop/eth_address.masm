@@ -4,8 +4,8 @@ use miden::protocol::account_id
 # TYPE ALIASES
 # =================================================================================================
 
-pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
-pub type EthereumBytes32Format = struct { a: felt, b: felt, c: felt, d: felt, e: felt, f: felt, g: felt, h: felt }
+pub type EthereumAddress = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
+pub type EthereumBytes32 = struct { a: felt, b: felt, c: felt, d: felt, e: felt, f: felt, g: felt, h: felt }
 
 # ERRORS
 # =================================================================================================
