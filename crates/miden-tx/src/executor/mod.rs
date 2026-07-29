@@ -354,6 +354,7 @@ where
             account_procedure_index_map,
             self.authenticator,
             tx_inputs.block_header().block_num(),
+            tx_inputs.block_header().commitment(),
             self.source_manager.clone(),
         );
 

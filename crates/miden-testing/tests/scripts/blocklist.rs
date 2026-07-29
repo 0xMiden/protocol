@@ -109,11 +109,6 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
     )
 }
 
-fn account_id_felts(account_id: AccountId) -> (Felt, Felt) {
-    let [prefix, suffix]: [Felt; 2] = account_id.into();
-    (prefix, suffix)
-}
-
 /// Builds a `sender`-authored note whose script invokes
 /// `manager::{block_account|unblock_account}` on the given target account. The sender must be
 /// authorized per the faucet's installed `Authority` component (the owner under
@@ -124,7 +119,6 @@ fn build_admin_note(
     proc: &str,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let (prefix, suffix) = account_id_felts(target_id);
     let script_code = format!(
         r#"
         use miden::standards::faucets::policies::transfer::blocklist::manager
@@ -139,7 +133,9 @@ fn build_admin_note(
 
             dropw dropw dropw dropw
         end
-        "#
+        "#,
+        suffix = target_id.suffix(),
+        prefix = target_id.prefix().as_felt()
     );
 
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());

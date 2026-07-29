@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -57,6 +58,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
     TransactionSummary,
+    TransactionSummaryUserParams,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::account::interface::{
@@ -75,6 +77,7 @@ use miden_tx::{
     LocalTransactionProver,
     TransactionExecutor,
     TransactionExecutorError,
+    TransactionKernelError,
     TransactionProverError,
 };
 use rstest::rstest;
@@ -443,7 +446,6 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
-      use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
@@ -453,19 +455,16 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce
-          exec.tx::get_block_number
-          push.0.0
-          # => [[0, 0, block_num, final_nonce], pad(16)]
-          # => [SALT, pad(16)]
+          # => [final_nonce, pad(16)]
+
+          # pass the final nonce as the last user param and zero the remaining ones
+          push.0.0.0.0.0.0
+          # => [user_params(7), pad(16)]
 
           exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
 
-          # insert tx summary into advice provider for extraction by the host
-          adv.insert_hqword
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-          exec.auth::hash_tx_summary
+          exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -502,7 +501,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         .build_transaction(account)
         .authenticated_input_note(input_note.id())
         .build()?;
-    let ref_block_num = mock_tx.tx_inputs().block_header().block_num().as_u32();
+    let ref_block_commitment = mock_tx.tx_inputs().block_header().commitment();
     let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
     let input_notes = mock_tx.input_notes().clone();
     let output_notes = RawOutputNotes::new(vec![RawOutputNote::Partial(output_note.into())])?;
@@ -515,10 +514,236 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
         assert_eq!(tx_summary.output_notes(), &output_notes);
-        assert_eq!(tx_summary.salt(), Word::from(
-          [0, 0, ref_block_num, final_nonce]
-        ));
+        assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
+        assert_eq!(tx_summary.expiration_delta(), 0);
+        assert_eq!(
+            tx_summary.user_params(),
+            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, 0, final_nonce].map(Felt::from))
+        );
     });
+
+    Ok(())
+}
+
+/// Tests that the transaction summary binds the expiration block delta set during the transaction
+/// and the user-defined parameters passed to `create_tx_summary`.
+///
+/// The host verifies that the reconstructed summary commits to the message hashed in the kernel,
+/// so the assertions on the extracted summary prove that these values are part of the signed
+/// message.
+#[tokio::test]
+async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          push.42 exec.tx::update_expiration_block_delta
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce
+          # => [final_nonce, pad(16)]
+
+          # pass [7, 8, 9] as the leading user params and the final nonce as the last one
+          push.0.0.0.9.8.7
+          # => [user_params(7), pad(16)]
+
+          exec.auth::create_tx_summary
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+    let ref_block_commitment = mock_tx.tx_inputs().block_header().commitment();
+    let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
+        assert_eq!(tx_summary.expiration_delta(), 42);
+        assert_eq!(
+            tx_summary.user_params(),
+            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, 0, final_nonce].map(Felt::from))
+        );
+        assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
+    });
+
+    Ok(())
+}
+
+/// Tests that the host rejects a transaction summary whose block commitment does not match the
+/// reference block of the transaction.
+#[tokio::test]
+async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce
+          # => [final_nonce, pad(16)]
+
+          # pass the final nonce as the last user param and zero the remaining ones
+          push.0.0.0.0.0.0
+          # => [user_params(7), pad(16)]
+
+          exec.auth::create_tx_summary
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          # replace BLOCK_COMMITMENT with a bogus word
+          swapw.3 dropw push.1.2.3.4 swapw.3
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([44; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryCommitmentMismatch(inner))
+                if inner.to_string().contains("block commitment")
+        )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects a transaction summary whose expiration delta does not match the
+/// kernel state of the transaction.
+#[tokio::test]
+async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
+
+          # Assemble the summary preimage manually with a forged PARAMS_HEAD word claiming an
+          # expiration delta of 777 while the transaction never set one.
+          padw
+          # => [PARAMS_TAIL, pad(16)]
+
+          push.0.0.0.777
+          # => [PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.tx::get_block_commitment
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([45; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+                expected: 0,
+                actual: 777,
+            })
+        )
+    );
 
     Ok(())
 }
@@ -544,7 +769,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         .unauthenticated_input_note(spawn_note.clone());
 
     let tx = tx_builder.clone().build()?;
-    let ref_block_num = tx.tx_inputs().block_header().block_num();
+    let ref_block_commitment = tx.tx_inputs().block_header().commitment();
     let tx = tx.execute().await?;
 
     let nonce_delta = Felt::ONE;
@@ -560,7 +785,11 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account_delta,
         InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
         RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2any_note))])?,
-        Word::from([0, 0, ref_block_num.as_u32(), final_nonce.as_canonical_u64() as u32]),
+        ref_block_commitment,
+        0,
+        TransactionSummaryUserParams::new(
+            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0, 0].map(Felt::from),
+        ),
     );
 
     let summary_commitment = expected_summary.to_commitment();

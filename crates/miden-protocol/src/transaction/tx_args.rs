@@ -171,25 +171,9 @@ impl TransactionArgs {
     /// - storage_commitment |-> storage_items.
     /// - script_root |-> script.
     pub fn add_output_note_recipient<T: AsRef<NoteRecipient>>(&mut self, note_recipient: T) {
-        let note_recipient = note_recipient.as_ref();
-        let storage = note_recipient.storage();
-        let script = note_recipient.script();
-        let script_encoded: Vec<Felt> = script.into();
-
-        // Build the advice map entries
-        let script_root: Word = script.root().into();
-        let sn_hash = Hasher::merge(&[note_recipient.serial_num(), Word::empty()]);
-        let sn_script_hash = Hasher::merge(&[sn_hash, script_root]);
-
-        let new_elements = vec![
-            (sn_hash, concat_words(note_recipient.serial_num(), Word::empty())),
-            (sn_script_hash, concat_words(sn_hash, script_root)),
-            (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
-            (storage.commitment(), storage.to_elements()),
-            (script_root, script_encoded),
-        ];
-
-        self.advice_inputs.extend(AdviceInputs::default().with_map(new_elements));
+        self.advice_inputs.extend(
+            AdviceInputs::default().with_map(note_recipient.as_ref().to_advice_map_entries()),
+        );
     }
 
     /// Adds the `signature` corresponding to `pub_key` on `message` to the advice inputs' map.
@@ -243,13 +227,6 @@ impl TransactionArgs {
 }
 
 /// Concatenates two [`Word`]s into a [`Vec<Felt>`] containing 8 elements.
-fn concat_words(first: Word, second: Word) -> Vec<Felt> {
-    let mut result = Vec::with_capacity(8);
-    result.extend(first);
-    result.extend(second);
-    result
-}
-
 impl Default for TransactionArgs {
     fn default() -> Self {
         Self::new(AdviceMap::default())
