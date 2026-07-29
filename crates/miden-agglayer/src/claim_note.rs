@@ -19,9 +19,11 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_standards::interop::eth::{EthAddress, EthAmount};
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::costs::NoteConsumptionCost;
+use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
+use crate::costs::CLAIM_CONSUMPTION_CYCLES;
 use crate::utils::Keccak256Output;
 use crate::{GlobalIndex, MetadataHash, note_script};
 
@@ -237,5 +239,20 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
         claim_storage.push(storage.miden_claim_amount);
 
         NoteStorage::new(claim_storage)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for ClaimNote {
+    fn consumption_cycles() -> u32 {
+        CLAIM_CONSUMPTION_CYCLES
+    }
+
+    /// Consuming a CLAIM note creates the MINT note routed to the agglayer faucet (a network
+    /// account).
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![MintNote::script_root()]
     }
 }

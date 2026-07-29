@@ -46,7 +46,7 @@ const ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR =
     "reference block MMR and note's authentication MMR must match"
 
 const ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT =
-    "number of note assets exceeds the maximum limit of 64"
+    "number of note assets exceeds the maximum limit of 16"
 
 const ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT =
     "provided info about assets of an input does not match its commitment"
@@ -796,8 +796,8 @@ end
 #! memory address.
 #!
 #! This procedure also computes the note's nullifier and ID. Stores the note's nullifier, metadata,
-#! args, assets, and note details commitment to memory, and returns the hasher state in the stack so
-#! that the input notes commitment can be extracted.
+#! args, assets, note details commitment, and note ID to memory, and returns the hasher state in the
+#! stack so that the input notes commitment can be extracted.
 #!
 #! Inputs:
 #!   Operand stack: [idx, CAPACITY]
@@ -883,15 +883,22 @@ proc process_input_note
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # save note details commitment to memory
-    movup.8 exec.memory::set_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
+    dup.8 exec.memory::set_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # note authentication
+    # note id
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
     exec.poseidon2::merge
+    # => [NOTE_ID, note_ptr, NULLIFIER, CAPACITY]
+
+    # cache the note ID in the note's data segment
+    movup.4 exec.memory::set_input_note_id
     # => [NOTE_ID, NULLIFIER, CAPACITY]
+
+    # note authentication
+    # ---------------------------------------------------------------------------------------------
 
     adv_push
     # => [is_authenticated, NOTE_ID, NULLIFIER, CAPACITY]

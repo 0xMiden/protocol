@@ -3,6 +3,7 @@
 //! This module provides helpers for creating B2AGG (Bridge to AggLayer) notes,
 //! which are used to bridge assets out from Miden to the AggLayer network.
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::Felt;
@@ -22,9 +23,11 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::costs::NoteConsumptionCost;
+use miden_standards::note::{BurnNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
+use crate::costs::B2AGG_CONSUMPTION_CYCLES;
 use crate::note_script;
 
 // NOTE SCRIPT
@@ -128,4 +131,19 @@ fn build_note_storage(
     elements.extend(destination_address.to_elements());
 
     NoteStorage::new(elements)
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for B2AggNote {
+    fn consumption_cycles() -> u32 {
+        B2AGG_CONSUMPTION_CYCLES
+    }
+
+    /// Consuming a B2AGG note creates the BURN note routed to the agglayer faucet (a network
+    /// account).
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![BurnNote::script_root()]
+    }
 }

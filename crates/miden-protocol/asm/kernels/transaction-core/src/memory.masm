@@ -6,7 +6,7 @@ use {AccountId} from miden::protocol_utils::types
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 64"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 16"
 
 const ERR_ACCOUNT_IS_NOT_NATIVE = "the active account is not native"
 
@@ -261,10 +261,11 @@ const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 16
 const INPUT_NOTE_METADATA_OFFSET = 20
 const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET = 24
 const INPUT_NOTE_RECIPIENT_OFFSET = 28
-const INPUT_NOTE_ARGS_OFFSET = 32
-const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET = 36
-const INPUT_NOTE_NUM_ASSETS_OFFSET = 40
-const INPUT_NOTE_ASSETS_OFFSET = 44
+const INPUT_NOTE_ID_OFFSET = 32
+const INPUT_NOTE_ARGS_OFFSET = 36
+const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET = 40
+const INPUT_NOTE_NUM_ASSETS_OFFSET = 44
+const INPUT_NOTE_ASSETS_OFFSET = 48
 
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
@@ -1469,6 +1470,33 @@ end
 #! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
 pub proc set_input_note_details_commitment
     mem_storew_le
+end
+
+#! Sets the note ID of the input note.
+#!
+#! Inputs:  [note_ptr, NOTE_ID]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the input note data segment begins.
+#! - NOTE_ID is the ID of the input note.
+pub proc set_input_note_id
+    add.INPUT_NOTE_ID_OFFSET
+    mem_storew_le
+end
+
+#! Returns the note ID of the input note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [NOTE_ID]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the input note data segment begins.
+#! - NOTE_ID is the ID of the input note.
+pub proc get_input_note_id
+    padw
+    movup.4 add.INPUT_NOTE_ID_OFFSET
+    mem_loadw_le
 end
 
 #! Stores the nullifier of the input note with `idx` in the nullifier memory section.

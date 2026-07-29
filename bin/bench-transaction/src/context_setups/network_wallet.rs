@@ -33,9 +33,9 @@ use miden_standards::note::{
 };
 use miden_testing::{Auth, MockTransaction};
 
-/// The number of assets carried by the asset-count-heavy benchmark scenarios: the P2ID/P2IDE
-/// asset cap, planned as 16 per <https://github.com/0xMiden/protocol/issues/3381>.
-const MAX_NOTE_ASSETS: usize = 16;
+/// The number of assets carried by the asset-count-heavy benchmark scenarios: the per-note
+/// asset cap ([`miden_protocol::MAX_ASSETS_PER_NOTE`]).
+const MAX_NOTE_ASSETS: usize = miden_protocol::MAX_ASSETS_PER_NOTE;
 
 /// Returns [`MAX_NOTE_ASSETS`] distinct assets: one fungible asset plus distinct non-fungible
 /// assets.

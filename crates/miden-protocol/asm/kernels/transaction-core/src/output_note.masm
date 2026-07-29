@@ -235,7 +235,7 @@ end
 #! - the asset ID or value are malformed (e.g., invalid faucet ID).
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
-#! - the total number of ASSETs exceeds the maximum of 64.
+#! - the total number of ASSETs exceeds the maximum of 16.
 pub proc add_asset
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
