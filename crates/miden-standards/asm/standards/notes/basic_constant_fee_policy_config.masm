@@ -1,6 +1,6 @@
 use miden::protocol::active_note
 use miden::standards::attachments::network_account_target
-use miden::standards::fees::policies::basic_constant_fee_manager
+use miden::standards::fees::policies::constant_fee_manager
 
 # CONSTANTS
 # =================================================================================================
@@ -29,7 +29,7 @@ const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "basic constant fe
 # =================================================================================================
 
 #! BasicConstantFeePolicyConfig script: schedules a fee for a note script root against the consuming
-#! account by calling the `BasicConstantFeeManager`'s `set_note_fee` procedure.
+#! account by calling the `ConstantFeeManager`'s `set_note_fee` procedure.
 #!
 #! The note script root and fee asset are read from the note storage (fixed at note creation, so
 #! authorization is bound to the note sender):
@@ -45,8 +45,8 @@ const ERR_BASIC_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "basic constant fe
 #! configured fee asset ID (also enforced by `set_note_fee`).
 #!
 #! Requires that the consuming account:
-#! - exposes `miden::standards::fees::policies::basic_constant_fee_manager::set_note_fee` (the
-#!   `BasicConstantFeeManager` component), installed on an `AuthNetworkAccount` whose active fee
+#! - exposes `miden::standards::fees::policies::constant_fee_manager::set_note_fee` (the
+#!   `ConstantFeeManager` component), installed on an `AuthNetworkAccount` whose active fee
 #!   policy is a constant-fee policy (e.g. `BasicConstantFeePolicy`, which owns the `fee_schedule`
 #!   slot), backed by an `Authority` companion component gating `set_note_fee` to the owner or a
 #!   role (not `AuthControlled`, which would make it permissionless).
@@ -87,6 +87,6 @@ pub proc main
     mem_loadw_le.SCRIPT_ROOT_PTR
     # => [NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]
 
-    call.basic_constant_fee_manager::set_note_fee
+    call.constant_fee_manager::set_note_fee
     # => [pad(16)]
 end

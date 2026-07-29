@@ -30,7 +30,7 @@ use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::fees::BasicConstantFeeManager;
+use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -304,9 +304,9 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
 /// Returns the transaction context in which a network account consumes a
 /// BASIC_CONSTANT_FEE_POLICY_CONFIG note.
 ///
-/// The account carries `BasicConstantFeeManager` (managing a `BasicConstantFeePolicy`'s fee
+/// The account carries `ConstantFeeManager` (managing a `BasicConstantFeePolicy`'s fee
 /// schedule) gated by the Ownable2Step owner via `Authority::OwnerControlled`, mirroring
-/// `build_manageable_fee_account` in the `basic_constant_fee_manager` test suite. The consumed
+/// `build_manageable_fee_account` in the `constant_fee_manager` test suite. The consumed
 /// note's own script root is allowlisted and 0-fee-scheduled via `network_auth`; the note schedules
 /// a non-zero fee for an unrelated target root.
 pub fn tx_consume_basic_constant_fee_policy_config_note_network() -> Result<MockTransaction> {
@@ -320,7 +320,7 @@ pub fn tx_consume_basic_constant_fee_policy_config_note_network() -> Result<Mock
         .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_component(BasicConstantFeeManager::for_basic_constant_fee_policy())
+        .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
         super::network_auth([BasicConstantFeePolicyConfigNote::script_root()])?,

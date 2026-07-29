@@ -1,6 +1,6 @@
 //! Tests for the [`miden_standards::note::BasicConstantFeePolicyConfigNote`] standardized note,
 //! which schedules a fee for a note script root by calling the consuming network account's
-//! [`BasicConstantFeeManager`](miden_standards::account::fees::BasicConstantFeeManager)
+//! [`ConstantFeeManager`](miden_standards::account::fees::ConstantFeeManager)
 //! `set_note_fee` procedure.
 
 use std::collections::BTreeSet;
@@ -25,7 +25,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
-use super::basic_constant_fee_manager::{
+use super::constant_fee_manager::{
     build_manageable_fee_account,
     committed_fee_schedule_entry,
     fee_asset,

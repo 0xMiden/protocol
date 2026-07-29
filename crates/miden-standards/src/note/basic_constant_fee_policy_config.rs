@@ -44,7 +44,7 @@ static BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock:
 
 /// A BasicConstantFeePolicyConfig note: schedules a fee for a note script root in a
 /// [`BasicConstantFeePolicy`](crate::account::fees::BasicConstantFeePolicy)'s fee schedule by
-/// calling the [`BasicConstantFeeManager`](crate::account::fees::BasicConstantFeeManager)'s
+/// calling the [`ConstantFeeManager`](crate::account::fees::ConstantFeeManager)'s
 /// `set_note_fee` procedure on the account that consumes it.
 ///
 /// The note script root and fee asset are carried in the note's storage as
@@ -64,8 +64,8 @@ static BASIC_CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock:
 /// The fee schedule and the fee asset ID live on an
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount), so this note is consumed by a
 /// network account, which must:
-/// - install the [`BasicConstantFeeManager`](crate::account::fees::BasicConstantFeeManager) gated
-///   by an [`Authority`](crate::account::access::Authority) in
+/// - install the [`ConstantFeeManager`](crate::account::fees::ConstantFeeManager) gated by an
+///   [`Authority`](crate::account::access::Authority) in
 ///   [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
 ///   [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode. It must NOT use
 ///   [`AuthControlled`](crate::account::access::Authority::AuthControlled): that makes
