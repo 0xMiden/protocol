@@ -171,23 +171,20 @@ async fn bytes32_to_account_id_rejects_nonzero_padding() {
     }
 }
 
-/// Rust mirror: `EthAddress::try_from_bytes32` accepts a zero-padded bytes32 and rejects non-zero
-/// padding.
+/// Rust mirror: `EthAddress::try_from::<[u8; 32]>` accepts a zero-padded bytes32 and rejects
+/// non-zero padding in any padding limb.
 #[test]
 fn try_from_bytes32_accepts_and_rejects() {
     let (addr_bytes, bytes32) = valid_embedded_bytes32();
 
     // Accept: the trailing 20 bytes come back unchanged.
-    let addr = EthAddress::try_from_bytes32(bytes32).unwrap();
+    let addr = EthAddress::try_from(bytes32).unwrap();
     assert_eq!(addr, EthAddress::new(addr_bytes));
 
     // Reject: a non-zero byte anywhere in the 12-byte padding.
     for corrupted_byte in [0, 5, 11] {
         let mut bad = bytes32;
         bad[corrupted_byte] = 0x01;
-        assert_eq!(
-            EthAddress::try_from_bytes32(bad),
-            Err(AddressConversionError::NonZeroBytes32Padding),
-        );
+        assert_eq!(EthAddress::try_from(bad), Err(AddressConversionError::NonZeroBytes32Padding),);
     }
 }

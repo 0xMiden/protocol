@@ -66,24 +66,6 @@ impl EthAddress {
         Ok(Self(bytes))
     }
 
-    /// Creates an [`EthAddress`] from a 32-byte (bytes32) value embedding a left-padded address.
-    ///
-    /// In EVM ABI encoding, a bytes32-embedded address has bytes 0..12 zero and the 20-byte
-    /// address in bytes 12..32. This is the encoding used by bridges that carry an address in a
-    /// full bytes32 field.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the leading 12 padding bytes are non-zero.
-    pub fn try_from_bytes32(bytes: [u8; 32]) -> Result<Self, AddressConversionError> {
-        if bytes[0..12] != [0; 12] {
-            return Err(AddressConversionError::NonZeroBytes32Padding);
-        }
-
-        let addr: [u8; 20] = bytes[12..32].try_into().expect("slice is exactly 20 bytes");
-        Ok(Self(addr))
-    }
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -126,6 +108,28 @@ impl fmt::Display for EthAddress {
 impl From<[u8; 20]> for EthAddress {
     fn from(bytes: [u8; 20]) -> Self {
         Self(bytes)
+    }
+}
+
+/// Creates an [`EthAddress`] from a 32-byte (bytes32) value embedding a left-padded address.
+///
+/// In EVM ABI encoding, a bytes32-embedded address has bytes 0..12 zero and the 20-byte
+/// address in bytes 12..32. This is the encoding used by bridges that carry an address in a
+/// full bytes32 field.
+///
+/// # Errors
+///
+/// Returns an error if any of the leading 12 padding bytes are non-zero.
+impl TryFrom<[u8; 32]> for EthAddress {
+    type Error = AddressConversionError;
+
+    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
+        if bytes[0..12] != [0; 12] {
+            return Err(AddressConversionError::NonZeroBytes32Padding);
+        }
+
+        let addr: [u8; 20] = bytes[12..32].try_into().expect("slice is exactly 20 bytes");
+        Ok(Self(addr))
     }
 }
 
