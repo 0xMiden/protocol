@@ -113,6 +113,9 @@ end
 #! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
 #! removed-GER keccak256 hash chain.
 #!
+#! Deliberately exempt from the emergency-pause check (`pausable::assert_not_paused`): a paused
+#! bridge must still be able to revoke a fraudulent GER. See SPEC section 2.5.
+#!
 #! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), overwrites the map entry with
 #! [0, 0, 0, 0] (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`) while asserting
 #! that the previous map value equals GER_KNOWN_FLAG (i.e. the GER was currently known), and

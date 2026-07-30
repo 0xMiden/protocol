@@ -6,6 +6,7 @@ use crate::{
     ClaimNote,
     ConfigAggBridgeNote,
     DeregisterAggFaucetNote,
+    PauseAggBridgeNote,
     RemoveGerNote,
     UpdateGerNote,
 };
@@ -24,6 +25,7 @@ pub enum AgglayerNote {
     DEREGISTER_AGG_FAUCET,
     UPDATE_GER,
     REMOVE_GER,
+    PAUSE_AGG_BRIDGE,
 }
 
 impl AgglayerNote {
@@ -40,6 +42,7 @@ impl AgglayerNote {
             r if r == DeregisterAggFaucetNote::script_root() => Some(Self::DEREGISTER_AGG_FAUCET),
             r if r == UpdateGerNote::script_root() => Some(Self::UPDATE_GER),
             r if r == RemoveGerNote::script_root() => Some(Self::REMOVE_GER),
+            r if r == PauseAggBridgeNote::script_root() => Some(Self::PAUSE_AGG_BRIDGE),
             _ => None,
         }
     }
@@ -56,6 +59,7 @@ impl AgglayerNote {
             Self::DEREGISTER_AGG_FAUCET => "DEREGISTER_AGG_FAUCET",
             Self::UPDATE_GER => "UPDATE_GER",
             Self::REMOVE_GER => "REMOVE_GER",
+            Self::PAUSE_AGG_BRIDGE => "PAUSE_AGG_BRIDGE",
         }
     }
 
@@ -68,6 +72,7 @@ impl AgglayerNote {
             Self::DEREGISTER_AGG_FAUCET => DeregisterAggFaucetNote::script(),
             Self::UPDATE_GER => UpdateGerNote::script(),
             Self::REMOVE_GER => RemoveGerNote::script(),
+            Self::PAUSE_AGG_BRIDGE => PauseAggBridgeNote::script(),
         }
     }
 
@@ -80,6 +85,7 @@ impl AgglayerNote {
             Self::DEREGISTER_AGG_FAUCET => DeregisterAggFaucetNote::script_root(),
             Self::UPDATE_GER => UpdateGerNote::script_root(),
             Self::REMOVE_GER => RemoveGerNote::script_root(),
+            Self::PAUSE_AGG_BRIDGE => PauseAggBridgeNote::script_root(),
         }
     }
 
@@ -92,6 +98,7 @@ impl AgglayerNote {
             Self::DEREGISTER_AGG_FAUCET => NoteCost::of::<DeregisterAggFaucetNote>(),
             Self::UPDATE_GER => NoteCost::of::<UpdateGerNote>(),
             Self::REMOVE_GER => NoteCost::of::<RemoveGerNote>(),
+            Self::PAUSE_AGG_BRIDGE => NoteCost::of::<PauseAggBridgeNote>(),
         }
     }
 
@@ -118,17 +125,19 @@ mod tests {
         CLAIM_CONSUMPTION_CYCLES,
         CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES,
         DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES,
+        PAUSE_AGG_BRIDGE_CONSUMPTION_CYCLES,
         REMOVE_GER_CONSUMPTION_CYCLES,
         UPDATE_GER_CONSUMPTION_CYCLES,
     };
 
-    const ALL_NOTES: [AgglayerNote; 6] = [
+    const ALL_NOTES: [AgglayerNote; 7] = [
         AgglayerNote::CLAIM,
         AgglayerNote::B2AGG,
         AgglayerNote::CONFIG_AGG_BRIDGE,
         AgglayerNote::DEREGISTER_AGG_FAUCET,
         AgglayerNote::UPDATE_GER,
         AgglayerNote::REMOVE_GER,
+        AgglayerNote::PAUSE_AGG_BRIDGE,
     ];
 
     /// Ties the hand-written per-variant tables to each other and each variant's cost to its
@@ -146,6 +155,7 @@ mod tests {
                 AgglayerNote::DEREGISTER_AGG_FAUCET => DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES,
                 AgglayerNote::UPDATE_GER => UPDATE_GER_CONSUMPTION_CYCLES,
                 AgglayerNote::REMOVE_GER => REMOVE_GER_CONSUMPTION_CYCLES,
+                AgglayerNote::PAUSE_AGG_BRIDGE => PAUSE_AGG_BRIDGE_CONSUMPTION_CYCLES,
             };
             let cost = AgglayerNote::note_cost(note.script_root())
                 .expect("every agglayer note should have a cost");

@@ -56,6 +56,7 @@ impl PricedNote {
             PricedNote::Agglayer(AgglayerNote::DEREGISTER_AGG_FAUCET),
             PricedNote::Agglayer(AgglayerNote::UPDATE_GER),
             PricedNote::Agglayer(AgglayerNote::REMOVE_GER),
+            PricedNote::Agglayer(AgglayerNote::PAUSE_AGG_BRIDGE),
         ]
     }
 
@@ -130,6 +131,9 @@ impl PricedNote {
             },
             PricedNote::Agglayer(AgglayerNote::REMOVE_GER) => {
                 &[ExecutionBenchmark::ConsumeRemoveGerWithFee]
+            },
+            PricedNote::Agglayer(AgglayerNote::PAUSE_AGG_BRIDGE) => {
+                &[ExecutionBenchmark::ConsumePauseAggBridgeWithFee]
             },
         }
     }
@@ -443,6 +447,7 @@ mod tests {
     #[case::deregister_agg_faucet(PricedNote::Agglayer(AgglayerNote::DEREGISTER_AGG_FAUCET))]
     #[case::update_ger(PricedNote::Agglayer(AgglayerNote::UPDATE_GER))]
     #[case::remove_ger(PricedNote::Agglayer(AgglayerNote::REMOVE_GER))]
+    #[case::pause_agg_bridge(PricedNote::Agglayer(AgglayerNote::PAUSE_AGG_BRIDGE))]
     #[tokio::test]
     async fn checked_in_cost_matches_benched_cycles(#[case] note: PricedNote) -> Result<()> {
         let measured = benched_cycles(note).await?;

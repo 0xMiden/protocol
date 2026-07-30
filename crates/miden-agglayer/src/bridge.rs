@@ -17,7 +17,6 @@ use miden_protocol::account::{
 use miden_protocol::note::NoteScriptRoot;
 #[cfg(any(feature = "testing", test))]
 use miden_standards::account::access::PausableStorage;
-use miden_standards::note::PauseActionNote;
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
@@ -45,6 +44,7 @@ pub use crate::{
     GlobalIndexError,
     LeafData,
     MetadataHash,
+    PauseAggBridgeNote,
     ProofData,
     RemoveGerNote,
     SmtNode,
@@ -462,9 +462,6 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
-    /// Besides the agglayer-specific notes, the bridge accepts the standards [`PauseActionNote`]
-    /// so the `ADMIN` role can toggle the emergency pause.
-    ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
@@ -474,7 +471,7 @@ impl AggLayerBridge {
             DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
-            PauseActionNote::script_root(),
+            PauseAggBridgeNote::script_root(),
         ])
     }
 }
@@ -761,8 +758,9 @@ impl AggLayerBridge {
     /// Returns a vector of all storage slot names a bridge account must have.
     ///
     /// Besides the [`AggLayerBridge`] component's own slots, this includes the standards-owned
-    /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so the
-    /// bridge validator must certify the slot exists for the pause guards to be effective.
+    /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so this
+    /// testing-side validator certifies the slot exists. (In production the slot is guaranteed by
+    /// `create_bridge_account_builder` always installing the `Pausable` component.)
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,

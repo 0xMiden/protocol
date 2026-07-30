@@ -1,5 +1,10 @@
 extern crate alloc;
 
+use miden_agglayer::errors::{
+    ERR_PAUSE_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH,
+    ERR_PAUSE_AGG_BRIDGE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_PAUSE_AGG_BRIDGE_UNKNOWN_SELECTOR,
+};
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{
     AggLayerBridge,
@@ -11,12 +16,13 @@ use miden_agglayer::{
     DeregisterAggFaucetNote,
     ExitRoot,
     MetadataHash,
+    PauseAggBridgeNote,
     RemoveGerNote,
     UpdateGerNote,
 };
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets};
@@ -24,9 +30,20 @@ use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::PausableStorage;
-use miden_standards::errors::standards::{ERR_PAUSABLE_IS_PAUSED, ERR_SENDER_LACKS_ROLE};
+use miden_standards::errors::standards::{
+    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
+    ERR_PAUSABLE_IS_PAUSED,
+    ERR_SENDER_LACKS_ROLE,
+};
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{PauseAction, PauseActionNote};
+use miden_standards::note::{
+    NetworkAccountTarget,
+    NetworkNoteExt,
+    NoteExecutionHint,
+    PauseAction,
+    PauseActionNote,
+};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 use super::test_utils::{
@@ -76,10 +93,10 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
     })
 }
 
-/// Builds a [`PauseActionNote`] for `action` sent by `sender` and targeting the bridge.
-fn pause_action_note(
+/// Builds a [`PauseAggBridgeNote`] for `action` sent by `sender` and targeting `target`.
+fn pause_agg_bridge_note(
     sender: AccountId,
-    bridge_id: AccountId,
+    target: AccountId,
     action: PauseAction,
 ) -> anyhow::Result<Note> {
     // Vary the rng seed by action so a pause and an unpause note built in the same test get
@@ -89,24 +106,18 @@ fn pause_action_note(
         PauseAction::Unpause => 42u32,
     };
     let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
-    let note = PauseActionNote::builder()
-        .sender(sender)
-        .account(bridge_id)
-        .action(action)
-        .generate_serial_number(&mut rng)
-        .build()?
-        .into();
+    let note = PauseAggBridgeNote::create(action, sender, target, &mut rng)?;
     Ok(note)
 }
 
-/// Builds an admin-sent [`PauseActionNote`] for `action` and stages it on the chain so it can
+/// Builds an admin-sent [`PauseAggBridgeNote`] for `action` and stages it on the chain so it can
 /// later be consumed as an authenticated note.
 fn stage_pause_note(
     builder: &mut MockChainBuilder,
     bridge_id: AccountId,
     action: PauseAction,
 ) -> anyhow::Result<Note> {
-    let note = pause_action_note(bridge_admin_account_id(), bridge_id, action)?;
+    let note = pause_agg_bridge_note(bridge_admin_account_id(), bridge_id, action)?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     Ok(note)
 }
@@ -175,15 +186,20 @@ const DUMMY_ETH_ADDRESS: &str = "0x00000000000000000000000000000000000000aa";
 // TESTS
 // ================================================================================================
 
-/// An ADMIN-sent PAUSE_ACTION note pauses the bridge and a second one unpauses it. This also
-/// proves the standards note passes the bridge's note allowlist and zero-fee schedule.
+/// An ADMIN-sent PAUSE_AGG_BRIDGE note pauses the bridge and a second one unpauses it. This
+/// also proves the note passes the bridge's note allowlist and zero-fee schedule, and that it
+/// is routable as a network note.
 #[tokio::test]
-async fn pause_action_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
+async fn pause_agg_bridge_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
     let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
     let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Unpause)?;
     let mut mock_chain = builder.build()?;
+
+    // The note must be discoverable by network-note routing (it carries a decodable
+    // NetworkAccountTarget attachment).
+    assert!(pause_note.is_network_note(), "pause note should be a routable network note");
 
     consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
     assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
@@ -194,16 +210,18 @@ async fn pause_action_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A PAUSE_ACTION note from a sender without the ADMIN role is rejected: the pause procedures
-/// have no mapped role, so `authority::assert_authorized` falls back to the ADMIN check.
+/// A PAUSE_AGG_BRIDGE note from a sender without the ADMIN role is rejected: the pause
+/// procedures have no mapped role, so `authority::assert_authorized` falls back to the ADMIN
+/// check.
 #[tokio::test]
-async fn non_admin_pause_action_reverts() -> anyhow::Result<()> {
+async fn non_admin_pause_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
     let mock_chain = builder.build()?;
 
     // The GER injector holds an operational role but not ADMIN.
-    let note = pause_action_note(setup.ger_injector.id(), setup.bridge.id(), PauseAction::Pause)?;
+    let note =
+        pause_agg_bridge_note(setup.ger_injector.id(), setup.bridge.id(), PauseAction::Pause)?;
     let result = mock_chain
         .build_transaction(setup.bridge.id())
         .unauthenticated_input_note(note)
@@ -212,6 +230,120 @@ async fn non_admin_pause_action_reverts() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+    Ok(())
+}
+
+/// A non-ADMIN sender cannot unpause a bridge that is actually paused.
+#[tokio::test]
+async fn non_admin_unpause_of_paused_bridge_reverts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
+    let mut mock_chain = builder.build()?;
+
+    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
+
+    let note =
+        pause_agg_bridge_note(setup.ger_injector.id(), setup.bridge.id(), PauseAction::Unpause)?;
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+    assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
+    Ok(())
+}
+
+/// An admin-sent note whose NetworkAccountTarget attachment points at a different account is
+/// rejected by the script's target assertion, so a pause/unpause note intended for one account
+/// cannot be redirected onto the bridge.
+#[tokio::test]
+async fn wrongly_targeted_pause_note_reverts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let mock_chain = builder.build()?;
+
+    // Admin-sent, but targeting some other (public, network-targetable) account.
+    let other_account = AccountIdBuilder::new()
+        .account_type(AccountType::Public)
+        .build_with_seed([9; 32]);
+    let note = pause_agg_bridge_note(bridge_admin_account_id(), other_account, PauseAction::Pause)?;
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSE_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// The generic standards PAUSE_ACTION note (which carries no target assertion) is not in the
+/// bridge's note allowlist, so no untargeted pause path into the bridge remains.
+#[tokio::test]
+async fn standards_pause_action_note_is_rejected_by_allowlist() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let mock_chain = builder.build()?;
+
+    let mut rng = RandomCoin::new([Felt::from(43u32); 4].into());
+    let note: Note = PauseActionNote::builder()
+        .sender(bridge_admin_account_id())
+        .account(setup.bridge.id())
+        .action(PauseAction::Pause)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
+    Ok(())
+}
+
+/// A note carrying the PAUSE_AGG_BRIDGE script with malformed storage is rejected by the
+/// script's guards: an unknown selector or a wrong storage item count.
+#[rstest::rstest]
+#[case::unknown_selector(vec![Felt::from(99u32)], ERR_PAUSE_AGG_BRIDGE_UNKNOWN_SELECTOR)]
+#[case::wrong_item_count(
+    vec![Felt::from(0u32), Felt::from(0u32)],
+    ERR_PAUSE_AGG_BRIDGE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+)]
+#[tokio::test]
+async fn malformed_pause_note_reverts(
+    #[case] storage: alloc::vec::Vec<Felt>,
+    #[case] expected_err: miden_protocol::errors::MasmError,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let mock_chain = builder.build()?;
+
+    // Hand-craft the note storage, bypassing the builder, with a valid attachment targeting the
+    // bridge so the script's earlier target assertion passes.
+    let mut rng = RandomCoin::new([Felt::from(44u32); 4].into());
+    let attachment = NetworkAccountTarget::new(setup.bridge.id(), NoteExecutionHint::Always)?;
+    let note = NoteBuilder::new(bridge_admin_account_id(), &mut rng)
+        .script(PauseAggBridgeNote::script())
+        .note_storage(storage)?
+        .attachment(attachment)
+        .build()?;
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_err);
     Ok(())
 }
 

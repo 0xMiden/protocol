@@ -45,6 +45,7 @@ pub enum ExecutionBenchmark {
     ConsumeDeregisterAggFaucetWithFee,
     ConsumeUpdateGerWithFee,
     ConsumeRemoveGerWithFee,
+    ConsumePauseAggBridgeWithFee,
 }
 
 impl ExecutionBenchmark {
@@ -90,6 +91,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeDeregisterAggFaucetWithFee,
             ExecutionBenchmark::ConsumeUpdateGerWithFee,
             ExecutionBenchmark::ConsumeRemoveGerWithFee,
+            ExecutionBenchmark::ConsumePauseAggBridgeWithFee,
         ]
     }
 }
@@ -213,6 +215,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeRemoveGerWithFee => {
                 write!(f, "consume REMOVE_GER note (with fee payment)")
+            },
+            ExecutionBenchmark::ConsumePauseAggBridgeWithFee => {
+                write!(f, "consume PAUSE_AGG_BRIDGE note (with fee payment)")
             },
         }
     }

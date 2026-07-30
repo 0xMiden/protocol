@@ -1,0 +1,94 @@
+use miden::protocol::active_note
+use miden::standards::access::pausable::manager
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+# Action selectors, stored in the single storage item. Keep in sync with `PauseAction` on the
+# Rust side.
+const SELECTOR_PAUSE = 0
+const SELECTOR_UNPAUSE = 1
+
+# Expected note storage item count.
+const PAUSE_AGG_BRIDGE_NUM_STORAGE_ITEMS = 1
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Memory address of the note storage selector.
+const SELECTOR_PTR = STORAGE_PTR
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PAUSE_AGG_BRIDGE_UNKNOWN_SELECTOR = "PAUSE_AGG_BRIDGE note selector does not match a known action"
+const ERR_PAUSE_AGG_BRIDGE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "PAUSE_AGG_BRIDGE script expects exactly 1 note storage item"
+const ERR_PAUSE_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "PAUSE_AGG_BRIDGE note attachment target account does not match consuming account"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Agglayer Bridge PAUSE_AGG_BRIDGE script: toggles the bridge's emergency pause by calling the
+#! `PausableManager` `pause` / `unpause` procedure selected by the note storage.
+#!
+#! This note can only be consumed by the specific agglayer bridge account whose ID is provided in
+#! the note attachment (target_account_id), and only if the note sender is authorized for the
+#! selected action (the `ADMIN` role, via the account-wide `Authority` component).
+#!
+#! The selected action is read from the note storage (fixed at note creation, so authorization is
+#! bound to the note sender):
+#! - `0` Pause:   `[0]`.
+#! - `1` Unpause: `[1]`.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::access::pausable::manager::{pause, unpause}` (the `PausableManager`
+#!   component), backed by the `Pausable` and `Authority` companion components.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - target account ID does not match the consuming account ID.
+#! - the number of note storage items is not exactly 1.
+#! - the selector is not a known action.
+#! - the note sender is not authorized for the selected action (per the `Authority` component).
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_PAUSE_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    # Validate the number of storage items
+    push.PAUSE_AGG_BRIDGE_NUM_STORAGE_ITEMS
+    assert_eq.err=ERR_PAUSE_AGG_BRIDGE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    mem_load.SELECTOR_PTR
+    # => [selector, pad(16)]
+
+    # dispatch on the selector to the matching manager procedure
+    dup eq.SELECTOR_PAUSE
+    # => [is_pause, selector, pad(16)]
+
+    if.true
+        drop
+        # => [pad(16)]
+
+        call.manager::pause
+    else
+        eq.SELECTOR_UNPAUSE assert.err=ERR_PAUSE_AGG_BRIDGE_UNKNOWN_SELECTOR
+        # => [pad(16)]
+
+        call.manager::unpause
+    end
+    # => [pad(16)]
+end

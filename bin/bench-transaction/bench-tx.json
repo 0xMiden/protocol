@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79649,
       "chiplets_rows": 64650,
-      "range_rows": 20309,
+      "range_rows": 20351,
       "chiplets_shape": {
         "hasher_rows": 61568,
         "bitwise_rows": 640,
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 11463,
       "chiplets_rows": 22476,
-      "range_rows": 1287,
+      "range_rows": 1285,
       "chiplets_shape": {
         "hasher_rows": 21024,
         "bitwise_rows": 640,
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83178,
       "chiplets_rows": 67650,
-      "range_rows": 20475,
+      "range_rows": 20303,
       "chiplets_shape": {
         "hasher_rows": 64080,
         "bitwise_rows": 984,
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 14992,
       "chiplets_rows": 25476,
-      "range_rows": 1235,
+      "range_rows": 1241,
       "chiplets_shape": {
         "hasher_rows": 23536,
         "bitwise_rows": 984,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 78911,
       "chiplets_rows": 63101,
-      "range_rows": 20439,
+      "range_rows": 20419,
       "chiplets_shape": {
         "hasher_rows": 60128,
         "bitwise_rows": 616,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 10725,
       "chiplets_rows": 20895,
-      "range_rows": 1071,
+      "range_rows": 1069,
       "chiplets_shape": {
         "hasher_rows": 19552,
         "bitwise_rows": 616,
@@ -929,6 +929,30 @@
         "hasher_rows": 36320,
         "bitwise_rows": 616,
         "memory_rows": 1653,
+        "kernel_rom_rows": 62,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume PAUSE_AGG_BRIDGE note (with fee payment)": {
+    "prologue": 4171,
+    "notes_processing": 3078,
+    "note_execution": {
+      "0xb3c081eff250b63e2900d24862c3fb8290025fe48b827a5a53c07a915dc00747": 3036
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 14271,
+      "auth_procedure": 8693
+    },
+    "trace": {
+      "core_rows": 21606,
+      "chiplets_rows": 33838,
+      "range_rows": 1883,
+      "chiplets_shape": {
+        "hasher_rows": 31712,
+        "bitwise_rows": 616,
+        "memory_rows": 1447,
         "kernel_rom_rows": 62,
         "ace_rows": 0
       }
