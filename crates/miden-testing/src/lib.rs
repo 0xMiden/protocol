@@ -23,8 +23,7 @@ pub use mock_transaction::{ExecError, MockTransaction, MockTransactionBuilder};
 
 pub mod asserts;
 
-#[cfg(test)]
-mod executor;
+pub mod executor;
 
 #[cfg(test)]
 mod mock_host;
