@@ -36,7 +36,7 @@ use rstest::rstest;
 use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
 // The role-membership storage getters are shared with the `rbac` suite, which owns the
 // exhaustive tests of the underlying component.
-use crate::scripts::rbac::{is_role_member, role};
+use crate::scripts::rbac::{get_role_config, is_role_member, role};
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -439,9 +439,10 @@ async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::R
 
 /// Pins the operational hazard documented in SPEC section 2.5: nothing on-chain prevents the
 /// last `ADMIN` member from renouncing (or revoking) its own role, after which no sender can
-/// ever manage roles again — role rotation on the bridge is permanently disabled. Admin rotation
-/// must therefore grant the successor (and wait for the grant to be committed) before any
-/// revocation or renouncement is issued.
+/// manage `ADMIN`-administered roles again — with no delegated admin roles (as here), role
+/// rotation on the bridge is permanently disabled. Admin rotation must therefore grant the
+/// successor (and wait for the grant to be committed) before any revocation or renouncement is
+/// issued.
 #[rstest]
 #[case::renounce(true)]
 #[case::revoke_self(false)]
@@ -503,6 +504,110 @@ async fn removing_last_admin_permanently_disables_role_management(
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+    Ok(())
+}
+
+/// Pins the ADMIN-decommissioning recipe documented in SPEC section 2.5: after a delegate admin
+/// role is populated, made self-administering, and given an operational role's admin — in that
+/// order — emptying `ADMIN` leaves the delegate role able to manage both the operational role
+/// and its own membership.
+#[tokio::test]
+async fn self_administered_delegate_survives_admin_removal() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let delegate = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let second_delegate = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let new_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let mut bridge_account = setup.bridge_account;
+    let injector_admin_role = role("INJ_ADMIN");
+
+    let recipe = [
+        // 1. populate the delegate admin role
+        RbacAction::GrantRole {
+            role: injector_admin_role.clone(),
+            account: delegate.id(),
+        },
+        // 2. make it self-administering
+        RbacAction::SetRoleAdmin {
+            role: injector_admin_role.clone(),
+            admin_role: Some(injector_admin_role.clone()),
+        },
+        // 3. delegate the operational role to it
+        RbacAction::SetRoleAdmin {
+            role: AggLayerBridge::ger_injector_role(),
+            admin_role: Some(injector_admin_role.clone()),
+        },
+        // 4. empty ADMIN
+        RbacAction::RenounceRole {
+            role: RoleBasedAccessControl::admin_role(),
+        },
+    ];
+    let recipe_notes = recipe
+        .into_iter()
+        .map(|action| {
+            let note = bridge_rbac_action_note(
+                setup.admin,
+                bridge_account.id(),
+                action,
+                builder.rng_mut(),
+            )?;
+            builder.add_output_note(RawOutputNote::Full(note.clone()));
+            Ok(note)
+        })
+        .collect::<anyhow::Result<alloc::vec::Vec<_>>>()?;
+
+    // the delegate can still rotate GER_INJECTOR after ADMIN is empty
+    let grant_by_delegate = bridge_rbac_action_note(
+        delegate.id(),
+        bridge_account.id(),
+        RbacAction::GrantRole {
+            role: AggLayerBridge::ger_injector_role(),
+            account: new_injector.id(),
+        },
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(grant_by_delegate.clone()));
+
+    // ...and can still rotate INJ_ADMIN's own membership — the property step 2 exists for;
+    // without the self-administration, INJ_ADMIN would be frozen under the empty ADMIN role
+    let grant_second_delegate = bridge_rbac_action_note(
+        delegate.id(),
+        bridge_account.id(),
+        RbacAction::GrantRole {
+            role: injector_admin_role.clone(),
+            account: second_delegate.id(),
+        },
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(grant_second_delegate.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    for note in &recipe_notes {
+        execute_bridge_note(&mut mock_chain, &mut bridge_account, note).await?;
+    }
+    // ADMIN is empty (member count 0), and INJ_ADMIN's admin is INJ_ADMIN itself
+    let (admin_member_count, _) =
+        get_role_config(&bridge_account, &RoleBasedAccessControl::admin_role())?;
+    assert_eq!(admin_member_count.as_canonical_u64(), 0);
+    let (_, injector_admin_admin) = get_role_config(&bridge_account, &injector_admin_role)?;
+    assert_eq!(injector_admin_admin, injector_admin_role.as_element());
+
+    execute_bridge_note(&mut mock_chain, &mut bridge_account, &grant_by_delegate).await?;
+    assert!(is_role_member(
+        &bridge_account,
+        &AggLayerBridge::ger_injector_role(),
+        new_injector.id()
+    )?);
+
+    execute_bridge_note(&mut mock_chain, &mut bridge_account, &grant_second_delegate).await?;
+    assert!(is_role_member(&bridge_account, &injector_admin_role, second_delegate.id())?);
     Ok(())
 }
 

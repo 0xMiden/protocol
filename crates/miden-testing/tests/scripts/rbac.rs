@@ -70,7 +70,7 @@ fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKe
 }
 
 /// Returns the role's `(member_count, admin_role_symbol)` from on-chain storage.
-pub(super) fn get_role_config(
+pub(crate) fn get_role_config(
     account: &Account,
     role: &RoleSymbol,
 ) -> anyhow::Result<(Felt, Felt)> {

@@ -235,11 +235,27 @@ note model:
 - **`ADMIN` compromise is equivalent to compromise of every operational role.** Because
   `ADMIN` is the effective admin of any role whose delegated admin is unset, a compromised
   `ADMIN` key can grant itself (or any account) `FAUCET_MNGR`, `GER_INJECTOR`, or
-  `GER_REMOVER` with a single note. Before role rotation existed, the `ADMIN` key could do
-  nothing on-chain; it is now the root authority of the bridge and must be protected
-  accordingly (see the trust model in [Section 1](#1-entities-and-trust-model)). A deployment
-  can bound this by delegating each operational role's admin via `set_role_admin` (see the
-  delegation caveat below) and renouncing `ADMIN`.
+  `GER_REMOVER` with a single note. The `ADMIN` key is the root authority of the bridge and
+  must be protected accordingly (see the trust model in
+  [Section 1](#1-entities-and-trust-model)). A deployment can bound this by delegating each
+  operational role's admin to a dedicated role and then emptying `ADMIN`. Ordering is
+  critical, and note consumption order is attacker-chosen (see the rotation-ordering caveat
+  below): for each delegate admin role `X`, grant `X`'s members and wait for the grants to
+  commit, then make `X` self-administering (`set_role_admin(X, X)` - safe only once `X` has
+  members), then delegate the operational role to `X`, and only then empty `ADMIN`
+  (revoking or renouncing every member), verifying each step on-chain before issuing the
+  next. Skipping the self-administration step leaves `X` administered by the then-empty
+  `ADMIN` role, freezing its membership forever (see the delegation caveat below), and
+  emptying `ADMIN` also permanently forfeits every `ADMIN`-defaulted capability (see the
+  last-admin caveat), including populating any future role. The resulting configuration has
+  a residual risk: each self-administering delegate role is the irrevocable root of its own
+  subtree, and RBAC has no quorum semantics - any single member of `X` can revoke every
+  peer and then renounce, emptying `X` and permanently freezing `X` and every role
+  delegated to it, with no on-chain recovery. Multiple members protect only against key
+  loss, not compromise; compromise resistance must come from each member account's own
+  authentication (e.g. a multisig account), with custody at least as strong as `ADMIN`'s.
+  The resulting configuration is pinned by the
+  `self_administered_delegate_survives_admin_removal` test.
 - **Rotation ordering.** `RBAC_ACTION` notes are unordered, unexpiring instructions, and the
   bridge executes without signatures - any party can choose which pending note is consumed
   first. An `ADMIN` rotation must therefore be sequenced: grant the successor and wait for the
@@ -254,7 +270,8 @@ note model:
   need.
 - **Last-admin removal is irreversible.** `ADMIN` administers itself, and nothing on-chain
   prevents revoking or renouncing the last `ADMIN` member. Once the `ADMIN` role is empty, no
-  sender can manage roles again and every `ADMIN`-defaulted procedure is permanently
+  sender can manage `ADMIN`-administered roles again (roles delegated to a living admin role
+  remain manageable by it) and every `ADMIN`-defaulted procedure is permanently
   uninvokable. (Bridging itself cannot be bricked this way: `bridge_out` / `claim` are
   ungated, and no allowlisted note currently reaches an `ADMIN`-defaulted procedure - the
   loss is role management itself.) This failure mode is pinned by the
@@ -276,13 +293,13 @@ note model:
   RBAC-carrying account.
 - **Role membership is only as strong as the member's own auth.** Authorization is
   note-sender-based, so granting a bridge role to an account with permissionless
-  authentication (e.g. `no_auth`) hands that role to the public. Role membership was fixed at
-  deployment before; every grant is now a standing key-custody decision.
+  authentication (e.g. `no_auth`) hands that role to the public. Every grant is a standing
+  key-custody decision.
 - **Emptying an operational role.** Revoking the last holder of `FAUCET_MNGR`, `GER_INJECTOR`,
   or `GER_REMOVER` leaves the corresponding procedures uninvokable until the role's effective
   admin grants a new holder. Unlike last-admin removal, this is recoverable - provided the
-  role's admin has not been delegated to an empty, unmanageable role (see the delegation
-  caveat above).
+  role's effective admin is still a populated, manageable role (see the delegation caveat
+  above).
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
