@@ -2,16 +2,8 @@ use core::num::NonZeroU16;
 use core::slice;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountCodeInterface,
-    AccountComponentCode,
-    AccountId,
-    AccountType,
-    AssetCallbackFlag,
-};
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::account::{Account, AccountCodeInterface, AccountComponentCode, AccountId};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
     Note,
@@ -34,14 +26,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::access::{Authority, Pausable};
-use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
-use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
-};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -57,15 +42,8 @@ use miden_standards::tx_script::{
     SendWalletNotesTransactionScript,
 };
 use miden_testing::utils::create_p2any_note;
-use miden_testing::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_transaction_executor_error,
-};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
-use rand::RngExt;
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
@@ -345,44 +323,12 @@ fn test_send_note_script_root_is_independent_of_payload() -> anyhow::Result<()> 
     Ok(())
 }
 
-/// Builds an existing non-fungible faucet with allow-all policies and auth-controlled minting, so
-/// it is not treated as a network faucet.
-fn build_nft_faucet(builder: &mut MockChainBuilder, symbol: &str) -> anyhow::Result<Account> {
-    let faucet = NonFungibleFaucet::builder()
-        .name(TokenName::new(symbol)?)
-        .symbol(TokenSymbol::new(symbol)?)
-        .build();
-
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build();
-
-    let account_builder = AccountBuilder::new(builder.rng_mut().random())
-        .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
-        .with_component(faucet)
-        .with_component(Authority::AuthControlled)
-        .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused());
-
-    builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
-    )
-}
-
 /// Tests the execution of the `send_notes` script in case the sending account has the
 /// [`NonFungibleFaucet`] interface, which mints the note's asset from its commitment alone.
 #[tokio::test]
 async fn test_send_note_script_non_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet_account = build_nft_faucet(&mut builder, "NFT")?;
+    let faucet_account = builder.add_existing_non_fungible_faucet(Auth::IncrNonce, "NFT")?;
     let mock_chain = builder.build()?;
 
     let commitment =
