@@ -203,20 +203,9 @@ fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePo
 /// transaction builder can bound how long the bridge's transactions stay valid.
 ///
 /// The bridge also installs the [`Pausable`] and [`PausableManager`] components for emergency
-/// pauses. The manager's `pause`/`unpause` procedures have no entry in
-/// [`AggLayerBridge::procedure_roles`], so [`Authority`] falls back to requiring the built-in
-/// `ADMIN` role for them (dedicated `PAUSER`/`UNPAUSER` roles are a planned follow-up). While
-/// paused, all bridge entry points abort except `remove_ger`, which stays available as an
-/// emergency remediation tool.
-///
-/// The pause complements the [`Authority`] freeze switch rather than duplicating it: freezing
-/// blocks every authority-gated procedure - including `remove_ger` - but not `claim`/`bridge_out`,
-/// while the pause is the inverse, halting user-facing flows yet keeping GER revocation live.
-///
-/// Note that pausing stops the bridge from processing new CLAIM notes but does not retract MINT
-/// notes already emitted by earlier claims; the agglayer faucets are not pausable, so those mints
-/// can still be consumed after the pause. `remove_ger` remains the tool to invalidate the
-/// offending GER (and thereby future claims against it) during an incident.
+/// pauses, gated by the `ADMIN` role via the [`Authority`] unmapped-procedure fallback. While
+/// paused, all bridge entry points abort except `remove_ger`, which stays available so a
+/// fraudulent GER can still be revoked.
 fn create_bridge_account_builder(
     seed: Word,
     admin: AccountId,
@@ -224,8 +213,6 @@ fn create_bridge_account_builder(
     network_id: u32,
 ) -> AccountBuilder {
     let fee_policy_manager = agglayer_fee_policy_manager(AggLayerBridge::allowed_notes());
-    // The component order must match the bridge branch in build.rs, which replays this list to
-    // compute the compile-time code commitment.
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))

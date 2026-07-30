@@ -59,10 +59,7 @@ asset and the destination network/address. The bridge account consumes this note
 The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
 
-The bridge supports an emergency pause: while paused, `bridge_out`, `claim`, `update_ger`,
-`register_faucet`, `store_faucet_metadata_hash`, and `deregister_faucet` abort, while `remove_ger`
-stays available as an emergency remediation tool. See
-[Section 2.5](#25-administration) for the mechanism and authorization.
+The bridge supports an emergency pause; see [Section 2.5](#25-administration).
 
 ### 2.2 Bridge-in (AggLayer to Miden)
 
@@ -235,28 +232,17 @@ components); once they exist, the bridge only needs to add their script roots to
 
 The bridge account installs the `miden-standards` `Pausable` and `PausableManager` components.
 Every bridge entry point except `remove_ger` starts with `pausable::assert_not_paused`, so while
-the standards-owned `miden::standards::access::pausable::is_paused` slot holds a non-zero word the
-bridge rejects all bridge-out, claim, GER-injection, and faucet-management operations. `remove_ger`
-is deliberately exempt: during an incident a paused bridge can still revoke a fraudulent GER, and
-because `update_ger` is paused the revoked GER cannot be re-injected until the bridge is unpaused.
+the bridge is paused it rejects all bridge-out, claim, GER-injection, and faucet-management
+operations. `remove_ger` is deliberately exempt: a paused bridge can still revoke a fraudulent
+GER, and because `update_ger` is paused the revoked GER cannot be re-injected until unpause.
 
 The pause is toggled via the standards [`PAUSE_CONFIG`](#410-pause_config-standards) note, which
-dispatches to `PausableManager`'s `pause` / `unpause` procedures. These have no entry in the
-bridge's `Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
-Splitting this authority into dedicated `PAUSER` / `UNPAUSER` roles (so pause authority can be
-delegated without granting role administration) is a planned follow-up. Note that the pause is
-`ADMIN`-gated in both directions: if the `ADMIN` key is lost while the bridge is paused, the
-bridge cannot be unpaused and in-flight user notes remain unconsumable.
+dispatches to `PausableManager`'s `pause` / `unpause`. These have no entry in the bridge's
+`Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
 
-The pause note is not yet bound to the bridge on consumption, so the pause cannot currently be
-relied on as a censorship-resistant emergency brake; see
-[Section 4.10](#410-pause_config-standards) for the concrete attacks and the tracking issue.
-
-The pause interacts with the `Authority` freeze switch as complementary controls: freezing blocks
-every authority-gated procedure - including `remove_ger` - but not `claim` / `bridge_out`, while
-the pause is the inverse. Note also that pausing does not retract MINT notes already emitted by
-earlier claims; the faucets are not pausable, so in-flight mints still pay out after the pause.
-Removing the offending GER is the remediation for claims not yet processed.
+The pause complements the `Authority` freeze switch: freezing blocks every authority-gated
+procedure - including `remove_ger` - but not `claim` / `bridge_out`, while the pause is the
+inverse.
 
 ---
 
@@ -279,10 +265,9 @@ The underlying library code lives in `asm/agglayer/bridge/` with supporting modu
 `asm/agglayer/common/`.
 
 In addition to the `bridge` component, the account installs the standards access-control stack
-(`RoleBasedAccessControl`, `Authority`) and the emergency-pause stack (`Pausable` with the
-`is_paused` view, `PausableManager` with the `ADMIN`-gated `pause` / `unpause`); see
-[Section 2.5](#25-administration). All bridge procedures below except `remove_ger` additionally
-panic while the bridge is paused.
+(`RoleBasedAccessControl`, `Authority`) and the emergency-pause stack (`Pausable`,
+`PausableManager`). All bridge procedures below except `remove_ger` panic while the bridge is
+paused.
 
 #### `bridge_out::bridge_out`
 
@@ -438,8 +423,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 The privileged-role state is held by the access-control components installed on the bridge account
 (`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
 documented in `miden-standards`, rather than in dedicated bridge slots. Likewise, the emergency
-pause state lives in the standards-owned `miden::standards::access::pausable::is_paused` value
-slot (`[0, 0, 0, 0]` = unpaused, non-zero = paused) contributed by the `Pausable` component. See
+pause state lives in the `Pausable` component's own `is_paused` slot. See
 [Administration](#25-administration).
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
@@ -1020,55 +1004,22 @@ agglayer-specific note; the bridge merely includes its script root in
 `PausableManager::pause`, `1` to `PausableManager::unpause`.
 
 **Consumption:** The script loads the selector and `call`s the matching `PausableManager`
-procedure, which runs `authority::assert_authorized` before flipping the
-`miden::standards::access::pausable::is_paused` slot. On the bridge the procedure has no
-mapped role, so the note sender must hold the `ADMIN` role.
+procedure, which runs `authority::assert_authorized` before flipping the pause state. On the
+bridge that procedure has no mapped role, so the note sender must hold the `ADMIN` role.
 
-Build these notes with [`AggLayerBridge::pause_note`], not the standards builder directly: the
-`PauseConfigNote` builder attaches no `NetworkAccountTarget` by default, and the attachment is
-the network-routing primitive - without it the network transaction builder never delivers the
-note to the bridge, and the note is ineligible for fee sponsorship. The note tag alone is only a
-best-effort discovery filter.
+Build these notes with [`AggLayerBridge::pause_note`] rather than the standards builder, which
+attaches no `NetworkAccountTarget` - without it the note is never routed to the bridge.
 
-Unlike the agglayer admin notes above, the `PAUSE_CONFIG` script does not *assert* the
-attachment target: authorization is purely sender-based, resolved against the *consuming*
-account. This is a known limitation of the standards admin notes, tracked and to be fixed for
-the whole note family in [#3433](https://github.com/0xMiden/protocol/issues/3433). Until that
-lands the bridge inherits two consequences, neither of which the operator can mitigate
-operationally:
-
-- **Burn.** `PAUSE_CONFIG` notes are public, so their nullifiers are computable by any observer.
-  Anyone can create their own account carrying `Pausable` + `PausableManager` and consume the
-  bridge's pause note into it. The attacker needs no relationship to the bridge's `ADMIN`
-  whatsoever: under `Authority::AuthControlled` the manager's `assert_authorized` is a no-op, so
-  the decoy account accepts a note from any sender. (`Authority::OwnerControlled` naming the
-  bridge's `ADMIN` as owner also works, since initial ownership needs no consent from the named
-  account.) The note's nullifier is spent and the bridge never pauses; each replacement note can
-  be burned the same way. This applies equally to *unpause* notes - and since
-  `PausableManager::unpause` does not require the account to be paused, one throwaway account
-  absorbs both directions without any setup. A bridge that has been paused can therefore be held
-  paused, in which case all `CLAIM` and `B2AGG` flows keep aborting and user funds stay stuck:
-  the bridge is a network account whose tx-script allowlist admits only
-  `ExpirationTransactionScript`, so a note is the only route to `unpause`.
-- **Redirection.** Conversely, a pause/unpause note the `ADMIN` issued for some other `Pausable`
-  account can be consumed by the bridge - pausing the bridge at a moment of the attacker's
-  choosing, or lifting an emergency pause mid-incident.
-
-Consequently the pause must not be relied on as a censorship-resistant emergency brake, and its
-availability in either direction is not guaranteed, until
-[#3433](https://github.com/0xMiden/protocol/issues/3433) binds these notes to their target.
-
-Note for that migration: binding the note changes its script root, and a deployed bridge's note
-allowlist is storage fixed at account creation. An already-deployed bridge therefore does not
-pick up the fixed note automatically - the bound root must be added *and* the old unbound root
-removed, or the unbound path stays open on that account.
+Unlike the agglayer admin notes above, the `PAUSE_CONFIG` script does not *assert* the attachment
+target, so the note is not bound to the bridge on consumption. This affects the whole standards
+admin-note family and is tracked in [#3433](https://github.com/0xMiden/protocol/issues/3433).
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
-| **Consumer** | Bridge account -- **routed** via the issuer-added `NetworkAccountTarget` attachment; not script-enforced (see [#3433](https://github.com/0xMiden/protocol/issues/3433)) |
+| **Consumer** | Bridge account -- **routed** via the `NetworkAccountTarget` attachment; not script-enforced ([#3433](https://github.com/0xMiden/protocol/issues/3433)) |
 
 ---
 

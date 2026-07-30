@@ -116,7 +116,6 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=8
 @locals(15)
 @account_procedure
 pub proc bridge_out
-    # assert the bridge is not in the emergency-paused state
     exec.pausable::assert_not_paused
 
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC

@@ -275,9 +275,6 @@ fn generate_agglayer_constants(
                 admin: dummy_owner,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
-            // The emergency-pause stack, in the same order as `create_bridge_account_builder`.
-            // Only component code affects the commitment, so the initial paused/unpaused state
-            // is immaterial here.
             components.push(AccountComponent::from(Pausable::unpaused()));
             components.push(AccountComponent::from(PausableManager));
         } else if component_name == "faucet" {

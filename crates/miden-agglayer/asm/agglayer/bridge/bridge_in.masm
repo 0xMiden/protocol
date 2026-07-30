@@ -173,7 +173,6 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 @locals(2) # 0: dest_prefix, 1: dest_suffix
 @account_procedure
 pub proc claim
-    # assert the bridge is not in the emergency-paused state
     exec.pausable::assert_not_paused
 
     # Write output note faucet amount to memory
