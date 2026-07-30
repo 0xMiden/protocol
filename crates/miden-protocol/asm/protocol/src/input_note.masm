@@ -533,7 +533,7 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
     # => [is_found, note_idx, TARGET_NOTE_ID]
 
     if.true
-        # Authenticate a reported match against the note ID cached by the prologue.
+        # Authenticate the claimed match against the note's ID.
         dup exec.get_note_id
         # => [NOTE_ID, note_idx, TARGET_NOTE_ID]
 
