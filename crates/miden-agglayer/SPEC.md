@@ -840,17 +840,21 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 |-------|-------|
 | `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
-| `storage` | None (0 felts) |
+| `storage` | Asset to burn (8 felts) |
 
-**Storage layout (0 felts):**
+**Storage layout (8 felts):**
 
-No fields -- this is a standard burn note with no custom data.
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0-3 | `ASSET_ID` | Identifier of the asset to burn |
+| 4-7 | `ASSET_VALUE` | Value of the asset to burn |
 
 **Consumption:**
 
-The standard BURN script calls `faucets::burn` on the consuming faucet account. This
-validates that the note contains exactly one fungible asset issued by that faucet and
-decreases the faucet's total token supply by the burned amount.
+The standard BURN script validates that the note carries exactly one asset matching the asset in
+storage, then passes the stored asset to the faucet's `receive_and_burn` procedure. The faucet
+validates that the fungible asset was issued by it and decreases its total token supply by the
+burned amount.
 
 #### Permissions
 

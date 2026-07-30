@@ -7,47 +7,47 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
-    ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_RBAC_ACTION_UNKNOWN_SELECTOR,
+    ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{RbacAction, RbacActionNote};
+use miden_standards::note::{RbacConfig, RbacConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
-// The RBAC account and storage-getter helpers are shared with the `rbac` suite, which owns the
-// exhaustive tests of the underlying component. This suite only checks that the RbacAction
-// note dispatches each action and rejects malformed notes.
-use super::rbac::{create_rbac_chain, get_role_config, is_role_member, role, test_account_id};
+// The RBAC account and storage-getter helpers are shared with the parent `rbac` suite, which
+// owns the exhaustive tests of the underlying component. This suite only checks that the
+// RbacConfig note dispatches each action and rejects malformed notes.
+use super::{create_rbac_chain, get_role_config, is_role_member, role, test_account_id};
 
 // HELPERS
 // ================================================================================================
 
-/// Builds an [`RbacActionNote`] for `action` sent by `sender` and targeting `account`.
-fn rbac_action_note(
+/// Builds an [`RbacConfigNote`] for `config` sent by `sender` and targeting `account`.
+fn rbac_config_note(
     sender: AccountId,
     account: AccountId,
-    action: RbacAction,
+    config: RbacConfig,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
-    let note = RbacActionNote::builder()
+    let note = RbacConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .generate_serial_number(rng)
         .build()?
         .into();
     Ok(note)
 }
 
-/// Builds a note carrying the RbacAction script with hand-crafted storage, bypassing the builder
+/// Builds a note carrying the RbacConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
-fn malformed_rbac_action_note(
+fn malformed_rbac_config_note(
     sender: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
-        .script(RbacActionNote::script())
+        .script(RbacConfigNote::script())
         .note_storage(storage)?
         .build()?;
     Ok(note)
@@ -84,19 +84,19 @@ async fn grant_then_revoke_dispatch() -> anyhow::Result<()> {
     let (account, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let grant = rbac_action_note(
+    let grant = rbac_config_note(
         admin,
         account.id(),
-        RbacAction::GrantRole { role: minter.clone(), account: member },
+        RbacConfig::GrantRole { role: minter.clone(), account: member },
         &mut rng,
     )?;
     let granted = execute_note_and_apply(&mock_chain, &account, grant).await?;
     assert!(is_role_member(&granted, &minter, member)?);
 
-    let revoke = rbac_action_note(
+    let revoke = rbac_config_note(
         admin,
         granted.id(),
-        RbacAction::RevokeRole { role: minter.clone(), account: member },
+        RbacConfig::RevokeRole { role: minter.clone(), account: member },
         &mut rng,
     )?;
     let revoked = execute_note_and_apply(&mock_chain, &granted, revoke).await?;
@@ -114,10 +114,10 @@ async fn set_role_admin_dispatch() -> anyhow::Result<()> {
     let (account, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let note = rbac_action_note(
+    let note = rbac_config_note(
         admin,
         account.id(),
-        RbacAction::SetRoleAdmin {
+        RbacConfig::SetRoleAdmin {
             role: minter.clone(),
             admin_role: Some(mint_admin.clone()),
         },
@@ -140,20 +140,20 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     let (account, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let grant = rbac_action_note(
+    let grant = rbac_config_note(
         admin,
         account.id(),
-        RbacAction::GrantRole { role: minter.clone(), account: member },
+        RbacConfig::GrantRole { role: minter.clone(), account: member },
         &mut rng,
     )?;
     let granted = execute_note_and_apply(&mock_chain, &account, grant).await?;
     assert!(is_role_member(&granted, &minter, member)?);
 
     // the member (note sender) renounces the role itself
-    let renounce = rbac_action_note(
+    let renounce = rbac_config_note(
         member,
         granted.id(),
-        RbacAction::RenounceRole { role: minter.clone() },
+        RbacConfig::RenounceRole { role: minter.clone() },
         &mut rng,
     )?;
     let renounced = execute_note_and_apply(&mock_chain, &granted, renounce).await?;
@@ -169,7 +169,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // selector 99 is not a known action
-    let note = malformed_rbac_action_note(admin, vec![Felt::from(99u32)], &mut rng)?;
+    let note = malformed_rbac_config_note(admin, vec![Felt::from(99u32)], &mut rng)?;
     let result = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -177,7 +177,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_RBAC_ACTION_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_UNKNOWN_SELECTOR);
     Ok(())
 }
 
@@ -189,7 +189,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // GrantRole selector (0) but only one storage item instead of the expected four
-    let note = malformed_rbac_action_note(admin, vec![Felt::from(0u32)], &mut rng)?;
+    let note = malformed_rbac_config_note(admin, vec![Felt::from(0u32)], &mut rng)?;
     let result = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -197,6 +197,6 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
     Ok(())
 }

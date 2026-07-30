@@ -10,10 +10,10 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
-    ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_PAUSE_ACTION_UNKNOWN_SELECTOR,
+    ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{PauseAction, PauseActionNote};
+use miden_standards::note::{PauseConfig, PauseConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -38,32 +38,32 @@ fn is_paused(account: &Account) -> anyhow::Result<bool> {
     Ok(word != Word::default())
 }
 
-/// Builds a [`PauseActionNote`] for `action` sent by `sender` and targeting `account`.
-fn pause_action_note(
+/// Builds a [`PauseConfigNote`] for `config` sent by `sender` and targeting `account`.
+fn pause_config_note(
     sender: AccountId,
     account: AccountId,
-    action: PauseAction,
+    config: PauseConfig,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
-    let note = PauseActionNote::builder()
+    let note = PauseConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .generate_serial_number(rng)
         .build()?
         .into();
     Ok(note)
 }
 
-/// Builds a note carrying the PauseAction script with hand-crafted storage, bypassing the builder
+/// Builds a note carrying the PauseConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
-fn malformed_pause_action_note(
+fn malformed_pause_config_note(
     sender: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
-        .script(PauseActionNote::script())
+        .script(PauseConfigNote::script())
         .note_storage(storage)?
         .build()?;
     Ok(note)
@@ -101,11 +101,11 @@ async fn pause_then_unpause_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let pause = pause_action_note(owner, account.id(), PauseAction::Pause, &mut rng)?;
+    let pause = pause_config_note(owner, account.id(), PauseConfig::Pause, &mut rng)?;
     let paused = execute_note_and_apply(&mock_chain, &account, &pause).await?;
     assert!(is_paused(&paused)?);
 
-    let unpause = pause_action_note(owner, paused.id(), PauseAction::Unpause, &mut rng)?;
+    let unpause = pause_config_note(owner, paused.id(), PauseConfig::Unpause, &mut rng)?;
     let unpaused = execute_note_and_apply(&mock_chain, &paused, &unpause).await?;
     assert!(!is_paused(&unpaused)?);
     Ok(())
@@ -123,14 +123,14 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // selector 99 is not a known action
-    let note = malformed_pause_action_note(owner, vec![Felt::from(99u32)], &mut rng)?;
+    let note = malformed_pause_config_note(owner, vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_ACTION_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR);
     Ok(())
 }
 
@@ -147,13 +147,13 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 
     // Pause selector (0) but two storage items instead of the expected one
     let note =
-        malformed_pause_action_note(owner, vec![Felt::from(0u32), Felt::from(0u32)], &mut rng)?;
+        malformed_pause_config_note(owner, vec![Felt::from(0u32), Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
     Ok(())
 }

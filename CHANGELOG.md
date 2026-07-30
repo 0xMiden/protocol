@@ -6,15 +6,18 @@
 
 - Added `miden::standards::interop::eth::bytes32_to_account_id` and the `TryFrom<[u8; 32]>` impl for `EthAddress` for converting bytes32-embedded Ethereum-format addresses ([#3426](https://github.com/0xMiden/protocol/pull/3426)).
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- Added the `AllowlistConfigNote` standard note, which dispatches the `AllowlistManager` admin procedures (`allow_account`, `disallow_account`) on the account that consumes it ([#3440](https://github.com/0xMiden/protocol/pull/3440)).
 - [BREAKING] Added `NetworkNotePricer` in `miden-tx` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 - Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it ([#3438](https://github.com/0xMiden/protocol/pull/3438)).
 
 ### Features
 
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
+- Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 
 ### Changes
 
+- [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).
 - [BREAKING] Reduced the maximum number of assets a note can carry from 64 to 16 ([#3381](https://github.com/0xMiden/protocol/issues/3381)).
 Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide an input-note index hint. Successful lookups authenticate it against the `NoteId` cached by the transaction prologue, while reported misses are validated by a full scan ([#3424](https://github.com/0xMiden/protocol/pull/3424)).
@@ -31,10 +34,13 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Replaced `SwapNote::create` with `SwapNote::builder()` ([#3414](https://github.com/0xMiden/protocol/pull/3414)).
 - [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
 - [BREAKING] Removed the redundant zero-nomination check and the `ERR_NO_NOMINATED_OWNER` error constant from `ownable2step::accept_ownership`; since a note sender can never be the zero address stored when no transfer is nominated, accepting ownership without a pending nomination now fails with `ERR_SENDER_NOT_NOMINATED_OWNER` ([#3416](https://github.com/0xMiden/protocol/pull/3416)).
+- [BREAKING] Renamed the component management notes to use "config" terminology: `FaucetPolicyActionNote`, `OwnerActionNote`, `PauseActionNote` and `RbacActionNote` (and the action enums they carry) are now `FaucetPolicyConfigNote`, `OwnerConfigNote`, `PauseConfigNote` and `RbacConfigNote`, and every config note builder takes its action via `.config()` instead of `.action()` ([#3434](https://github.com/0xMiden/protocol/pull/3434)).
+- [BREAKING] Made `RbacConfigNote` and `OwnerConfigNote` add the `NetworkAccountTarget` attachment routing the note to the managed account unless the caller supplies one, since both are network notes, and convert into an `AccountTargetNetworkNote` via `From` ([#3434](https://github.com/0xMiden/protocol/pull/3434)).
 - Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
 - [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
 - [BREAKING] Bound FEE_SPONSORSHIP notes to the notes they pay for by note ID instead of by position in `collect_sponsored_fees` and allow multiple sponsorship notes to sponsor the same feature note ([#3318](https://github.com/0xMiden/protocol/issues/3318)).
+- [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 
 ### Fixes
 
