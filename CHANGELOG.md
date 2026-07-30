@@ -38,7 +38,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
 - [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
-- [BREAKING] Changed the `FaucetPolicyConfigNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]`, so that the policy root is word-aligned in memory and the note script can load it with a single `mem_loadw_le` ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
+- [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 
 ### Fixes
 
