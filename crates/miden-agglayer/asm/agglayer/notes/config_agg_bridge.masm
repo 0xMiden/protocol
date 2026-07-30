@@ -1,5 +1,5 @@
 use agglayer::bridge::bridge_config
-use agglayer::common::utils
+use miden::standards::utils
 use miden::protocol::active_note
 use miden::standards::attachments::network_account_target
 

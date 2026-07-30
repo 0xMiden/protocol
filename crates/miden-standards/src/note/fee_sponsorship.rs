@@ -23,6 +23,7 @@ use miden_protocol::{Felt, Word};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
+use crate::note::costs::{FEE_SPONSORSHIP_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -313,6 +314,15 @@ impl TryFrom<&[Felt]> for FeeSponsorshipNoteStorage {
         )?;
 
         Ok(Self::new(feature_note_id, reclaimer, reclaim_height))
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for FeeSponsorshipNote {
+    fn consumption_cycles() -> u32 {
+        FEE_SPONSORSHIP_CONSUMPTION_CYCLES
     }
 }
 

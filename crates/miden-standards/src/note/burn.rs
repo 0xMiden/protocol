@@ -22,6 +22,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::StandardsLib;
+use crate::note::costs::{BURN_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -180,6 +181,15 @@ impl From<BurnNote> for Note {
         let assets = NoteAssets::new(vec![note.asset])
             .expect("a single asset never exceeds the note asset limit");
         Note::with_attachments(assets, metadata, recipient, note.attachments)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for BurnNote {
+    fn consumption_cycles() -> u32 {
+        BURN_CONSUMPTION_CYCLES
     }
 }
 

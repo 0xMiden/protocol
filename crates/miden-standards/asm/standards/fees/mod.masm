@@ -23,7 +23,6 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
 use miden::standards::note
-use miden::standards::note::note_id
 use miden::standards::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS, FEATURE_NOTE_ID_ITEM_OFFSET} from miden::standards::notes::fee_sponsorship
@@ -194,7 +193,7 @@ pub proc collect_sponsored_fees(fee_asset_id: AssetId) -> felt
             push.0 locaddr.REQUIRED_FEE_TABLE_LOC dup.2 add mem_store
             # => [note_idx, total_fee_amount]
 
-            dup exec.get_sponsored_feature_note_id exec.note_id::find_input_note_by_id
+            dup exec.get_sponsored_feature_note_id exec.input_note::find_note
             # => [is_found, feature_note_idx, note_idx, total_fee_amount]
 
             # a sponsorship note that is reclaimed does not need its feature note present and
@@ -773,7 +772,7 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     # => []
 
     # derive a unique serial for the sponsorship note from the feature note ID
-    loc_load.CREATE_NOTE_IDX_LOC exec.note_id::compute_output_note_id
+    loc_load.CREATE_NOTE_IDX_LOC exec.output_note::compute_note_id
     # => [FEATURE_NOTE_ID]
 
     loc_storew_le.CREATE_FEATURE_NOTE_ID_LOC
