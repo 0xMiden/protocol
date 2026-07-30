@@ -24,6 +24,9 @@ pub const BURN_CONSUMPTION_CYCLES: u32 = 27251;
 /// Cycles of consuming a FAUCET_POLICY_ACTION note (single benchmarked path).
 pub const FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES: u32 = 26658;
 
+/// Cycles of consuming a FUNGIBLE_FAUCET_CONFIG note (single benchmarked path).
+pub const FUNGIBLE_FAUCET_CONFIG_CONSUMPTION_CYCLES: u32 = 25472;
+
 /// Cycles of consuming an ALLOWLIST_CONFIG note (single benchmarked path).
 pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 24762;
 

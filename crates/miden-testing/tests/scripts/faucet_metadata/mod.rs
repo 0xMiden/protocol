@@ -14,6 +14,8 @@
 
 extern crate alloc;
 
+mod config;
+
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
@@ -56,17 +58,21 @@ fn owner_id() -> AccountId {
     AccountIdBuilder::new().build_with_seed([1; 32])
 }
 
-/// Builds an existing fungible faucet owned by `owner` via `Authority::OwnerControlled`, with the
-/// three metadata mutability flags set to `mutable`.
+/// Initial maximum supply of the faucets built by [`create_faucet`].
+const INITIAL_MAX_SUPPLY: u64 = 1_000_000;
+
+/// Builds an existing fungible faucet owned by `owner` via `Authority::OwnerControlled`, with every
+/// metadata mutability flag set to `mutable`.
 fn create_faucet(owner: AccountId, mutable: bool) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("SYM")?)
         .symbol("SYM".try_into()?)
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
+        .max_supply(AssetAmount::new(INITIAL_MAX_SUPPLY)?)
         .is_description_mutable(mutable)
         .is_logo_uri_mutable(mutable)
         .is_external_link_mutable(mutable)
+        .is_max_supply_mutable(mutable)
         .build()?;
 
     let account = AccountBuilder::new([43; 32])

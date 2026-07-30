@@ -10,6 +10,7 @@
 - [BREAKING] Added `NetworkNotePricer` in `miden-tx` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 - Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it ([#3438](https://github.com/0xMiden/protocol/pull/3438)).
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
+- Added the `FungibleFaucetConfigNote` standard note, which dispatches the `FungibleFaucet` token metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`) on the account that consumes it. The three string setters read their new value from the advice map, so the note carries the 7-Word payload in its storage and the script commits to it and republishes it under that commitment before the call ([#3046](https://github.com/0xMiden/protocol/issues/3046)).
 
 ### Features
 

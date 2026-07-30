@@ -30,6 +30,9 @@ pub use execution_hint::NoteExecutionHint;
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
+mod fungible_faucet_config;
+pub use fungible_faucet_config::{FungibleFaucetConfig, FungibleFaucetConfigNote};
+
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
@@ -83,6 +86,7 @@ pub enum StandardNote {
     MINT,
     BURN,
     FAUCET_POLICY_ACTION,
+    FUNGIBLE_FAUCET_CONFIG,
     ALLOWLIST_CONFIG,
     BLOCKLIST_CONFIG,
     PAUSE_ACTION,
@@ -127,6 +131,9 @@ impl StandardNote {
         if root == FaucetPolicyActionNote::script_root() {
             return Some(Self::FAUCET_POLICY_ACTION);
         }
+        if root == FungibleFaucetConfigNote::script_root() {
+            return Some(Self::FUNGIBLE_FAUCET_CONFIG);
+        }
         if root == AllowlistConfigNote::script_root() {
             return Some(Self::ALLOWLIST_CONFIG);
         }
@@ -168,6 +175,7 @@ impl StandardNote {
             Self::MINT => "MINT",
             Self::BURN => "BURN",
             Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
+            Self::FUNGIBLE_FAUCET_CONFIG => "FUNGIBLE_FAUCET_CONFIG",
             Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
             Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
             Self::PAUSE_ACTION => "PAUSE_ACTION",
@@ -189,6 +197,8 @@ impl StandardNote {
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
+            // FungibleFaucetConfig storage is variable per action; this returns the upper bound.
+            Self::FUNGIBLE_FAUCET_CONFIG => FungibleFaucetConfigNote::MAX_NUM_STORAGE_ITEMS,
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
@@ -212,6 +222,7 @@ impl StandardNote {
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
+            Self::FUNGIBLE_FAUCET_CONFIG => FungibleFaucetConfigNote::script(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
             Self::PAUSE_ACTION => PauseActionNote::script(),
@@ -233,6 +244,7 @@ impl StandardNote {
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
+            Self::FUNGIBLE_FAUCET_CONFIG => FungibleFaucetConfigNote::script_root(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
