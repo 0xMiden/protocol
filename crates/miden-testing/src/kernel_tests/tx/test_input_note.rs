@@ -2,17 +2,17 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
 };
-use miden_protocol::note::{Note, NoteAssets, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -21,6 +21,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ASSET_SIZE;
+use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
@@ -28,7 +29,32 @@ use rstest::rstest;
 
 use super::{ExecutionOutputExt, TestSetup, setup_test};
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, TestTransactionBuilder, assert_execution_error};
+use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
+
+/// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
+/// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
+fn two_note_tx() -> anyhow::Result<MockTransaction> {
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let bare_note = NoteBuilder::new(account.id(), &mut rng).build()?;
+    let rich_note = NoteBuilder::new(account.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .add_assets(vec![FungibleAsset::mock(150)])
+        .attachment(NoteAttachment::with_word(
+            NoteAttachmentScheme::new(10)?,
+            Word::from([3, 4, 5, 6u32]),
+        ))
+        .attachment(NoteAttachment::with_word(
+            NoteAttachmentScheme::new(20)?,
+            Word::from([7, 8, 9, 10u32]),
+        ))
+        .build()?;
+
+    TestTransactionBuilder::new(account)
+        .input_notes(vec![bare_note, rich_note])
+        .build()
+}
 
 /// A note's ID read from MASM must match `Note::id()` in Rust through both the indexed and active
 /// note accessors.
@@ -83,6 +109,104 @@ async fn active_and_input_note_id_matches_rust(
 
     let exec_output = mock_tx.execute_code(&code).await?;
     assert_eq!(exec_output.get_stack_word(0), expected_note_id.as_word());
+
+    Ok(())
+}
+
+/// Finding an input note by its ID returns the note's index; both fixture notes must be found at
+/// their own index.
+#[rstest]
+#[tokio::test]
+async fn find_note_returns_index(#[values(0, 1)] note_index: u8) -> anyhow::Result<()> {
+    let mock_tx = two_note_tx()?;
+    let note_id = mock_tx.input_notes().get_note(note_index as usize).note().id();
+
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::input_note
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{note_id}
+            exec.input_note::find_note
+            # => [is_found, note_idx]
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        note_id = note_id.as_word(),
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word(0), Word::from([1, note_index as u32, 0, 0]));
+
+    Ok(())
+}
+
+/// An ID that matches no input note reports is_found = 0.
+#[tokio::test]
+async fn find_note_reports_missing_note() -> anyhow::Result<()> {
+    let mock_tx = two_note_tx()?;
+    let unknown_id = Word::from([11, 12, 13, 14u32]);
+
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::input_note
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{unknown_id}
+            exec.input_note::find_note
+            # => [is_found, note_idx]
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#
+    );
+
+    let exec_output = mock_tx.execute_code(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word(0), Word::empty());
+
+    Ok(())
+}
+
+/// Invalid host claims are rejected: a reported match must identify the requested note, and a
+/// reported miss must survive a full scan of all input notes.
+#[rstest]
+#[case::incorrect_match([Felt::ONE, Felt::ONE])]
+#[case::incorrect_miss([Felt::ZERO, Felt::ZERO])]
+#[tokio::test]
+async fn find_note_rejects_invalid_host_claim(#[case] response: [Felt; 2]) -> anyhow::Result<()> {
+    let mock_tx = two_note_tx()?;
+    let note_id = mock_tx.input_notes().get_note(0).note().id();
+    let code = format!(
+        r#"
+        use miden::protocol::input_note
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{note_id}
+            exec.input_note::find_note
+        end
+        "#,
+        note_id = note_id.as_word(),
+    );
+
+    let result = mock_tx.execute_code_with_input_note_index_response(&code, response).await;
+
+    assert_execution_error!(result, ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID);
 
     Ok(())
 }

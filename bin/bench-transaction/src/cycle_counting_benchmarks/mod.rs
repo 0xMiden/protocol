@@ -29,10 +29,12 @@ pub enum ExecutionBenchmark {
     ConsumeMintFungibleNetwork,
     ConsumeMintNonFungibleNetwork,
     ConsumeBurnNetwork,
-    ConsumeFaucetPolicyActionNetwork,
-    ConsumePauseActionNetwork,
-    ConsumeOwnerActionNetwork,
-    ConsumeRbacActionNetwork,
+    ConsumeFaucetPolicyConfigNetwork,
+    ConsumeAllowlistConfigNetwork,
+    ConsumeBlocklistConfigNetwork,
+    ConsumePauseConfigNetwork,
+    ConsumeOwnerConfigNetwork,
+    ConsumeRbacConfigNetwork,
     ConsumeNetworkAccountConfigNetwork,
     ConsumeConstantFeePolicyConfigNetwork,
     ConsumeFeeSponsorshipWithFeatureNetwork,
@@ -74,10 +76,12 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeMintFungibleNetwork,
             ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ExecutionBenchmark::ConsumeBurnNetwork,
-            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork,
-            ExecutionBenchmark::ConsumePauseActionNetwork,
-            ExecutionBenchmark::ConsumeOwnerActionNetwork,
-            ExecutionBenchmark::ConsumeRbacActionNetwork,
+            ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork,
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork,
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork,
+            ExecutionBenchmark::ConsumePauseConfigNetwork,
+            ExecutionBenchmark::ConsumeOwnerConfigNetwork,
+            ExecutionBenchmark::ConsumeRbacConfigNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
             ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
@@ -166,17 +170,23 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeBurnNetwork => {
                 write!(f, "consume BURN note (network account)")
             },
-            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
-                write!(f, "consume FAUCET_POLICY_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork => {
+                write!(f, "consume FAUCET_POLICY_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumePauseActionNetwork => {
-                write!(f, "consume PAUSE_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+                write!(f, "consume ALLOWLIST_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumeOwnerActionNetwork => {
-                write!(f, "consume OWNER_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
+                write!(f, "consume BLOCKLIST_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumeRbacActionNetwork => {
-                write!(f, "consume RBAC_ACTION note (network account)")
+            ExecutionBenchmark::ConsumePauseConfigNetwork => {
+                write!(f, "consume PAUSE_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeOwnerConfigNetwork => {
+                write!(f, "consume OWNER_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeRbacConfigNetwork => {
+                write!(f, "consume RBAC_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
                 write!(f, "consume NETWORK_ACCOUNT_CONFIG note (network account)")

@@ -1,7 +1,7 @@
 use miden::core::crypto::hashes::keccak256
 use {load_zeros_to_memory} from agglayer::bridge::canonical_zeros
-use {mem_store_double_word} from agglayer::common::utils
-use {mem_load_double_word} from agglayer::common::utils
+use {mem_store_double_word} from miden::standards::utils
+use {mem_load_double_word} from miden::standards::utils
 
 # A Merkle Tree Frontier (MTF) is a data structure based on an Merkle Mountain Range (MMR), which
 # combines some features of an MMR and an SMT.
