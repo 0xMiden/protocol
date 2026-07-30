@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::num::NonZeroU16;
 
 use miden_protocol::account::{AccountCodeInterface, AccountId, AccountProcedureRoot};
+use miden_protocol::asset::AssetComposition;
 use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
@@ -284,7 +285,7 @@ impl SendWalletNotesTransactionScript {
 /// The canonical `send_notes` [`TransactionScript`] for accounts exposing the [`FungibleFaucet`]
 /// procedures, which sends notes holding assets the faucet mints as part of note creation.
 ///
-/// Every note must carry exactly one asset, issued by this faucet.
+/// Every note must carry exactly one fungible asset, issued by this faucet.
 ///
 /// Faucets that delegate minting to an authority (those exposing [`Ownable2Step`] or
 /// [`RoleBasedAccessControl`]) are network faucets that mint exclusively via MINT notes, so they
@@ -319,7 +320,7 @@ impl SendFungibleFaucetNotesTransactionScript {
     /// - The interface does not expose the [`FungibleFaucet`] procedure the script calls.
     /// - The faucet delegates minting to an authority.
     /// - Any note is not sent by the faucet.
-    /// - Any note does not carry exactly one asset issued by the faucet.
+    /// - Any note does not carry exactly one fungible asset issued by the faucet.
     pub fn with_expiration_delta(
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
@@ -349,7 +350,7 @@ impl SendFungibleFaucetNotesTransactionScript {
         expiration_delta: u16,
     ) -> Result<Self, SendNotesTransactionScriptError> {
         validate_faucet(interface, FungibleFaucet::mint_and_send_root())?;
-        validate_minted_notes(interface.id(), output_notes)?;
+        validate_minted_notes(interface.id(), output_notes, AssetComposition::Fungible)?;
 
         Ok(Self(SendNotesScript::new(
             SEND_NOTES_FUNGIBLE_FAUCET_TX_SCRIPT.clone(),
@@ -365,9 +366,9 @@ impl SendFungibleFaucetNotesTransactionScript {
 /// The canonical `send_notes` [`TransactionScript`] for accounts exposing the [`NonFungibleFaucet`]
 /// procedures, which sends notes holding assets the faucet mints as part of note creation.
 ///
-/// Every note must carry exactly one asset, issued by this faucet. Unlike the fungible faucet,
-/// `non_fungible::mint_and_send` derives the asset from the faucet itself, so the script passes it
-/// only the asset's commitment.
+/// Every note must carry exactly one non-fungible asset, issued by this faucet. Unlike the fungible
+/// faucet, `non_fungible::mint_and_send` derives the asset from the faucet itself, so the script
+/// passes it only the asset's commitment.
 ///
 /// Faucets that delegate minting to an authority (those exposing [`Ownable2Step`] or
 /// [`RoleBasedAccessControl`]) are network faucets that mint exclusively via MINT notes, so they
@@ -402,7 +403,7 @@ impl SendNonFungibleFaucetNotesTransactionScript {
     /// - The interface does not expose the [`NonFungibleFaucet`] procedure the script calls.
     /// - The faucet delegates minting to an authority.
     /// - Any note is not sent by the faucet.
-    /// - Any note does not carry exactly one asset issued by the faucet.
+    /// - Any note does not carry exactly one non-fungible asset issued by the faucet.
     pub fn with_expiration_delta(
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
@@ -432,7 +433,7 @@ impl SendNonFungibleFaucetNotesTransactionScript {
         expiration_delta: u16,
     ) -> Result<Self, SendNotesTransactionScriptError> {
         validate_faucet(interface, NonFungibleFaucet::mint_and_send_root())?;
-        validate_minted_notes(interface.id(), output_notes)?;
+        validate_minted_notes(interface.id(), output_notes, AssetComposition::None)?;
 
         Ok(Self(SendNotesScript::new(
             SEND_NOTES_NON_FUNGIBLE_FAUCET_TX_SCRIPT.clone(),
@@ -495,6 +496,14 @@ pub enum SendNotesTransactionScriptError {
     IssuanceFaucetMismatch(AccountId),
     #[error("note created by the faucet doesn't contain exactly one asset")]
     FaucetNoteUnexpectedNumAssets,
+    #[error(
+        "note asset has the {actual} composition but the faucet mints assets with the {expected} \
+         composition"
+    )]
+    AssetCompositionMismatch {
+        expected: AssetComposition,
+        actual: AssetComposition,
+    },
     #[error("invalid sender account: {0}")]
     InvalidSenderAccount(AccountId),
     #[error(
@@ -530,11 +539,13 @@ fn validate_faucet(
     Ok(())
 }
 
-/// Validates that every note is sent by `sender` and carries exactly one asset issued by it, as
-/// both faucet scripts mint exactly one asset per note.
+/// Validates that every note is sent by `sender` and carries exactly one asset issued by it with
+/// the `expected_composition`, as both faucet scripts mint exactly one asset of the composition
+/// their faucet type defines per note.
 fn validate_minted_notes(
     sender: AccountId,
     notes: &[PartialNote],
+    expected_composition: AssetComposition,
 ) -> Result<(), SendNotesTransactionScriptError> {
     for note in notes {
         validate_note_sender(sender, note)?;
@@ -545,6 +556,14 @@ fn validate_minted_notes(
         let asset = note.assets().iter().next().expect("note should contain an asset");
         if asset.faucet_id() != sender {
             return Err(SendNotesTransactionScriptError::IssuanceFaucetMismatch(asset.faucet_id()));
+        }
+
+        let composition = asset.id().composition();
+        if composition != expected_composition {
+            return Err(SendNotesTransactionScriptError::AssetCompositionMismatch {
+                expected: expected_composition,
+                actual: composition,
+            });
         }
     }
     Ok(())
