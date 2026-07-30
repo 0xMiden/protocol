@@ -462,8 +462,8 @@ impl AggLayerBridge {
     ///
     /// The set includes the role-management [`RbacActionNote`], which makes the bridge's RBAC
     /// role graph mutable on-chain. Role-management notes are unordered, unexpiring, and not
-    /// bound to the bridge account; see the Administration section of `SPEC.md` for the required
-    /// rotation ordering and the associated caveats.
+    /// bound to the bridge account; see the [`RbacActionNote`] security considerations and the
+    /// Administration section of `SPEC.md` for the associated caveats.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {

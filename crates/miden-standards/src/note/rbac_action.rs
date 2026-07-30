@@ -134,6 +134,25 @@ impl From<RbacAction> for NoteStorage {
 ///
 /// Construct one with the [builder](RbacActionNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
+///
+/// ## Security considerations
+///
+/// A created note is an unordered, unexpiring, uncancellable instruction:
+///
+/// - Consumption order is not guaranteed and, on accounts that execute without signatures, is
+///   chosen by whoever consumes the note. When rotating a role's membership, grant the successor
+///   and wait for the grant to be committed before creating any revoke or renounce note: a pending
+///   note whose sender (fixed at creation) currently lacks the required role cannot be consumed on
+///   the target account, but it is not dead — it remains pending and becomes consumable again if
+///   its sender ever regains the role.
+/// - An unconsumed note remains valid indefinitely and cannot be recalled or expired; it can be
+///   consumed at an arbitrary later time, e.g. re-granting a role that was revoked in the meantime.
+///   Treat every created note as a standing capability, and do not create role-management notes
+///   ahead of need.
+/// - The note is not bound to `account`, which only feeds the note's routing tag. Any account
+///   exposing the RBAC management procedures that accepts this script can consume the note,
+///   applying the action to its own role graph; a sender administering multiple RBAC-carrying
+///   accounts must treat its notes as redirectable between them.
 #[derive(Debug, Clone)]
 pub struct RbacActionNote {
     sender: AccountId,

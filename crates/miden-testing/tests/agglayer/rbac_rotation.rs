@@ -398,8 +398,8 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
 
 /// The `RBAC_ACTION` note is not bound to the account it was issued for: a note whose `account`
 /// (and thus tag) references a different account is still consumable by the bridge, applying the
-/// role change to the bridge's own role graph. Pins the target-binding caveat documented in SPEC
-/// section 2.5.
+/// role change to the bridge's own role graph. Pins the no-target-binding hazard documented in
+/// the `RbacActionNote` security considerations (and referenced by SPEC section 2.5).
 #[tokio::test]
 async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -437,7 +437,8 @@ async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::R
     Ok(())
 }
 
-/// Pins the operational hazard documented in SPEC section 2.5: nothing on-chain prevents the
+/// Pins the operational hazard documented in the `RoleBasedAccessControl` component docs (and
+/// referenced by SPEC section 2.5): nothing on-chain prevents the
 /// last `ADMIN` member from renouncing (or revoking) its own role, after which no sender can
 /// manage `ADMIN`-administered roles again — with no delegated admin roles (as here), role
 /// rotation on the bridge is permanently disabled. Admin rotation must therefore grant the
@@ -507,7 +508,8 @@ async fn removing_last_admin_permanently_disables_role_management(
     Ok(())
 }
 
-/// Pins the ADMIN-decommissioning recipe documented in SPEC section 2.5: after a delegate admin
+/// Pins the ADMIN-decommissioning recipe documented in the `RoleBasedAccessControl` component
+/// docs (and referenced by SPEC section 2.5): after a delegate admin
 /// role is populated, made self-administering, and given an operational role's admin — in that
 /// order — emptying `ADMIN` leaves the delegate role able to manage both the operational role
 /// and its own membership.

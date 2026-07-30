@@ -229,77 +229,38 @@ Authorization is enforced by those procedures against the note sender: a member 
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
 renounce. This makes every role rotatable after account creation, including `ADMIN` itself.
 
-Role management via notes comes with security and operational caveats that follow from the
-note model:
+Role management via notes comes with security and operational caveats. The generic hazards
+of the RBAC model and of the `RBAC_ACTION` note - sender-based authorization and
+permissionless members, exclusive admin delegation, removal of a role's last effective
+admin, safely decommissioning `ADMIN`, and the note model's ordering and lifetime pitfalls -
+are documented on the miden-standards
+[`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs) component and the
+[`RBAC_ACTION` note](../miden-standards/src/note/rbac_action.rs). The bridge-specific
+consequences:
 
-- **`ADMIN` compromise is equivalent to compromise of every operational role.** Because
-  `ADMIN` is the effective admin of any role whose delegated admin is unset, a compromised
-  `ADMIN` key can grant itself (or any account) `FAUCET_MNGR`, `GER_INJECTOR`, or
-  `GER_REMOVER` with a single note. The `ADMIN` key is the root authority of the bridge and
-  must be protected accordingly (see the trust model in
-  [Section 1](#1-entities-and-trust-model)). A deployment can bound this by delegating each
-  operational role's admin to a dedicated role and then emptying `ADMIN`. Ordering is
-  critical, and note consumption order is attacker-chosen (see the rotation-ordering caveat
-  below): for each delegate admin role `X`, grant `X`'s members and wait for the grants to
-  commit, then make `X` self-administering (`set_role_admin(X, X)` - safe only once `X` has
-  members), then delegate the operational role to `X`, and only then empty `ADMIN`
-  (revoking or renouncing every member), verifying each step on-chain before issuing the
-  next. Skipping the self-administration step leaves `X` administered by the then-empty
-  `ADMIN` role, freezing its membership forever (see the delegation caveat below), and
-  emptying `ADMIN` also permanently forfeits every `ADMIN`-defaulted capability (see the
-  last-admin caveat), including populating any future role. The resulting configuration has
-  a residual risk: each self-administering delegate role is the irrevocable root of its own
-  subtree, and RBAC has no quorum semantics - any single member of `X` can revoke every
-  peer and then renounce, emptying `X` and permanently freezing `X` and every role
-  delegated to it, with no on-chain recovery. Multiple members protect only against key
-  loss, not compromise; compromise resistance must come from each member account's own
-  authentication (e.g. a multisig account), with custody at least as strong as `ADMIN`'s.
-  The resulting configuration is pinned by the
-  `self_administered_delegate_survives_admin_removal` test.
-- **Rotation ordering.** `RBAC_ACTION` notes are unordered, unexpiring instructions, and the
-  bridge executes without signatures - any party can choose which pending note is consumed
-  first. An `ADMIN` rotation must therefore be sequenced: grant the successor and wait for the
-  grant to be committed **before** issuing any revoke or renounce of the outgoing admin. Never
-  have an `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously - if the
-  revoke is consumed first, the grant (whose sender is fixed at creation) fails forever.
-- **Pending grant notes are standing capabilities.** An unconsumed `GrantRole` note has no
-  expiry and cannot be recalled; any party can consume it at an arbitrary future time -
-  including after the role change it encodes has been superseded (e.g. re-granting a role
-  that has since been revoked). The only way to neutralize a pending role-management note is
-  to let it take effect and then reverse it. Do not create role-management notes ahead of
-  need.
-- **Last-admin removal is irreversible.** `ADMIN` administers itself, and nothing on-chain
-  prevents revoking or renouncing the last `ADMIN` member. Once the `ADMIN` role is empty, no
-  sender can manage `ADMIN`-administered roles again (roles delegated to a living admin role
-  remain manageable by it) and every `ADMIN`-defaulted procedure is permanently
-  uninvokable. (Bridging itself cannot be bricked this way: `bridge_out` / `claim` are
-  ungated, and no allowlisted note currently reaches an `ADMIN`-defaulted procedure - the
-  loss is role management itself.) This failure mode is pinned by the
-  `removing_last_admin_permanently_disables_role_management` test.
-- **Delegating a role's admin is exclusive - and irreversible if the delegation chain dies.**
-  `set_role_admin(role, X)` moves authority over `role` exclusively to members of `X`; the
-  `ADMIN` role loses it (pinned by the `delegated_role_admin_is_exclusive` test). If `X` has
-  no members, `role` can no longer be granted or revoked; this is recoverable only while
-  `X` itself is still manageable (its own admin chain ends in a populated role). Delegating
-  to an empty role whose admin chain is dead - e.g. a self-referential or cyclic delegation,
-  or delegating `ADMIN` itself away and emptying it - permanently freezes the affected role.
-  Only delegate to a role that already has members.
-- **Notes are not target-bound.** The `RBAC_ACTION` script does not verify which account
-  consumes the note (the target account only feeds the note's best-effort tag and attachment),
-  and role symbols are global constants. A role-management note issued for one RBAC-carrying
-  account can be consumed by any other account that allowlists the script (pinned by the
-  `note_targeted_at_another_account_is_consumable_by_bridge` test). No account holding a
-  bridge role (including `ADMIN`) should therefore administer or hold roles on any other
-  RBAC-carrying account.
-- **Role membership is only as strong as the member's own auth.** Authorization is
-  note-sender-based, so granting a bridge role to an account with permissionless
-  authentication (e.g. `no_auth`) hands that role to the public. Every grant is a standing
-  key-custody decision.
-- **Emptying an operational role.** Revoking the last holder of `FAUCET_MNGR`, `GER_INJECTOR`,
-  or `GER_REMOVER` leaves the corresponding procedures uninvokable until the role's effective
-  admin grants a new holder. Unlike last-admin removal, this is recoverable - provided the
-  role's effective admin is still a populated, manageable role (see the delegation caveat
-  above).
+- **`ADMIN` compromise is equivalent to compromise of every operational role.** `ADMIN` is
+  the effective admin of `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` (none delegates
+  its admin at creation), so an `ADMIN` key can grant any of them to any account with a
+  single note. The `ADMIN` key is the bridge's root authority and must be protected
+  accordingly (see the trust model in [Section 1](#1-entities-and-trust-model)); it can be
+  decommissioned following the strictly ordered recipe in the `RoleBasedAccessControl`
+  docs (pinned by the `self_administered_delegate_survives_admin_removal` test).
+- **Consumption order is not under the operator's control.** The bridge executes without a
+  signature gate, so any party may submit a transaction consuming any pending allowlisted
+  note. Never have an `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously
+  (see the ordering caveat in the `RbacActionNote` security considerations).
+- **Losing role management does not brick bridging.** `bridge_out` / `claim` are ungated,
+  and every role-gated bridge procedure is mapped to an operational role, so no allowlisted
+  note reaches an `ADMIN`-defaulted bridge procedure. Emptying the `ADMIN` role (pinned by
+  the `removing_last_admin_permanently_disables_role_management` test) permanently disables
+  management of `ADMIN`-administered roles only.
+- **Emptying an operational role.** Revoking the last holder of `FAUCET_MNGR`,
+  `GER_INJECTOR`, or `GER_REMOVER` leaves the corresponding procedures uninvokable until
+  the role's effective admin - if still populated and manageable - grants a new holder.
+- **Bridge role holders must not administer other RBAC accounts.** `RBAC_ACTION` notes are
+  not bound to the account they were issued for (pinned by the
+  `note_targeted_at_another_account_is_consumable_by_bridge` test), so a role-management
+  note issued for another account can be consumed by the bridge, and vice versa.
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
@@ -936,7 +897,7 @@ those procedures against the note sender; the script itself performs no target o
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
-| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_ACTION` script could consume it (see the target-binding caveat in [Section 2.5](#25-administration)) |
+| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_ACTION` script could consume it (see [Section 2.5](#25-administration)) |
 
 ### 4.8 BURN (generated)
 
