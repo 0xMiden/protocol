@@ -12,6 +12,9 @@ pub mod costs;
 mod allowlist_config;
 pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
 
+mod blocklist_config;
+pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
+
 mod burn;
 pub use burn::BurnNote;
 
@@ -71,6 +74,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -80,6 +84,7 @@ pub enum StandardNote {
     BURN,
     FAUCET_POLICY_ACTION,
     ALLOWLIST_CONFIG,
+    BLOCKLIST_CONFIG,
     PAUSE_ACTION,
     OWNER_ACTION,
     RBAC_ACTION,
@@ -125,6 +130,9 @@ impl StandardNote {
         if root == AllowlistConfigNote::script_root() {
             return Some(Self::ALLOWLIST_CONFIG);
         }
+        if root == BlocklistConfigNote::script_root() {
+            return Some(Self::BLOCKLIST_CONFIG);
+        }
         if root == PauseActionNote::script_root() {
             return Some(Self::PAUSE_ACTION);
         }
@@ -161,6 +169,7 @@ impl StandardNote {
             Self::BURN => "BURN",
             Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
             Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
+            Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
             Self::PAUSE_ACTION => "PAUSE_ACTION",
             Self::OWNER_ACTION => "OWNER_ACTION",
             Self::RBAC_ACTION => "RBAC_ACTION",
@@ -181,6 +190,7 @@ impl StandardNote {
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
             // OwnerAction storage is variable per action; this returns the upper bound.
             Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
@@ -203,6 +213,7 @@ impl StandardNote {
             Self::BURN => BurnNote::script(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
             Self::PAUSE_ACTION => PauseActionNote::script(),
             Self::OWNER_ACTION => OwnerActionNote::script(),
             Self::RBAC_ACTION => RbacActionNote::script(),
@@ -223,6 +234,7 @@ impl StandardNote {
             Self::BURN => BurnNote::script_root(),
             Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
             Self::PAUSE_ACTION => PauseActionNote::script_root(),
             Self::OWNER_ACTION => OwnerActionNote::script_root(),
             Self::RBAC_ACTION => RbacActionNote::script_root(),

@@ -1,10 +1,10 @@
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::input_note
 use miden::protocol::note
 use miden::protocol::tx
 
-use miden::standards::note::note_id
 use miden::standards::wallets::basic as basic_wallet
 
 use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from miden::protocol::types
@@ -151,11 +151,9 @@ pub proc main
 
     # The pairing check stops a sponsorship from being consumed on its own, and it runs in this
     # script rather than in the consuming account because the sponsor trusts neither the consuming
-    # account nor the transaction builder. The search takes no index hint from the note args: an
-    # incorrect hint would revert a transaction whose feature note is in fact present, handing
-    # the builder a griefing vector.
-    exec.note_id::find_input_note_by_id
-    # => [is_found, note_idx, pad(16)]
+    # account nor the transaction builder.
+    exec.input_note::find_note
+    # => [is_found, feature_note_idx, pad(16)]
 
     swap drop
     # => [is_found, pad(16)]

@@ -115,11 +115,28 @@ impl BasicConstantFeePolicy {
 
     /// Sets the fee for notes with the given script root, replacing any previous entry.
     ///
+    /// The schedule stores bare amounts: the fee must be denominated in the fee asset of the
+    /// [`FeePolicyManager`](crate::account::fees::FeePolicyManager) this policy is registered
+    /// with, which is the asset the policy charges it in.
+    ///
     /// Scheduling an explicit fee of 0 makes notes with this script root free; script roots
     /// without a schedule entry abort fee estimation.
     #[must_use]
     pub fn with_fee(mut self, script_root: NoteScriptRoot, fee: AssetAmount) -> Self {
         self.fee_schedule.insert(script_root, fee);
+        self
+    }
+
+    /// Extends the fee schedule with the given `(script_root, fee)` entries, replacing any
+    /// previous entries. See [`Self::with_fee`] for the fee denomination requirement.
+    #[must_use]
+    pub fn with_fees(
+        mut self,
+        entries: impl IntoIterator<Item = (NoteScriptRoot, AssetAmount)>,
+    ) -> Self {
+        for (script_root, fee) in entries {
+            self = self.with_fee(script_root, fee);
+        }
         self
     }
 
@@ -206,9 +223,11 @@ mod tests {
         let fee = AssetAmount::new(500)?;
         let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
+        // Seed an outdated entry and overwrite it via `with_fees`, so the storage assertions
+        // below also cover the batch method's extend-and-replace contract.
         let policy = BasicConstantFeePolicy::new()
-            .with_fee(script_root, fee)
-            .with_fee(free_script_root, AssetAmount::ZERO);
+            .with_fee(script_root, AssetAmount::new(100)?)
+            .with_fees([(script_root, fee), (free_script_root, AssetAmount::ZERO)]);
 
         let component = AccountComponent::from(policy);
         let slot = component

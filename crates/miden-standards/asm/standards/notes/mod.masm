@@ -1,4 +1,5 @@
 pub mod allowlist_config
+pub mod blocklist_config
 pub mod burn
 pub mod faucet_policy_action
 pub mod fee_sponsorship

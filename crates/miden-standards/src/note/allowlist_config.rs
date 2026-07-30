@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{ALLOWLIST_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -250,6 +251,15 @@ impl From<AllowlistConfigNote> for Note {
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for AllowlistConfigNote {
+    fn consumption_cycles() -> u32 {
+        ALLOWLIST_CONFIG_CONSUMPTION_CYCLES
     }
 }
 

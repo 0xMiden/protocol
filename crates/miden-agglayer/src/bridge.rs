@@ -24,16 +24,19 @@ use crate::utils::Keccak256Output;
 
 /// Removed-GER hash chain representation (32-byte Keccak256 hash)
 pub type RemovedGerHashChain = Keccak256Output;
+pub use miden_standards::interop::eth::{
+    EthAddress,
+    EthAmount,
+    EthAmountError,
+    EthEmbeddedAccountId,
+};
+
 pub use crate::{
     B2AggNote,
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     DeregisterAggFaucetNote,
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
     ExitRoot,
     GlobalIndex,
     GlobalIndexError,

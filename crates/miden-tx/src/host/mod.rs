@@ -273,6 +273,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
 
+    /// Pushes an input note's index and a presence flag onto the advice stack.
+    ///
+    /// When the note is absent, index zero is returned with a cleared presence flag. The index is
+    /// an unauthenticated hint and must be validated by the VM before it is used.
+    pub fn on_input_note_index_lookup(&self, note_id: NoteId) -> Vec<AdviceMutation> {
+        let note_idx =
+            self.input_notes.iter().position(|input_note| input_note.id() == note_id).map(
+                |note_idx| {
+                    u16::try_from(note_idx).expect("maximum number of input notes fits in u16")
+                },
+            );
+
+        let is_found = Felt::from(note_idx.is_some() as u8);
+        let note_idx = Felt::from(note_idx.unwrap_or(0));
+
+        vec![AdviceMutation::extend_stack([note_idx, is_found])]
+    }
+
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
     /// event ID.
     ///
