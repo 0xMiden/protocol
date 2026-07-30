@@ -79,6 +79,56 @@ use crate::{
     assert_transaction_executor_error,
 };
 
+/// Recomputing an output note's ID in MASM must match `Note::id()` in Rust.
+#[tokio::test]
+async fn compute_note_id_matches_rust() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let asset = FungibleAsset::mock(150);
+    let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset])?;
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let expected_note = NoteBuilder::new(account.id(), rng)
+        .note_type(NoteType::Public)
+        .add_assets(vec![asset])
+        .attachment(NoteAttachment::with_word(
+            NoteAttachmentScheme::new(10)?,
+            Word::from([3, 4, 5, 6u32]),
+        ))
+        .build()?;
+    let spawn_note = builder.add_spawn_note([&expected_note])?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = format!(
+        r#"
+        use miden::protocol::output_note
+
+        @transaction_script
+        pub proc main
+            push.0
+            exec.output_note::compute_note_id
+            # => [NOTE_ID]
+
+            push.{EXPECTED_NOTE_ID}
+            assert_eqw.err="computed output note ID does not match Note::id()"
+        end
+        "#,
+        EXPECTED_NOTE_ID = expected_note.id().as_word(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(spawn_note.id())
+        .expected_output_note(RawOutputNote::Full(expected_note))
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_create_note() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;

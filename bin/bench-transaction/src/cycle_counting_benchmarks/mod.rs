@@ -30,6 +30,8 @@ pub enum ExecutionBenchmark {
     ConsumeMintNonFungibleNetwork,
     ConsumeBurnNetwork,
     ConsumeFaucetPolicyConfigNetwork,
+    ConsumeAllowlistConfigNetwork,
+    ConsumeBlocklistConfigNetwork,
     ConsumePauseConfigNetwork,
     ConsumeOwnerConfigNetwork,
     ConsumeRbacConfigNetwork,
@@ -74,6 +76,8 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ExecutionBenchmark::ConsumeBurnNetwork,
             ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork,
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork,
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork,
             ExecutionBenchmark::ConsumePauseConfigNetwork,
             ExecutionBenchmark::ConsumeOwnerConfigNetwork,
             ExecutionBenchmark::ConsumeRbacConfigNetwork,
@@ -166,6 +170,12 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork => {
                 write!(f, "consume FAUCET_POLICY_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+                write!(f, "consume ALLOWLIST_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
+                write!(f, "consume BLOCKLIST_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumePauseConfigNetwork => {
                 write!(f, "consume PAUSE_CONFIG note (network account)")

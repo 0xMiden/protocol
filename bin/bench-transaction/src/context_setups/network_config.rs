@@ -1,5 +1,5 @@
 //! Benchmark scenarios where a network account carrying the required management components
-//! consumes a standard config note.
+//! consumes a standard action note.
 //!
 //! Each scenario mirrors the account fixture of the corresponding note test suite in
 //! `crates/miden-testing/tests/scripts/`, changing only what the canonical network-account
@@ -17,12 +17,14 @@ use anyhow::Result;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountBuilder,
+    AccountComponent,
     AccountId,
     AccountType,
     AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -31,6 +33,8 @@ use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    AllowlistManager,
+    BlocklistManager,
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
@@ -38,6 +42,10 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
+    AllowlistConfig,
+    AllowlistConfigNote,
+    BlocklistConfig,
+    BlocklistConfigNote,
     FaucetPolicyConfig,
     FaucetPolicyConfigNote,
     NetworkAccountConfig,
@@ -51,7 +59,7 @@ use miden_standards::note::{
 };
 use miden_testing::{AccountState, Auth, MockTransaction};
 
-// FAUCET POLICY CONFIG NOTE SETUP
+// FAUCET POLICY ACTION NOTE SETUP
 // ================================================================================================
 
 /// Returns the transaction context for a network faucet consuming a FAUCET_POLICY_CONFIG note.
@@ -116,7 +124,145 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .build()
 }
 
-// PAUSE CONFIG NOTE SETUP
+// LIST CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming an ALLOWLIST_CONFIG note.
+///
+/// The benchmarked action is `AllowAccount`, adding an account to the initially empty allowlist.
+/// See [`tx_consume_list_config_note_network`] for the account fixture.
+pub fn tx_consume_allowlist_config_note_network() -> Result<MockTransaction> {
+    tx_consume_list_config_note_network(ListKind::Allowlist)
+}
+
+/// Returns the transaction context for a network faucet consuming a BLOCKLIST_CONFIG note.
+///
+/// The benchmarked action is `BlockAccount`, adding an account to the initially empty blocklist.
+/// See [`tx_consume_list_config_note_network`] for the account fixture.
+pub fn tx_consume_blocklist_config_note_network() -> Result<MockTransaction> {
+    tx_consume_list_config_note_network(ListKind::Blocklist)
+}
+
+/// The two transfer-list kinds. The pieces differing between the ALLOWLIST_CONFIG and
+/// BLOCKLIST_CONFIG scenarios (transfer policy, list manager component, and consumed note) are
+/// all derived from this discriminant via the methods below, keeping the per-list choices in one
+/// place.
+#[derive(Clone, Copy)]
+enum ListKind {
+    Allowlist,
+    Blocklist,
+}
+
+impl ListKind {
+    /// The list's empty basic transfer policy.
+    fn transfer_policy(self) -> TransferPolicy {
+        match self {
+            ListKind::Allowlist => TransferPolicy::empty_basic_allowlist(),
+            ListKind::Blocklist => TransferPolicy::empty_basic_blocklist(),
+        }
+    }
+
+    /// The list's manager admin component.
+    fn manager(self) -> AccountComponent {
+        match self {
+            ListKind::Allowlist => AllowlistManager.into(),
+            ListKind::Blocklist => BlocklistManager.into(),
+        }
+    }
+
+    /// The list's config note script root.
+    fn script_root(self) -> NoteScriptRoot {
+        match self {
+            ListKind::Allowlist => AllowlistConfigNote::script_root(),
+            ListKind::Blocklist => BlocklistConfigNote::script_root(),
+        }
+    }
+
+    /// The list's config note carrying the benchmarked action: adding `listed` to the initially
+    /// empty list.
+    fn build_note(
+        self,
+        sender: AccountId,
+        target: AccountId,
+        listed: AccountId,
+        rng: &mut impl FeltRng,
+    ) -> Result<Note> {
+        let note = match self {
+            ListKind::Allowlist => AllowlistConfigNote::builder()
+                .sender(sender)
+                .target(target)
+                .config(AllowlistConfig::AllowAccount { account: listed })
+                .generate_serial_number(rng)
+                .build()?
+                .into(),
+            ListKind::Blocklist => BlocklistConfigNote::builder()
+                .sender(sender)
+                .target(target)
+                .config(BlocklistConfig::BlockAccount { account: listed })
+                .generate_serial_number(rng)
+                .build()?
+                .into(),
+        };
+        Ok(note)
+    }
+}
+
+/// Returns the transaction context for a network faucet consuming a transfer-list config note.
+///
+/// Shared setup of the ALLOWLIST_CONFIG and BLOCKLIST_CONFIG scenarios: the faucet carries the
+/// list's basic transfer policy on send and receive plus the list's manager admin component,
+/// gated by the owner wallet via `Authority::OwnerControlled` (mirrors the
+/// `add_faucet_with_owner_{allowlist,blocklist}_transfer` fixtures in the respective test
+/// suites). The benchmarked action adds an account to the initially empty list.
+fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send list config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(list.transfer_policy())
+        .active_receive_policy(list.transfer_policy())
+        .build();
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
+        .with_components(token_policy_manager)
+        .with_component(list.manager())
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([list.script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // the account added to the initially empty list by the benchmarked action
+    let listed = AccountIdBuilder::new().build_with_seed([3; 32]);
+    let note = list.build_note(owner.id(), account.id(), listed, builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// PAUSE ACTION NOTE SETUP
 // ================================================================================================
 
 /// Returns the transaction context for a network pausable account consuming a PAUSE_CONFIG note.
@@ -160,7 +306,7 @@ pub fn tx_consume_pause_config_note_network() -> Result<MockTransaction> {
         .build()
 }
 
-// OWNER CONFIG NOTE SETUP
+// OWNER ACTION NOTE SETUP
 // ================================================================================================
 
 /// Returns the transaction context for a network ownable account consuming an OWNER_CONFIG note.
@@ -202,7 +348,7 @@ pub fn tx_consume_owner_config_note_network() -> Result<MockTransaction> {
         .build()
 }
 
-// RBAC CONFIG NOTE SETUP
+// RBAC ACTION NOTE SETUP
 // ================================================================================================
 
 /// Returns the transaction context for a network RBAC account consuming an RBAC_CONFIG note.

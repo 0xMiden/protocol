@@ -8,6 +8,7 @@ pub mod faucets
 pub mod fee
 pub mod fees
 pub mod inspection
+pub mod interop
 pub mod note
 pub mod note_tag
 pub mod notes

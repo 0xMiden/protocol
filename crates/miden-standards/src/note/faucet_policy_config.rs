@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -263,6 +264,15 @@ impl From<FaucetPolicyConfigNote> for Note {
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for FaucetPolicyConfigNote {
+    fn consumption_cycles() -> u32 {
+        FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES
     }
 }
 

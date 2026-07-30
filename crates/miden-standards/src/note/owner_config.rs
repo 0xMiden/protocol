@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, OWNER_CONFIG_CONSUMPTION_CYCLES};
 use crate::note::{AccountTargetNetworkNote, NetworkAccountTarget};
 
 // NOTE SCRIPT
@@ -272,6 +273,15 @@ impl From<OwnerConfigNote> for AccountTargetNetworkNote {
     fn from(note: OwnerConfigNote) -> Self {
         AccountTargetNetworkNote::new(Note::from(note))
             .expect("OwnerConfig note is public and carries a network account target attachment")
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for OwnerConfigNote {
+    fn consumption_cycles() -> u32 {
+        OWNER_CONFIG_CONSUMPTION_CYCLES
     }
 }
 

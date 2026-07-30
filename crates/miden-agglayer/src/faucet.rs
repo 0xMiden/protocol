@@ -14,6 +14,12 @@ use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
+pub use miden_standards::interop::eth::{
+    EthAddress,
+    EthAmount,
+    EthAmountError,
+    EthEmbeddedAccountId,
+};
 use miden_standards::note::{BurnNote, MintNote};
 use thiserror::Error;
 
@@ -23,10 +29,6 @@ pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
     ExitRoot,
     GlobalIndex,
     GlobalIndexError,

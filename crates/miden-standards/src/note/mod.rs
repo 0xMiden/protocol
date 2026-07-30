@@ -9,6 +9,12 @@ use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
 pub mod costs;
 
+mod allowlist_config;
+pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
+
+mod blocklist_config;
+pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
+
 mod burn;
 pub use burn::BurnNote;
 
@@ -68,6 +74,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -76,6 +83,8 @@ pub enum StandardNote {
     MINT,
     BURN,
     FAUCET_POLICY_CONFIG,
+    ALLOWLIST_CONFIG,
+    BLOCKLIST_CONFIG,
     PAUSE_CONFIG,
     OWNER_CONFIG,
     RBAC_CONFIG,
@@ -118,6 +127,12 @@ impl StandardNote {
         if root == FaucetPolicyConfigNote::script_root() {
             return Some(Self::FAUCET_POLICY_CONFIG);
         }
+        if root == AllowlistConfigNote::script_root() {
+            return Some(Self::ALLOWLIST_CONFIG);
+        }
+        if root == BlocklistConfigNote::script_root() {
+            return Some(Self::BLOCKLIST_CONFIG);
+        }
         if root == PauseConfigNote::script_root() {
             return Some(Self::PAUSE_CONFIG);
         }
@@ -153,6 +168,8 @@ impl StandardNote {
             Self::MINT => "MINT",
             Self::BURN => "BURN",
             Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
+            Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
+            Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
             Self::PAUSE_CONFIG => "PAUSE_CONFIG",
             Self::OWNER_CONFIG => "OWNER_CONFIG",
             Self::RBAC_CONFIG => "RBAC_CONFIG",
@@ -172,6 +189,8 @@ impl StandardNote {
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_CONFIG => PauseConfigNote::NUM_STORAGE_ITEMS,
             // OwnerConfig storage is variable per action; this returns the upper bound.
             Self::OWNER_CONFIG => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
@@ -193,6 +212,8 @@ impl StandardNote {
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
             Self::PAUSE_CONFIG => PauseConfigNote::script(),
             Self::OWNER_CONFIG => OwnerConfigNote::script(),
             Self::RBAC_CONFIG => RbacConfigNote::script(),
@@ -212,6 +233,8 @@ impl StandardNote {
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
             Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
             Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
             Self::RBAC_CONFIG => RbacConfigNote::script_root(),
