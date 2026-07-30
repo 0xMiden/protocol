@@ -573,6 +573,30 @@
       }
     }
   },
+  "consume ALLOWLIST_CONFIG note (network account)": {
+    "prologue": 5363,
+    "notes_processing": 2167,
+    "note_execution": {
+      "0x7083baac7b8e1ffeac1e684379b3adbd136a6df2d370654fe519a74f4aa44263": 2125
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 17190,
+      "auth_procedure": 8864
+    },
+    "trace": {
+      "core_rows": 24806,
+      "chiplets_rows": 35252,
+      "range_rows": 2397,
+      "chiplets_shape": {
+        "hasher_rows": 32928,
+        "bitwise_rows": 568,
+        "memory_rows": 1693,
+        "kernel_rom_rows": 62,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume BLOCKLIST_CONFIG note (network account)": {
     "prologue": 5363,
     "notes_processing": 2167,

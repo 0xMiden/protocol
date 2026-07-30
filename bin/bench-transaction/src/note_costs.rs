@@ -44,6 +44,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::MINT),
             PricedNote::Standard(StandardNote::BURN),
             PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION),
+            PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
             PricedNote::Standard(StandardNote::PAUSE_ACTION),
             PricedNote::Standard(StandardNote::OWNER_ACTION),
@@ -89,6 +90,9 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::BURN) => &[ExecutionBenchmark::ConsumeBurnNetwork],
             PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION) => {
                 &[ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork]
+            },
+            PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeAllowlistConfigNetwork]
             },
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeBlocklistConfigNetwork]
@@ -180,7 +184,11 @@ impl PricedNote {
     /// consonant sounds ("a REMOVE_GER", read as a word).
     fn doc_article(&self) -> &'static str {
         match self {
-            PricedNote::Standard(StandardNote::OWNER_ACTION | StandardNote::RBAC_ACTION)
+            PricedNote::Standard(
+                StandardNote::ALLOWLIST_CONFIG
+                | StandardNote::OWNER_ACTION
+                | StandardNote::RBAC_ACTION,
+            )
             | PricedNote::Agglayer(AgglayerNote::UPDATE_GER) => "an",
             _ => "a",
         }
@@ -377,6 +385,8 @@ mod tests {
     fn doc_subjects_use_the_checked_in_articles() {
         let subjects: BTreeMap<&str, String> =
             PricedNote::all().iter().map(|note| (note.name(), note.doc_subject())).collect();
+        assert_eq!(subjects["ALLOWLIST_CONFIG"], "an ALLOWLIST_CONFIG");
+        assert_eq!(subjects["BLOCKLIST_CONFIG"], "a BLOCKLIST_CONFIG");
         assert_eq!(subjects["OWNER_ACTION"], "an OWNER_ACTION");
         assert_eq!(subjects["UPDATE_GER"], "an UPDATE_GER");
         assert_eq!(subjects["RBAC_ACTION"], "an RBAC_ACTION");
@@ -431,6 +441,7 @@ mod tests {
     #[case::mint(PricedNote::Standard(StandardNote::MINT))]
     #[case::burn(PricedNote::Standard(StandardNote::BURN))]
     #[case::faucet_policy_action(PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION))]
+    #[case::allowlist_config(PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG))]
     #[case::blocklist_config(PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG))]
     #[case::pause_action(PricedNote::Standard(StandardNote::PAUSE_ACTION))]
     #[case::owner_action(PricedNote::Standard(StandardNote::OWNER_ACTION))]
