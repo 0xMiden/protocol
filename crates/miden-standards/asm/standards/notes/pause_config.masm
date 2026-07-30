@@ -7,11 +7,11 @@ use miden::standards::access::pausable::manager
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory address of the PauseAction note storage selector.
+# Memory address of the PauseConfig note storage selector.
 const SELECTOR_PTR = STORAGE_PTR
 
-# Action selectors, stored in the first storage item. Keep in sync with `PauseAction` on the Rust
-# side.
+# Config note selectors, stored in the first storage item. Keep in sync with `PauseConfig` on the
+# Rust side.
 const SELECTOR_PAUSE = 0
 const SELECTOR_UNPAUSE = 1
 
@@ -22,14 +22,14 @@ const NUM_ITEMS_UNPAUSE = 1
 # ERRORS
 # =================================================================================================
 
-const ERR_PAUSE_ACTION_UNKNOWN_SELECTOR = "pause action note selector does not match a known action"
+const ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR = "pause config note selector does not match a known action"
 
-const ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause action note storage item count does not match the selected action"
+const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note storage item count does not match the selected action"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! PauseAction script: triggers a `PausableManager` admin action against the consuming account,
+#! PauseConfig script: triggers a `PausableManager` admin action against the consuming account,
 #! dispatched on a selector stored in the first note storage item.
 #!
 #! The selected action is read from the note storage (fixed at note creation, so authorization is
@@ -74,7 +74,7 @@ pub proc main
 
         exec.execute_pause
     else
-        eq.SELECTOR_UNPAUSE assert.err=ERR_PAUSE_ACTION_UNKNOWN_SELECTOR
+        eq.SELECTOR_UNPAUSE assert.err=ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR
         # => [num_storage_items]
 
         exec.execute_unpause
@@ -97,7 +97,7 @@ end
 #! Invocation: exec
 proc execute_pause
     eq.NUM_ITEMS_PAUSE
-    assert.err=ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # pad to the empty `pause` input window [pad(16)]
@@ -124,7 +124,7 @@ end
 #! Invocation: exec
 proc execute_unpause
     eq.NUM_ITEMS_UNPAUSE
-    assert.err=ERR_PAUSE_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # pad to the empty `unpause` input window [pad(16)]

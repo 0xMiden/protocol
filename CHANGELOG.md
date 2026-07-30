@@ -16,6 +16,7 @@
 
 ### Changes
 
+- [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).
 - [BREAKING] Reduced the maximum number of assets a note can carry from 64 to 16 ([#3381](https://github.com/0xMiden/protocol/issues/3381)).
 Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide an input-note index hint. Successful lookups authenticate it against the `NoteId` cached by the transaction prologue, while reported misses are validated by a full scan ([#3424](https://github.com/0xMiden/protocol/pull/3424)).
@@ -32,9 +33,12 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Replaced `SwapNote::create` with `SwapNote::builder()` ([#3414](https://github.com/0xMiden/protocol/pull/3414)).
 - [BREAKING] Moved the network-account default configuration into `AuthNetworkAccount::new`, which now allowlists the `NetworkAccountConfigNote` and `FeeSponsorshipNote` script roots and the canonical `ExpirationTransactionScript` tx-script root; added `AuthNetworkAccount::custom` to build a raw component with no default configuration for low-level use, and removed `AuthNetworkAccount::with_allowed_tx_scripts` ([#3392](https://github.com/0xMiden/protocol/pull/3392)).
 - [BREAKING] Removed the redundant zero-nomination check and the `ERR_NO_NOMINATED_OWNER` error constant from `ownable2step::accept_ownership`; since a note sender can never be the zero address stored when no transfer is nominated, accepting ownership without a pending nomination now fails with `ERR_SENDER_NOT_NOMINATED_OWNER` ([#3416](https://github.com/0xMiden/protocol/pull/3416)).
+- [BREAKING] Renamed the component management notes to use "config" terminology: `FaucetPolicyActionNote`, `OwnerActionNote`, `PauseActionNote` and `RbacActionNote` (and the action enums they carry) are now `FaucetPolicyConfigNote`, `OwnerConfigNote`, `PauseConfigNote` and `RbacConfigNote`, and every config note builder takes its action via `.config()` instead of `.action()` ([#3434](https://github.com/0xMiden/protocol/pull/3434)).
+- [BREAKING] Made `RbacConfigNote` and `OwnerConfigNote` add the `NetworkAccountTarget` attachment routing the note to the managed account unless the caller supplies one, since both are network notes, and convert into an `AccountTargetNetworkNote` via `From` ([#3434](https://github.com/0xMiden/protocol/pull/3434)).
 - Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
 - [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
+- [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 
 ### Fixes
 
