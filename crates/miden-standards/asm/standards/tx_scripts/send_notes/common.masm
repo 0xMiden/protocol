@@ -50,10 +50,6 @@ pub const NUM_ATTACHMENTS_OFFSET = TAG_OFFSET + 3
 pub const ITEMS_OFFSET = NUM_ATTACHMENTS_OFFSET + 1
 pub const ITEM_NUM_ELEMENTS = WORD_NUM_ELEMENTS + WORD_NUM_ELEMENTS
 
-# add_attachments locals
-const ADD_ATTACHMENTS_NOTE_IDX_LOC = 0
-const ADD_ATTACHMENTS_READ_PTR_LOC = 1
-
 # ERRORS
 # =================================================================================================
 
@@ -153,46 +149,38 @@ end
 #! Panics if:
 #! - an attachment's elements are missing from the advice map.
 #!
-#! Locals:
-#! 0: index of the output note being added to
-#! 1: pointer to the current attachment item
-#!
 #! Invocation: exec
-@locals(2)
 pub proc add_attachments(note_idx: u32, attachments_ptr: u32, num_attachments: u32) -> u32
-    loc_store.ADD_ATTACHMENTS_NOTE_IDX_LOC
-    # => [attachments_ptr, num_attachments]
-
-    loc_store.ADD_ATTACHMENTS_READ_PTR_LOC
-    # => [num_attachments]
+    # the loop variables are kept on the stack
+    movdn.2 swap
+    # => [num_attachments, attachments_ptr, note_idx]
 
     dup neq.0
     while.true
-        # => [attachments_left]
+        # => [attachments_left, read_ptr, note_idx]
 
-        loc_load.ADD_ATTACHMENTS_NOTE_IDX_LOC
-        # => [note_idx, attachments_left]
+        dup.2
+        # => [note_idx, attachments_left, read_ptr, note_idx]
 
-        padw loc_load.ADD_ATTACHMENTS_READ_PTR_LOC add.WORD_NUM_ELEMENTS mem_loadw_le
-        # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left]
+        padw dup.6 add.WORD_NUM_ELEMENTS mem_loadw_le
+        # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left, read_ptr, note_idx]
 
-        loc_load.ADD_ATTACHMENTS_READ_PTR_LOC mem_load
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left]
+        dup.6 mem_load
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left, read_ptr, note_idx]
 
         exec.output_note::add_attachment
-        # => [attachments_left]
+        # => [attachments_left, read_ptr, note_idx]
 
         # advance to the next attachment
-        loc_load.ADD_ATTACHMENTS_READ_PTR_LOC add.ITEM_NUM_ELEMENTS
-        loc_store.ADD_ATTACHMENTS_READ_PTR_LOC
-        # => [attachments_left]
+        swap add.ITEM_NUM_ELEMENTS swap
+        # => [attachments_left, read_ptr, note_idx]
 
         sub.1 dup neq.0
-        # => [attachments_left != 0, attachments_left]
+        # => [attachments_left != 0, attachments_left, read_ptr, note_idx]
     end
     drop
-    # => []
+    # => [read_ptr, note_idx]
 
-    loc_load.ADD_ATTACHMENTS_READ_PTR_LOC
+    swap drop
     # => [end_ptr]
 end
