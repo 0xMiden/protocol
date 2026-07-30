@@ -29,10 +29,7 @@ use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::{
-    ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET,
-    ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH,
-};
+use miden_standards::errors::standards::ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET;
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::{
     SendFungibleFaucetNotesTransactionScript,
@@ -630,33 +627,15 @@ async fn execute_with_payload(
         .await)
 }
 
-/// Tests that a payload whose note record claims more assets than it carries data for is rejected
-/// before any loop walks the record, rather than reading past the piped-in payload.
-#[tokio::test]
-async fn test_send_note_script_rejects_record_length_mismatch() -> anyhow::Result<()> {
-    let (mock_chain, faucet_account, script, mut payload) =
-        faucet_with_single_asset_payload().await?;
-
-    // Claim two assets without appending the second asset's elements.
-    payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
-        + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
-
-    let result = execute_with_payload(&mock_chain, &faucet_account, &script, payload).await?;
-
-    assert_transaction_executor_error!(result, ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH);
-
-    Ok(())
-}
-
-/// Tests that the faucet script rejects a well-formed payload whose note record carries more than
-/// one asset, since the faucet mints exactly one asset per note.
+/// Tests that the faucet script rejects a payload whose note record carries more than one asset,
+/// since the faucet mints exactly one asset per note.
 #[tokio::test]
 async fn test_send_note_script_faucet_rejects_multi_asset_payload() -> anyhow::Result<()> {
     let (mock_chain, faucet_account, script, mut payload) =
         faucet_with_single_asset_payload().await?;
 
     // Claim two assets and append a second asset's elements, so the record stays well formed and
-    // the failure comes from the faucet's own one-asset assertion rather than the bounds check.
+    // the failure comes from the faucet's own one-asset assertion.
     payload[SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
         + SendNotesTransactionScript::NOTE_RECORD_NUM_ASSETS_OFFSET] = Felt::from(2u32);
     let first_asset_start = SendNotesTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS

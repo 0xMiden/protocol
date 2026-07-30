@@ -50,12 +50,6 @@ pub const NUM_ATTACHMENTS_OFFSET = TAG_OFFSET + 3
 pub const ITEMS_OFFSET = NUM_ATTACHMENTS_OFFSET + 1
 pub const ITEM_NUM_ELEMENTS = WORD_NUM_ELEMENTS + WORD_NUM_ELEMENTS
 
-# load_payload locals
-const LOAD_PAYLOAD_NUM_WORDS_LOC = 0
-
-# validate_note_records locals
-const VALIDATE_RECORDS_READ_PTR_LOC = 0
-
 # add_attachments locals
 const ADD_ATTACHMENTS_NOTE_IDX_LOC = 0
 const ADD_ATTACHMENTS_READ_PTR_LOC = 1
@@ -68,16 +62,6 @@ const ERR_SEND_NOTES_PAYLOAD_LENGTH_INVALID = "send notes payload length advice 
 const ERR_SEND_NOTES_PAYLOAD_NOT_WORD_ALIGNED = "send notes payload length is not a multiple of the word size"
 
 const ERR_SEND_NOTES_PAYLOAD_EMPTY = "send notes payload must not be empty"
-
-const ERR_SEND_NOTES_NUM_NOTES_INVALID = "send notes payload note count is not a valid u32"
-
-const ERR_SEND_NOTES_NUM_ASSETS_INVALID = "send notes payload asset count is not a valid u32"
-
-const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment count is not a valid u32"
-
-const ERR_SEND_NOTES_RECORD_END_INVALID = "send notes payload note record extends past the payload"
-
-const ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH = "send notes payload note records do not exactly fill the payload"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -101,15 +85,9 @@ const ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH = "send notes payload note records 
 #! - the advice map has no entry for PAYLOAD_COMMITMENT.
 #! - the payload length is not a non-zero multiple of the word size.
 #! - the payload does not hash to PAYLOAD_COMMITMENT.
-#! - any note count in the payload is not a valid u32.
-#! - the note records do not exactly fill the payload.
 #! - the expiration delta is non-zero and not in the range 1..=0xFFFF.
 #!
-#! Locals:
-#! 0: number of words in the payload
-#!
 #! Invocation: exec
-@locals(1)
 pub proc load_payload(payload_commitment: word)
     # push the payload from the advice map onto the advice stack, together with its length
     adv.push_mapvaln
@@ -132,22 +110,11 @@ pub proc load_payload(payload_commitment: word)
     dup neq.0 assert.err=ERR_SEND_NOTES_PAYLOAD_EMPTY
     # => [num_words, PAYLOAD_COMMITMENT, pad(12)]
 
-    # keep the length around to bound the note records against it once the payload is in memory
-    dup loc_store.LOAD_PAYLOAD_NUM_WORDS_LOC
-    # => [num_words, PAYLOAD_COMMITMENT, pad(12)]
-
     # pipe the payload to memory and validate it matches the PAYLOAD_COMMITMENT
     push.PAYLOAD_ADDR swap
     # => [num_words, write_ptr, PAYLOAD_COMMITMENT, pad(12)]
 
     exec.mem::pipe_preimage_to_memory drop
-    # => [pad(16)]
-
-    # check the note records line up with the payload length before any consumer walks them
-    loc_load.LOAD_PAYLOAD_NUM_WORDS_LOC mul.WORD_NUM_ELEMENTS
-    # => [num_elements, pad(16)]
-
-    exec.validate_note_records
     # => [pad(16)]
 
     # set the transaction expiration delta if one was provided
@@ -228,79 +195,4 @@ pub proc add_attachments(note_idx: u32, attachments_ptr: u32, num_attachments: u
 
     loc_load.ADD_ATTACHMENTS_READ_PTR_LOC
     # => [end_ptr]
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Validates that the note records stored at `PAYLOAD_ADDR` exactly fill the `num_elements` the
-#! payload claims to hold.
-#!
-#! Each record's length is implied by its own `num_assets` and `num_attachments`, so walking the
-#! records and landing exactly on the end of the payload proves every count is in range. Consumers
-#! can therefore drive their loops off those counts without re-validating them or reading past the
-#! data that was piped into memory.
-#!
-#! Inputs:
-#!   Operand stack: [num_elements]
-#! Outputs:
-#!   Operand stack: []
-#!
-#! Where:
-#! - num_elements is the number of elements piped to memory at `PAYLOAD_ADDR`.
-#!
-#! Panics if:
-#! - any note count in the payload is not a valid u32.
-#! - a record extends past the end of the payload.
-#! - the records end before the end of the payload.
-#!
-#! Locals:
-#! 0: pointer to the current note record
-#!
-#! Invocation: exec
-@locals(1)
-proc validate_note_records(num_elements: u32)
-    push.NOTES_START_ADDR loc_store.VALIDATE_RECORDS_READ_PTR_LOC
-    # => [num_elements]
-
-    mem_load.NUM_NOTES_ADDR u32assert.err=ERR_SEND_NOTES_NUM_NOTES_INVALID
-    # => [notes_left, num_elements]
-
-    dup neq.0
-    while.true
-        # => [notes_left, num_elements]
-
-        loc_load.VALIDATE_RECORDS_READ_PTR_LOC add.NUM_ASSETS_OFFSET mem_load
-        u32assert.err=ERR_SEND_NOTES_NUM_ASSETS_INVALID
-        # => [num_assets, notes_left, num_elements]
-
-        loc_load.VALIDATE_RECORDS_READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
-        u32assert.err=ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID
-        # => [num_attachments, num_assets, notes_left, num_elements]
-
-        # record length = ITEMS_OFFSET + (num_assets + num_attachments) * ITEM_NUM_ELEMENTS
-        add mul.ITEM_NUM_ELEMENTS add.ITEMS_OFFSET
-        # => [record_num_elements, notes_left, num_elements]
-
-        # advance past this record, keeping the pointer a u32 so the walk cannot wrap around
-        loc_load.VALIDATE_RECORDS_READ_PTR_LOC add
-        u32assert.err=ERR_SEND_NOTES_RECORD_END_INVALID
-        loc_store.VALIDATE_RECORDS_READ_PTR_LOC
-        # => [notes_left, num_elements]
-
-        sub.1 dup neq.0
-        # => [notes_left != 0, notes_left, num_elements]
-    end
-    drop
-    # => [num_elements]
-
-    # the last record must end exactly at the end of the payload
-    push.PAYLOAD_ADDR add
-    # => [payload_end, ]
-
-    loc_load.VALIDATE_RECORDS_READ_PTR_LOC
-    # => [read_ptr, payload_end]
-
-    eq assert.err=ERR_SEND_NOTES_RECORDS_LENGTH_MISMATCH
-    # => []
 end
