@@ -3,6 +3,7 @@ mod authority;
 mod blocklist;
 mod code_inspection;
 mod constant_fee_manager;
+mod constant_fee_policy_config;
 mod expiration;
 mod faucet;
 mod faucet_policy_config;

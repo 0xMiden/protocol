@@ -43,6 +43,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PSWAP),
             PricedNote::Standard(StandardNote::MINT),
             PricedNote::Standard(StandardNote::BURN),
+            PricedNote::Standard(StandardNote::CONSTANT_FEE_POLICY_CONFIG),
             PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG),
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
@@ -88,6 +89,9 @@ impl PricedNote {
                 ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ],
             PricedNote::Standard(StandardNote::BURN) => &[ExecutionBenchmark::ConsumeBurnNetwork],
+            PricedNote::Standard(StandardNote::CONSTANT_FEE_POLICY_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork]
+            },
             PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork]
             },
