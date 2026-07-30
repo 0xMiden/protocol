@@ -16,7 +16,7 @@ mod p2ide;
 mod pausable;
 mod pause_action;
 mod pswap;
-mod rbac;
+pub(crate) mod rbac;
 mod rbac_action;
 mod send_note;
 mod swap;

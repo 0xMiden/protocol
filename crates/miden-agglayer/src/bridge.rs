@@ -15,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::note::NoteScriptRoot;
+use miden_standards::note::RbacActionNote;
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
@@ -459,6 +460,11 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
+    /// The set includes the role-management [`RbacActionNote`], which makes the bridge's RBAC
+    /// role graph mutable on-chain. Role-management notes are unordered, unexpiring, and not
+    /// bound to the bridge account; see the Administration section of `SPEC.md` for the required
+    /// rotation ordering and the associated caveats.
+    ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
@@ -468,6 +474,7 @@ impl AggLayerBridge {
             DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
+            RbacActionNote::script_root(),
         ])
     }
 }

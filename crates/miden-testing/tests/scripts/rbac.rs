@@ -52,7 +52,7 @@ pub(super) fn test_account_id(seed: u8) -> AccountId {
         .build_with_seed([seed; 32])
 }
 
-pub(super) fn role(name: &str) -> RoleSymbol {
+pub(crate) fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
@@ -80,7 +80,7 @@ pub(super) fn get_role_config(
     Ok((word[0], word[1]))
 }
 
-pub(super) fn is_role_member(
+pub(crate) fn is_role_member(
     account: &Account,
     role: &RoleSymbol,
     account_id: AccountId,

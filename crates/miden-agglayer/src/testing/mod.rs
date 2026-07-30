@@ -38,9 +38,41 @@ use crate::{
 /// Creates an existing bridge account seeded with a single holder per operational role and a
 /// fixed dummy account as the built-in `ADMIN` role member.
 ///
+/// Use [`create_existing_bridge_account_with_admin_and_roles`] when a test needs to act as the
+/// `ADMIN` role member (e.g. to rotate roles).
+///
 /// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+    network_id: u32,
+) -> Account {
+    let admin_account =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    create_existing_bridge_account_with_admin_and_roles(
+        seed,
+        admin_account,
+        faucet_manager,
+        ger_injector,
+        ger_remover,
+        network_id,
+    )
+}
+
+/// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
+/// role member and a single holder per operational role.
+///
+/// RBAC authorization is note-sender-based, and the mock chain (unlike the transaction kernel in
+/// production, which stamps the sender itself) can synthesize notes with an arbitrary sender, so
+/// in tests the admin does not need to exist in the chain.
+///
+/// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
+pub fn create_existing_bridge_account_with_admin_and_roles(
+    seed: Word,
+    admin: AccountId,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
@@ -53,10 +85,7 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    let admin_account =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    create_bridge_account_builder(seed, admin_account, roles, network_id)
+    create_bridge_account_builder(seed, admin, roles, network_id)
         .build_existing()
         .expect("bridge account should be valid")
 }

@@ -9,6 +9,7 @@ pub use miden_agglayer::testing::{
     MtfVectorsFile,
     SOLIDITY_CANONICAL_ZEROS,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    create_existing_bridge_account_with_admin_and_roles,
     create_existing_bridge_account_with_roles,
 };
 use miden_core_lib::CoreLibrary;

@@ -88,7 +88,8 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
 }
 
 /// Asserts that a transaction consuming an input note whose script root falls outside the
-/// bridge's allowlist (CLAIM, B2AGG, CONFIG_AGG_BRIDGE, UPDATE_GER) fails with
+/// bridge's allowlist (see
+/// [`AggLayerBridge::allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes)) fails with
 /// [`ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED`].
 #[tokio::test]
 async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {

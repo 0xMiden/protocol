@@ -6,6 +6,7 @@ mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
 mod network_account_regression;
+mod rbac_rotation;
 mod remove_ger;
 pub mod test_utils;
 mod update_ger;
