@@ -21,4 +21,3 @@ mod rbac_action;
 mod send_note;
 mod swap;
 mod tx_fee;
-mod warden;

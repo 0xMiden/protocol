@@ -2,4 +2,3 @@ pub mod authority
 pub mod ownable2step
 pub mod pausable
 pub mod rbac
-pub mod warden

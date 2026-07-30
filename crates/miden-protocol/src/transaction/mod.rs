@@ -4,6 +4,7 @@ use super::vm::AdviceInputs;
 use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};
 
 mod executed_tx;
+mod fee;
 mod inputs;
 mod kernel;
 mod ordered_transactions;
@@ -17,6 +18,7 @@ mod tx_summary;
 mod verifier;
 
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
+pub use fee::{TransactionFee, TransactionFeeError};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use ordered_transactions::OrderedTransactionHeaders;

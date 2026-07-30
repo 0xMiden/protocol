@@ -5,7 +5,7 @@ use core::fmt;
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 
-use super::eth_address::{AddressConversionError, EthAddress};
+use super::address::{AddressConversionError, EthAddress};
 
 // ================================================================================================
 // ETH EMBEDDED ACCOUNT ID
@@ -23,9 +23,8 @@ use super::eth_address::{AddressConversionError, EthAddress};
 /// `Felt::new_unchecked(u64)` does not reduce mod p (checked explicitly in
 /// [`Self::try_from_eth_address`]).
 ///
-/// This type is used by integrators (Gateway, claim managers) to convert between Miden AccountIds
-/// and the Ethereum address format when constructing CLAIM notes or calling the AggLayer Bridge
-/// `bridgeAsset()` function.
+/// This type is used by bridge integrators to convert between Miden AccountIds and the Ethereum
+/// address format, e.g. when constructing claim notes or calling an EVM bridge contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EthEmbeddedAccountId(AccountId);
 
@@ -127,6 +126,14 @@ impl EthEmbeddedAccountId {
     /// Returns the raw 20-byte Ethereum address encoding.
     pub fn to_bytes(&self) -> [u8; 20] {
         self.to_eth_address().into_bytes()
+    }
+
+    /// Returns the bytes32-embedded encoding: the 20-byte Ethereum address encoding left-padded
+    /// to 32 bytes (bytes 0..12 zero, address in bytes 12..32).
+    pub fn to_bytes32(&self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out[12..32].copy_from_slice(&self.to_bytes());
+        out
     }
 
     /// Converts the address to a hex string (lowercase, 0x-prefixed).
