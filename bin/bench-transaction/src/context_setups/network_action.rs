@@ -31,7 +31,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::faucets::{Description, FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     AllowlistManager,
     BlocklistManager,
@@ -48,6 +48,8 @@ use miden_standards::note::{
     BlocklistConfigNote,
     FaucetPolicyAction,
     FaucetPolicyActionNote,
+    FungibleFaucetConfig,
+    FungibleFaucetConfigNote,
     NetworkAccountConfig,
     NetworkAccountConfigNote,
     OwnerAction,
@@ -110,6 +112,65 @@ pub fn tx_consume_faucet_policy_action_note_network() -> Result<MockTransaction>
         .account(account.id())
         .action(FaucetPolicyAction::SetMintPolicy {
             policy_root: MintPolicy::owner_only().root(),
+        })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// FUNGIBLE FAUCET CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming a FUNGIBLE_FAUCET_CONFIG note.
+///
+/// The faucet carries the token metadata with every mutability flag set, gated by the owner wallet
+/// via `Authority::OwnerControlled` (mirrors `create_faucet` in the `faucet_metadata` test suite).
+/// The benchmarked action is `SetDescription`, the most expensive selector: it commits to the
+/// 7-Word payload and republishes it in the advice map before the call, which the `SetMaxSupply`
+/// selector does not do.
+pub fn tx_consume_fungible_faucet_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send metadata config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .is_description_mutable(true)
+        .is_logo_uri_mutable(true)
+        .is_external_link_mutable(true)
+        .is_max_supply_mutable(true)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_component(Pausable::unpaused())
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([FungibleFaucetConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let note: Note = FungibleFaucetConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .config(FungibleFaucetConfig::SetDescription {
+            description: Description::new("benchmarked token description")?,
         })
         .generate_serial_number(builder.rng_mut())
         .build()?

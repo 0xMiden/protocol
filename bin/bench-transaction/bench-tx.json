@@ -573,6 +573,30 @@
       }
     }
   },
+  "consume FUNGIBLE_FAUCET_CONFIG note (network account)": {
+    "prologue": 4730,
+    "notes_processing": 5178,
+    "note_execution": {
+      "0xf3cd00a6634fb0a76bc7b111b8318d5e30f41d4bac98f982c6b282fc8aeb81f0": 5136
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 15522,
+      "auth_procedure": 8774
+    },
+    "trace": {
+      "core_rows": 25516,
+      "chiplets_rows": 33214,
+      "range_rows": 2303,
+      "chiplets_shape": {
+        "hasher_rows": 30864,
+        "bitwise_rows": 576,
+        "memory_rows": 1711,
+        "kernel_rom_rows": 62,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume ALLOWLIST_CONFIG note (network account)": {
     "prologue": 5363,
     "notes_processing": 2167,

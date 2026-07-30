@@ -44,6 +44,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::MINT),
             PricedNote::Standard(StandardNote::BURN),
             PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION),
+            PricedNote::Standard(StandardNote::FUNGIBLE_FAUCET_CONFIG),
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
             PricedNote::Standard(StandardNote::PAUSE_ACTION),
@@ -90,6 +91,9 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::BURN) => &[ExecutionBenchmark::ConsumeBurnNetwork],
             PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION) => {
                 &[ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork]
+            },
+            PricedNote::Standard(StandardNote::FUNGIBLE_FAUCET_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeFungibleFaucetConfigNetwork]
             },
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeAllowlistConfigNetwork]
@@ -441,6 +445,7 @@ mod tests {
     #[case::mint(PricedNote::Standard(StandardNote::MINT))]
     #[case::burn(PricedNote::Standard(StandardNote::BURN))]
     #[case::faucet_policy_action(PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION))]
+    #[case::fungible_faucet_config(PricedNote::Standard(StandardNote::FUNGIBLE_FAUCET_CONFIG))]
     #[case::allowlist_config(PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG))]
     #[case::blocklist_config(PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG))]
     #[case::pause_action(PricedNote::Standard(StandardNote::PAUSE_ACTION))]
