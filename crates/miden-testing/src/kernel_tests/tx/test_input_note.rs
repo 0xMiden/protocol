@@ -22,11 +22,13 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ASSET_SIZE;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
-use miden_tx::TransactionKernelError;
+use miden_tx::{TransactionExecutorError, TransactionKernelError};
 use rstest::rstest;
 
 use super::{ExecutionOutputExt, TestSetup, setup_test};
@@ -39,6 +41,51 @@ use crate::{
     assert_execution_error,
     assert_transaction_executor_error,
 };
+
+const P2ID_INPUT_NOTE_INDEX: u8 = 1;
+const STOLEN_ASSET_PTR: u32 = 1024;
+
+fn assert_rejected_by_account_origin_auth(
+    result: Result<ExecutedTransaction, TransactionExecutorError>,
+) {
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
+}
+
+fn build_victim_p2id_note(target: AccountId, asset: Asset) -> anyhow::Result<Note> {
+    Ok(P2idNote::builder()
+        .sender(ACCOUNT_ID_SENDER.try_into()?)
+        .target(target)
+        .asset(asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([2, 2, 2, 2u32])))
+        .build()
+        .map(Note::from)?)
+}
+
+fn build_attacker_output_note(sender: AccountId, asset: Asset) -> anyhow::Result<Note> {
+    Ok(NoteBuilder::new(sender, RandomCoin::new(Word::from([3, 3, 3, 3u32])))
+        .note_type(NoteType::Public)
+        .add_assets([asset])
+        .build()?)
+}
+
+fn build_malicious_note(code: String) -> anyhow::Result<Note> {
+    Ok(NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+    )
+    .note_type(NoteType::Public)
+    .code(code)
+    .dynamically_linked_packages(CodeBuilder::mock_packages())
+    .build()?)
+}
 
 /// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
 /// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
@@ -585,72 +632,130 @@ async fn test_assets_removed_after_note_scripts() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note script cannot remove assets from another input note by index.
-#[rstest]
-#[case::remove_asset("remove_asset")]
-#[case::remove_all_assets("remove_all_assets")]
+/// A malicious note cannot move assets from a later P2ID note by removing them from the P2ID note
+/// by index and moving them into an attacker-controlled output note.
 #[tokio::test]
-async fn test_note_script_cannot_remove_assets_from_another_note(
-    #[case] procedure: &str,
-) -> anyhow::Result<()> {
+async fn test_malicious_note_cannot_remove_asset_from_later_p2id_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let mock_chain = builder.build()?;
 
-    let asset = FungibleAsset::mock(100);
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let sender = ACCOUNT_ID_SENDER.try_into()?;
+    let p2id_asset = FungibleAsset::mock(100);
+    let p2id_note = build_victim_p2id_note(account.id(), p2id_asset)?;
+    let attacker_output_note = build_attacker_output_note(account.id(), p2id_asset)?;
 
-    let remove_assets = match procedure {
-        "remove_asset" => format!(
-            "push.1 push.{asset_value} push.{asset_id} exec.input_note::remove_asset dropw",
-            asset_id = asset.to_id_word(),
-            asset_value = asset.to_value_word(),
-        ),
-        "remove_all_assets" => {
-            String::from("push.1 push.0 exec.input_note::remove_all_assets drop")
-        },
-        _ => unreachable!("unknown input note removal procedure"),
-    };
-
-    let attacker_code = format!(
+    let malicious_note_code = format!(
         r#"
         use miden::protocol::input_note
+        use miden::protocol::output_note
+        use miden::core::sys
 
         @note_script
         pub proc main
-            {remove_assets}
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            push.{p2id_note_index}
+            push.{asset_value}
+            push.{asset_id}
+            exec.input_note::remove_asset
+            # => [remaining_asset]
+            dropw
 
-            # If the indexed removal was not rejected, fail with a distinct error.
-            push.0 assert.err="indexed input note asset removal unexpectedly succeeded"
+            # If the indexed removal above were allowed, create an attacker-controlled output note.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            # Move the asset stolen from the P2ID note into the attacker's output note.
+            push.{asset_value}
+            push.{asset_id}
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
         end
-    "#
+    "#,
+        asset_id = p2id_asset.to_id_word(),
+        asset_value = p2id_asset.to_value_word(),
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        recipient = attacker_output_note.recipient().digest(),
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
     );
 
-    let attacker_note = NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Public)
-        .code(attacker_code)
-        .build()?;
-    let target_note = NoteBuilder::new(sender, &mut rng)
-        .add_assets([asset])
-        .note_type(NoteType::Public)
-        .build()?;
+    let malicious_note = build_malicious_note(malicious_note_code)?;
+    let mock_chain = builder.build()?;
 
     let result = mock_chain
         .build_transaction(account.id())
-        .unauthenticated_input_notes([attacker_note, target_note])
+        .unauthenticated_input_notes([malicious_note, p2id_note])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::EventError { error: ref event_err, .. }
-            if matches!(
-                event_err.downcast_ref::<TransactionKernelError>(),
-                Some(TransactionKernelError::UnknownAccountProcedure(_))
-            )
+    assert_rejected_by_account_origin_auth(result);
+
+    Ok(())
+}
+
+/// A malicious note also cannot use the bulk indexed removal API to empty a later P2ID note.
+#[tokio::test]
+async fn test_malicious_note_cannot_remove_all_assets_from_later_p2id_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let p2id_asset = FungibleAsset::mock(100);
+    let p2id_note = build_victim_p2id_note(account.id(), p2id_asset)?;
+    let attacker_output_note = build_attacker_output_note(account.id(), p2id_asset)?;
+
+    let malicious_note_code = format!(
+        r#"
+        use miden::protocol::asset
+        use miden::protocol::input_note
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        @note_script
+        pub proc main
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            push.{p2id_note_index}
+            push.{stolen_asset_ptr}
+            exec.input_note::remove_all_assets
+            # => [num_assets]
+            push.1 assert_eq
+
+            # If the indexed removal above were allowed, create an attacker-controlled output note.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            # Move the asset stolen from the P2ID note into the attacker's output note.
+            push.{stolen_asset_ptr}
+            exec.asset::load
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        recipient = attacker_output_note.recipient().digest(),
+        stolen_asset_ptr = STOLEN_ASSET_PTR,
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
     );
+
+    let malicious_note = build_malicious_note(malicious_note_code)?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes([malicious_note, p2id_note])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_rejected_by_account_origin_auth(result);
 
     Ok(())
 }
