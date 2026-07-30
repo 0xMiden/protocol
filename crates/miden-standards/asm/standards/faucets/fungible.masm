@@ -8,7 +8,6 @@
 # mutability config word live in the parent `miden::standards::faucets` namespace.
 
 use miden::protocol::active_account
-use miden::protocol::asset
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
@@ -35,8 +34,6 @@ const TOKEN_CONFIG_SLOT_LOCAL = 0
 # and supply checks in `mint_and_send`. Its faucet ID is checked against the active account
 # to bind the mint to the faucet the MINT note was created for.
 const MINT_ASSET_ID_LOCAL = 4
-const ASSET_PTR = 0
-
 const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
 const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than current token supply"
 
@@ -404,12 +401,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # Consume the supplied asset into memory, then load it into the same stack shape used by the
-    # burn flow.
-    push.ASSET_PTR exec.asset::store
-    push.ASSET_PTR exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, pad(16)]
-
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 

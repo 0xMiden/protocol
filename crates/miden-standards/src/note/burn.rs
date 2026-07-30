@@ -15,7 +15,6 @@ use miden_protocol::note::{
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
-    NoteTag,
     NoteType,
     PartialNoteMetadata,
 };
@@ -65,7 +64,7 @@ pub struct BurnNote {
 impl BurnNote {
     /// Builds a new [`BurnNote`] that burns `asset` against the faucet that issued it.
     ///
-    /// The target faucet is the asset's own issuing faucet; the note is tagged for it.
+    /// The target faucet is the asset's own issuing faucet.
     ///
     /// # Errors
     ///
@@ -79,8 +78,11 @@ impl BurnNote {
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let network_target =
-            NetworkAccountTarget::new(asset.faucet_id(), NoteExecutionHint::Always)
-                .expect("an asset faucet ID is always public");
+            NetworkAccountTarget::new(asset.faucet_id(), NoteExecutionHint::Always).map_err(
+                |err| {
+                    NoteError::other_with_source("failed to target BURN note at asset faucet", err)
+                },
+            )?;
         let attachments = NoteAttachments::new(
             core::iter::once(network_target.into()).chain(attachments).collect(),
         )?;
@@ -178,11 +180,10 @@ where
 
 impl From<BurnNote> for Note {
     fn from(note: BurnNote) -> Self {
-        // BURN notes are always public for network execution. The tag and NetworkAccountTarget
-        // attachment route the note to the asset's issuing faucet, while storage binds the script
-        // to the asset it must burn.
-        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.asset.faucet_id()));
+        // BURN notes are always public for network execution. The NetworkAccountTarget attachment
+        // routes the note to the asset's issuing faucet, while storage binds the script to the
+        // asset it must burn.
+        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public);
         let storage = NoteStorage::new(note.asset.as_elements().to_vec())
             .expect("an asset always fits in BURN note storage");
         let recipient = NoteRecipient::new(note.serial_number, BurnNote::script(), storage);
@@ -210,6 +211,7 @@ mod tests {
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::note::NoteTag;
 
     use super::*;
     use crate::note::NetworkAccountTarget;
@@ -222,7 +224,7 @@ mod tests {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32])
     }
 
-    /// The builder produces a public note, tagged for the faucet, carrying the asset to burn.
+    /// The builder produces a public note targeted at the faucet and carrying the asset to burn.
     #[test]
     fn builder_builds_public_burn_note() {
         let mut rng = RandomCoin::new(Word::empty());
@@ -242,7 +244,7 @@ mod tests {
 
         let note = Note::from(burn_note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
-        assert_eq!(note.metadata().tag(), NoteTag::with_account_target(faucet()));
+        assert_eq!(note.metadata().tag(), NoteTag::default());
         assert_eq!(note.assets().num_assets(), 1);
         assert_eq!(note.recipient().storage().items(), Asset::from(asset).as_elements());
 

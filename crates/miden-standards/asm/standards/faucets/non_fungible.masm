@@ -17,7 +17,6 @@
 
 use miden::core::word
 use miden::protocol::active_account
-use miden::protocol::asset
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
@@ -41,8 +40,6 @@ const STATUS_BURNED = 2
 
 # The local memory address holding the asset commitment across the mint flow.
 const ASSET_VALUE_LOCAL = 0
-const ASSET_PTR = 0
-
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
 const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
@@ -261,12 +258,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # Consume the supplied asset into memory, then load it into the same stack shape used by the
-    # burn flow.
-    push.ASSET_PTR exec.asset::store
-    push.ASSET_PTR exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, pad(16)]
-
     # validate the asset to burn is well-formed before processing it
     # note that the asset's origin is validated by the kernel
     exec.non_fungible_asset::validate

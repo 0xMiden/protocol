@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79649,
       "chiplets_rows": 64650,
-      "range_rows": 20205,
+      "range_rows": 20333,
       "chiplets_shape": {
         "hasher_rows": 61568,
         "bitwise_rows": 640,
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 11463,
       "chiplets_rows": 22476,
-      "range_rows": 1299,
+      "range_rows": 1283,
       "chiplets_shape": {
         "hasher_rows": 21024,
         "bitwise_rows": 640,
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83178,
       "chiplets_rows": 67650,
-      "range_rows": 20499,
+      "range_rows": 20583,
       "chiplets_shape": {
         "hasher_rows": 64080,
         "bitwise_rows": 984,
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 14992,
       "chiplets_rows": 25476,
-      "range_rows": 1231,
+      "range_rows": 1235,
       "chiplets_shape": {
         "hasher_rows": 23536,
         "bitwise_rows": 984,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 78911,
       "chiplets_rows": 63101,
-      "range_rows": 20355,
+      "range_rows": 20335,
       "chiplets_shape": {
         "hasher_rows": 60128,
         "bitwise_rows": 616,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 10725,
       "chiplets_rows": 20895,
-      "range_rows": 1059,
+      "range_rows": 1081,
       "chiplets_shape": {
         "hasher_rows": 19552,
         "bitwise_rows": 616,
@@ -193,7 +193,7 @@
     "prologue": 4731,
     "notes_processing": 118526,
     "note_execution": {
-      "0x80e5d728c1c5268b54a6caf3b673859d180cac09bc7a5975b8fe15bd8d9929eb": 118484
+      "0x5bc84b4d1d5d3c2c62b1a9e14b8a8b928dff99f3abd16e72a244a9086078dcad": 118484
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -217,7 +217,7 @@
     "prologue": 4731,
     "notes_processing": 116829,
     "note_execution": {
-      "0x80e5d728c1c5268b54a6caf3b673859d180cac09bc7a5975b8fe15bd8d9929eb": 116787
+      "0x5bc84b4d1d5d3c2c62b1a9e14b8a8b928dff99f3abd16e72a244a9086078dcad": 116787
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -241,7 +241,7 @@
     "prologue": 4731,
     "notes_processing": 62480,
     "note_execution": {
-      "0x80e5d728c1c5268b54a6caf3b673859d180cac09bc7a5975b8fe15bd8d9929eb": 62438
+      "0x5bc84b4d1d5d3c2c62b1a9e14b8a8b928dff99f3abd16e72a244a9086078dcad": 62438
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -527,9 +527,9 @@
   },
   "consume BURN note (network account)": {
     "prologue": 5952,
-    "notes_processing": 4610,
+    "notes_processing": 4571,
     "note_execution": {
-      "0x9a37d46b4986512faec639f1aadc154a65be5bda0cc5bf68088848762ad250d4": 4568
+      "0x90c1f0a2c27744efd107c653e6dba134c6713257427980e503580fa4931dc935": 4529
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -537,13 +537,13 @@
       "auth_procedure": 8864
     },
     "trace": {
-      "core_rows": 27662,
-      "chiplets_rows": 37430,
-      "range_rows": 2505,
+      "core_rows": 27623,
+      "chiplets_rows": 37378,
+      "range_rows": 2495,
       "chiplets_shape": {
-        "hasher_rows": 34640,
+        "hasher_rows": 34592,
         "bitwise_rows": 912,
-        "memory_rows": 1815,
+        "memory_rows": 1811,
         "kernel_rom_rows": 62,
         "ace_rows": 0
       }
@@ -732,7 +732,7 @@
     "trace": {
       "core_rows": 16284,
       "chiplets_rows": 29232,
-      "range_rows": 1377,
+      "range_rows": 1375,
       "chiplets_shape": {
         "hasher_rows": 27328,
         "bitwise_rows": 960,
@@ -794,7 +794,7 @@
     "prologue": 4731,
     "notes_processing": 118526,
     "note_execution": {
-      "0x80e5d728c1c5268b54a6caf3b673859d180cac09bc7a5975b8fe15bd8d9929eb": 118484
+      "0x5bc84b4d1d5d3c2c62b1a9e14b8a8b928dff99f3abd16e72a244a9086078dcad": 118484
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -818,7 +818,7 @@
     "prologue": 4731,
     "notes_processing": 62480,
     "note_execution": {
-      "0x80e5d728c1c5268b54a6caf3b673859d180cac09bc7a5975b8fe15bd8d9929eb": 62438
+      "0x5bc84b4d1d5d3c2c62b1a9e14b8a8b928dff99f3abd16e72a244a9086078dcad": 62438
     },
     "tx_script_processing": 42,
     "epilogue": {

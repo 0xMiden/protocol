@@ -581,23 +581,13 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     let fungible_asset = FungibleAsset::new(faucet.id(), 100).unwrap();
 
-    // need to create a note with the fungible asset to be burned
-    let burn_note_script_code = "
-        # burn the asset
-        @note_script
-        pub proc main
-            dropw
-            # => []
-
-            push.0 exec.::miden::protocol::active_note::remove_all_assets assert
-            push.0 exec.::miden::protocol::asset::load
-            swapdw dropw dropw
-            call.::miden::standards::faucets::fungible::receive_and_burn
-            # => [pad(16)]
-        end
-        ";
-
-    let note = get_note_with_fungible_asset_and_script(fungible_asset, burn_note_script_code);
+    let note = Note::from(
+        BurnNote::builder()
+            .sender(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?)
+            .asset(fungible_asset)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
 
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
@@ -1727,6 +1717,52 @@ async fn network_faucet_burn_rejects_asset_mismatch() -> anyhow::Result<()> {
     let carried_asset = FungibleAsset::new(faucet.id(), 100)?;
     let stored_asset = Asset::from(FungibleAsset::new(faucet.id(), 99)?);
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let note = NoteBuilder::new(owner, &mut rng)
+        .add_assets([Asset::from(carried_asset)])
+        .note_storage(stored_asset.as_elements().iter().copied())?
+        .script(BurnNote::script())
+        .build()?;
+
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+    let result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_BURN_ASSET_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests that the BURN script rejects a stored faucet ID that differs from the carried asset's
+/// faucet ID even when their values are identical.
+#[tokio::test]
+async fn network_faucet_burn_rejects_faucet_id_mismatch() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        200,
+        owner,
+        Some(100),
+        MintPolicy::owner_only(),
+        [],
+    )?;
+    let other_faucet = builder.add_existing_network_faucet(
+        "ALT",
+        200,
+        owner,
+        Some(100),
+        MintPolicy::owner_only(),
+        [],
+    )?;
+
+    let carried_asset = FungibleAsset::new(faucet.id(), 100)?;
+    let stored_asset = Asset::from(FungibleAsset::new(other_faucet.id(), 100)?);
+    let mut rng = RandomCoin::new([Felt::from(101u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .add_assets([Asset::from(carried_asset)])
         .note_storage(stored_asset.as_elements().iter().copied())?
