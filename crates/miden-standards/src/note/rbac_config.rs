@@ -146,11 +146,7 @@ impl From<RbacConfig> for NoteStorage {
 /// standing capability and do not create role-management notes ahead of need. Consumption order
 /// is chosen by whoever consumes the note, so when rotating a role, wait for the successor's
 /// grant to commit before issuing any revoke or renounce (a note that fails because its sender
-/// currently lacks the role stays pending and revives if the sender regains it). The script
-/// does not verify the
-/// consuming account (`account` only feeds the routing tag and the default
-/// `NetworkAccountTarget` attachment, neither of which is enforced), so a sender administering
-/// several RBAC-carrying accounts must treat its notes as redirectable between them.
+/// currently lacks the role stays pending and revives if the sender regains it).
 #[derive(Debug, Clone)]
 pub struct RbacConfigNote {
     sender: AccountId,
