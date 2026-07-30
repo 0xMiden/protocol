@@ -168,7 +168,7 @@ proc invoke_callback
         # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
 
         # assert that the callback returned the asset value unchanged
-        dupw dupw loc_loadw_le.CALLBACK_ASSET_VALUE_LOC
+        dupw padw loc_loadw_le.CALLBACK_ASSET_VALUE_LOC
         assert_eqw.err=ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT
         # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
     else
