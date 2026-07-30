@@ -5,12 +5,17 @@
 //! Unlike the other authority-gated faucet mutators, these three do not take their argument on the
 //! operand stack. The caller passes the Poseidon2 commitment of the new 7-Word value and provides
 //! the preimage in the advice map under it; the setter pipes the preimage back out and validates it
-//! against the commitment. The notes below satisfy that contract the way a real caller does: the
-//! payload travels in the note storage, and the script commits to the memory `get_storage` wrote it
-//! to and inserts it into the advice map before making the call.
+//! against the commitment.
 //!
-//! The `assert_not_paused` guard these setters share with the other mutators is covered by
-//! [`super::pausable`]; this suite does not repeat it.
+//! `FungibleFaucetConfigNote` is the standard caller that satisfies this contract, so the tests
+//! below drive the setters through it. The one exception is
+//! [`set_description_accepts_caller_computed_commitment`], which supplies a commitment computed
+//! outside the VM — something the standard note never does — and therefore uses a hand-written
+//! script.
+//!
+//! The setters' happy paths are covered by the note's own dispatch tests in [`config`]; this suite
+//! covers the guards around them. The `assert_not_paused` guard they share with the other mutators
+//! is covered by [`super::pausable`] and is not repeated here.
 
 extern crate alloc;
 
@@ -41,6 +46,7 @@ use miden_standards::errors::standards::{
     ERR_LOGO_URI_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
+use miden_standards::note::{FungibleFaucetConfig, FungibleFaucetConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -86,32 +92,39 @@ fn create_faucet(owner: AccountId, mutable: bool) -> anyhow::Result<Account> {
     Ok(account)
 }
 
-/// Builds a `sender`-authored note that calls `setter` with `value` as the new metadata string.
-///
-/// The 7-Word payload travels in the note storage. The script writes it to memory via
-/// `active_note::get_storage`, commits to it, and inserts it into the advice map under that
-/// commitment so the setter can pipe it back out.
-///
-/// When `commitment` is `Some`, that caller-supplied value is used as the advice map key instead of
-/// one computed in MASM, which is how [`set_description_accepts_caller_computed_commitment`] pins
-/// the Rust and MASM commitment conventions to each other.
-fn build_set_string_note(
+/// Builds a `sender`-authored [`FungibleFaucetConfigNote`] carrying `config`.
+fn config_note(
     sender: AccountId,
-    setter: &str,
-    value: &[Word],
-    commitment: Option<Word>,
+    faucet_id: AccountId,
+    config: FungibleFaucetConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let push_commitment = match commitment {
-        Some(commitment) => format!("push.{commitment}"),
-        None => {
-            format!("push.{STRING_NUM_ELEMENTS} push.{STRING_PTR} exec.poseidon2::hash_elements")
-        },
-    };
+    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let note = FungibleFaucetConfigNote::builder()
+        .sender(sender)
+        .target(faucet_id)
+        .config(config)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+    Ok(note)
+}
 
+/// Builds a `sender`-authored note that calls `set_description` with a caller-supplied
+/// `commitment`, rather than one computed in MASM as `FungibleFaucetConfigNote` does.
+///
+/// The 7-Word payload travels in the note storage; the script publishes it in the advice map under
+/// `commitment` so the setter can pipe it back out and validate it. Only
+/// [`set_description_accepts_caller_computed_commitment`] needs this — every other test drives the
+/// standard note.
+fn build_caller_committed_description_note(
+    sender: AccountId,
+    description: &Description,
+    commitment: Word,
+    rng_seed: u32,
+) -> anyhow::Result<Note> {
     let script_code = format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
         use miden::protocol::active_note
         use miden::standards::faucets
 
@@ -130,7 +143,7 @@ fn build_set_string_note(
             padw padw padw
             # => [pad(12)]
 
-            {push_commitment}
+            push.{commitment}
             # => [COMMITMENT, pad(12)]
 
             # publish the payload under the commitment so the setter can pipe it back out
@@ -142,7 +155,7 @@ fn build_set_string_note(
             movup.4 drop movup.4 drop
             # => [COMMITMENT, pad(12)]
 
-            call.faucets::{setter}
+            call.faucets::set_description
             # => [pad(16)]
 
             dropw dropw dropw dropw
@@ -156,7 +169,7 @@ fn build_set_string_note(
     let note = NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .script(script)
-        .note_storage(flatten(value))?
+        .note_storage(flatten(&description.to_words()))?
         .build()?;
 
     Ok(note)
@@ -191,67 +204,6 @@ fn metadata(faucet: &Account) -> anyhow::Result<TokenMetadata> {
     Ok(TokenMetadata::try_from_storage(faucet.storage())?)
 }
 
-// TESTS — HAPPY PATHS
-// ================================================================================================
-
-/// The owner sets the description; the new value round-trips through the faucet's storage slots.
-#[tokio::test]
-async fn set_description_updates_storage() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let faucet = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(faucet.clone())?;
-    let mock_chain = builder.build()?;
-
-    let description = Description::new("A thoroughly described token")?;
-    let note = build_set_string_note(owner, "set_description", &description.to_words(), None, 1)?;
-
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
-
-    assert_eq!(metadata(&updated)?.description(), Some(&description));
-
-    Ok(())
-}
-
-/// The owner sets the logo URI; the new value round-trips through the faucet's storage slots.
-#[tokio::test]
-async fn set_logo_uri_updates_storage() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let faucet = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(faucet.clone())?;
-    let mock_chain = builder.build()?;
-
-    let logo_uri = LogoURI::new("https://example.com/logo.png")?;
-    let note = build_set_string_note(owner, "set_logo_uri", &logo_uri.to_words(), None, 2)?;
-
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
-
-    assert_eq!(metadata(&updated)?.logo_uri(), Some(&logo_uri));
-
-    Ok(())
-}
-
-/// The owner sets the external link; the new value round-trips through the faucet's storage slots.
-#[tokio::test]
-async fn set_external_link_updates_storage() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let faucet = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(faucet.clone())?;
-    let mock_chain = builder.build()?;
-
-    let external_link = ExternalLink::new("https://example.com")?;
-    let note =
-        build_set_string_note(owner, "set_external_link", &external_link.to_words(), None, 3)?;
-
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
-
-    assert_eq!(metadata(&updated)?.external_link(), Some(&external_link));
-
-    Ok(())
-}
-
 // TESTS — MUTABILITY FLAGS
 // ================================================================================================
 
@@ -265,7 +217,8 @@ async fn set_description_fails_when_immutable() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let description = Description::new("nope")?;
-    let note = build_set_string_note(owner, "set_description", &description.to_words(), None, 4)?;
+    let note =
+        config_note(owner, faucet.id(), FungibleFaucetConfig::SetDescription { description }, 4)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -288,7 +241,7 @@ async fn set_logo_uri_fails_when_immutable() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let logo_uri = LogoURI::new("https://example.com/nope.png")?;
-    let note = build_set_string_note(owner, "set_logo_uri", &logo_uri.to_words(), None, 5)?;
+    let note = config_note(owner, faucet.id(), FungibleFaucetConfig::SetLogoUri { logo_uri }, 5)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -311,8 +264,12 @@ async fn set_external_link_fails_when_immutable() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let external_link = ExternalLink::new("https://example.com/nope")?;
-    let note =
-        build_set_string_note(owner, "set_external_link", &external_link.to_words(), None, 6)?;
+    let note = config_note(
+        owner,
+        faucet.id(),
+        FungibleFaucetConfig::SetExternalLink { external_link },
+        6,
+    )?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -340,8 +297,12 @@ async fn set_description_fails_when_sender_is_not_owner() -> anyhow::Result<()> 
     let mock_chain = builder.build()?;
 
     let description = Description::new("not yours")?;
-    let note =
-        build_set_string_note(stranger, "set_description", &description.to_words(), None, 7)?;
+    let note = config_note(
+        stranger,
+        faucet.id(),
+        FungibleFaucetConfig::SetDescription { description },
+        7,
+    )?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -373,10 +334,9 @@ async fn set_description_accepts_caller_computed_commitment() -> anyhow::Result<
     let mock_chain = builder.build()?;
 
     let description = Description::new("committed in Rust")?;
-    let words = description.to_words();
-    let commitment = Hasher::hash_elements(&flatten(&words));
+    let commitment = Hasher::hash_elements(&flatten(&description.to_words()));
 
-    let note = build_set_string_note(owner, "set_description", &words, Some(commitment), 8)?;
+    let note = build_caller_committed_description_note(owner, &description, commitment, 8)?;
 
     let updated = consume_note(&mock_chain, &faucet, &note).await?;
 
