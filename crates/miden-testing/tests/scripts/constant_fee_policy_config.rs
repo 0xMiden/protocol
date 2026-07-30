@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{AccountId, AccountType};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -34,22 +35,23 @@ use crate::consume_note;
 // HELPERS
 // ================================================================================================
 
-/// Builds a `ConstantFeePolicyConfigNote` scheduling `fee` (in the account's fee asset) for
-/// `priced_root()` on `account`, authored by `sender`, and converts it to a protocol [`Note`].
+/// Builds a `ConstantFeePolicyConfigNote` scheduling `fee_asset` for `priced_root()` on `account`,
+/// authored by `sender`, and converts it to a protocol [`Note`].
 ///
 /// `serial_seed` distinguishes otherwise-identical notes so that several can coexist in one chain
-/// without sharing a note ID.
-fn build_config_note(
+/// without sharing a note ID. Shared with the `constant_fee_manager` suite, which uses the
+/// standardized note to exercise `set_note_fee` behaviors that don't require a hand-crafted note.
+pub(super) fn build_config_note(
     sender: AccountId,
     account: AccountId,
-    fee: u64,
+    fee_asset: FungibleAsset,
     serial_seed: u32,
 ) -> anyhow::Result<Note> {
     let note = ConstantFeePolicyConfigNote::builder()
         .sender(sender)
         .account(account)
         .note_script_root(priced_root())
-        .fee_asset(fee_asset(fee)?)
+        .fee_asset(fee_asset)
         .serial_number(Word::from([serial_seed, 0, 0, 0]))
         .build()?;
     Ok(Note::from(note))
@@ -88,7 +90,7 @@ async fn config_note_schedules_fee() -> anyhow::Result<()> {
         owner,
         BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
-    let config_note = build_config_note(owner, account.id(), FEE_AMOUNT, 1)?;
+    let config_note = build_config_note(owner, account.id(), fee_asset(FEE_AMOUNT)?, 1)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -114,7 +116,7 @@ async fn non_owner_config_note_is_rejected() -> anyhow::Result<()> {
         owner,
         BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
-    let attacker_note = build_config_note(non_owner_id(), account.id(), FEE_AMOUNT, 2)?;
+    let attacker_note = build_config_note(non_owner_id(), account.id(), fee_asset(FEE_AMOUNT)?, 2)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -188,7 +190,7 @@ async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
         owner,
         BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
-    let config_note = build_config_note(owner, target_account, FEE_AMOUNT, 3)?;
+    let config_note = build_config_note(owner, target_account, fee_asset(FEE_AMOUNT)?, 3)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(consuming_account.clone())?;
