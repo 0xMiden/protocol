@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the bridge's `ADMIN` role and manages role membership via RBAC_ACTION notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_ACTION notes |
+| **Role Admin** (offchain) | Holds the bridge's `ADMIN` role and manages role membership via RBAC_CONFIG notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_CONFIG notes |
 
 ---
 
@@ -162,7 +162,7 @@ caveat worth calling out: a compromised or faulty `GER_INJECTOR` role holder can
 emergency patch and re-open the very claim window the removal was meant to close. The
 split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only for
 operational-key compromise: the `ADMIN` role can rotate the offending holder out via
-[`RBAC_ACTION`](#47-rbac_action) notes (see [Section 2.5](#25-administration)). It does not
+[`RBAC_CONFIG`](#47-rbac_config) notes (see [Section 2.5](#25-administration)). It does not
 bound a compromised `ADMIN`, which can grant itself either role. The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
 - a GER listed in the chain may have been revived since its removal.
@@ -223,19 +223,19 @@ note sender holds that role (a role may have multiple holders). Procedures with 
 back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
 holders are seeded at account creation, so the bridge is born fully functional.
 
-Roles are managed on-chain via [`RBAC_ACTION`](#47-rbac_action) notes, which dispatch to the
+Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dispatch to the
 RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
 Authorization is enforced by those procedures against the note sender: a member of the target
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
 renounce. This makes every role rotatable after account creation, including `ADMIN` itself.
 
 Role management via notes comes with security and operational caveats. The generic hazards
-of the RBAC model and of the `RBAC_ACTION` note - sender-based authorization and
+of the RBAC model and of the `RBAC_CONFIG` note - sender-based authorization and
 permissionless members, exclusive admin delegation, removal of a role's last effective
 admin, safely decommissioning `ADMIN`, and the note model's ordering and lifetime pitfalls -
 are documented on the miden-standards
 [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs) component and the
-[`RBAC_ACTION` note](../miden-standards/src/note/rbac_action.rs). The bridge-specific
+[`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs). The bridge-specific
 consequences:
 
 - **`ADMIN` compromise is equivalent to compromise of every operational role.** `ADMIN` is
@@ -248,7 +248,7 @@ consequences:
 - **Consumption order is not under the operator's control.** The bridge executes without a
   signature gate, so any party may submit a transaction consuming any pending allowlisted
   note. Never have an `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously
-  (see the ordering caveat in the `RbacActionNote` security considerations).
+  (see the ordering caveat in the `RbacConfigNote` security considerations).
 - **Losing role management does not brick bridging.** `bridge_out` / `claim` are ungated,
   and every role-gated bridge procedure is mapped to an operational role, so no allowlisted
   note reaches an `ADMIN`-defaulted bridge procedure. Emptying the `ADMIN` role (pinned by
@@ -257,7 +257,7 @@ consequences:
 - **Emptying an operational role.** Revoking the last holder of `FAUCET_MNGR`,
   `GER_INJECTOR`, or `GER_REMOVER` leaves the corresponding procedures uninvokable until
   the role's effective admin - if still populated and manageable - grants a new holder.
-- **Bridge role holders must not administer other RBAC accounts.** `RBAC_ACTION` notes are
+- **Bridge role holders must not administer other RBAC accounts.** `RBAC_CONFIG` notes are
   not bound to the account they were issued for (pinned by the
   `note_targeted_at_another_account_is_consumable_by_bridge` test), so a role-management
   note issued for another account can be consumed by the bridge, and vice versa.
@@ -848,13 +848,13 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.7 RBAC_ACTION
+### 4.7 RBAC_CONFIG
 
 **Purpose:** Triggers a role-management action (`grant_role`, `revoke_role`, `set_role_admin`,
 `renounce_role`) on the bridge's RBAC component, enabling on-chain rotation of the `ADMIN`,
 `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles (see
-[Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_ACTION` note
-(`RbacActionNote` in Rust), not a bridge-specific script.
+[Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_CONFIG` note
+(`RbacConfigNote` in Rust), not a bridge-specific script.
 
 **`NoteHeader`**
 
@@ -865,7 +865,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::with_account_target(bridge)` |
-| `attachment` | None by default; attach `NetworkAccountTarget` (target: bridge; execution hint: Always) to mirror the other bridge notes' network-routing pattern. Unlike those notes' scripts, the `RBAC_ACTION` script does **not** validate the attachment target. |
+| `attachment` | None by default; attach `NetworkAccountTarget` (target: bridge; execution hint: Always) to mirror the other bridge notes' network-routing pattern. Unlike those notes' scripts, the `RBAC_CONFIG` script does **not** validate the attachment target. |
 
 **`NoteDetails`**
 
@@ -876,7 +876,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `rbac_action.masm` (miden-standards) |
+| `script` | `rbac_config.masm` (miden-standards) |
 | `storage` | 2-4 felts, selector-dispatched -- see layout below |
 
 **Storage layout (selector-dispatched):**
@@ -897,7 +897,7 @@ those procedures against the note sender; the script itself performs no target o
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
-| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_ACTION` script could consume it (see [Section 2.5](#25-administration)) |
+| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_CONFIG` script could consume it (see [Section 2.5](#25-administration)) |
 
 ### 4.8 BURN (generated)
 
@@ -924,17 +924,21 @@ those procedures against the note sender; the script itself performs no target o
 |-------|-------|
 | `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
-| `storage` | None (0 felts) |
+| `storage` | Asset to burn (8 felts) |
 
-**Storage layout (0 felts):**
+**Storage layout (8 felts):**
 
-No fields -- this is a standard burn note with no custom data.
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0-3 | `ASSET_ID` | Identifier of the asset to burn |
+| 4-7 | `ASSET_VALUE` | Value of the asset to burn |
 
 **Consumption:**
 
-The standard BURN script calls `faucets::burn` on the consuming faucet account. This
-validates that the note contains exactly one fungible asset issued by that faucet and
-decreases the faucet's total token supply by the burned amount.
+The standard BURN script validates that the note carries exactly one asset matching the asset in
+storage, then passes the stored asset to the faucet's `receive_and_burn` procedure. The faucet
+validates that the fungible asset was issued by it and decreases its total token supply by the
+burned amount.
 
 #### Permissions
 

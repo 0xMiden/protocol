@@ -7,16 +7,13 @@ use miden::standards::faucets::policies::policy_manager
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the FaucetPolicyAction note storage. The policy root word occupies the four
-# items after the selector (offsets 1..5).
-const SELECTOR_PTR = STORAGE_PTR
-const POLICY_ROOT0_PTR = STORAGE_PTR + 1
-const POLICY_ROOT1_PTR = STORAGE_PTR + 2
-const POLICY_ROOT2_PTR = STORAGE_PTR + 3
-const POLICY_ROOT3_PTR = STORAGE_PTR + 4
+# Memory addresses of the FaucetPolicyConfig note storage. The policy root word comes first so that
+# it is word-aligned and can be loaded with a single `mem_loadw_le`; the selector follows it.
+const POLICY_ROOT_PTR = STORAGE_PTR
+const SELECTOR_PTR = STORAGE_PTR + 4
 
-# Action selectors, stored in the first storage item. Keep in sync with `FaucetPolicyAction` on the
-# Rust side.
+# Config note selectors, stored in the storage item after the policy root. Keep in sync with
+# `FaucetPolicyConfig` on the Rust side.
 const SELECTOR_SET_MINT_POLICY = 0
 const SELECTOR_SET_BURN_POLICY = 1
 const SELECTOR_SET_SEND_POLICY = 2
@@ -29,22 +26,22 @@ const NUM_ITEMS_SET_POLICY = 5
 # ERRORS
 # =================================================================================================
 
-const ERR_FAUCET_POLICY_ACTION_UNKNOWN_SELECTOR = "faucet policy action note selector does not match a known action"
+const ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR = "faucet policy config note selector does not match a known action"
 
-const ERR_FAUCET_POLICY_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet policy action note storage item count does not match the selected action"
+const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet policy config note storage item count does not match the selected action"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! FaucetPolicyAction script: triggers a `TokenPolicyManager` policy-switch action against the
-#! consuming faucet, dispatched on a selector stored in the first note storage item.
+#! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
+#! consuming faucet, dispatched on a selector stored in the note storage item after the policy root.
 #!
 #! The selected action and its policy root are read from the note storage (fixed at note creation,
 #! so authorization is bound to the note sender):
-#! - `0` SetMintPolicy:    `[0, POLICY_ROOT]`.
-#! - `1` SetBurnPolicy:    `[1, POLICY_ROOT]`.
-#! - `2` SetSendPolicy:    `[2, POLICY_ROOT]`.
-#! - `3` SetReceivePolicy: `[3, POLICY_ROOT]`.
+#! - `0` SetMintPolicy:    `[POLICY_ROOT, 0]`.
+#! - `1` SetBurnPolicy:    `[POLICY_ROOT, 1]`.
+#! - `2` SetSendPolicy:    `[POLICY_ROOT, 2]`.
+#! - `3` SetReceivePolicy: `[POLICY_ROOT, 3]`.
 #!
 #! Authorization is enforced by the called `TokenPolicyManager` procedures via the account-wide
 #! `Authority` component (`assert_authorized`), which resolves the note sender against the
@@ -105,7 +102,7 @@ pub proc main
                 exec.execute_set_send_policy
             else
                 eq.SELECTOR_SET_RECEIVE_POLICY
-                assert.err=ERR_FAUCET_POLICY_ACTION_UNKNOWN_SELECTOR
+                assert.err=ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR
                 # => [num_storage_items]
 
                 exec.execute_set_receive_policy
@@ -130,15 +127,12 @@ end
 #! Invocation: exec
 proc load_policy_root_window
     eq.NUM_ITEMS_SET_POLICY
-    assert.err=ERR_FAUCET_POLICY_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
-    # rebuild the policy root word on top of a pad(12) tail, matching the stored element order
-    padw padw padw
-    mem_load.POLICY_ROOT3_PTR
-    mem_load.POLICY_ROOT2_PTR
-    mem_load.POLICY_ROOT1_PTR
-    mem_load.POLICY_ROOT0_PTR
+    # load the word-aligned policy root on top of a pad(12) tail, overwriting the topmost pad word
+    padw padw padw padw
+    mem_loadw_le.POLICY_ROOT_PTR
     # => [NEW_POLICY_ROOT, pad(12)]
 end
 

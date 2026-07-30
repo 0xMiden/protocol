@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::errors::{AccountIdError, NoteError};
@@ -51,6 +53,41 @@ impl NetworkAccountTarget {
         }
 
         Ok(Self { target_id, exec_hint })
+    }
+
+    /// Ensures `attachments` carries a valid [`NetworkAccountTarget`], appending one that routes
+    /// the note to `target_id` with [`NoteExecutionHint::Always`] if none is present.
+    ///
+    /// This lets a note that is always targeted at a single network account derive its target from
+    /// the account it manages, while still accepting a caller-supplied target that overrides the
+    /// execution hint, and any number of unrelated attachments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] is present but does not
+    ///   decode as a [`NetworkAccountTarget`].
+    /// - none is present and `target_id` is not
+    ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public).
+    pub(crate) fn append_if_missing(
+        attachments: &mut Vec<NoteAttachment>,
+        target_id: AccountId,
+    ) -> Result<(), NetworkAccountTargetError> {
+        let present = attachments
+            .iter()
+            .find(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME);
+
+        // Validate a caller-supplied target so that the note is a well-formed network note either
+        // way.
+        match present {
+            Some(attachment) => Self::try_from(attachment).map(|_| ()),
+            None => {
+                let target = Self::new(target_id, NoteExecutionHint::Always)?;
+                attachments.push(NoteAttachment::from(target));
+
+                Ok(())
+            },
+        }
     }
 
     // ACCESSORS

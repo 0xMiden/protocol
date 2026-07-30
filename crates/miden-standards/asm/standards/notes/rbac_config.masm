@@ -7,7 +7,7 @@ use miden::standards::access::rbac
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the RbacAction note storage. `ROLE_SYMBOL_PTR` is shared by every action;
+# Memory addresses of the RbacConfig note storage. `ROLE_SYMBOL_PTR` is shared by every action;
 # the remaining slots are reused per action (an account ID for grant / revoke, an admin role for
 # set-role-admin).
 const SELECTOR_PTR = STORAGE_PTR
@@ -16,8 +16,8 @@ const ACCOUNT_SUFFIX_PTR = STORAGE_PTR + 2
 const ACCOUNT_PREFIX_PTR = STORAGE_PTR + 3
 const ADMIN_ROLE_SYMBOL_PTR = STORAGE_PTR + 2
 
-# Action selectors, stored in the first storage item. Keep in sync with `RbacAction` on the Rust
-# side.
+# Config note selectors, stored in the first storage item. Keep in sync with `RbacConfig` on the
+# Rust side.
 const SELECTOR_GRANT_ROLE = 0
 const SELECTOR_REVOKE_ROLE = 1
 const SELECTOR_SET_ROLE_ADMIN = 2
@@ -32,14 +32,14 @@ const NUM_ITEMS_RENOUNCE_ROLE = 2
 # ERRORS
 # =================================================================================================
 
-const ERR_RBAC_ACTION_UNKNOWN_SELECTOR = "rbac action note selector does not match a known action"
+const ERR_RBAC_CONFIG_UNKNOWN_SELECTOR = "rbac config note selector does not match a known action"
 
-const ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac action note storage item count does not match the selected action"
+const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note storage item count does not match the selected action"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! RbacAction script: triggers a `RoleBasedAccessControl` management action against the consuming
+#! RbacConfig script: triggers a `RoleBasedAccessControl` management action against the consuming
 #! account, dispatched on a selector stored in the first note storage item.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation,
@@ -103,7 +103,7 @@ pub proc main
 
                 exec.execute_set_role_admin
             else
-                eq.SELECTOR_RENOUNCE_ROLE assert.err=ERR_RBAC_ACTION_UNKNOWN_SELECTOR
+                eq.SELECTOR_RENOUNCE_ROLE assert.err=ERR_RBAC_CONFIG_UNKNOWN_SELECTOR
                 # => [num_storage_items]
 
                 exec.execute_renounce_role
@@ -129,7 +129,7 @@ end
 #! Invocation: exec
 proc execute_grant_role
     eq.NUM_ITEMS_GRANT_ROLE
-    assert.err=ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # build the `grant_role` input window: [role_symbol, account_suffix, account_prefix, pad(13)]
@@ -160,7 +160,7 @@ end
 #! Invocation: exec
 proc execute_revoke_role
     eq.NUM_ITEMS_REVOKE_ROLE
-    assert.err=ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # build the `revoke_role` input window: [role_symbol, account_suffix, account_prefix, pad(13)]
@@ -192,7 +192,7 @@ end
 #! Invocation: exec
 proc execute_set_role_admin
     eq.NUM_ITEMS_SET_ROLE_ADMIN
-    assert.err=ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # build the `set_role_admin` input window: [role_symbol, admin_role_symbol, pad(14)]
@@ -221,7 +221,7 @@ end
 #! Invocation: exec
 proc execute_renounce_role
     eq.NUM_ITEMS_RENOUNCE_ROLE
-    assert.err=ERR_RBAC_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # build the `renounce_role` input window: [role_symbol, pad(15)]

@@ -243,6 +243,11 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             StandardNote::BURN.script_root(),
             "BURN note should use the BURN script"
         );
+        assert_eq!(
+            burn_note.recipient().storage().items(),
+            expected_asset.as_elements(),
+            "BURN note storage should contain the bridged asset"
+        );
 
         bridge_account.apply_patch(executed_tx.account_patch())?;
         assert_eq!(

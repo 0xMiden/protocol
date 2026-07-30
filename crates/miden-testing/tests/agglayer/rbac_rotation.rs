@@ -1,8 +1,8 @@
-//! Tests on-chain rotation of the AggLayer bridge's RBAC roles via `RBAC_ACTION` notes.
+//! Tests on-chain rotation of the AggLayer bridge's RBAC roles via `RBAC_CONFIG` notes.
 //!
-//! The generic RBAC component and note-script tests live in `tests/scripts/{rbac,rbac_action}.rs`
+//! The generic RBAC component and note-script tests live in `tests/scripts/rbac/`
 //! and run against a bare RBAC account. This suite proves the bridge-specific wiring: an
-//! `RBAC_ACTION` note passes the bridge's [`AuthNetworkAccount`] allowlist and zero-fee schedule,
+//! `RBAC_CONFIG` note passes the bridge's [`AuthNetworkAccount`] allowlist and zero-fee schedule,
 //! its RBAC procedures authorize against the note sender, and a rotated role actually changes
 //! which senders may invoke the bridge's role-gated procedures.
 //!
@@ -29,7 +29,7 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::errors::standards::{ERR_SENDER_LACKS_ROLE, ERR_SENDER_NOT_ROLE_ADMIN};
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, RbacAction, RbacActionNote};
+use miden_standards::note::{RbacConfig, RbacConfigNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -88,25 +88,18 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<RotationSetup>
     })
 }
 
-/// Builds an `RBAC_ACTION` note for `action` sent by `sender` and targeted at the bridge.
-///
-/// The [`NetworkAccountTarget`] attachment mirrors the call pattern of the other bridge notes:
-/// it routes the note to the bridge for network execution. Unlike those notes' scripts, the
-/// `RBAC_ACTION` script does not validate the attachment target — authorization rests entirely
-/// on the RBAC procedures' note-sender checks.
-fn bridge_rbac_action_note(
+/// Builds an `RBAC_CONFIG` note for `config` sent by `sender` and targeted at the bridge.
+fn bridge_rbac_config_note(
     sender: AccountId,
     bridge_id: AccountId,
-    action: RbacAction,
+    config: RbacConfig,
     rng: &mut impl FeltRng,
 ) -> anyhow::Result<Note> {
-    let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)?;
-    let note = RbacActionNote::builder()
+    let note = RbacConfigNote::builder()
         .sender(sender)
         .account(bridge_id)
-        .action(action)
+        .config(config)
         .generate_serial_number(rng)
-        .attachment(attachment)
         .build()?
         .into();
     Ok(note)
@@ -135,7 +128,7 @@ async fn execute_bridge_note(
 // ================================================================================================
 
 /// End-to-end rotation of an operational role: the admin grants `GER_INJECTOR` to a fresh
-/// account via an `RBAC_ACTION` note consumed by the bridge, and the new holder's `UPDATE_GER`
+/// account via an `RBAC_CONFIG` note consumed by the bridge, and the new holder's `UPDATE_GER`
 /// note then succeeds.
 #[tokio::test]
 async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
@@ -146,10 +139,10 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     })?;
     let mut bridge_account = setup.bridge_account;
 
-    let grant = bridge_rbac_action_note(
+    let grant = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
         },
@@ -176,7 +169,7 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The admin revokes the seeded `GER_INJECTOR` holder via an `RBAC_ACTION` note; the revoked
+/// The admin revokes the seeded `GER_INJECTOR` holder via an `RBAC_CONFIG` note; the revoked
 /// account's subsequent `UPDATE_GER` note is rejected by the bridge's role check.
 #[tokio::test]
 async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
@@ -184,10 +177,10 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     let setup = setup_bridge(&mut builder)?;
     let mut bridge_account = setup.bridge_account;
 
-    let revoke = bridge_rbac_action_note(
+    let revoke = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::RevokeRole {
+        RbacConfig::RevokeRole {
             role: AggLayerBridge::ger_injector_role(),
             account: setup.ger_injector,
         },
@@ -220,7 +213,7 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// An `RBAC_ACTION` grant note whose sender is not a member of the role's effective admin role
+/// An `RBAC_CONFIG` grant note whose sender is not a member of the role's effective admin role
 /// (here: an operational-role holder) is rejected by the bridge.
 #[tokio::test]
 async fn non_admin_sender_cannot_grant_role() -> anyhow::Result<()> {
@@ -230,10 +223,10 @@ async fn non_admin_sender_cannot_grant_role() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let grant = bridge_rbac_action_note(
+    let grant = bridge_rbac_config_note(
         setup.ger_injector,
         setup.bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: outsider.id(),
         },
@@ -268,10 +261,10 @@ async fn granted_admin_can_manage_roles() -> anyhow::Result<()> {
     })?;
     let mut bridge_account = setup.bridge_account;
 
-    let grant_admin = bridge_rbac_action_note(
+    let grant_admin = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: RoleBasedAccessControl::admin_role(),
             account: new_admin.id(),
         },
@@ -279,10 +272,10 @@ async fn granted_admin_can_manage_roles() -> anyhow::Result<()> {
     )?;
     builder.add_output_note(RawOutputNote::Full(grant_admin.clone()));
 
-    let grant_injector = bridge_rbac_action_note(
+    let grant_injector = bridge_rbac_config_note(
         new_admin.id(),
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
         },
@@ -328,10 +321,10 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
     let injector_admin_role = role("INJ_ADMIN");
 
     // seed the delegated admin role with a member before delegating, so the role stays manageable
-    let grant_delegate = bridge_rbac_action_note(
+    let grant_delegate = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: injector_admin_role.clone(),
             account: delegate.id(),
         },
@@ -339,10 +332,10 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
     )?;
     builder.add_output_note(RawOutputNote::Full(grant_delegate.clone()));
 
-    let delegate_admin = bridge_rbac_action_note(
+    let delegate_admin = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::SetRoleAdmin {
+        RbacConfig::SetRoleAdmin {
             role: AggLayerBridge::ger_injector_role(),
             admin_role: Some(injector_admin_role.clone()),
         },
@@ -350,10 +343,10 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
     )?;
     builder.add_output_note(RawOutputNote::Full(delegate_admin.clone()));
 
-    let grant_by_delegate = bridge_rbac_action_note(
+    let grant_by_delegate = bridge_rbac_config_note(
         delegate.id(),
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
         },
@@ -361,10 +354,10 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
     )?;
     builder.add_output_note(RawOutputNote::Full(grant_by_delegate.clone()));
 
-    let grant_by_admin = bridge_rbac_action_note(
+    let grant_by_admin = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: outsider.id(),
         },
@@ -396,10 +389,10 @@ async fn delegated_role_admin_is_exclusive() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The `RBAC_ACTION` note is not bound to the account it was issued for: a note whose `account`
+/// The `RBAC_CONFIG` note is not bound to the account it was issued for: a note whose `account`
 /// (and thus tag) references a different account is still consumable by the bridge, applying the
 /// role change to the bridge's own role graph. Pins the no-target-binding hazard documented in
-/// the `RbacActionNote` security considerations (and referenced by SPEC section 2.5).
+/// the `RbacConfigNote` security considerations (and referenced by SPEC section 2.5).
 #[tokio::test]
 async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -412,12 +405,12 @@ async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::R
     })?;
     let mut bridge_account = setup.bridge_account;
 
-    // note issued "for" other_account: its tag references it, not the bridge, and no
-    // NetworkAccountTarget attachment is added (the builder default)
-    let grant: Note = RbacActionNote::builder()
+    // note issued "for" other_account: its tag and default attachment reference it, not the
+    // bridge
+    let grant: Note = RbacConfigNote::builder()
         .sender(setup.admin)
         .account(other_account.id())
-        .action(RbacAction::GrantRole {
+        .config(RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
         })
@@ -459,16 +452,16 @@ async fn removing_last_admin_permanently_disables_role_management(
     let mut bridge_account = setup.bridge_account;
 
     let removal_action = if renounce {
-        RbacAction::RenounceRole {
+        RbacConfig::RenounceRole {
             role: RoleBasedAccessControl::admin_role(),
         }
     } else {
-        RbacAction::RevokeRole {
+        RbacConfig::RevokeRole {
             role: RoleBasedAccessControl::admin_role(),
             account: setup.admin,
         }
     };
-    let removal = bridge_rbac_action_note(
+    let removal = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
         removal_action,
@@ -476,10 +469,10 @@ async fn removing_last_admin_permanently_disables_role_management(
     )?;
     builder.add_output_note(RawOutputNote::Full(removal.clone()));
 
-    let grant = bridge_rbac_action_note(
+    let grant = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: RoleBasedAccessControl::admin_role(),
             account: successor.id(),
         },
@@ -531,29 +524,29 @@ async fn self_administered_delegate_survives_admin_removal() -> anyhow::Result<(
 
     let recipe = [
         // 1. populate the delegate admin role
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: injector_admin_role.clone(),
             account: delegate.id(),
         },
         // 2. make it self-administering
-        RbacAction::SetRoleAdmin {
+        RbacConfig::SetRoleAdmin {
             role: injector_admin_role.clone(),
             admin_role: Some(injector_admin_role.clone()),
         },
         // 3. delegate the operational role to it
-        RbacAction::SetRoleAdmin {
+        RbacConfig::SetRoleAdmin {
             role: AggLayerBridge::ger_injector_role(),
             admin_role: Some(injector_admin_role.clone()),
         },
         // 4. empty ADMIN
-        RbacAction::RenounceRole {
+        RbacConfig::RenounceRole {
             role: RoleBasedAccessControl::admin_role(),
         },
     ];
     let recipe_notes = recipe
         .into_iter()
         .map(|action| {
-            let note = bridge_rbac_action_note(
+            let note = bridge_rbac_config_note(
                 setup.admin,
                 bridge_account.id(),
                 action,
@@ -565,10 +558,10 @@ async fn self_administered_delegate_survives_admin_removal() -> anyhow::Result<(
         .collect::<anyhow::Result<alloc::vec::Vec<_>>>()?;
 
     // the delegate can still rotate GER_INJECTOR after ADMIN is empty
-    let grant_by_delegate = bridge_rbac_action_note(
+    let grant_by_delegate = bridge_rbac_config_note(
         delegate.id(),
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
         },
@@ -578,10 +571,10 @@ async fn self_administered_delegate_survives_admin_removal() -> anyhow::Result<(
 
     // ...and can still rotate INJ_ADMIN's own membership — the property step 2 exists for;
     // without the self-administration, INJ_ADMIN would be frozen under the empty ADMIN role
-    let grant_second_delegate = bridge_rbac_action_note(
+    let grant_second_delegate = bridge_rbac_config_note(
         delegate.id(),
         bridge_account.id(),
-        RbacAction::GrantRole {
+        RbacConfig::GrantRole {
             role: injector_admin_role.clone(),
             account: second_delegate.id(),
         },
@@ -624,7 +617,7 @@ fn bridge_allowed_notes_pin() {
         DeregisterAggFaucetNote::script_root(),
         UpdateGerNote::script_root(),
         RemoveGerNote::script_root(),
-        RbacActionNote::script_root(),
+        RbacConfigNote::script_root(),
     ]);
     assert_eq!(AggLayerBridge::allowed_notes(), expected);
 }
