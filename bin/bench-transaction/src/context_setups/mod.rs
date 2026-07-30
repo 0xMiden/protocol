@@ -17,11 +17,15 @@ use miden_agglayer::{
     create_existing_agglayer_faucet,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, StorageMapKey};
+use miden_protocol::account::{Account, AccountId, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
-use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_FEE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_SENDER,
+};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
@@ -416,8 +420,12 @@ fn setup_bridge_fixture(
     })?;
 
     // CREATE BRIDGE ACCOUNT
+    // the dummy admin only matters for role rotation, which the benches do not exercise
+    let admin = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
+        .expect("dummy admin account ID should be valid");
     let mut bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        admin,
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

@@ -33,7 +33,7 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, RbacAction,
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_admin_and_roles};
+use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
 // The role-membership storage getters are shared with the `rbac` suite, which owns the
 // exhaustive tests of the underlying component.
 use crate::scripts::rbac::{is_role_member, role};
@@ -71,7 +71,7 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<RotationSetup>
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_admin_and_roles(
+    let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         admin.id(),
         faucet_manager.id(),

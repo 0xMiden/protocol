@@ -10,7 +10,11 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_id,
+    create_existing_bridge_account_with_roles,
+};
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -35,6 +39,7 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Acco
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

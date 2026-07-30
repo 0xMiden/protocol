@@ -15,7 +15,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::interop::eth::{EthAddress, EthAmount};
@@ -35,33 +34,6 @@ use crate::{
 // BRIDGE ACCOUNT HELPERS
 // ================================================================================================
 
-/// Creates an existing bridge account seeded with a single holder per operational role and a
-/// fixed dummy account as the built-in `ADMIN` role member.
-///
-/// Use [`create_existing_bridge_account_with_admin_and_roles`] when a test needs to act as the
-/// `ADMIN` role member (e.g. to rotate roles).
-///
-/// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
-pub fn create_existing_bridge_account_with_roles(
-    seed: Word,
-    faucet_manager: AccountId,
-    ger_injector: AccountId,
-    ger_remover: AccountId,
-    network_id: u32,
-) -> Account {
-    let admin_account =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    create_existing_bridge_account_with_admin_and_roles(
-        seed,
-        admin_account,
-        faucet_manager,
-        ger_injector,
-        ger_remover,
-        network_id,
-    )
-}
-
 /// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
 /// role member and a single holder per operational role.
 ///
@@ -70,7 +42,7 @@ pub fn create_existing_bridge_account_with_roles(
 /// in tests the admin does not need to exist in the chain.
 ///
 /// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
-pub fn create_existing_bridge_account_with_admin_and_roles(
+pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     admin: AccountId,
     faucet_manager: AccountId,

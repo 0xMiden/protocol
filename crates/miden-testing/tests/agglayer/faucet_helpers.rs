@@ -7,7 +7,11 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_testing::{Auth, MockChain};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_id,
+    create_existing_bridge_account_with_roles,
+};
 
 #[test]
 fn test_faucet_helper_methods() -> anyhow::Result<()> {
@@ -25,6 +29,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

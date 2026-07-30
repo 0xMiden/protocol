@@ -9,7 +9,6 @@ pub use miden_agglayer::testing::{
     MtfVectorsFile,
     SOLIDITY_CANONICAL_ZEROS,
     SOLIDITY_MERKLE_PROOF_VECTORS,
-    create_existing_bridge_account_with_admin_and_roles,
     create_existing_bridge_account_with_roles,
 };
 use miden_core_lib::CoreLibrary;
@@ -23,6 +22,8 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::ProtocolLib;
+use miden_protocol::account::AccountId;
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::StandardsLib;
@@ -33,6 +34,16 @@ use miden_standards::StandardsLib;
 /// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
+
+// TEST BRIDGE ADMIN
+// ================================================================================================
+
+/// Returns the dummy account used as the bridge's `ADMIN` role member by tests that do not
+/// exercise role rotation.
+pub fn bridge_admin_id() -> AccountId {
+    AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
+        .expect("dummy admin account ID should be valid")
+}
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
