@@ -240,7 +240,7 @@ bridge rejects all bridge-out, claim, GER-injection, and faucet-management opera
 is deliberately exempt: during an incident a paused bridge can still revoke a fraudulent GER, and
 because `update_ger` is paused the revoked GER cannot be re-injected until the bridge is unpaused.
 
-The pause is toggled via the standards [`PAUSE_ACTION`](#410-pause_action-standards) note, which
+The pause is toggled via the standards [`PAUSE_CONFIG`](#410-pause_config-standards) note, which
 dispatches to `PausableManager`'s `pause` / `unpause` procedures. These have no entry in the
 bridge's `Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
 Splitting this authority into dedicated `PAUSER` / `UNPAUSER` roles (so pause authority can be
@@ -250,7 +250,7 @@ bridge cannot be unpaused and in-flight user notes remain unconsumable.
 
 The pause note is not yet bound to the bridge on consumption, so the pause cannot currently be
 relied on as a censorship-resistant emergency brake; see
-[Section 4.10](#410-pause_action-standards) for the concrete attacks and the tracking issue.
+[Section 4.10](#410-pause_config-standards) for the concrete attacks and the tracking issue.
 
 The pause interacts with the `Authority` freeze switch as complementary controls: freezing blocks
 every authority-gated procedure - including `remove_ger` - but not `claim` / `bridge_out`, while
@@ -874,17 +874,21 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 |-------|-------|
 | `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
-| `storage` | None (0 felts) |
+| `storage` | Asset to burn (8 felts) |
 
-**Storage layout (0 felts):**
+**Storage layout (8 felts):**
 
-No fields -- this is a standard burn note with no custom data.
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0-3 | `ASSET_ID` | Identifier of the asset to burn |
+| 4-7 | `ASSET_VALUE` | Value of the asset to burn |
 
 **Consumption:**
 
-The standard BURN script calls `faucets::burn` on the consuming faucet account. This
-validates that the note contains exactly one fungible asset issued by that faucet and
-decreases the faucet's total token supply by the burned amount.
+The standard BURN script validates that the note carries exactly one asset matching the asset in
+storage, then passes the stored asset to the faucet's `receive_and_burn` procedure. The faucet
+validates that the fungible asset was issued by it and decreases its total token supply by the
+burned amount.
 
 #### Permissions
 
@@ -1007,10 +1011,10 @@ note via `output_note::add_asset`.
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
 | **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_ID` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
 
-### 4.10 PAUSE_ACTION (standards)
+### 4.10 PAUSE_CONFIG (standards)
 
 **Purpose:** Toggles the bridge's emergency pause (see [Section 2.5](#25-administration)). This is
-the `miden-standards` `PAUSE_ACTION` note (`pause_action.masm` / `PauseActionNote`), not an
+the `miden-standards` `PAUSE_CONFIG` note (`pause_config.masm` / `PauseConfigNote`), not an
 agglayer-specific note; the bridge merely includes its script root in
 [`AggLayerBridge::allowed_notes`]. Its single storage felt is a selector: `0` dispatches to
 `PausableManager::pause`, `1` to `PausableManager::unpause`.
@@ -1021,19 +1025,19 @@ procedure, which runs `authority::assert_authorized` before flipping the
 mapped role, so the note sender must hold the `ADMIN` role.
 
 Build these notes with [`AggLayerBridge::pause_note`], not the standards builder directly: the
-`PauseActionNote` builder attaches no `NetworkAccountTarget` by default, and the attachment is
+`PauseConfigNote` builder attaches no `NetworkAccountTarget` by default, and the attachment is
 the network-routing primitive - without it the network transaction builder never delivers the
 note to the bridge, and the note is ineligible for fee sponsorship. The note tag alone is only a
 best-effort discovery filter.
 
-Unlike the agglayer admin notes above, the `PAUSE_ACTION` script does not *assert* the
+Unlike the agglayer admin notes above, the `PAUSE_CONFIG` script does not *assert* the
 attachment target: authorization is purely sender-based, resolved against the *consuming*
 account. This is a known limitation of the standards admin notes, tracked and to be fixed for
 the whole note family in [#3433](https://github.com/0xMiden/protocol/issues/3433). Until that
 lands the bridge inherits two consequences, neither of which the operator can mitigate
 operationally:
 
-- **Burn.** `PAUSE_ACTION` notes are public, so their nullifiers are computable by any observer.
+- **Burn.** `PAUSE_CONFIG` notes are public, so their nullifiers are computable by any observer.
   Anyone can create their own account carrying `Pausable` + `PausableManager` and consume the
   bridge's pause note into it. The attacker needs no relationship to the bridge's `ADMIN`
   whatsoever: under `Authority::AuthControlled` the manager's `assert_authorized` is a no-op, so

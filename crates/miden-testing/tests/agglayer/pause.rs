@@ -24,7 +24,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::PausableStorage;
 use miden_standards::errors::standards::{ERR_PAUSABLE_IS_PAUSED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseAction};
+use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 use super::test_utils::{
@@ -74,30 +74,30 @@ fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
     })
 }
 
-/// Builds a bridge-targeted [`PauseActionNote`] for `action` sent by `sender`.
-fn pause_action_note(
+/// Builds a bridge-targeted [`PauseConfigNote`] for `action` sent by `sender`.
+fn pause_config_note(
     sender: AccountId,
     bridge_id: AccountId,
-    action: PauseAction,
+    action: PauseConfig,
 ) -> anyhow::Result<Note> {
     // Vary the rng seed by action so a pause and an unpause note built in the same test get
     // distinct serial numbers.
     let seed = match action {
-        PauseAction::Pause => 41u32,
-        PauseAction::Unpause => 42u32,
+        PauseConfig::Pause => 41u32,
+        PauseConfig::Unpause => 42u32,
     };
     let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
     Ok(AggLayerBridge::pause_note(action, sender, bridge_id, &mut rng)?)
 }
 
-/// Builds an admin-sent [`PauseActionNote`] for `action` and stages it on the chain so it can
+/// Builds an admin-sent [`PauseConfigNote`] for `action` and stages it on the chain so it can
 /// later be consumed as an authenticated note.
 fn stage_pause_note(
     builder: &mut MockChainBuilder,
     bridge_id: AccountId,
-    action: PauseAction,
+    action: PauseConfig,
 ) -> anyhow::Result<Note> {
-    let note = pause_action_note(bridge_admin_account_id(), bridge_id, action)?;
+    let note = pause_config_note(bridge_admin_account_id(), bridge_id, action)?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     Ok(note)
 }
@@ -139,7 +139,7 @@ async fn assert_note_rejected_while_paused(
     let setup = setup_bridge(&mut builder)?;
     let note = build_note(&mut builder, &setup)?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
-    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
     let mut mock_chain = builder.build()?;
 
     consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
@@ -166,18 +166,18 @@ const DUMMY_ETH_ADDRESS: &str = "0x00000000000000000000000000000000000000aa";
 // TESTS
 // ================================================================================================
 
-/// An ADMIN-sent PAUSE_ACTION note pauses the bridge and a second one unpauses it. This also
+/// An ADMIN-sent PAUSE_CONFIG note pauses the bridge and a second one unpauses it. This also
 /// proves the note passes the bridge's note allowlist and is routable as a network note.
 #[tokio::test]
-async fn pause_action_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
+async fn pause_config_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
-    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
-    let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Unpause)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
+    let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Unpause)?;
     let mut mock_chain = builder.build()?;
 
     // The note must be discoverable by network-note routing, and routed to the bridge: the
-    // PAUSE_ACTION script does not assert the target, so this attachment is the only thing that
+    // PAUSE_CONFIG script does not assert the target, so this attachment is the only thing that
     // delivers the pause to the bridge.
     assert!(pause_note.is_network_note(), "pause note should be a routable network note");
     let target = NetworkAccountTarget::try_from(pause_note.attachments())?;
@@ -192,7 +192,7 @@ async fn pause_action_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A PAUSE_ACTION note from a sender without the ADMIN role is rejected: the pause procedures
+/// A PAUSE_CONFIG note from a sender without the ADMIN role is rejected: the pause procedures
 /// have no mapped role, so `authority::assert_authorized` falls back to the ADMIN check.
 #[tokio::test]
 async fn non_admin_pause_reverts() -> anyhow::Result<()> {
@@ -201,7 +201,7 @@ async fn non_admin_pause_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // The GER injector holds an operational role but not ADMIN.
-    let note = pause_action_note(setup.ger_injector.id(), setup.bridge.id(), PauseAction::Pause)?;
+    let note = pause_config_note(setup.ger_injector.id(), setup.bridge.id(), PauseConfig::Pause)?;
     let result = mock_chain
         .build_transaction(setup.bridge.id())
         .unauthenticated_input_note(note)
@@ -218,13 +218,13 @@ async fn non_admin_pause_reverts() -> anyhow::Result<()> {
 async fn non_admin_unpause_of_paused_bridge_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
-    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
     let mut mock_chain = builder.build()?;
 
     consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
     assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
 
-    let note = pause_action_note(setup.ger_injector.id(), setup.bridge.id(), PauseAction::Unpause)?;
+    let note = pause_config_note(setup.ger_injector.id(), setup.bridge.id(), PauseConfig::Unpause)?;
     let result = mock_chain
         .build_transaction(setup.bridge.id())
         .unauthenticated_input_note(note)
@@ -238,7 +238,7 @@ async fn non_admin_unpause_of_paused_bridge_reverts() -> anyhow::Result<()> {
 }
 
 /// Characterizes the accepted limitation tracked by
-/// [#3433](https://github.com/0xMiden/protocol/issues/3433): the `PAUSE_ACTION` script does not
+/// [#3433](https://github.com/0xMiden/protocol/issues/3433): the `PAUSE_CONFIG` script does not
 /// assert its target, so an `ADMIN`-issued pause note built for a *different* account is still
 /// accepted by the bridge. When #3433 binds these notes to their target this test must be
 /// inverted to expect a rejection.
@@ -254,7 +254,7 @@ async fn pause_note_targeting_another_account_is_currently_accepted() -> anyhow:
         .build_with_seed([9; 32]);
     let mut rng = RandomCoin::new([Felt::from(45u32); 4].into());
     let note = AggLayerBridge::pause_note(
-        PauseAction::Pause,
+        PauseConfig::Pause,
         bridge_admin_account_id(),
         other_account,
         &mut rng,
@@ -379,7 +379,7 @@ async fn paused_bridge_allows_remove_ger() -> anyhow::Result<()> {
     let remove_note =
         RemoveGerNote::create(ger, setup.ger_remover.id(), setup.bridge.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(remove_note.clone()));
-    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
 
     let mut mock_chain = builder.build()?;
 
@@ -411,8 +411,8 @@ async fn unpause_restores_operation() -> anyhow::Result<()> {
     let update_note =
         UpdateGerNote::create(ger, setup.ger_injector.id(), setup.bridge.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_note.clone()));
-    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Pause)?;
-    let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseAction::Unpause)?;
+    let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
+    let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Unpause)?;
 
     let mut mock_chain = builder.build()?;
 

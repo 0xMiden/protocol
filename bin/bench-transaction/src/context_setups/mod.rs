@@ -33,7 +33,7 @@ use rand::RngExt;
 
 use crate::cycle_counting_benchmarks::ExecutionBenchmark;
 
-mod network_action;
+mod network_config;
 mod network_faucet;
 mod network_wallet;
 
@@ -175,23 +175,26 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
             network_faucet::tx_consume_mint_note_non_fungible_network()
         },
         ExecutionBenchmark::ConsumeBurnNetwork => network_faucet::tx_consume_burn_note_network(),
-        ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
-            network_action::tx_consume_faucet_policy_action_note_network()
+        ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork => {
+            network_config::tx_consume_faucet_policy_config_note_network()
+        },
+        ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+            network_config::tx_consume_allowlist_config_note_network()
         },
         ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
-            network_action::tx_consume_blocklist_config_note_network()
+            network_config::tx_consume_blocklist_config_note_network()
         },
-        ExecutionBenchmark::ConsumePauseActionNetwork => {
-            network_action::tx_consume_pause_action_note_network()
+        ExecutionBenchmark::ConsumePauseConfigNetwork => {
+            network_config::tx_consume_pause_config_note_network()
         },
-        ExecutionBenchmark::ConsumeOwnerActionNetwork => {
-            network_action::tx_consume_owner_action_note_network()
+        ExecutionBenchmark::ConsumeOwnerConfigNetwork => {
+            network_config::tx_consume_owner_config_note_network()
         },
-        ExecutionBenchmark::ConsumeRbacActionNetwork => {
-            network_action::tx_consume_rbac_action_note_network()
+        ExecutionBenchmark::ConsumeRbacConfigNetwork => {
+            network_config::tx_consume_rbac_config_note_network()
         },
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
-            network_action::tx_consume_network_account_config_note_network()
+            network_config::tx_consume_network_account_config_note_network()
         },
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)

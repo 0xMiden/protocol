@@ -84,7 +84,7 @@ const ATTACHMENT_SCHEME_LOC=12
 
 const LEAF_TYPE_ASSET=0
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
-const BURN_NOTE_NUM_STORAGE_ITEMS=0
+const BURN_NOTE_NUM_STORAGE_ITEMS=8
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -647,7 +647,7 @@ proc create_burn_note
     procref.::miden::standards::notes::burn::main swapw
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
-    push.BURN_NOTE_NUM_STORAGE_ITEMS push.0
+    push.BURN_NOTE_NUM_STORAGE_ITEMS locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::compute_and_store_recipient

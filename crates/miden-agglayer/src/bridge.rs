@@ -23,8 +23,8 @@ use miden_standards::note::{
     NetworkAccountTarget,
     NetworkAccountTargetError,
     NoteExecutionHint,
-    PauseAction,
-    PauseActionNote,
+    PauseConfig,
+    PauseConfigNote,
 };
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
@@ -470,10 +470,10 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
-    /// Besides the agglayer-specific notes, the bridge accepts the standards [`PauseActionNote`]
+    /// Besides the agglayer-specific notes, the bridge accepts the standards [`PauseConfigNote`]
     /// so the `ADMIN` role can toggle the emergency pause.
     ///
-    /// Unlike the agglayer notes, the `PAUSE_ACTION` script does not assert its
+    /// Unlike the agglayer notes, the `PAUSE_CONFIG` script does not assert its
     /// `NetworkAccountTarget`, so it is not bound to the consuming account: any third party can
     /// burn a pause note by consuming it into a throwaway `Pausable` account of their own, and
     /// an `ADMIN`-issued note for another `Pausable` account can be redirected onto the bridge.
@@ -491,23 +491,23 @@ impl AggLayerBridge {
             DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
-            PauseActionNote::script_root(),
+            PauseConfigNote::script_root(),
         ])
     }
 
     // PAUSE NOTE
     // --------------------------------------------------------------------------------------------
 
-    /// Builds a [`PauseActionNote`] that toggles the emergency pause of the bridge account
+    /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
     /// `bridge_id`.
     ///
     /// `sender` must hold the bridge's `ADMIN` role, which the note's `PausableManager`
     /// procedures verify on consumption.
     ///
-    /// Use this instead of [`PauseActionNote::builder`] directly: the bridge is a network
+    /// Use this instead of [`PauseConfigNote::builder`] directly: the bridge is a network
     /// account, so the note must carry a [`NetworkAccountTarget`] attachment naming the bridge
     /// to be delivered by network-note routing (and to be eligible for fee sponsorship). The
-    /// standards builder does not add one by default. Note that the `PAUSE_ACTION` script does
+    /// standards builder does not add one by default. Note that the `PAUSE_CONFIG` script does
     /// not *assert* the attachment - see [`AggLayerBridge::allowed_notes`] for what that means
     /// for the pause's guarantees.
     ///
@@ -515,7 +515,7 @@ impl AggLayerBridge {
     /// Returns an error if `bridge_id` cannot be named by a network account target, or if note
     /// creation fails.
     pub fn pause_note<R: FeltRng>(
-        action: PauseAction,
+        config: PauseConfig,
         sender: AccountId,
         bridge_id: AccountId,
         rng: &mut R,
@@ -523,10 +523,10 @@ impl AggLayerBridge {
         let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)
             .map_err(AgglayerBridgeError::InvalidPauseNoteTarget)?;
 
-        PauseActionNote::builder()
+        PauseConfigNote::builder()
             .sender(sender)
             .account(bridge_id)
-            .action(action)
+            .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)
             .build()
@@ -861,7 +861,7 @@ pub enum AgglayerBridgeError {
     InvalidNetworkId,
     #[error("failed to target the bridge account with a network account target attachment")]
     InvalidPauseNoteTarget(#[source] NetworkAccountTargetError),
-    #[error("failed to build a PAUSE_ACTION note for the bridge account")]
+    #[error("failed to build a PAUSE_CONFIG note for the bridge account")]
     PauseNoteCreationFailed(#[source] NoteError),
 }
 

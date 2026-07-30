@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+mod config;
+
 use alloc::collections::BTreeMap;
 
 use miden_processor::crypto::random::RandomCoin;
@@ -645,6 +647,9 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
         @note_script
         pub proc main
             dropw
+            push.0 exec.::miden::protocol::active_note::remove_all_assets assert
+            push.0 exec.::miden::protocol::asset::load
+            swapdw dropw dropw
             call.::miden::standards::faucets::fungible::receive_and_burn
         end
     "#;
