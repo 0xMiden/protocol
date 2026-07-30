@@ -69,7 +69,7 @@ impl FaucetPolicyAction {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
+    // Action selectors stored in the storage item after the policy root. Keep in sync with
     // `faucet_policy_action.masm`.
     const SELECTOR_SET_MINT_POLICY: u8 = 0;
     const SELECTOR_SET_BURN_POLICY: u8 = 1;
@@ -94,12 +94,15 @@ impl FaucetPolicyAction {
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[selector, POLICY_ROOT]`.
+    /// Returns the note storage values encoding this action, laid out as `[POLICY_ROOT, selector]`.
+    ///
+    /// The policy root comes first so that it is word-aligned once the note script writes the
+    /// storage to memory, letting the script load it with a single `mem_loadw_le`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, policy_root) = self.parts();
         let mut values = Vec::with_capacity(FaucetPolicyActionNote::NUM_STORAGE_ITEMS);
-        values.push(Felt::from(selector));
         values.extend_from_slice(policy_root.as_word().as_elements());
+        values.push(Felt::from(selector));
         values
     }
 }
@@ -310,7 +313,7 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// Storage is `[selector, POLICY_ROOT]` with the selector matching the action kind.
+    /// Storage is `[POLICY_ROOT, selector]` with the selector matching the action kind.
     #[test]
     fn storage_layout() {
         let root = policy_root(10);
@@ -336,8 +339,8 @@ mod tests {
 
         for (action, selector) in cases {
             let storage = NoteStorage::from(action);
-            let mut expected = alloc::vec![Felt::from(selector)];
-            expected.extend_from_slice(root.as_word().as_elements());
+            let mut expected = Vec::from(root.as_word().as_elements());
+            expected.push(Felt::from(selector));
             assert_eq!(storage.items(), expected.as_slice());
             assert_eq!(storage.items().len(), FaucetPolicyActionNote::NUM_STORAGE_ITEMS);
         }

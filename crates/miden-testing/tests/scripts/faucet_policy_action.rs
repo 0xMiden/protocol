@@ -197,8 +197,8 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // selector 99 with a root-sized payload; 99 is not a known action
-    let storage = vec![Felt::from(99u32), Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO];
+    // a root-sized payload followed by selector 99, which is not a known action
+    let storage = vec![Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(99u32)];
     let note = malformed_faucet_policy_action_note(owner, storage, &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
@@ -220,7 +220,8 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // SetMintPolicy selector (0) but only one storage item instead of the expected five
+    // a single storage item instead of the expected five; the selector position reads as an
+    // uninitialized zero, dispatching to SetMintPolicy, whose count guard then rejects the note
     let note = malformed_faucet_policy_action_note(owner, vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
