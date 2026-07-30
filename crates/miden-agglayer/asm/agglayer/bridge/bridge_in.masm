@@ -10,6 +10,7 @@ use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::standards::access::pausable
 use {DoubleWord} from miden::protocol::types
 use {MemoryAddress} from miden::protocol::types
 use {ONE_WORD} from miden::standards::utils
@@ -165,6 +166,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! }
 #!
 #! Panics if:
+#! - the bridge is paused.
 #! - the leaf type is not 0 (not an asset claim).
 #! - the leaf destination network does not match the bridge's configured network ID.
 #! - the Merkle proof validation fails.
@@ -174,6 +176,9 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 @locals(2) # 0: dest_prefix, 1: dest_suffix
 @account_procedure
 pub proc claim
+    # assert the bridge is not in the emergency-paused state
+    exec.pausable::assert_not_paused
+
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]

@@ -59,8 +59,10 @@ asset and the destination network/address. The bridge account consumes this note
 The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
 
-TODO: The bridge currently has no emergency pause mechanism to halt operations
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+The bridge supports an emergency pause: while paused, `bridge_out`, `claim`, `update_ger`,
+`register_faucet`, `store_faucet_metadata_hash`, and `deregister_faucet` abort, while `remove_ger`
+stays available as an emergency remediation tool. See
+[Section 2.5](#25-administration) for the mechanism and authorization.
 
 ### 2.2 Bridge-in (AggLayer to Miden)
 
@@ -229,8 +231,26 @@ builders for these `Rbac` procedures are tracked more broadly by
 components); once they exist, the bridge only needs to add their script roots to
 [`AggLayerBridge::allowed_notes`].
 
-TODO: No emergency pause mechanism exists
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+#### Emergency pause
+
+The bridge account installs the `miden-standards` `Pausable` and `PausableManager` components.
+Every bridge entry point except `remove_ger` starts with `pausable::assert_not_paused`, so while
+the standards-owned `miden::standards::access::pausable::is_paused` slot holds a non-zero word the
+bridge rejects all bridge-out, claim, GER-injection, and faucet-management operations. `remove_ger`
+is deliberately exempt: during an incident a paused bridge can still revoke a fraudulent GER, and
+because `update_ger` is paused the revoked GER cannot be re-injected until the bridge is unpaused.
+
+The pause is toggled via the standards [`PAUSE_ACTION`](#410-pause_action-standards) note, which
+dispatches to `PausableManager`'s `pause` / `unpause` procedures. These have no entry in the
+bridge's `Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
+Splitting this authority into dedicated `PAUSER` / `UNPAUSER` roles (so pause authority can be
+delegated without granting role administration) is a planned follow-up.
+
+The pause interacts with the `Authority` freeze switch as complementary controls: freezing blocks
+every authority-gated procedure - including `remove_ger` - but not `claim` / `bridge_out`, while
+the pause is the inverse. Note also that pausing does not retract MINT notes already emitted by
+earlier claims; the faucets are not pausable, so in-flight mints still pay out after the pause.
+Removing the offending GER is the remediation for claims not yet processed.
 
 ---
 
@@ -252,6 +272,12 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
 `asm/agglayer/common/`.
 
+In addition to the `bridge` component, the account installs the standards access-control stack
+(`RoleBasedAccessControl`, `Authority`) and the emergency-pause stack (`Pausable` with the
+`is_paused` view, `PausableManager` with the `ADMIN`-gated `pause` / `unpause`); see
+[Section 2.5](#25-administration). All bridge procedures below except `remove_ger` additionally
+panic while the bridge is paused.
+
 #### `bridge_out::bridge_out`
 
 | | |
@@ -260,7 +286,7 @@ The underlying library code lives in `asm/agglayer/bridge/` with supporting modu
 | **Inputs** | `[ASSET, dest_network_id, dest_addr(5), pad(4)]` |
 | **Outputs** | `[]` |
 | **Context** | Consuming a `B2AGG` note on the bridge account |
-| **Panics** | Faucet not in registry; destination network is Miden's AggLayer network ID |
+| **Panics** | Bridge is paused; faucet not in registry; destination network is Miden's AggLayer network ID |
 
 Bridges an asset out of Miden into the AggLayer:
 
@@ -278,7 +304,7 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused |
 
 Asserts that the note sender holds the `FAUCET_MNGR`
 role, then registers the faucet across three storage maps:
@@ -308,7 +334,7 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused; faucet is not currently registered |
 
 Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
@@ -333,7 +359,7 @@ role holder should warn users with notes in flight. As defense-in-depth, `claim`
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender does not hold the `GER_INJECTOR` role; GER has already been registered in storage |
+| **Panics** | Note sender does not hold the `GER_INJECTOR` role; bridge is paused; GER has already been registered in storage |
 
 Asserts that the note sender holds the `GER_INJECTOR`
 role, then computes
@@ -350,7 +376,7 @@ in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Bridge is paused; leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
@@ -405,7 +431,9 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 The privileged-role state is held by the access-control components installed on the bridge account
 (`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
-documented in `miden-standards`, rather than in dedicated bridge slots. See
+documented in `miden-standards`, rather than in dedicated bridge slots. Likewise, the emergency
+pause state lives in the standards-owned `miden::standards::access::pausable::is_paused` value
+slot (`[0, 0, 0, 0]` = unpaused, non-zero = paused) contributed by the `Pausable` component. See
 [Administration](#25-administration).
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
@@ -972,6 +1000,31 @@ note via `output_note::add_asset`.
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
 | **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_ID` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
+
+### 4.10 PAUSE_ACTION (standards)
+
+**Purpose:** Toggles the bridge's emergency pause (see [Section 2.5](#25-administration)). This is
+the `miden-standards` `PAUSE_ACTION` note (`pause_action.masm` / `PauseActionNote`), not an
+agglayer-specific note; the bridge merely includes its script root in
+[`AggLayerBridge::allowed_notes`]. Its single storage felt is a selector: `0` dispatches to
+`PausableManager::pause`, `1` to `PausableManager::unpause`.
+
+**Consumption:** The script loads the selector and `call`s the matching `PausableManager`
+procedure, which runs `authority::assert_authorized` before flipping the
+`miden::standards::access::pausable::is_paused` slot. On the bridge the procedure has no
+mapped role, so the note sender must hold the `ADMIN` role.
+
+Unlike the agglayer admin notes above, `PAUSE_ACTION` carries no `NetworkAccountTarget`
+assertion in its script; the note tag is only a best-effort routing filter. Authorization is
+purely sender-based via `Authority`/RBAC, which is the security boundary: a non-`ADMIN` sender
+aborts, and a wrongly targeted note from an `ADMIN` sender is that sender's own error.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
+| **Consumer** | Bridge account -- **routed** by the note tag; not script-enforced (see above) |
 
 ---
 

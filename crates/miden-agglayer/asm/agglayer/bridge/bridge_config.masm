@@ -5,6 +5,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
+use miden::standards::access::pausable
 use {ONE_WORD} from miden::standards::utils
 use miden::standards::utils
 
@@ -75,6 +76,7 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #!
 #! Panics if:
 #! - the note sender does not hold the global exit root injector role.
+#! - the bridge is paused.
 #! - the GER has already been registered in storage.
 #!
 #! Invocation: call
@@ -82,6 +84,8 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 pub proc update_ger
     # assert the note sender is authorized for this procedure (holds the GER injector role).
     exec.authority::assert_authorized
+    # assert the bridge is not in the emergency-paused state
+    exec.pausable::assert_not_paused
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
@@ -209,6 +213,7 @@ end
 #!
 #! Panics if:
 #! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #!
 #! Invocation: call
 @locals(14)
@@ -216,6 +221,8 @@ end
 pub proc register_faucet
     # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
+    # assert the bridge is not in the emergency-paused state
+    exec.pausable::assert_not_paused
     # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
     # Save non-address data to locals.
@@ -357,12 +364,15 @@ end
 #!
 #! Panics if:
 #! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #!
 #! Invocation: call
 @account_procedure
 pub proc store_faucet_metadata_hash
     # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
+    # assert the bridge is not in the emergency-paused state
+    exec.pausable::assert_not_paused
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
     # --- Store METADATA_HASH_LO at key [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix] ---
@@ -398,6 +408,7 @@ end
 #!
 #! Panics if:
 #! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #! - the faucet is not currently registered in the faucet registry.
 #!
 #! Locals:
@@ -410,6 +421,8 @@ end
 pub proc deregister_faucet
     # assert the note sender is authorized for this procedure (holds the faucet manager role).
     exec.authority::assert_authorized
+    # assert the bridge is not in the emergency-paused state
+    exec.pausable::assert_not_paused
     # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
 
     # Stash the faucet ID; it is needed for every map key below.

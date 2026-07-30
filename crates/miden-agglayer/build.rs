@@ -19,7 +19,7 @@ use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMet
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::StandardsLib;
-use miden_standards::account::access::{AccessControl, Authority};
+use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -275,6 +275,11 @@ fn generate_agglayer_constants(
                 admin: dummy_owner,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
+            // The emergency-pause stack, in the same order as `create_bridge_account_builder`.
+            // Only component code affects the commitment, so the initial paused/unpaused state
+            // is immaterial here.
+            components.push(AccountComponent::from(Pausable::unpaused()));
+            components.push(AccountComponent::from(PausableManager));
         } else if component_name == "faucet" {
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
