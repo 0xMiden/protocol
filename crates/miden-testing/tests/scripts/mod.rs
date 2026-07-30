@@ -4,6 +4,7 @@ mod blocklist;
 mod code_inspection;
 mod expiration;
 mod faucet;
+mod faucet_metadata;
 mod faucet_policy_action;
 mod fee_collection;
 mod fee_manager;
