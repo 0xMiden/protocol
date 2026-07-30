@@ -1133,10 +1133,7 @@ pub proc input_note_remove_asset
     movup.9 swap
     # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
 
-    # authenticate indexed access while allowing a note script to remove assets from itself
-    dup eq.0 if.true
-        exec.authenticate_account_origin
-    end
+    exec.authenticate_indexed_input_note_asset_removal
     # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
@@ -1188,10 +1185,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_remove_all_assets
-    # authenticate indexed access while allowing a note script to remove assets from itself
-    dup eq.0 if.true
-        exec.authenticate_account_origin
-    end
+    exec.authenticate_indexed_input_note_asset_removal
     # => [is_active_note, note_index, pad(14)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
@@ -2087,6 +2081,20 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Authenticates indexed input-note asset removal while allowing active-note self-removal.
+#!
+#! Inputs:  [is_active_note, ...]
+#! Outputs: [is_active_note, ...]
+#!
+#! Panics if:
+#! - is_active_note is 0 and the invocation does not originate from the account context.
+proc authenticate_indexed_input_note_asset_removal
+    dup eq.0
+    if.true
+        exec.authenticate_account_origin
+    end
+end
 
 #! Returns the memory pointer to the input note, depending on whether the requested note is current
 #! or it was requested by index.
