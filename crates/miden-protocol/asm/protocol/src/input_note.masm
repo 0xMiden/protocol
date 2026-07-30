@@ -534,11 +534,7 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
 
     if.true
         # Authenticate the claimed match against the note's ID.
-        dup exec.get_note_id
-        # => [NOTE_ID, note_idx, TARGET_NOTE_ID]
-
-        # Move note_idx below the two IDs so it survives the equality check.
-        movup.4 movdn.8
+        movdn.4 dup.4 exec.get_note_id
         # => [NOTE_ID, TARGET_NOTE_ID, note_idx]
 
         exec.word::eq assert.err=ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID
@@ -563,11 +559,10 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
             sub.1
             # => [note_idx, TARGET_NOTE_ID]
 
-            dup exec.get_note_id
-            # => [NOTE_ID, note_idx, TARGET_NOTE_ID]
+            movdn.4 dup.4 exec.get_note_id
+            # => [NOTE_ID, TARGET_NOTE_ID, note_idx]
 
-            # Keep both the target ID and counter while testing the current note ID.
-            movup.4 movdn.8 exec.word::test_eq
+            exec.word::test_eq
             # => [is_match, NOTE_ID, TARGET_NOTE_ID, note_idx]
 
             not assert.err=ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID
