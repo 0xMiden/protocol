@@ -593,6 +593,10 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
+                TransactionEvent::InputNoteIndexLookup { note_id } => {
+                    Ok(self.base_host.on_input_note_index_lookup(note_id))
+                },
+
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,

@@ -23,6 +23,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
@@ -288,6 +289,15 @@ impl From<NetworkAccountConfigNote> for Note {
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for NetworkAccountConfigNote {
+    fn consumption_cycles() -> u32 {
+        NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES
     }
 }
 

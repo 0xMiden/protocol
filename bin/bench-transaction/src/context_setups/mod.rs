@@ -11,7 +11,6 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     ConversionMetadata,
     DeregisterAggFaucetNote,
-    EthAddress,
     MetadataHash,
     RemoveGerNote,
     UpdateGerNote,
@@ -27,6 +26,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
@@ -177,6 +177,12 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeBurnNetwork => network_faucet::tx_consume_burn_note_network(),
         ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
             network_action::tx_consume_faucet_policy_action_note_network()
+        },
+        ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+            network_action::tx_consume_allowlist_config_note_network()
+        },
+        ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
+            network_action::tx_consume_blocklist_config_note_network()
         },
         ExecutionBenchmark::ConsumePauseActionNetwork => {
             network_action::tx_consume_pause_action_note_network()
@@ -501,7 +507,7 @@ pub async fn tx_consume_claim_note(
     // CREATE CLAIM NOTE
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale as u32)
+        .scale_to_asset_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let config_metadata_hash = leaf_data.metadata_hash;

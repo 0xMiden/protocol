@@ -11,7 +11,6 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     ConversionMetadata,
     DeregisterAggFaucetNote,
-    EthAddress,
     MetadataHash,
 };
 use miden_protocol::account::auth::AuthScheme;
@@ -28,6 +27,7 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
+use miden_standards::interop::eth::EthAddress;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
