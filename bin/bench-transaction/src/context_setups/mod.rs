@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
+use miden_agglayer::testing::create_existing_bridge_account_with_roles;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -12,7 +12,6 @@ use miden_agglayer::{
     ConversionMetadata,
     DeregisterAggFaucetNote,
     MetadataHash,
-    PauseAggBridgeNote,
     RemoveGerNote,
     UpdateGerNote,
     create_existing_agglayer_faucet,
@@ -28,7 +27,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountConfigNote, PauseAction, StandardNote};
+use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
@@ -218,9 +217,6 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         },
         ExecutionBenchmark::ConsumeUpdateGerWithFee => tx_consume_update_ger_note().await,
         ExecutionBenchmark::ConsumeRemoveGerWithFee => tx_consume_remove_ger_note().await,
-        ExecutionBenchmark::ConsumePauseAggBridgeWithFee => {
-            tx_consume_pause_agg_bridge_note().await
-        },
     }
 }
 
@@ -869,29 +865,6 @@ pub async fn tx_consume_update_ger_note() -> Result<MockTransaction> {
     mock_chain
         .build_transaction(bridge_account.id())
         .authenticated_input_note(update_ger_note.id())
-        .build()
-}
-
-/// Returns the transaction context for the fee-funded bridge account consuming a
-/// PAUSE_AGG_BRIDGE note sent by the bridge's `ADMIN` role member.
-pub async fn tx_consume_pause_agg_bridge_note() -> Result<MockTransaction> {
-    let mut builder = chain_builder(true);
-
-    let BridgeFixture { bridge_account, .. } = setup_bridge_fixture(&mut builder, None, true)?;
-
-    let pause_note = PauseAggBridgeNote::create(
-        PauseAction::Pause,
-        bridge_admin_account_id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
-
-    let mock_chain = builder.build()?;
-
-    mock_chain
-        .build_transaction(bridge_account.id())
-        .authenticated_input_note(pause_note.id())
         .build()
 }
 

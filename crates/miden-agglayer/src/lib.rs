@@ -39,7 +39,6 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 mod ger_note;
-pub mod pause_note;
 pub mod remove_ger_note;
 #[cfg(any(feature = "testing", test))]
 pub mod testing;
@@ -65,7 +64,6 @@ pub use deregister_note::DeregisterAggFaucetNote;
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
-pub use pause_note::PauseAggBridgeNote;
 pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;

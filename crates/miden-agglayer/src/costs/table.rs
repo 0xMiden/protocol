@@ -19,6 +19,3 @@ pub const UPDATE_GER_CONSUMPTION_CYCLES: u32 = 23041;
 
 /// Cycles of consuming a REMOVE_GER note (single benchmarked path).
 pub const REMOVE_GER_CONSUMPTION_CYCLES: u32 = 24242;
-
-/// Cycles of consuming a PAUSE_AGG_BRIDGE note (single benchmarked path).
-pub const PAUSE_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 21562;
