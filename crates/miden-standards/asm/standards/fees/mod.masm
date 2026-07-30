@@ -355,29 +355,29 @@ proc zeroize_elements
     dup.1 add swap
     # => [start_ptr, end_ptr]
 
-    padw dup.4
-    # => [start_ptr, EMPTY_WORD, start_ptr, end_ptr]
+    padw movup.4
+    # => [start_ptr, EMPTY_WORD, end_ptr]
 
     # loop if start_ptr != end_ptr
-    dup.6 dup.1 neq
-    # => [should_loop, start_ptr, EMPTY_WORD, start_ptr, end_ptr]
+    dup.5 dup.1 neq
+    # => [should_loop, start_ptr, EMPTY_WORD, end_ptr]
 
     while.true
+        # compute the pointer for the next iteration by moving one word ahead
+        dup add.WORD_NUM_ELEMENTS movdn.5
+        # => [current_ptr, EMPTY_WORD, next_ptr, end_ptr]
+
         # zeroize the word
-        mem_storew_le
-        # => [EMPTY_WORD, current_ptr, end_ptr]
+        mem_storew_le movup.4
+        # => [next_ptr, EMPTY_WORD, end_ptr]
 
-        # move one word ahead
-        movup.4 add.WORD_NUM_ELEMENTS dup movdn.5
-        # => [current_ptr', EMPTY_WORD, current_ptr', end_ptr]
-
-        # continue looping if current_ptr' != end_ptr
-        dup.6 dup.1 neq
-        # => [should_loop, current_ptr', EMPTY_WORD, current_ptr', end_ptr]
+        # continue looping if next_ptr != end_ptr
+        dup.5 dup.1 neq
+        # => [should_loop, next_ptr, EMPTY_WORD, end_ptr]
     end
-    # => [current_ptr', EMPTY_WORD, current_ptr', end_ptr]
+    # => [next_ptr, EMPTY_WORD, end_ptr]
 
-    drop dropw drop drop
+    drop dropw drop
     # => []
 end
 
