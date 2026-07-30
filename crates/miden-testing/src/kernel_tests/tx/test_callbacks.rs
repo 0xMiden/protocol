@@ -381,6 +381,66 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     Ok(())
 }
 
+/// Tests that the account callback cannot change the value of an asset added to the account
+/// vault, even when offsetting rewrites would leave the aggregate totals intact.
+///
+/// The two consumed notes add 200 and 100 units to the vault; the callback rewrites every
+/// addition to 150 units. Because the vault aggregates amounts per asset ID, the final vault -
+/// and thus the epilogue's conservation check - is identical either way. Unlike the note path,
+/// there is also no host-side backstop: `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT` is emitted after
+/// the callback with the processed value, so the host never disagrees with the kernel. The
+/// callback-boundary assertion is therefore the only enforcement on this path.
+#[tokio::test]
+async fn test_callback_cannot_rewrite_value_added_to_account() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let account_callback_masm = r#"
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+    #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+    @account_procedure
+    pub proc on_before_asset_added_to_account
+        # Drop the asset ID and replace the input amount with 150.
+        dropw
+        push.150 swap drop
+        # => [PROCESSED_ASSET_VALUE, pad(8)]
+    end
+    "#;
+
+    let faucet = add_faucet_with_callbacks(&mut builder, Some(account_callback_masm), None)?;
+    let first_asset = FungibleAsset::new(faucet.id(), 200)?;
+    let second_asset = FungibleAsset::new(faucet.id(), 100)?;
+    let first_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[first_asset.into()],
+        NoteType::Public,
+    )?;
+    let second_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[second_asset.into()],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_notes([first_note.id(), second_note.id()])
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT);
+
+    Ok(())
+}
+
 /// Tests that a blocked account cannot receive an asset with callbacks enabled.
 #[rstest::rstest]
 #[case::fungible(
