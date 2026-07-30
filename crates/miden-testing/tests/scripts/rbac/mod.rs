@@ -54,7 +54,7 @@ pub(super) fn test_account_id(seed: u8) -> AccountId {
         .build_with_seed([seed; 32])
 }
 
-pub(crate) fn role(name: &str) -> RoleSymbol {
+pub(super) fn role(name: &str) -> RoleSymbol {
     RoleSymbol::new(name).expect("role symbol should be valid")
 }
 
@@ -72,7 +72,7 @@ fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> StorageMapKe
 }
 
 /// Returns the role's `(member_count, admin_role_symbol)` from on-chain storage.
-pub(crate) fn get_role_config(
+pub(super) fn get_role_config(
     account: &Account,
     role: &RoleSymbol,
 ) -> anyhow::Result<(Felt, Felt)> {
@@ -958,6 +958,41 @@ fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Resul
 
     // A role mapped to an empty member set is dropped.
     assert_eq!(get_role_config(&account, &empty_role)?.0, Felt::ZERO);
+
+    Ok(())
+}
+
+/// A role delegated to itself stays manageable by its own members after the sole `ADMIN`
+/// renounces: `set_role_admin(MANAGER, MANAGER)` (step 2 of the decentralized-configuration
+/// recipe in the component docs) keeps `MANAGER`'s membership rotatable once `ADMIN` is empty.
+#[tokio::test]
+async fn test_rbac_self_administered_role_survives_admin_renounce() -> anyhow::Result<()> {
+    let admin = test_account_id(124);
+    let manager = test_account_id(125);
+    let second_manager = test_account_id(126);
+
+    let admin_role = RoleBasedAccessControl::admin_role();
+    let manager_role = role("MANAGER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    // Seed MANAGER, then make it self-administering.
+    let grant_manager_note = build_note(admin, grant_role_script(&manager_role, manager))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &grant_manager_note).await?;
+
+    let self_admin_note =
+        build_note(admin, set_role_admin_script(&manager_role, Some(&manager_role)))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &self_admin_note).await?;
+
+    // The sole ADMIN renounces ADMIN.
+    let renounce_note = build_note(admin, renounce_role_script(&admin_role))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_note).await?;
+    assert!(!is_role_member(&updated, &admin_role, admin)?);
+
+    // MANAGER can still rotate its own membership.
+    let grant_second_note = build_note(manager, grant_role_script(&manager_role, second_manager))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_second_note).await?;
+    assert!(is_role_member(&updated, &manager_role, second_manager)?);
 
     Ok(())
 }
