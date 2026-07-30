@@ -1011,8 +1011,9 @@ Build these notes with [`AggLayerBridge::pause_note`] rather than the standards 
 attaches no `NetworkAccountTarget` - without it the note is never routed to the bridge.
 
 Unlike the agglayer admin notes above, the `PAUSE_CONFIG` script does not *assert* the attachment
-target, so the note is not bound to the bridge on consumption. This affects the whole standards
-admin-note family and is tracked in [#3433](https://github.com/0xMiden/protocol/issues/3433).
+target, so the note is not bound to the bridge on consumption. This affects the remaining
+standards admin notes (`NETWORK_ACCOUNT_CONFIG` already binds its target) and is tracked in
+[#3433](https://github.com/0xMiden/protocol/issues/3433).
 
 #### Permissions
 
