@@ -70,7 +70,7 @@ impl NetworkAccountConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
+    // Config note selectors stored in the first storage item. Keep in sync with
     // `network_account_config.masm`.
     const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT: u8 = 0;
     const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;
@@ -106,8 +106,8 @@ impl NetworkAccountConfig {
 }
 
 impl From<NetworkAccountConfig> for NoteStorage {
-    fn from(action: NetworkAccountConfig) -> Self {
-        NoteStorage::new(action.to_storage_values())
+    fn from(config: NetworkAccountConfig) -> Self {
+        NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
@@ -134,14 +134,14 @@ impl From<NetworkAccountConfig> for NoteStorage {
 pub struct NetworkAccountConfigNote {
     sender: AccountId,
     account: AccountId,
-    action: NetworkAccountConfig,
+    config: NetworkAccountConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
 impl NetworkAccountConfigNote {
-    /// Builds a new [`NetworkAccountConfigNote`] that triggers `action` on `account`.
+    /// Builds a new [`NetworkAccountConfigNote`] that applies `config` to `account`.
     ///
     /// # Errors
     ///
@@ -152,7 +152,7 @@ impl NetworkAccountConfigNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: NetworkAccountConfig,
+        config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -160,7 +160,7 @@ impl NetworkAccountConfigNote {
         Ok(Self {
             sender,
             account,
-            action,
+            config,
             serial_number,
             attachments,
         })
@@ -199,8 +199,8 @@ impl NetworkAccountConfigNote {
     }
 
     /// Returns the allowlist-mutation action carried by the note.
-    pub fn action(&self) -> NetworkAccountConfig {
-        self.action
+    pub fn config(&self) -> NetworkAccountConfig {
+        self.config
     }
 
     /// Returns the note's serial number.
@@ -260,7 +260,7 @@ impl From<NetworkAccountConfigNote> for Note {
         let recipient = NoteRecipient::new(
             note.serial_number,
             NetworkAccountConfigNote::script(),
-            NoteStorage::from(note.action),
+            NoteStorage::from(note.config),
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
@@ -304,7 +304,7 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed network account.
     #[test]
-    fn builder_builds_allowlist_action_note() {
+    fn builder_builds_allowlist_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let account = account_id(1);
         let sender = account_id(2);
@@ -312,7 +312,7 @@ mod tests {
         let note = NetworkAccountConfigNote::builder()
             .sender(sender)
             .account(account)
-            .action(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
+            .config(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();

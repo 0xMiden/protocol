@@ -43,11 +43,12 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PSWAP),
             PricedNote::Standard(StandardNote::MINT),
             PricedNote::Standard(StandardNote::BURN),
-            PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION),
+            PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG),
+            PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
-            PricedNote::Standard(StandardNote::PAUSE_ACTION),
-            PricedNote::Standard(StandardNote::OWNER_ACTION),
-            PricedNote::Standard(StandardNote::RBAC_ACTION),
+            PricedNote::Standard(StandardNote::PAUSE_CONFIG),
+            PricedNote::Standard(StandardNote::OWNER_CONFIG),
+            PricedNote::Standard(StandardNote::RBAC_CONFIG),
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG),
             PricedNote::Standard(StandardNote::FEE_SPONSORSHIP),
             PricedNote::Agglayer(AgglayerNote::CLAIM),
@@ -87,20 +88,23 @@ impl PricedNote {
                 ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ],
             PricedNote::Standard(StandardNote::BURN) => &[ExecutionBenchmark::ConsumeBurnNetwork],
-            PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION) => {
-                &[ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork]
+            PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeAllowlistConfigNetwork]
             },
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeBlocklistConfigNetwork]
             },
-            PricedNote::Standard(StandardNote::PAUSE_ACTION) => {
-                &[ExecutionBenchmark::ConsumePauseActionNetwork]
+            PricedNote::Standard(StandardNote::PAUSE_CONFIG) => {
+                &[ExecutionBenchmark::ConsumePauseConfigNetwork]
             },
-            PricedNote::Standard(StandardNote::OWNER_ACTION) => {
-                &[ExecutionBenchmark::ConsumeOwnerActionNetwork]
+            PricedNote::Standard(StandardNote::OWNER_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeOwnerConfigNetwork]
             },
-            PricedNote::Standard(StandardNote::RBAC_ACTION) => {
-                &[ExecutionBenchmark::ConsumeRbacActionNetwork]
+            PricedNote::Standard(StandardNote::RBAC_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeRbacConfigNetwork]
             },
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
@@ -180,7 +184,11 @@ impl PricedNote {
     /// consonant sounds ("a REMOVE_GER", read as a word).
     fn doc_article(&self) -> &'static str {
         match self {
-            PricedNote::Standard(StandardNote::OWNER_ACTION | StandardNote::RBAC_ACTION)
+            PricedNote::Standard(
+                StandardNote::ALLOWLIST_CONFIG
+                | StandardNote::OWNER_CONFIG
+                | StandardNote::RBAC_CONFIG,
+            )
             | PricedNote::Agglayer(AgglayerNote::UPDATE_GER) => "an",
             _ => "a",
         }
@@ -377,9 +385,11 @@ mod tests {
     fn doc_subjects_use_the_checked_in_articles() {
         let subjects: BTreeMap<&str, String> =
             PricedNote::all().iter().map(|note| (note.name(), note.doc_subject())).collect();
-        assert_eq!(subjects["OWNER_ACTION"], "an OWNER_ACTION");
+        assert_eq!(subjects["ALLOWLIST_CONFIG"], "an ALLOWLIST_CONFIG");
+        assert_eq!(subjects["BLOCKLIST_CONFIG"], "a BLOCKLIST_CONFIG");
+        assert_eq!(subjects["OWNER_CONFIG"], "an OWNER_CONFIG");
         assert_eq!(subjects["UPDATE_GER"], "an UPDATE_GER");
-        assert_eq!(subjects["RBAC_ACTION"], "an RBAC_ACTION");
+        assert_eq!(subjects["RBAC_CONFIG"], "an RBAC_CONFIG");
         assert_eq!(subjects["REMOVE_GER"], "a REMOVE_GER");
         assert_eq!(subjects["P2ID"], "a P2ID");
     }
@@ -430,11 +440,12 @@ mod tests {
     #[case::pswap(PricedNote::Standard(StandardNote::PSWAP))]
     #[case::mint(PricedNote::Standard(StandardNote::MINT))]
     #[case::burn(PricedNote::Standard(StandardNote::BURN))]
-    #[case::faucet_policy_action(PricedNote::Standard(StandardNote::FAUCET_POLICY_ACTION))]
+    #[case::faucet_policy_config(PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG))]
+    #[case::allowlist_config(PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG))]
     #[case::blocklist_config(PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG))]
-    #[case::pause_action(PricedNote::Standard(StandardNote::PAUSE_ACTION))]
-    #[case::owner_action(PricedNote::Standard(StandardNote::OWNER_ACTION))]
-    #[case::rbac_action(PricedNote::Standard(StandardNote::RBAC_ACTION))]
+    #[case::pause_config(PricedNote::Standard(StandardNote::PAUSE_CONFIG))]
+    #[case::owner_config(PricedNote::Standard(StandardNote::OWNER_CONFIG))]
+    #[case::rbac_config(PricedNote::Standard(StandardNote::RBAC_CONFIG))]
     #[case::network_account_config(PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG))]
     #[case::fee_sponsorship(PricedNote::Standard(StandardNote::FEE_SPONSORSHIP))]
     #[case::claim(PricedNote::Agglayer(AgglayerNote::CLAIM))]
