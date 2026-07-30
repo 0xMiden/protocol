@@ -3,7 +3,7 @@
     "prologue": 3717,
     "notes_processing": 2148,
     "note_execution": {
-      "0x1a8d1538d32975fe23806d99e22c8102d90c62d6f7dfa1fb102f0c46ce3575d2": 2106
+      "0x04680491717340767747649597cc884a8fb81e0616fa04d3f8e5bd2bc91d41c6": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79649,
       "chiplets_rows": 64650,
-      "range_rows": 20343,
+      "range_rows": 20205,
       "chiplets_shape": {
         "hasher_rows": 61568,
         "bitwise_rows": 640,
@@ -27,7 +27,7 @@
     "prologue": 3717,
     "notes_processing": 2148,
     "note_execution": {
-      "0xd09d78f4acbb2d794d6ccebc546c4bcee786af6ae926f0c9858ffe967535622c": 2106
+      "0x496f36157bdb5fd67f3cbe40fcdbab9f0d4ad1bd952c84801cbc3e1126d273aa": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 11463,
       "chiplets_rows": 22476,
-      "range_rows": 1293,
+      "range_rows": 1299,
       "chiplets_shape": {
         "hasher_rows": 21024,
         "bitwise_rows": 640,
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83178,
       "chiplets_rows": 67650,
-      "range_rows": 20465,
+      "range_rows": 20499,
       "chiplets_shape": {
         "hasher_rows": 64080,
         "bitwise_rows": 984,
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 14992,
       "chiplets_rows": 25476,
-      "range_rows": 1247,
+      "range_rows": 1231,
       "chiplets_shape": {
         "hasher_rows": 23536,
         "bitwise_rows": 984,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 78911,
       "chiplets_rows": 63101,
-      "range_rows": 20237,
+      "range_rows": 20355,
       "chiplets_shape": {
         "hasher_rows": 60128,
         "bitwise_rows": 616,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 10725,
       "chiplets_rows": 20895,
-      "range_rows": 1087,
+      "range_rows": 1059,
       "chiplets_shape": {
         "hasher_rows": 19552,
         "bitwise_rows": 616,
@@ -695,10 +695,10 @@
   },
   "consume FEE_SPONSORSHIP note with feature note (network account)": {
     "prologue": 4681,
-    "notes_processing": 1517,
+    "notes_processing": 1178,
     "note_execution": {
       "0x30e133565785ae090e4920c05bb4adac8004adba6ba51e887396e0082197e1e7": 461,
-      "0x3b9734db3525b3dae525310eafd8ad73d183fb754a7e3ada846298b9351751fc": 1005
+      "0x495030d5f3631fe2a1c80daed0d6533fa0a077100600d3ca4734111ef78ad4bb": 666
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -706,13 +706,13 @@
       "auth_procedure": 11528
     },
     "trace": {
-      "core_rows": 20660,
-      "chiplets_rows": 34261,
-      "range_rows": 1533,
+      "core_rows": 20321,
+      "chiplets_rows": 33949,
+      "range_rows": 1487,
       "chiplets_shape": {
-        "hasher_rows": 32080,
+        "hasher_rows": 31792,
         "bitwise_rows": 944,
-        "memory_rows": 1174,
+        "memory_rows": 1150,
         "kernel_rom_rows": 62,
         "ace_rows": 0
       }
@@ -720,9 +720,9 @@
   },
   "consume FEE_SPONSORSHIP note (reclaim)": {
     "prologue": 3568,
-    "notes_processing": 2937,
+    "notes_processing": 2907,
     "note_execution": {
-      "0x59bdccc234e8199c9811f65960307fca20c7d10bb042818db4765c8fc95e3dbb": 2895
+      "0xabc408b207033594b9b08e8440d21e4e8f5e02a9dc23bcc3844d9f341140b346": 2865
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -730,13 +730,13 @@
       "auth_procedure": 7552
     },
     "trace": {
-      "core_rows": 16314,
-      "chiplets_rows": 29308,
-      "range_rows": 1387,
+      "core_rows": 16284,
+      "chiplets_rows": 29232,
+      "range_rows": 1377,
       "chiplets_shape": {
-        "hasher_rows": 27392,
+        "hasher_rows": 27328,
         "bitwise_rows": 960,
-        "memory_rows": 893,
+        "memory_rows": 881,
         "kernel_rom_rows": 62,
         "ace_rows": 0
       }
