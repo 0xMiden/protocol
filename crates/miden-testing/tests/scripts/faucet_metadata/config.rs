@@ -90,10 +90,13 @@ async fn set_max_supply_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Selector `1` dispatches to `set_description`, whose payload travels in the note storage and is
-/// published to the advice map by the script.
+/// Selectors `1`, `2` and `3` dispatch to `set_description`, `set_logo_uri` and
+/// `set_external_link`, each writing its own field.
+///
+/// The three run against the same faucet in sequence, so a selector wired to the wrong setter shows
+/// up as a field that did not change — or as one that changed twice.
 #[tokio::test]
-async fn set_description_dispatch() -> anyhow::Result<()> {
+async fn string_actions_dispatch() -> anyhow::Result<()> {
     let owner = owner_id();
     let faucet = create_faucet(owner, true)?;
     let mut builder = MockChain::builder();
@@ -101,64 +104,39 @@ async fn set_description_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let description = Description::new("dispatched through the config note")?;
-    let note = config_note(
-        owner,
-        faucet.id(),
-        FungibleFaucetConfig::SetDescription { description: description.clone() },
-        2,
-    )?;
-
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
-
-    assert_eq!(metadata(&updated)?.description(), Some(&description));
-
-    Ok(())
-}
-
-/// Selector `2` dispatches to `set_logo_uri`.
-#[tokio::test]
-async fn set_logo_uri_dispatch() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let faucet = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(faucet.clone())?;
-    let mock_chain = builder.build()?;
-
     let logo_uri = LogoURI::new("https://example.com/dispatched.png")?;
-    let note = config_note(
-        owner,
-        faucet.id(),
-        FungibleFaucetConfig::SetLogoUri { logo_uri: logo_uri.clone() },
-        3,
-    )?;
-
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
-
-    assert_eq!(metadata(&updated)?.logo_uri(), Some(&logo_uri));
-
-    Ok(())
-}
-
-/// Selector `3` dispatches to `set_external_link`.
-#[tokio::test]
-async fn set_external_link_dispatch() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let faucet = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(faucet.clone())?;
-    let mock_chain = builder.build()?;
-
     let external_link = ExternalLink::new("https://example.com/dispatched")?;
-    let note = config_note(
-        owner,
-        faucet.id(),
-        FungibleFaucetConfig::SetExternalLink { external_link: external_link.clone() },
-        4,
-    )?;
 
-    let updated = consume_note(&mock_chain, &faucet, &note).await?;
+    let notes = [
+        config_note(
+            owner,
+            faucet.id(),
+            FungibleFaucetConfig::SetDescription { description: description.clone() },
+            2,
+        )?,
+        config_note(
+            owner,
+            faucet.id(),
+            FungibleFaucetConfig::SetLogoUri { logo_uri: logo_uri.clone() },
+            3,
+        )?,
+        config_note(
+            owner,
+            faucet.id(),
+            FungibleFaucetConfig::SetExternalLink { external_link: external_link.clone() },
+            4,
+        )?,
+    ];
 
-    assert_eq!(metadata(&updated)?.external_link(), Some(&external_link));
+    let mut updated = faucet;
+    for note in &notes {
+        updated = consume_note(&mock_chain, &updated, note).await?;
+    }
+
+    let metadata = metadata(&updated)?;
+    assert_eq!(metadata.description(), Some(&description));
+    assert_eq!(metadata.logo_uri(), Some(&logo_uri));
+    assert_eq!(metadata.external_link(), Some(&external_link));
 
     Ok(())
 }
