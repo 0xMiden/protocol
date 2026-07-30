@@ -14,7 +14,7 @@ const STORAGE_PTR = 0
 const ROOT_PTR = STORAGE_PTR
 const SELECTOR_PTR = STORAGE_PTR + 4
 
-# Action selectors, stored in the storage item after the root. Keep in sync with
+# Config note selectors, stored in the storage item after the script root. Keep in sync with
 # `NetworkAccountConfig` on the Rust side.
 const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT = 0
 const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT = 1

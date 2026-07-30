@@ -396,18 +396,18 @@ fn build_owner_controlled_account(
         .build_existing()?)
 }
 
-/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that
-/// triggers `action`. `serial_seed` distinguishes otherwise-identical notes.
-fn build_action_note(
+/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that applies
+/// `config`. `serial_seed` distinguishes otherwise-identical notes.
+fn build_config_note(
     sender: AccountId,
     account: AccountId,
-    action: NetworkAccountConfig,
+    config: NetworkAccountConfig,
     serial_seed: u32,
 ) -> anyhow::Result<Note> {
     let note = NetworkAccountConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .serial_number(Word::from([serial_seed, 0, 0, 0]))
         .build()?;
 
@@ -446,7 +446,7 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`, but
     // fee-schedule `new_root` so the note is consumable once it is added to the allowlist.
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![new_root])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -482,7 +482,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let new_root = new_note.script().root();
 
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         stranger,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -519,7 +519,7 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
 
     // Deploy with the target note allowlisted (plus the config note via allowlist management).
     let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::RemoveAllowedNoteScript { script_root: target_root },
@@ -561,7 +561,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     let new_root = new_note.script().root();
 
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -603,7 +603,7 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
 
     // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
     let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
@@ -653,7 +653,7 @@ async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
     let owner = owner_id();
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
 
-    let admin_note = build_action_note(owner, account.id(), action, 6)?;
+    let admin_note = build_config_note(owner, account.id(), action, 6)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -685,7 +685,7 @@ async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
     let decoy = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
 
     // A config note targeted at `target` (not the decoy), sent by `owner`.
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         target,
         NetworkAccountConfig::AddAllowedFeePolicy {

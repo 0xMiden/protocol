@@ -8,51 +8,48 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::errors::standards::{
-    ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_OWNER_ACTION_UNKNOWN_SELECTOR,
+    ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_OWNER_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{OwnerAction, OwnerActionNote};
+use miden_standards::note::{OwnerConfig, OwnerConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
-// The `Ownable2Step` account and storage-getter helpers are shared with the `ownable2step`
-// suite, which owns the exhaustive tests of the underlying component. This suite only checks
-// that the OwnerAction note dispatches each action and rejects malformed notes.
-use super::ownable2step::{
-    create_ownable_account,
-    get_nominated_owner_from_storage,
-    get_owner_from_storage,
-};
+// The `Ownable2Step` account and storage-getter helpers are shared with the parent
+// `ownable2step` suite, which owns the exhaustive tests of the underlying component. This
+// suite only checks that the OwnerConfig note dispatches each action and rejects malformed
+// notes.
+use super::{create_ownable_account, get_nominated_owner_from_storage, get_owner_from_storage};
 
 // HELPERS
 // ================================================================================================
 
-/// Builds an [`OwnerActionNote`] for `action` sent by `sender` and targeting `account`.
-fn owner_action_note(
+/// Builds an [`OwnerConfigNote`] for `config` sent by `sender` and targeting `account`.
+fn owner_config_note(
     sender: AccountId,
     account: AccountId,
-    action: OwnerAction,
+    config: OwnerConfig,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
-    let note = OwnerActionNote::builder()
+    let note = OwnerConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .generate_serial_number(rng)
         .build()?
         .into();
     Ok(note)
 }
 
-/// Builds a note carrying the OwnerAction script with hand-crafted storage, bypassing the builder
+/// Builds a note carrying the OwnerConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
-fn malformed_owner_action_note(
+fn malformed_owner_config_note(
     sender: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
-        .script(OwnerActionNote::script())
+        .script(OwnerConfigNote::script())
         .note_storage(storage)?
         .build()?;
     Ok(note)
@@ -91,17 +88,17 @@ async fn transfer_then_accept_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let transfer = owner_action_note(
+    let transfer = owner_config_note(
         owner,
         account.id(),
-        OwnerAction::TransferOwnership { new_owner: Some(new_owner) },
+        OwnerConfig::TransferOwnership { new_owner: Some(new_owner) },
         &mut rng,
     )?;
     let updated = execute_note_and_apply(&mock_chain, &account, &transfer).await?;
     assert_eq!(get_nominated_owner_from_storage(&updated)?, Some(new_owner));
 
     let accept =
-        owner_action_note(new_owner, updated.id(), OwnerAction::AcceptOwnership, &mut rng)?;
+        owner_config_note(new_owner, updated.id(), OwnerConfig::AcceptOwnership, &mut rng)?;
     let final_account = execute_note_and_apply(&mock_chain, &updated, &accept).await?;
 
     assert_eq!(get_owner_from_storage(&final_account)?, Some(new_owner));
@@ -121,7 +118,7 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let note = owner_action_note(owner, account.id(), OwnerAction::RenounceOwnership, &mut rng)?;
+    let note = owner_config_note(owner, account.id(), OwnerConfig::RenounceOwnership, &mut rng)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
 
     assert_eq!(get_owner_from_storage(&updated)?, None);
@@ -140,14 +137,14 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // selector 99 is not a known action
-    let note = malformed_owner_action_note(owner, vec![Felt::from(99u32)], &mut rng)?;
+    let note = malformed_owner_config_note(owner, vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_ACTION_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNKNOWN_SELECTOR);
     Ok(())
 }
 
@@ -163,13 +160,13 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // TransferOwnership selector (0) but only one storage item instead of the expected three
-    let note = malformed_owner_action_note(owner, vec![Felt::from(0u32)], &mut rng)?;
+    let note = malformed_owner_config_note(owner, vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
     Ok(())
 }
