@@ -37,7 +37,7 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy con
 #!
 #! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
 #! script asserts the consuming account matches that target before doing anything else, so the note
-#! cannot be consumed (and burned) by any other account that happens to accept its sender.
+#! cannot be consumed by any other account that happens to accept its sender.
 #!
 #! Authorization is enforced by the called `set_note_fee` procedure via the account-wide
 #! `Authority` component, which resolves the note sender against the configured owner or role; this
@@ -66,7 +66,7 @@ pub proc main
     # => [pad(16)]
 
     # assert the consuming account is the account the note is targeted at, so it cannot be consumed
-    # and burned by an unrelated account (the note's `set_note_fee` call only checks the sender)
+    # and by an unrelated account (the note's `set_note_fee` call only checks the sender)
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
     # => [pad(16)]

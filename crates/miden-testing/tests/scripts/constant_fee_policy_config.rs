@@ -176,10 +176,10 @@ async fn config_note_with_wrong_storage_item_count_is_rejected(
     Ok(())
 }
 
-/// A config note targeted at one account cannot be consumed (and burned) by a different account:
-/// the script's `NetworkAccountTarget` check rejects it before `set_note_fee` runs, even though the
-/// consuming account allowlists the note's root and its `Authority` would accept the sender. This
-/// prevents a third party from hijacking a public config note away from its intended account.
+/// A config note targeted at one account cannot be consumed by a different account: the script's
+/// `NetworkAccountTarget` check rejects it before `set_note_fee` runs, even though the consuming
+/// account allowlists the note's root and its `Authority` would accept the sender. This prevents a
+/// third party from hijacking a public config note away from its intended account.
 #[tokio::test]
 async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
     let owner = owner_id();
