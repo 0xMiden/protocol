@@ -1,10 +1,10 @@
-//! Tests for the `FaucetPolicyAction` note, which switches a faucet's active `TokenPolicyManager`
+//! Tests for the `FaucetPolicyConfig` note, which switches a faucet's active `TokenPolicyManager`
 //! policy (mint / burn / send / receive) to an allowed alternative.
 //!
 //! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
 //! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in selector and
-//! call target, which are covered by the `faucet_policy_action` unit storage tests; there is no
+//! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
 //! built-in alternative `TransferPolicy` to switch to without bespoke policy setup.
 
 extern crate alloc;
@@ -26,10 +26,10 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::errors::standards::{
-    ERR_FAUCET_POLICY_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_FAUCET_POLICY_ACTION_UNKNOWN_SELECTOR,
+    ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{FaucetPolicyAction, FaucetPolicyActionNote};
+use miden_standards::note::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -84,32 +84,32 @@ fn active_burn_policy_root(account: &Account) -> anyhow::Result<Word> {
     Ok(account.storage().get_item(TokenPolicyManager::active_burn_policy_slot())?)
 }
 
-/// Builds a [`FaucetPolicyActionNote`] for `action` sent by `sender` and targeting `account`.
-fn faucet_policy_action_note(
+/// Builds a [`FaucetPolicyConfigNote`] for `config` sent by `sender` and targeting `account`.
+fn faucet_policy_config_note(
     sender: AccountId,
     account: AccountId,
-    action: FaucetPolicyAction,
+    config: FaucetPolicyConfig,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
-    let note = FaucetPolicyActionNote::builder()
+    let note = FaucetPolicyConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .generate_serial_number(rng)
         .build()?
         .into();
     Ok(note)
 }
 
-/// Builds a note carrying the FaucetPolicyAction script with hand-crafted storage, bypassing the
+/// Builds a note carrying the FaucetPolicyConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
-fn malformed_faucet_policy_action_note(
+fn malformed_faucet_policy_config_note(
     sender: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
-        .script(FaucetPolicyActionNote::script())
+        .script(FaucetPolicyConfigNote::script())
         .note_storage(storage)?
         .build()?;
     Ok(note)
@@ -149,10 +149,10 @@ async fn set_mint_policy_dispatch() -> anyhow::Result<()> {
     let owner_only_root = MintPolicy::owner_only().root();
     assert_ne!(active_mint_policy_root(&faucet)?, owner_only_root.as_word());
 
-    let note = faucet_policy_action_note(
+    let note = faucet_policy_config_note(
         owner,
         faucet.id(),
-        FaucetPolicyAction::SetMintPolicy { policy_root: owner_only_root },
+        FaucetPolicyConfig::SetMintPolicy { policy_root: owner_only_root },
         &mut rng,
     )?;
     let updated = execute_note_and_apply(&mock_chain, &faucet, &note).await?;
@@ -175,10 +175,10 @@ async fn set_burn_policy_dispatch() -> anyhow::Result<()> {
     let owner_only_root = BurnPolicy::owner_only().root();
     assert_ne!(active_burn_policy_root(&faucet)?, owner_only_root.as_word());
 
-    let note = faucet_policy_action_note(
+    let note = faucet_policy_config_note(
         owner,
         faucet.id(),
-        FaucetPolicyAction::SetBurnPolicy { policy_root: owner_only_root },
+        FaucetPolicyConfig::SetBurnPolicy { policy_root: owner_only_root },
         &mut rng,
     )?;
     let updated = execute_note_and_apply(&mock_chain, &faucet, &note).await?;
@@ -199,14 +199,14 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
 
     // selector 99 with a root-sized payload; 99 is not a known action
     let storage = vec![Felt::from(99u32), Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO];
-    let note = malformed_faucet_policy_action_note(owner, storage, &mut rng)?;
+    let note = malformed_faucet_policy_config_note(owner, storage, &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_ACTION_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR);
     Ok(())
 }
 
@@ -221,7 +221,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // SetMintPolicy selector (0) but only one storage item instead of the expected five
-    let note = malformed_faucet_policy_action_note(owner, vec![Felt::from(0u32)], &mut rng)?;
+    let note = malformed_faucet_policy_config_note(owner, vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)
@@ -230,7 +230,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 
     assert_transaction_executor_error!(
         result,
-        ERR_FAUCET_POLICY_ACTION_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
     Ok(())
 }

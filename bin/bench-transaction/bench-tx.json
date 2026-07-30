@@ -549,7 +549,7 @@
       }
     }
   },
-  "consume FAUCET_POLICY_ACTION note (network account)": {
+  "consume FAUCET_POLICY_CONFIG note (network account)": {
     "prologue": 5306,
     "notes_processing": 4443,
     "note_execution": {
@@ -621,7 +621,7 @@
       }
     }
   },
-  "consume PAUSE_ACTION note (network account)": {
+  "consume PAUSE_CONFIG note (network account)": {
     "prologue": 3233,
     "notes_processing": 1608,
     "note_execution": {
@@ -645,7 +645,7 @@
       }
     }
   },
-  "consume OWNER_ACTION note (network account)": {
+  "consume OWNER_CONFIG note (network account)": {
     "prologue": 3092,
     "notes_processing": 1637,
     "note_execution": {
@@ -669,7 +669,7 @@
       }
     }
   },
-  "consume RBAC_ACTION note (network account)": {
+  "consume RBAC_CONFIG note (network account)": {
     "prologue": 3271,
     "notes_processing": 3899,
     "note_execution": {

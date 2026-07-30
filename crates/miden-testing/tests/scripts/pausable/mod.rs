@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+mod config;
+
 use alloc::collections::BTreeMap;
 
 use miden_processor::crypto::random::RandomCoin;

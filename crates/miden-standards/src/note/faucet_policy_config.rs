@@ -21,29 +21,29 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::note::costs::{FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::costs::{FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the FAUCET_POLICY_ACTION note script procedure in the standards library.
-const FAUCET_POLICY_ACTION_SCRIPT_PATH: &str =
-    "::miden::standards::notes::faucet_policy_action::main";
+/// Path to the FAUCET_POLICY_CONFIG note script procedure in the standards library.
+const FAUCET_POLICY_CONFIG_SCRIPT_PATH: &str =
+    "::miden::standards::notes::faucet_policy_config::main";
 
-// Initialize the FAUCET_POLICY_ACTION note script only once.
-static FAUCET_POLICY_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the FAUCET_POLICY_CONFIG note script only once.
+static FAUCET_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(FAUCET_POLICY_ACTION_SCRIPT_PATH);
+    let path = Path::new(FAUCET_POLICY_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains FAUCET_POLICY_ACTION note script procedure")
+        .expect("Standards library contains FAUCET_POLICY_CONFIG note script procedure")
 });
 
-// FAUCET POLICY ACTION
+// FAUCET POLICY CONFIG
 // ================================================================================================
 
 /// A policy-switch action of the
 /// [`TokenPolicyManager`](crate::account::policies::TokenPolicyManager) component that a
-/// [`FaucetPolicyActionNote`] triggers on the faucet that consumes it.
+/// [`FaucetPolicyConfigNote`] triggers on the faucet that consumes it.
 ///
 /// Each variant switches the active policy of one kind to `policy_root`, which must be a root that
 /// the manager registered as an allowed alternative for that kind (otherwise the corresponding
@@ -55,7 +55,7 @@ static FAUCET_POLICY_ACTION_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// is the note sender: the consuming faucet's `TokenPolicyManager` procedures authorize the sender
 /// through the account-wide `Authority` component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FaucetPolicyAction {
+pub enum FaucetPolicyConfig {
     /// Switch the active mint policy to `policy_root`.
     SetMintPolicy { policy_root: AccountProcedureRoot },
     /// Switch the active burn policy to `policy_root`.
@@ -66,12 +66,12 @@ pub enum FaucetPolicyAction {
     SetReceivePolicy { policy_root: AccountProcedureRoot },
 }
 
-impl FaucetPolicyAction {
+impl FaucetPolicyConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
-    // Action selectors stored in the first storage item. Keep in sync with
-    // `faucet_policy_action.masm`.
+    // Config note selectors stored in the first storage item. Keep in sync with
+    // `faucet_policy_config.masm`.
     const SELECTOR_SET_MINT_POLICY: u8 = 0;
     const SELECTOR_SET_BURN_POLICY: u8 = 1;
     const SELECTOR_SET_SEND_POLICY: u8 = 2;
@@ -80,16 +80,16 @@ impl FaucetPolicyAction {
     /// Returns the selector and policy root of this action.
     fn parts(self) -> (u8, AccountProcedureRoot) {
         match self {
-            FaucetPolicyAction::SetMintPolicy { policy_root } => {
+            FaucetPolicyConfig::SetMintPolicy { policy_root } => {
                 (Self::SELECTOR_SET_MINT_POLICY, policy_root)
             },
-            FaucetPolicyAction::SetBurnPolicy { policy_root } => {
+            FaucetPolicyConfig::SetBurnPolicy { policy_root } => {
                 (Self::SELECTOR_SET_BURN_POLICY, policy_root)
             },
-            FaucetPolicyAction::SetSendPolicy { policy_root } => {
+            FaucetPolicyConfig::SetSendPolicy { policy_root } => {
                 (Self::SELECTOR_SET_SEND_POLICY, policy_root)
             },
-            FaucetPolicyAction::SetReceivePolicy { policy_root } => {
+            FaucetPolicyConfig::SetReceivePolicy { policy_root } => {
                 (Self::SELECTOR_SET_RECEIVE_POLICY, policy_root)
             },
         }
@@ -98,24 +98,24 @@ impl FaucetPolicyAction {
     /// Returns the note storage values encoding this action, laid out as `[selector, POLICY_ROOT]`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, policy_root) = self.parts();
-        let mut values = Vec::with_capacity(FaucetPolicyActionNote::NUM_STORAGE_ITEMS);
+        let mut values = Vec::with_capacity(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
         values.push(Felt::from(selector));
         values.extend_from_slice(policy_root.as_word().as_elements());
         values
     }
 }
 
-impl From<FaucetPolicyAction> for NoteStorage {
-    fn from(action: FaucetPolicyAction) -> Self {
-        NoteStorage::new(action.to_storage_values())
+impl From<FaucetPolicyConfig> for NoteStorage {
+    fn from(config: FaucetPolicyConfig) -> Self {
+        NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// FAUCET POLICY ACTION NOTE
+// FAUCET POLICY CONFIG NOTE
 // ================================================================================================
 
-/// A FaucetPolicyAction note: triggers a
+/// A FaucetPolicyConfig note: triggers a
 /// [`TokenPolicyManager`](crate::account::policies::TokenPolicyManager) policy switch on the
 /// faucet that consumes it.
 ///
@@ -130,20 +130,20 @@ impl From<FaucetPolicyAction> for NoteStorage {
 /// account authorized for the action per the faucet's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
-/// Construct one with the [builder](FaucetPolicyActionNote::builder); convert it into a protocol
+/// Construct one with the [builder](FaucetPolicyConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct FaucetPolicyActionNote {
+pub struct FaucetPolicyConfigNote {
     sender: AccountId,
     account: AccountId,
-    action: FaucetPolicyAction,
+    config: FaucetPolicyConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl FaucetPolicyActionNote {
-    /// Builds a new [`FaucetPolicyActionNote`] that triggers `action` on `account`.
+impl FaucetPolicyConfigNote {
+    /// Builds a new [`FaucetPolicyConfigNote`] that applies `config` to `account`.
     ///
     /// # Errors
     ///
@@ -154,7 +154,7 @@ impl FaucetPolicyActionNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
-        action: FaucetPolicyAction,
+        config: FaucetPolicyConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -162,31 +162,31 @@ impl FaucetPolicyActionNote {
         Ok(Self {
             sender,
             account,
-            action,
+            config,
             serial_number,
             attachments,
         })
     }
 }
 
-impl FaucetPolicyActionNote {
+impl FaucetPolicyConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a FaucetPolicyAction note: a selector plus the policy root word.
+    /// Number of storage items of a FaucetPolicyConfig note: a selector plus the policy root word.
     pub const NUM_STORAGE_ITEMS: usize = 5;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the FaucetPolicyAction note.
+    /// Returns the script of the FaucetPolicyConfig note.
     pub fn script() -> NoteScript {
-        FAUCET_POLICY_ACTION_SCRIPT.clone()
+        FAUCET_POLICY_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the FaucetPolicyAction note script root.
+    /// Returns the FaucetPolicyConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        FAUCET_POLICY_ACTION_SCRIPT.root()
+        FAUCET_POLICY_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -200,8 +200,8 @@ impl FaucetPolicyActionNote {
     }
 
     /// Returns the policy-switch action carried by the note.
-    pub fn action(&self) -> FaucetPolicyAction {
-        self.action
+    pub fn config(&self) -> FaucetPolicyConfig {
+        self.config
     }
 
     /// Returns the note's serial number.
@@ -218,7 +218,7 @@ impl FaucetPolicyActionNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: faucet_policy_action_note_builder::State> FaucetPolicyActionNoteBuilder<S> {
+impl<S: faucet_policy_config_note_builder::State> FaucetPolicyConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -235,15 +235,15 @@ impl<S: faucet_policy_action_note_builder::State> FaucetPolicyActionNoteBuilder<
     }
 }
 
-impl<S: faucet_policy_action_note_builder::State> FaucetPolicyActionNoteBuilder<S>
+impl<S: faucet_policy_config_note_builder::State> FaucetPolicyConfigNoteBuilder<S>
 where
-    S::SerialNumber: faucet_policy_action_note_builder::IsUnset,
+    S::SerialNumber: faucet_policy_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> FaucetPolicyActionNoteBuilder<faucet_policy_action_note_builder::SetSerialNumber<S>> {
+    ) -> FaucetPolicyConfigNoteBuilder<faucet_policy_config_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -251,16 +251,16 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<FaucetPolicyActionNote> for Note {
-    fn from(note: FaucetPolicyActionNote) -> Self {
-        // FaucetPolicyAction notes carry no assets and are always public for network execution; the
+impl From<FaucetPolicyConfigNote> for Note {
+    fn from(note: FaucetPolicyConfigNote) -> Self {
+        // FaucetPolicyConfig notes carry no assets and are always public for network execution; the
         // action and its policy root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.account));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            FaucetPolicyActionNote::script(),
-            NoteStorage::from(note.action),
+            FaucetPolicyConfigNote::script(),
+            NoteStorage::from(note.config),
         );
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
@@ -270,9 +270,9 @@ impl From<FaucetPolicyActionNote> for Note {
 // NOTE CONSUMPTION COST
 // ================================================================================================
 
-impl NoteConsumptionCost for FaucetPolicyActionNote {
+impl NoteConsumptionCost for FaucetPolicyConfigNote {
     fn consumption_cycles() -> u32 {
-        FAUCET_POLICY_ACTION_CONSUMPTION_CYCLES
+        FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES
     }
 }
 
@@ -298,15 +298,15 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed faucet.
     #[test]
-    fn builder_builds_faucet_policy_action_note() {
+    fn builder_builds_faucet_policy_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let faucet = account_id(1);
         let sender = account_id(2);
 
-        let note = FaucetPolicyActionNote::builder()
+        let note = FaucetPolicyConfigNote::builder()
             .sender(sender)
             .account(faucet)
-            .action(FaucetPolicyAction::SetMintPolicy { policy_root: policy_root(10) })
+            .config(FaucetPolicyConfig::SetMintPolicy { policy_root: policy_root(10) })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -327,20 +327,20 @@ mod tests {
 
         let cases = [
             (
-                FaucetPolicyAction::SetMintPolicy { policy_root: root },
-                FaucetPolicyAction::SELECTOR_SET_MINT_POLICY,
+                FaucetPolicyConfig::SetMintPolicy { policy_root: root },
+                FaucetPolicyConfig::SELECTOR_SET_MINT_POLICY,
             ),
             (
-                FaucetPolicyAction::SetBurnPolicy { policy_root: root },
-                FaucetPolicyAction::SELECTOR_SET_BURN_POLICY,
+                FaucetPolicyConfig::SetBurnPolicy { policy_root: root },
+                FaucetPolicyConfig::SELECTOR_SET_BURN_POLICY,
             ),
             (
-                FaucetPolicyAction::SetSendPolicy { policy_root: root },
-                FaucetPolicyAction::SELECTOR_SET_SEND_POLICY,
+                FaucetPolicyConfig::SetSendPolicy { policy_root: root },
+                FaucetPolicyConfig::SELECTOR_SET_SEND_POLICY,
             ),
             (
-                FaucetPolicyAction::SetReceivePolicy { policy_root: root },
-                FaucetPolicyAction::SELECTOR_SET_RECEIVE_POLICY,
+                FaucetPolicyConfig::SetReceivePolicy { policy_root: root },
+                FaucetPolicyConfig::SELECTOR_SET_RECEIVE_POLICY,
             ),
         ];
 
@@ -349,7 +349,7 @@ mod tests {
             let mut expected = alloc::vec![Felt::from(selector)];
             expected.extend_from_slice(root.as_word().as_elements());
             assert_eq!(storage.items(), expected.as_slice());
-            assert_eq!(storage.items().len(), FaucetPolicyActionNote::NUM_STORAGE_ITEMS);
+            assert_eq!(storage.items().len(), FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
         }
     }
 }
