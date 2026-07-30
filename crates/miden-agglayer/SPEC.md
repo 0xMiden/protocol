@@ -246,11 +246,6 @@ bridge-specific consequences are:
 - **Consumption order is not under the operator's control.** The bridge executes without a
   signature gate, so any party chooses which pending note is consumed first; never have an
   `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
-- **`RBAC_CONFIG` notes are not bound to the bridge** (pinned by the
-  `note_targeted_at_another_account_is_consumable_by_bridge` test): a note issued for
-  another account can be consumed by the bridge and vice versa, so a third party able to
-  authorize the note sender on its own RBAC account can consume - and thereby nullify - a
-  pending bridge note. Bridge role holders should not administer other RBAC accounts.
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
@@ -887,7 +882,7 @@ those procedures against the note sender; the script itself performs no target o
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
-| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_CONFIG` script could consume it (see [Section 2.5](#25-administration)) |
+| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_CONFIG` script could consume it |
 
 ### 4.8 BURN (generated)
 
