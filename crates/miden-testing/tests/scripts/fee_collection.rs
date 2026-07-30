@@ -222,11 +222,14 @@ async fn collect_fee_balance(
 }
 
 /// A feature note bound to a sponsorship note that covers its fee is collected: the aggregated fee
-/// equals the sponsored amount, whether the sponsorship covers the fee exactly or with a surplus,
-/// and regardless of whether the sponsorship is consumed before or after the note it pays for.
+/// equals the sponsored amount, whether the sponsorship covers the fee exactly or with a surplus -
+/// including for a 0-priced feature note, which owes nothing yet still has its sponsorship
+/// collected - and regardless of whether the sponsorship is consumed before or after the note it
+/// pays for.
 #[rstest]
 #[tokio::test]
 async fn collects_sponsored_fee_for_a_bound_pair(
+    #[values(0, FEE_AMOUNT)] feature_note_fee: u64,
     #[values(FEE_AMOUNT, FEE_AMOUNT + 250)] sponsored_amount: u64,
     #[values(false, true)] sponsorship_first: bool,
 ) -> anyhow::Result<()> {
@@ -236,7 +239,7 @@ async fn collects_sponsored_fee_for_a_bound_pair(
         feature_notes,
         sponsorship_notes,
     } = build_test(
-        Some(AssetAmount::new(FEE_AMOUNT)?),
+        Some(AssetAmount::new(feature_note_fee)?),
         1,
         vec![(0, fee_asset(sponsored_amount)?)],
     )?;
@@ -290,10 +293,8 @@ async fn multiple_sponsorships_top_up_one_feature_note(
     Ok(())
 }
 
-/// Sponsorships are attributed to the feature note they name. Tests random orders of input notes
-/// through a fixed seed.
-///
-/// Uses four input notes, so the fee table's element count is an exact multiple of the word size.
+/// Sponsorships are attributed to the feature note they name. Tests random orders of five input
+/// notes - two feature notes and three sponsorships - through a fixed seed.
 #[rstest]
 #[tokio::test]
 async fn sponsorships_are_attributed_by_note_id(
@@ -472,7 +473,8 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fees from several feature/sponsorship pairs are aggregated into a single total.
+/// Fees from several feature/sponsorship pairs are aggregated into a single total. Uses four input
+/// notes, so the fee table's element count is an exact multiple of the word size.
 #[tokio::test]
 async fn aggregates_fees_across_pairs() -> anyhow::Result<()> {
     let Test {
