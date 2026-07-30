@@ -37,10 +37,6 @@ use crate::{
 /// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
 /// role member and a single holder per operational role.
 ///
-/// RBAC authorization is note-sender-based, and the mock chain (unlike the transaction kernel in
-/// production, which stamps the sender itself) can synthesize notes with an arbitrary sender, so
-/// in tests the admin does not need to exist in the chain.
-///
 /// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
