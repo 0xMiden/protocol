@@ -102,8 +102,6 @@ const ORIGIN_TOKEN_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 6
 
 const DESTINATION_NETWORK_ID_MEM_ADDR = CLAIM_LEAF_DATA_START_PTR + 7
 
-# The destination address spans offsets 8..13. Its first four felts are word-aligned, so they are
-# addressed as one word and only the fifth needs its own pointer.
 const DESTINATION_ADDRESS_0 = CLAIM_LEAF_DATA_START_PTR + 8
 const DESTINATION_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 12
 
@@ -750,11 +748,9 @@ end
 #!
 #! Invocation: exec
 proc load_destination_address
-    # the fifth felt sits above the word, so load it first
     mem_load.DESTINATION_ADDRESS_4
     # => [address_4]
 
-    # the first four felts are word-aligned, so load them in one go
     padw mem_loadw_le.DESTINATION_ADDRESS_0
     # => [address[5]]
 end

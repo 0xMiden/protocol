@@ -95,9 +95,6 @@ impl FaucetPolicyAction {
     }
 
     /// Returns the note storage values encoding this action, laid out as `[POLICY_ROOT, selector]`.
-    ///
-    /// The policy root comes first so that it is word-aligned once the note script writes the
-    /// storage to memory, letting the script load it with a single `mem_loadw_le`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, policy_root) = self.parts();
         let mut values = Vec::with_capacity(FaucetPolicyActionNote::NUM_STORAGE_ITEMS);
