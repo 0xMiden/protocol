@@ -25,6 +25,8 @@ use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
+use crate::consume_note;
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -412,24 +414,6 @@ fn build_config_note(
         .build()?;
 
     Ok(Note::from(note))
-}
-
-/// Consumes an authenticated note in a transaction against `account_id`, then commits the resulting
-/// transaction and proves a block so the mutation is visible to subsequent transactions.
-async fn consume_note(
-    mock_chain: &mut MockChain,
-    account_id: AccountId,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let executed = mock_chain
-        .build_transaction(account_id)
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
 }
 
 /// The owner can add a note script root after deployment: a note whose root was not allowlisted at

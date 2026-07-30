@@ -24,9 +24,9 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use super::{
     add_faucet_with_owner_blocklist_transfer,
     add_rbac_faucet_with_blocklist,
-    consume_admin_note,
     dummy_owner,
 };
+use crate::consume_note;
 use crate::scripts::rbac::{build_grant_role_note, role, test_account_id};
 
 // HELPERS
@@ -109,10 +109,10 @@ async fn block_and_unblock() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
     assert!(!is_blocked(&mock_chain, faucet.id(), target_account.id())?);
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block).await?;
     assert!(is_blocked(&mock_chain, faucet.id(), target_account.id())?);
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &unblock).await?;
+    consume_note(&mut mock_chain, faucet.id(), &unblock).await?;
     assert!(!is_blocked(&mock_chain, faucet.id(), target_account.id())?);
 
     Ok(())
@@ -142,8 +142,8 @@ async fn rbac_blocklister_can_block() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &grant).await?;
-    consume_admin_note(&mut mock_chain, faucet.id(), &block).await?;
+    consume_note(&mut mock_chain, faucet.id(), &grant).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block).await?;
 
     assert!(is_blocked(&mock_chain, faucet.id(), target_account.id())?);
 
