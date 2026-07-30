@@ -1,4 +1,5 @@
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
@@ -22,7 +23,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 
 use crate::StandardsLib;
-use crate::note::{P2idNoteStorage, StandardNoteAttachment};
+use crate::note::costs::{NoteConsumptionCost, PSWAP_CONSUMPTION_CYCLES};
+use crate::note::{P2idNote, P2idNoteStorage, StandardNoteAttachment};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -916,6 +918,21 @@ impl TryFrom<&Note> for PswapNote {
             .offered_asset(offered_asset)
             .maybe_attachment(attachment)
             .build()
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for PswapNote {
+    fn consumption_cycles() -> u32 {
+        PSWAP_CONSUMPTION_CYCLES
+    }
+
+    /// Filling a PSWAP note creates the P2ID payback note for the swap creator and, on a
+    /// partial fill, the residual PSWAP note carrying the unfilled remainder.
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![P2idNote::script_root(), PswapNote::script_root()]
     }
 }
 

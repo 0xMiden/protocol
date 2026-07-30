@@ -1,7 +1,5 @@
 extern crate alloc;
 
-use alloc::sync::Arc;
-
 use miden_agglayer::agglayer_package;
 pub use miden_agglayer::testing::{
     ClaimDataSource,
@@ -13,7 +11,6 @@ pub use miden_agglayer::testing::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
     create_existing_bridge_account_with_roles,
 };
-use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -25,9 +22,9 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::ProtocolLib;
-use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::StandardsLib;
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -75,6 +72,9 @@ pub async fn execute_program_with_default_host(
     let protocol_lib = ProtocolLib::default();
     host.load_library(protocol_lib.mast_forest()).unwrap();
 
+    let standards_lib = StandardsLib::default();
+    host.load_library(standards_lib.mast_forest()).unwrap();
+
     let agglayer_package = agglayer_package();
     host.load_library(agglayer_package.mast_forest()).unwrap();
 
@@ -85,35 +85,4 @@ pub async fn execute_program_with_default_host(
         .with_advice(advice_inputs)
         .map_err(ExecutionError::advice_error_no_context)?;
     processor.execute(&program, &mut host).await
-}
-
-/// Execute a MASM script with the default host
-pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
-    let agglayer_package = agglayer_package();
-
-    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
-        .unwrap()
-        .with_package(Arc::new(agglayer_package), Linkage::Dynamic)
-        .unwrap()
-        .assemble_program("agglayer-test-script", script_code)
-        .unwrap()
-        .try_into_program()
-        .unwrap();
-
-    execute_program_with_default_host(program, None).await
-}
-
-/// Helper to assert execution fails with a specific MASM assertion error.
-pub async fn assert_execution_fails_with(script_code: &str, expected_error: &MasmError) {
-    let result = execute_masm_script(script_code).await;
-    assert!(result.is_err(), "Expected execution to fail but it succeeded");
-
-    let error = result.unwrap_err();
-    assert!(
-        expected_error.matches_execution_error(&error),
-        "Expected error {}, got: {}",
-        expected_error,
-        error
-    );
 }

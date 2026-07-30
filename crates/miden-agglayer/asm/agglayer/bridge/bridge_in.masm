@@ -1,9 +1,9 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
-use agglayer::common::utils
-use agglayer::common::asset_conversion
-use agglayer::common::eth_address
+use miden::standards::utils
+use miden::standards::assets::asset_amount
+use miden::standards::interop::eth
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
@@ -184,7 +184,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.load_destination_address
-    exec.eth_address::to_account_id
+    exec.eth::to_account_id
     loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [pad(16)]
 
@@ -448,7 +448,7 @@ end
 #! This procedure:
 #! 1. Reads the scale factor from the bridge's faucet_metadata_map.
 #! 2. Loads the raw U256 amount from the leaf data in memory.
-#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
+#! 3. Calls `verify_u256_to_asset_amount_conversion` to assert that
 #!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
@@ -475,7 +475,7 @@ proc verify_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
     # Step 4: Verify that y = floor(x / 10^scale)
-    exec.asset_conversion::verify_u256_to_native_amount_conversion
+    exec.asset_amount::verify_u256_to_asset_amount_conversion
     # => []
 end
 

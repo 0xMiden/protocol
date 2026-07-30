@@ -20,7 +20,7 @@ use crate::ExecError;
 // ================================================================================================
 
 /// Helper for executing arbitrary code within arbitrary hosts.
-pub(crate) struct CodeExecutor<H> {
+pub struct CodeExecutor<H> {
     host: H,
     stack_inputs: Option<StackInputs>,
     advice_inputs: AdviceInputs,
@@ -55,7 +55,8 @@ impl<H: Host> CodeExecutor<H> {
         self
     }
 
-    /// Compiles and runs the desired code in the host and returns the [`Process`] state.
+    /// Compiles and runs the desired code in the host and returns the resulting
+    /// [`ExecutionOutput`].
     pub async fn run(self, code: &str) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
         use alloc::sync::Arc;
@@ -76,7 +77,7 @@ impl<H: Host> CodeExecutor<H> {
         self.execute_package(package).await
     }
 
-    /// Executes the provided executable [`Package`] and returns the [`Process`] state.
+    /// Executes the provided executable [`Package`] and returns the resulting [`ExecutionOutput`].
     ///
     /// Package-owned debug information is used when present.
     pub async fn execute_package(

@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 #[cfg(test)]
-use miden_processor::ExecutionOutput;
+use miden_processor::{ExecutionOutput, Felt};
 use miden_processor::{FutureMaybeSend, LoadedMastForest, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
@@ -135,7 +135,7 @@ impl MockTransaction {
     ///
     /// - If the provided `code` is not a valid program.
     pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true).await
+        self.execute_code_inner(code, true, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
@@ -144,13 +144,24 @@ impl MockTransaction {
         &self,
         code: &str,
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, false).await
+        self.execute_code_inner(code, false, None).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], but overrides the host response to an input-note
+    /// index request with `[note_idx, is_found]`.
+    pub(crate) async fn execute_code_with_input_note_index_response(
+        &self,
+        code: &str,
+        response: [Felt; 2],
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true, Some(response)).await
     }
 
     async fn execute_code_inner(
         &self,
         code: &str,
         is_lazy_loading_enabled: bool,
+        input_note_index_response: Option<[Felt; 2]>,
     ) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
 
@@ -238,6 +249,9 @@ impl MockTransaction {
         let mut mock_host = MockHost::new(exec_host);
         if is_lazy_loading_enabled {
             mock_host.enable_lazy_loading()
+        }
+        if let Some(response) = input_note_index_response {
+            mock_host.set_input_note_index_response(response);
         }
 
         CodeExecutor::new(mock_host)
