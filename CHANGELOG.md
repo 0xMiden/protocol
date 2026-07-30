@@ -4,11 +4,18 @@
 
 ### Features
 
+- Added `miden::standards::interop::eth::bytes32_to_account_id` and the `TryFrom<[u8; 32]>` impl for `EthAddress` for converting bytes32-embedded Ethereum-format addresses ([#3426](https://github.com/0xMiden/protocol/pull/3426)).
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- [BREAKING] Added `NetworkNotePricer` in `miden-tx` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
+- Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it ([#3438](https://github.com/0xMiden/protocol/pull/3438)).
+
+### Features
+
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 
 ### Changes
 
+- [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).
 - [BREAKING] Reduced the maximum number of assets a note can carry from 64 to 16 ([#3381](https://github.com/0xMiden/protocol/issues/3381)).
 Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide an input-note index hint. Successful lookups authenticate it against the `NoteId` cached by the transaction prologue, while reported misses are validated by a full scan ([#3424](https://github.com/0xMiden/protocol/pull/3424)).
 - [BREAKING] Transaction summaries now bind the reference block, expiration delta, and seven user parameters; the Rust and MASM APIs changed accordingly ([#3210](https://github.com/0xMiden/protocol/issues/3210)).

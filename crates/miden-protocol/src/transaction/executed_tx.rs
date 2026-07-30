@@ -215,13 +215,6 @@ impl TransactionMeasurements {
     pub fn total_cycles(&self) -> usize {
         self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
     }
-
-    /// Returns the trace length of the transaction which is the next power of 2 of the total cycles
-    /// spent executing the transaction.
-    pub fn trace_length(&self) -> usize {
-        let total_cycles = self.total_cycles();
-        total_cycles.next_power_of_two()
-    }
 }
 
 impl Serializable for TransactionMeasurements {

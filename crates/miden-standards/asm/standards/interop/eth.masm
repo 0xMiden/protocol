@@ -1,28 +1,23 @@
-use agglayer::common::utils
+use miden::standards::utils
 use miden::protocol::account_id
 
 # TYPE ALIASES
 # =================================================================================================
 
-pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
+pub type EthereumAddress = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
+pub type EthereumBytes32 = struct { a: felt, b: felt, c: felt, d: felt, e: felt, f: felt, g: felt, h: felt }
 
 # ERRORS
 # =================================================================================================
 
 const ERR_NOT_U32="address limb is not u32"
 const ERR_MSB_NONZERO="most-significant 4 bytes must be zero for AccountId"
-const ERR_FELT_OUT_OF_FIELD="combined u64 doesn't fit in field"
-
-# CONSTANTS
-# =================================================================================================
-
-const U32_MAX=4294967295
-const TWO_POW_32=4294967296
+const ERR_BYTES32_PADDING_NONZERO="leading 12 bytes must be zero for a bytes32-embedded address"
 
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Converts an Ethereum address format (address[5] type) back into an AccountId [prefix, suffix] type.
+#! Converts an Ethereum address format (address[5] type) back into an AccountId [suffix, prefix] type.
 #!
 #! The Ethereum address format is represented as 5 u32 limbs (20 bytes total) in *big-endian limb order*
 #! (matching Solidity ABI encoding). Each limb encodes its 4 bytes in little-endian order:
@@ -83,17 +78,53 @@ pub proc to_account_id
     # => [suffix, prefix]
 end
 
+#! Converts a bytes32-embedded Ethereum address format back into an AccountId [suffix, prefix] type.
+#!
+#! In EVM ABI encoding, a bytes32-embedded address is the 20-byte Ethereum address format
+#! left-padded to 32 bytes: bytes[0..12] are zero and bytes[12..32] hold the address. The bytes32
+#! is represented as 8 u32 limbs (32 bytes total) in *big-endian limb order* (matching Solidity ABI
+#! encoding). Each limb encodes its 4 bytes in little-endian order:
+#!   limb0 = bytes[0..4]   (padding, must be zero)
+#!   limb1 = bytes[4..8]   (padding, must be zero)
+#!   limb2 = bytes[8..12]  (padding, must be zero)
+#!   limb3..limb7 = bytes[12..32] (the embedded address[5] limbs)
+#!
+#! The three padding limbs are asserted to be zero directly on their raw packed form: a limb
+#! byte-swaps to zero if it is zero, so no byte reordering is needed for the check. The remaining
+#! 5 limbs are exactly the address[5] format (most-significant address limb on top) and are
+#! delegated to to_account_id for the AccountId conversion and validation.
+#!
+#! Inputs:  [limb0, limb1, limb2, limb3, limb4, limb5, limb6, limb7]
+#! Outputs: [suffix, prefix]
+#!
+#! Panics if:
+#! - any of the leading 12 padding bytes (limb0, limb1, limb2) are non-zero.
+#! - to_account_id fails to verify the embedded address.
+#!
+#! Invocation: exec
+pub proc bytes32_to_account_id
+    # the three padding limbs (bytes 0..12) must be 0
+    assertz.err=ERR_BYTES32_PADDING_NONZERO
+    assertz.err=ERR_BYTES32_PADDING_NONZERO
+    assertz.err=ERR_BYTES32_PADDING_NONZERO
+    # => [limb3, limb4, limb5, limb6, limb7]
+
+    # the remaining limbs are the address[5] format expected by to_account_id
+    exec.to_account_id
+    # => [suffix, prefix]
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
 #! Builds a single felt from two u32 limbs (little-endian limb order, little-endian bytes).
-#! Conceptually, this is packing a 64-bit word (lo + (hi << 32)) into a field element.
-#! This proc additionally verifies that the packed value did *not* reduce mod p by round-tripping
-#! through u32split and comparing the limbs.
+#!
+#! The limbs are byte-swapped to big-endian numeric order and merged via
+#! utils::merge_u32_limbs, which verifies the merged value was not reduced mod p.
 #!
 #! Inputs:  [lo, hi]
 #! Outputs: [felt]
-proc build_felt
+pub proc build_felt
     # --- validate u32 limbs ---
     u32assert2.err=ERR_NOT_U32
     # => [lo_be, hi_be]
@@ -105,24 +136,6 @@ proc build_felt
     swap
     # => [lo, hi]
 
-    # keep copies for the overflow check
-    dup.1 dup.1
-    # => [lo_be, hi_be, lo_be, hi_be]
-
-    # felt = (hi * 2^32) + lo
-    swap
-    push.TWO_POW_32 mul
-    add
-    # => [felt, lo_be, hi_be]
-
-    # ensure no reduction mod p happened:
-    # split felt back into (lo, hi) and compare to inputs
-    dup u32split
-    # => [lo2, hi2, felt, lo_be, hi_be]
-
-    movup.3 assert_eq.err=ERR_FELT_OUT_OF_FIELD
-    # => [hi2, felt, hi_be]
-
-    movup.2 assert_eq.err=ERR_FELT_OUT_OF_FIELD
+    exec.utils::merge_u32_limbs
     # => [felt]
 end

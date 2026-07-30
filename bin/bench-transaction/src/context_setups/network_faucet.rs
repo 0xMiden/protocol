@@ -143,7 +143,7 @@ fn minted_asset_witness(faucet: &Account, asset_id: AssetId) -> AdviceInputs {
 /// Returns the transaction context for a network fungible faucet consuming a MINT note.
 ///
 /// The owner-sent MINT note instructs the fee-funded faucet to mint [`MINT_AMOUNT`] tokens into a
-/// private P2ID output note addressed to an existing wallet.
+/// public P2ID output note addressed to an existing wallet.
 pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
@@ -158,16 +158,16 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
             .sender(faucet.id())
             .target(target_account.id())
             .asset(mint_asset)
-            .note_type(NoteType::Private)
+            .note_type(NoteType::Public)
             .serial_number(builder.rng_mut().draw_word())
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_fungible_private(
-        p2id_output_note.recipient().digest(),
+    let mint_storage = MintNoteStorage::new_fungible_public(
+        p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),
-    );
+    )?;
     let mint_note: Note = MintNote::builder()
         .sender(owner_account_id)
         .mint_storage(mint_storage)
@@ -187,7 +187,7 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
 
 /// Returns the transaction context for a network non-fungible faucet consuming a MINT note.
 ///
-/// The owner-sent MINT note instructs the fee-funded faucet to mint an NFT into a private P2ID
+/// The owner-sent MINT note instructs the fee-funded faucet to mint an NFT into a public P2ID
 /// output note addressed to an existing wallet.
 pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
@@ -207,16 +207,16 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
             .sender(faucet.id())
             .target(target_account.id())
             .asset(mint_asset)
-            .note_type(NoteType::Private)
+            .note_type(NoteType::Public)
             .serial_number(builder.rng_mut().draw_word())
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_non_fungible_private(
-        p2id_output_note.recipient().digest(),
+    let mint_storage = MintNoteStorage::new_non_fungible_public(
+        p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),
-    );
+    )?;
     let mint_note: Note = MintNote::builder()
         .sender(owner_account_id)
         .mint_storage(mint_storage)

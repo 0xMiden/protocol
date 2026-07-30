@@ -8,8 +8,10 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_utils_sync::LazyLock;
 
+use crate::costs::REMOVE_GER_CONSUMPTION_CYCLES;
 use crate::ger_note::create_ger_note;
 use crate::{ExitRoot, note_script};
 
@@ -74,5 +76,14 @@ impl RemoveGerNote {
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         create_ger_note(ger, sender_account_id, target_account_id, Self::script(), rng)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for RemoveGerNote {
+    fn consumption_cycles() -> u32 {
+        REMOVE_GER_CONSUMPTION_CYCLES
     }
 }
