@@ -385,6 +385,8 @@ mod tests {
     fn doc_subjects_use_the_checked_in_articles() {
         let subjects: BTreeMap<&str, String> =
             PricedNote::all().iter().map(|note| (note.name(), note.doc_subject())).collect();
+        assert_eq!(subjects["ALLOWLIST_CONFIG"], "an ALLOWLIST_CONFIG");
+        assert_eq!(subjects["BLOCKLIST_CONFIG"], "a BLOCKLIST_CONFIG");
         assert_eq!(subjects["OWNER_ACTION"], "an OWNER_ACTION");
         assert_eq!(subjects["UPDATE_GER"], "an UPDATE_GER");
         assert_eq!(subjects["RBAC_ACTION"], "an RBAC_ACTION");
