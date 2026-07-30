@@ -178,6 +178,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
             network_action::tx_consume_faucet_policy_action_note_network()
         },
+        ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+            network_action::tx_consume_allowlist_config_note_network()
+        },
         ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
             network_action::tx_consume_blocklist_config_note_network()
         },
