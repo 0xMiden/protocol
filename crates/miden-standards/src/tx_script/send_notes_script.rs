@@ -48,8 +48,8 @@ static SEND_NOTES_NON_FUNGIBLE_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> =
 /// Each variant wraps the dedicated type for one canonical script. Use [`Self::new`] to let the
 /// account's interface decide, or construct a concrete type directly when the kind is known.
 ///
-/// When the account exposes both [`BasicWallet`] and [`FungibleFaucet`] procedures, the faucet
-/// script is preferred.
+/// When the account exposes both [`BasicWallet`] and faucet ([`FungibleFaucet`] or
+/// [`NonFungibleFaucet`]) procedures, the faucet script is preferred.
 ///
 /// # Example
 ///
@@ -107,8 +107,8 @@ impl SendNotesTransactionScript {
     ///
     /// # Errors
     ///
-    /// Returns an error if the interface exposes neither the wallet nor the fungible faucet
-    /// procedures, or if the notes fail the selected script's validation.
+    /// Returns an error if the interface exposes none of the wallet, fungible faucet or
+    /// non-fungible faucet procedures, or if the notes fail the selected script's validation.
     pub fn new(
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
@@ -121,8 +121,7 @@ impl SendNotesTransactionScript {
     ///
     /// The delta specifies how close to the transaction's reference block the transaction must be
     /// included into the chain. For example, with a reference block of 100 and a delta of 10, the
-    /// transaction must be included by block 110. The delta is part of the payload, so it does not
-    /// affect the script root.
+    /// transaction must be included by block 110.
     ///
     /// # Errors
     ///

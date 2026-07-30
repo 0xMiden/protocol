@@ -26,9 +26,9 @@ use miden::protocol::tx
 # CONSTANTS
 # =================================================================================================
 
-# The number of field elements in a word. Mirrors `miden::protocol::constants::WORD_NUM_ELEMENTS`,
-# which cannot be used here: the assembler resolves imported constants only in instruction
-# immediates, so the offset chain below cannot be derived from one.
+# The number of field elements in a word. Replace with
+# `miden::protocol::constants::WORD_NUM_ELEMENTS`, once
+# https://github.com/0xMiden/miden-vm/issues/3429 is fixed.
 pub const WORD_NUM_ELEMENTS = 4
 
 # Memory addresses of the payload and of the two header elements it starts with.
