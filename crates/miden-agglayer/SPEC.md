@@ -359,7 +359,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    network ID (read from the `agglayer::bridge::network_id` storage slot) after `swap_u32_bytes`
    on the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
 2. Extracts the destination account ID from the leaf data's destination address
-   (via `eth_address::to_account_id`).
+   (via `eth::to_account_id`).
 3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
    value from leaf data, computes the GER from mainnet + rollup exit roots, asserts
    GER is known, processes global index (mainnet or rollup), verifies Merkle proof.
@@ -378,7 +378,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (read from the bridge's `faucet_metadata_map` via
    `bridge_config::get_faucet_scale`), using
-   `asset_conversion::verify_u256_to_native_amount_conversion`.
+   `miden::standards::assets::asset_amount::verify_u256_to_asset_amount_conversion`.
 8. If the faucet is not native, builds a MINT output note targeting the faucet (see
    [Section 4.9](#49-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
    asset from the bridge's vault and emits a `P2ID` note directly to the recipient
@@ -840,17 +840,21 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 |-------|-------|
 | `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
-| `storage` | None (0 felts) |
+| `storage` | Asset to burn (8 felts) |
 
-**Storage layout (0 felts):**
+**Storage layout (8 felts):**
 
-No fields -- this is a standard burn note with no custom data.
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0-3 | `ASSET_ID` | Identifier of the asset to burn |
+| 4-7 | `ASSET_VALUE` | Value of the asset to burn |
 
 **Consumption:**
 
-The standard BURN script calls `faucets::burn` on the consuming faucet account. This
-validates that the note contains exactly one fungible asset issued by that faucet and
-decreases the faucet's total token supply by the burned amount.
+The standard BURN script validates that the note carries exactly one asset matching the asset in
+storage, then passes the stored asset to the faucet's `receive_and_burn` procedure. The faucet
+validates that the fungible asset was issued by it and decreases its total token supply by the
+burned amount.
 
 #### Permissions
 
@@ -1111,7 +1115,7 @@ extract the recipient's `AccountId` from the embedded Ethereum address and e.g. 
 
 #### 6.4.3 Ethereum Address → `AccountId` (MASM)
 
-`eth_address::to_account_id` — Module: `agglayer::common::eth_address`
+`eth::to_account_id` — Module: `miden::standards::interop::eth`
 
 This is the in-VM counterpart of the Rust `to_account_id`, invoked during CLAIM note
 consumption to decode the recipient's address from the leaf data, and eventually for building the P2ID note for the recipient.

@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-fees-policies-constant-fee-manager"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::fees::policies::constant_fee_manager"
+path      = "constant_fee_manager.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

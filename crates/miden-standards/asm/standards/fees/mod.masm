@@ -22,7 +22,6 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
 use miden::standards::note
-use miden::standards::note::note_id
 use miden::standards::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS} from miden::standards::notes::fee_sponsorship
@@ -374,7 +373,7 @@ proc assert_neighbor_sponsors
     # => [SPONSORED_FEATURE_NOTE_ID, neighbor_note_index, note_index, num_input_notes]
 
     # assert the neighboring sponsorship note pays for the feature note at note_index
-    dup.5 exec.note_id::compute_input_note_id exec.word::eq
+    dup.5 exec.input_note::get_note_id exec.word::eq
     assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE
     # => [neighbor_note_index, note_index, num_input_notes]
 
@@ -662,7 +661,7 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     # => []
 
     # derive a unique serial for the sponsorship note from the feature note ID
-    loc_load.CREATE_NOTE_IDX_LOC exec.note_id::compute_output_note_id
+    loc_load.CREATE_NOTE_IDX_LOC exec.output_note::compute_note_id
     # => [FEATURE_NOTE_ID]
 
     loc_storew_le.CREATE_FEATURE_NOTE_ID_LOC

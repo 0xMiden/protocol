@@ -6,7 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use {ONE_WORD} from miden::standards::utils
-use agglayer::common::utils
+use miden::standards::utils
 
 # ERRORS
 # =================================================================================================

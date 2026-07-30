@@ -14,6 +14,7 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
@@ -23,6 +24,8 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
+
+use crate::consume_note;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -395,40 +398,22 @@ fn build_owner_controlled_account(
         .build_existing()?)
 }
 
-/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that
-/// triggers `action`. `serial_seed` distinguishes otherwise-identical notes.
-fn build_action_note(
+/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that applies
+/// `config`. `serial_seed` distinguishes otherwise-identical notes.
+fn build_config_note(
     sender: AccountId,
     account: AccountId,
-    action: NetworkAccountConfig,
+    config: NetworkAccountConfig,
     serial_seed: u32,
 ) -> anyhow::Result<Note> {
     let note = NetworkAccountConfigNote::builder()
         .sender(sender)
         .account(account)
-        .action(action)
+        .config(config)
         .serial_number(Word::from([serial_seed, 0, 0, 0]))
         .build()?;
 
     Ok(Note::from(note))
-}
-
-/// Consumes an authenticated note in a transaction against `account_id`, then commits the resulting
-/// transaction and proves a block so the mutation is visible to subsequent transactions.
-async fn consume_note(
-    mock_chain: &mut MockChain,
-    account_id: AccountId,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let executed = mock_chain
-        .build_transaction(account_id)
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
 }
 
 /// The owner can add a note script root after deployment: a note whose root was not allowlisted at
@@ -445,7 +430,7 @@ async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Resul
     // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`, but
     // fee-schedule `new_root` so the note is consumable once it is added to the allowlist.
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![new_root])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -481,7 +466,7 @@ async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let new_root = new_note.script().root();
 
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         stranger,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -518,7 +503,7 @@ async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Re
 
     // Deploy with the target note allowlisted (plus the config note via allowlist management).
     let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::RemoveAllowedNoteScript { script_root: target_root },
@@ -560,7 +545,7 @@ async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyh
     let new_root = new_note.script().root();
 
     let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
@@ -602,7 +587,7 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
 
     // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
     let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner, vec![])?;
-    let admin_note = build_action_note(
+    let admin_note = build_config_note(
         owner,
         account.id(),
         NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
@@ -628,6 +613,86 @@ async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// A network account manages its allowed fee policies through the same config note: the owner sends
+/// an add/remove config note (always allowlisted, and fee-scheduled by
+/// `build_owner_controlled_account`), and the account-exposed `add_allowed_fee_policy` /
+/// `remove_allowed_fee_policy` runs under the owner authority. The target root is a procedure of
+/// the account that is not the active policy, so both actions are permitted (the remove is a
+/// no-op).
+#[rstest]
+#[case::add(NetworkAccountConfig::AddAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
+#[case::remove(NetworkAccountConfig::RemoveAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
+#[tokio::test]
+async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
+    #[case] action: NetworkAccountConfig,
+) -> anyhow::Result<()> {
+    let owner = owner_id();
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    let admin_note = build_config_note(owner, account.id(), action, 6)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The network account consumes the config note; the owner-authorized fee-policy mutator runs to
+    // completion.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    Ok(())
+}
+
+/// A config note is bound to its target account by a `NetworkAccountTarget` attachment, so a decoy
+/// account cannot consume a note meant for another account. The decoy is owned by the note's sender
+/// (so it passes both the note-script allowlist and the owner authority), yet consuming a note
+/// targeted at a different account aborts at the target-account check before any action runs.
+#[tokio::test]
+async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
+    let owner = owner_id();
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    // The decoy account, owned by the same `owner` (so it authorizes the sender's notes) and
+    // allowlisting the config note by default.
+    let decoy = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    // A config note targeted at `target` (not the decoy), sent by `owner`.
+    let admin_note = build_config_note(
+        owner,
+        target,
+        NetworkAccountConfig::AddAllowedFeePolicy {
+            policy_root: AuthNetworkAccount::get_fee_policy_root(),
+        },
+        8,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The decoy consumes the note; the target-account check aborts before any action runs.
+    let result = mock_chain
+        .build_transaction(decoy.id())
+        .authenticated_input_note(admin_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
 
     Ok(())
 }
