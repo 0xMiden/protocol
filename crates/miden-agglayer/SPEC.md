@@ -229,38 +229,28 @@ Authorization is enforced by those procedures against the note sender: a member 
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
 renounce. This makes every role rotatable after account creation, including `ADMIN` itself.
 
-Role management via notes comes with security and operational caveats. The generic hazards
-of the RBAC model and of the `RBAC_CONFIG` note - sender-based authorization and
-permissionless members, exclusive admin delegation, removal of a role's last effective
-admin, safely decommissioning `ADMIN`, and the note model's ordering and lifetime pitfalls -
-are documented on the miden-standards
-[`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs) component and the
-[`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs). The bridge-specific
-consequences:
+Role management via notes comes with caveats. The generic hazards are documented on the
+miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs)
+component and the [`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs); the
+bridge-specific consequences are:
 
-- **`ADMIN` compromise is equivalent to compromise of every operational role.** `ADMIN` is
-  the effective admin of `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` (none delegates
-  its admin at creation), so an `ADMIN` key can grant any of them to any account with a
-  single note. The `ADMIN` key is the bridge's root authority and must be protected
-  accordingly (see the trust model in [Section 1](#1-entities-and-trust-model)); it can be
-  decommissioned following the strictly ordered recipe in the `RoleBasedAccessControl`
-  docs (pinned by the `self_administered_delegate_survives_admin_removal` test).
+- **`ADMIN` is the bridge's root authority.** It is the effective admin of all three
+  operational roles, and the auto-allowlisted `NETWORK_ACCOUNT_CONFIG` note dispatches the
+  `ADMIN`-defaulted allowlist-update procedures, so a compromised `ADMIN` key controls the
+  whole bridge configuration (see [Section 1](#1-entities-and-trust-model)). For the same
+  reason the `ADMIN` role must never be emptied: existing role holders and ungated bridging
+  keep working, but role rotation and every `ADMIN`-defaulted procedure - the bridge's
+  post-deployment configuration channel - would be lost forever. Contain `ADMIN` compromise
+  risk with strong key custody (e.g. a multisig member account), not by decommissioning the
+  role.
 - **Consumption order is not under the operator's control.** The bridge executes without a
-  signature gate, so any party may submit a transaction consuming any pending allowlisted
-  note. Never have an `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously
-  (see the ordering caveat in the `RbacConfigNote` security considerations).
-- **Losing role management does not brick bridging.** `bridge_out` / `claim` are ungated,
-  and every role-gated bridge procedure is mapped to an operational role, so no allowlisted
-  note reaches an `ADMIN`-defaulted bridge procedure. Emptying the `ADMIN` role (pinned by
-  the `removing_last_admin_permanently_disables_role_management` test) permanently disables
-  management of `ADMIN`-administered roles only.
-- **Emptying an operational role.** Revoking the last holder of `FAUCET_MNGR`,
-  `GER_INJECTOR`, or `GER_REMOVER` leaves the corresponding procedures uninvokable until
-  the role's effective admin - if still populated and manageable - grants a new holder.
-- **Bridge role holders must not administer other RBAC accounts.** `RBAC_CONFIG` notes are
-  not bound to the account they were issued for (pinned by the
-  `note_targeted_at_another_account_is_consumable_by_bridge` test), so a role-management
-  note issued for another account can be consumed by the bridge, and vice versa.
+  signature gate, so any party chooses which pending note is consumed first; never have an
+  `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
+- **`RBAC_CONFIG` notes are not bound to the bridge** (pinned by the
+  `note_targeted_at_another_account_is_consumable_by_bridge` test): a note issued for
+  another account can be consumed by the bridge and vice versa, so a third party able to
+  authorize the note sender on its own RBAC account can consume - and thereby nullify - a
+  pending bridge note. Bridge role holders should not administer other RBAC accounts.
 
 TODO: No emergency pause mechanism exists
 ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
@@ -865,7 +855,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::with_account_target(bridge)` |
-| `attachment` | None by default; attach `NetworkAccountTarget` (target: bridge; execution hint: Always) to mirror the other bridge notes' network-routing pattern. Unlike those notes' scripts, the `RBAC_CONFIG` script does **not** validate the attachment target. |
+| `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. Unlike the other bridge notes' scripts, the `RBAC_CONFIG` script does **not** validate the attachment target. |
 
 **`NoteDetails`**
 

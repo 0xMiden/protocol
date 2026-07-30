@@ -76,34 +76,22 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// administrator. To hand authority back, the current delegated admin re-points the role
 /// (passing `0` reverts it to the `ADMIN` role).
 ///
-/// This supports a fully decentralized configuration, in strictly ordered steps per delegated
-/// role: (1) grant the dedicated admin role's members and wait for the grants to be committed,
-/// (2) make it self-administering (`set_role_admin(X, X)` — safe only once `X` has members),
-/// (3) delegate the managed role to it, and (4) only after every delegation is committed,
-/// revoke or renounce all bootstrap `ADMIN` members. Skipping step 2 leaves `X` administered
-/// by the then-empty `ADMIN` role, freezing `X`'s membership forever. Step 4 permanently
-/// forfeits every `ADMIN`-defaulted capability: any role still administered by `ADMIN`, and
-/// any `Authority`-gated procedure absent from the procedure→role map (which falls back to
-/// `ADMIN`, including `freeze` / `unfreeze`). That map is fixed at account creation and cannot
-/// be amended, so an account whose gated procedures are not all mapped to live roles must
-/// never empty `ADMIN`. The resulting graph has
-/// no recovery root — each self-administering role is the irrevocable root of its own subtree,
-/// and the component has no quorum semantics: any single member can revoke every peer and then
-/// renounce, permanently freezing that role and every role delegated to it. Multiple members
-/// therefore protect only against key loss, not compromise; compromise resistance must come
-/// from each member account's own authentication (e.g. a multisig account). Use a dedicated
-/// delegate admin role per managed role — sharing one reproduces the full `ADMIN` blast
-/// radius.
+/// This supports a fully decentralized configuration: for each delegated role, (1) grant the
+/// dedicated admin role's members, (2) make it self-administering (`set_role_admin(X, X)` —
+/// only safe once `X` has members), (3) delegate the managed role to it, and (4) revoke or
+/// renounce all bootstrap `ADMIN` members, waiting for each step to commit before issuing
+/// the next. Emptying `ADMIN` is permanent and forfeits every `ADMIN`-defaulted capability
+/// (the `Authority` procedure→role map is fixed at account creation), so an account whose
+/// gated procedures are not all mapped to live roles must never empty `ADMIN`. A
+/// self-administering role has no quorum — any single member can evict the rest — so its
+/// members should themselves be strongly authenticated (e.g. multisig) accounts.
 ///
 /// The delegated admin of a role can itself be any role, including one that it admins.
 /// Circular relationships are possible but should be designed with care, since each role
-/// can then revoke the other. Only delegate a role's admin to a role that already has
-/// members: delegating to an empty role whose own admin chain is dead freezes the delegated
-/// role. Revoking the last member of a role's effective admin leaves that role unmanageable
-/// until a member of its effective admin role is restored — and when the emptied role is its
-/// own effective admin (as `ADMIN` is by default), no restoration path exists, so emptying it
-/// is permanent and unrecoverable. Treat `ADMIN` renouncement with the same caution as
-/// ownership renouncement.
+/// can then revoke the other. Only delegate to a role that already has members, and treat
+/// emptying a role's effective admin like ownership renouncement: the role stays
+/// unmanageable until its effective admin is repopulated — for a self-administering role
+/// (including `ADMIN`), never.
 ///
 /// ## Role semantics
 ///

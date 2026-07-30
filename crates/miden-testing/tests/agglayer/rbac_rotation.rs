@@ -430,8 +430,8 @@ async fn note_targeted_at_another_account_is_consumable_by_bridge() -> anyhow::R
     Ok(())
 }
 
-/// Pins the operational hazard documented in the `RoleBasedAccessControl` component docs (and
-/// referenced by SPEC section 2.5): nothing on-chain prevents the
+/// Pins the operational hazard documented in the `RoleBasedAccessControl` component docs:
+/// nothing on-chain prevents the
 /// last `ADMIN` member from renouncing (or revoking) its own role, after which no sender can
 /// manage `ADMIN`-administered roles again — with no delegated admin roles (as here), role
 /// rotation on the bridge is permanently disabled. Admin rotation must therefore grant the
@@ -451,7 +451,7 @@ async fn removing_last_admin_permanently_disables_role_management(
     })?;
     let mut bridge_account = setup.bridge_account;
 
-    let removal_action = if renounce {
+    let removal_config = if renounce {
         RbacConfig::RenounceRole {
             role: RoleBasedAccessControl::admin_role(),
         }
@@ -464,7 +464,7 @@ async fn removing_last_admin_permanently_disables_role_management(
     let removal = bridge_rbac_config_note(
         setup.admin,
         bridge_account.id(),
-        removal_action,
+        removal_config,
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(removal.clone()));
@@ -502,7 +502,9 @@ async fn removing_last_admin_permanently_disables_role_management(
 }
 
 /// Pins the ADMIN-decommissioning recipe documented in the `RoleBasedAccessControl` component
-/// docs (and referenced by SPEC section 2.5): after a delegate admin
+/// docs. Note this recipe is not viable for a production bridge, whose `ADMIN`-defaulted auth
+/// procedures would be forfeited (see SPEC section 2.5); the bridge account here only serves as
+/// the test vehicle. After a delegate admin
 /// role is populated, made self-administering, and given an operational role's admin — in that
 /// order — emptying `ADMIN` leaves the delegate role able to manage both the operational role
 /// and its own membership.
@@ -545,11 +547,11 @@ async fn self_administered_delegate_survives_admin_removal() -> anyhow::Result<(
     ];
     let recipe_notes = recipe
         .into_iter()
-        .map(|action| {
+        .map(|config| {
             let note = bridge_rbac_config_note(
                 setup.admin,
                 bridge_account.id(),
-                action,
+                config,
                 builder.rng_mut(),
             )?;
             builder.add_output_note(RawOutputNote::Full(note.clone()));
