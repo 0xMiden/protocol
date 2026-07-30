@@ -670,7 +670,7 @@ async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
 }
 
 /// A config note is bound to its target account by a `NetworkAccountTarget` attachment, so a decoy
-/// account cannot burn a note meant for another account. The decoy is owned by the note's sender -
+/// account cannot consume a note meant for another account. The decoy is owned by the note's sender -
 /// so it passes both the note-script allowlist and the owner authority - yet consuming a note
 /// targeted at a different account aborts at the target-account check before any action runs.
 #[tokio::test]

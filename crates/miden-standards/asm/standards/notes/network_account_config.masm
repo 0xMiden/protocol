@@ -55,7 +55,7 @@ const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account conf
 #!
 #! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
 #! script asserts the consuming account matches that target before doing anything else, so the note
-#! cannot be consumed (and burned) by any other account that happens to accept its sender.
+#! cannot be consumed by any other account that happens to accept its sender.
 #!
 #! Requires that the account exposes the `miden::standards::auth::network_account` allowlist
 #! procedures and the `miden::standards::fees::fee_manager` allowed-fee-policy procedures (as the
