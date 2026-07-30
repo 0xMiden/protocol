@@ -555,7 +555,7 @@ pub proc find_note(note_id: NoteId) -> (Bool, u16)
         # => [num_notes, TARGET_NOTE_ID]
 
         dup neq.0
-        # => [should_loop, num_notes]
+        # => [should_loop, num_notes, TARGET_NOTE_ID]
 
         while.true
             # The counter holds the number of notes not yet inspected; the note at counter - 1 is
