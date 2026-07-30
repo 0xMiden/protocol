@@ -71,6 +71,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,

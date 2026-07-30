@@ -22,6 +22,7 @@ use miden_standards::account::policies::{
 };
 use miden_utils_sync::LazyLock;
 
+pub mod agglayer_note;
 pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
@@ -38,6 +39,7 @@ pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
+pub use agglayer_note::AgglayerNote;
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoles, RemovedGerHashChain};
 pub use claim_note::{
@@ -54,15 +56,7 @@ pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
-pub use eth_types::{
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    GlobalIndex,
-    GlobalIndexError,
-    MetadataHash,
-};
+pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;

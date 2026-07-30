@@ -24,6 +24,7 @@ use miden_protocol::{Felt, Word};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, P2IDE_CONSUMPTION_CYCLES};
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -363,6 +364,15 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             reclaim_height,
             timelock_height,
         })
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for P2ideNote {
+    fn consumption_cycles() -> u32 {
+        P2IDE_CONSUMPTION_CYCLES
     }
 }
 
