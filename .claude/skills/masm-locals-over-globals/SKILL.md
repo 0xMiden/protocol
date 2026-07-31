@@ -11,6 +11,8 @@ When a MASM procedure needs scratch storage that lives only for the duration of 
 
 Global memory regions are reserved for state that crosses procedure boundaries (kernel inputs, account data, advice-keyed state). Stashing per-call scratch there leaks an implementation detail into a shared namespace and ties the procedure to a fixed address.
 
+This ranks locals against globals only. Scratch that fits on the operand stack - loop counters, pointers, indices - belongs there rather than in a local; see `cheap-masm-equivalents`.
+
 ## Why
 
 Procedure locals are allocated and freed by the VM, so two callers of the same procedure can't collide. A hard-coded scratch slot in global memory risks colliding with another procedure, forces every caller to avoid clobbering it, and locks the layout.
