@@ -4,14 +4,20 @@ use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::errors::standards::{
+    ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_OWNER_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{OwnerConfig, OwnerConfigNote};
+use miden_standards::note::{
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    OwnerConfig,
+    OwnerConfigNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -43,14 +49,18 @@ fn owner_config_note(
 
 /// Builds a note carrying the OwnerConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note,
+/// so the note passes the script's target check and reaches the guard under test.
 fn malformed_owner_config_note(
     sender: AccountId,
+    target: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(OwnerConfigNote::script())
         .note_storage(storage)?
+        .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
         .build()?;
     Ok(note)
 }
@@ -137,7 +147,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // selector 99 is not a known action
-    let note = malformed_owner_config_note(owner, vec![Felt::from(99u32)], &mut rng)?;
+    let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -160,7 +170,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // TransferOwnership selector (0) but only one storage item instead of the expected three
-    let note = malformed_owner_config_note(owner, vec![Felt::from(0u32)], &mut rng)?;
+    let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -168,5 +178,35 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let result = tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    Ok(())
+}
+
+/// The note is bound to its target account, so a decoy account cannot consume a note meant for
+/// another account. The decoy carries the same `Ownable2Step` setup with the same owner, so the
+/// sender-based authorization would pass; consuming a note targeted at a different account aborts
+/// at the target check before any ownership change runs. Without the binding the decoy would
+/// succeed and burn the note, denying it to its intended target.
+#[tokio::test]
+async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let decoy = create_ownable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    let note = owner_config_note(owner, target, OwnerConfig::AcceptOwnership, &mut rng)?;
+    let result = mock_chain
+        .build_transaction(decoy.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH);
     Ok(())
 }

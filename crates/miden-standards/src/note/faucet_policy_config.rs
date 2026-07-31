@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
@@ -130,6 +131,11 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 /// account authorized for the action per the faucet's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
+/// The note is bound to the target `account` by a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
+/// that the consuming account matches that target before dispatching, so the note cannot be
+/// consumed (and burned) by a third-party account that merely accepts its sender.
+///
 /// Construct one with the [builder](FaucetPolicyConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -147,16 +153,28 @@ impl FaucetPolicyConfigNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
+    ///   which requires a public target).
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the bound
+    ///   target attachment occupies one of the available slots.
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         account: AccountId,
         config: FaucetPolicyConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // Bind the note to `account`: the note script asserts, before any dispatch, that the
+        // consuming account matches this `NetworkAccountTarget`.
+        NetworkAccountTarget::bind(&mut attachments, account).map_err(|err| {
+            NoteError::other_with_source(
+                "failed to bind the FaucetPolicyConfig note to its target account",
+                err,
+            )
+        })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
@@ -220,12 +238,20 @@ impl FaucetPolicyConfigNote {
 
 impl<S: faucet_policy_config_note_builder::State> FaucetPolicyConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
+    ///
+    /// The note reserves one attachment slot for its bound `NetworkAccountTarget`, so callers can
+    /// add at most [`NoteAttachments::MAX_COUNT`] - 1 of their own. A caller-supplied
+    /// `NetworkAccountTarget` does not override the bound one (the bound target is prepended and
+    /// wins as the canonical first match).
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
         self
     }
 
     /// Adds multiple attachments to the note.
+    ///
+    /// See [`Self::attachment`] for how the bound `NetworkAccountTarget` interacts with the
+    /// attachment limit and caller-supplied targets.
     pub fn attachments(
         mut self,
         attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,

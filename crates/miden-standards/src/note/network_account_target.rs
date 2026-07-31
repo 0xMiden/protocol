@@ -55,39 +55,28 @@ impl NetworkAccountTarget {
         Ok(Self { target_id, exec_hint })
     }
 
-    /// Ensures `attachments` carries a valid [`NetworkAccountTarget`], appending one that routes
-    /// the note to `target_id` with [`NoteExecutionHint::Always`] if none is present.
+    /// Binds a note to `target_id` by prepending a [`NetworkAccountTarget`] for it to
+    /// `attachments`, with [`NoteExecutionHint::Always`].
     ///
-    /// This lets a note that is always targeted at a single network account derive its target from
-    /// the account it manages, while still accepting a caller-supplied target that overrides the
-    /// execution hint, and any number of unrelated attachments.
+    /// The target is prepended rather than appended so that it is the first attachment carrying the
+    /// scheme, and therefore the canonical one read by [`NetworkAccountTarget::try_from`] and by
+    /// the note script's `network_account_target::active_account_matches_target_account` check.
+    /// A caller-supplied target of the same scheme cannot override the bound one, which is what
+    /// makes the binding a property of `target_id` rather than of the caller's attachment list.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] is present but does not
-    ///   decode as a [`NetworkAccountTarget`].
-    /// - none is present and `target_id` is not
-    ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public).
-    pub(crate) fn append_if_missing(
+    /// Returns an error if `target_id` is not
+    /// [`AccountType::Public`](miden_protocol::account::AccountType::Public), since a network
+    /// account must be public.
+    pub(crate) fn bind(
         attachments: &mut Vec<NoteAttachment>,
         target_id: AccountId,
     ) -> Result<(), NetworkAccountTargetError> {
-        let present = attachments
-            .iter()
-            .find(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME);
+        let target = Self::new(target_id, NoteExecutionHint::Always)?;
+        attachments.insert(0, NoteAttachment::from(target));
 
-        // Validate a caller-supplied target so that the note is a well-formed network note either
-        // way.
-        match present {
-            Some(attachment) => Self::try_from(attachment).map(|_| ()),
-            None => {
-                let target = Self::new(target_id, NoteExecutionHint::Always)?;
-                attachments.push(NoteAttachment::from(target));
-
-                Ok(())
-            },
-        }
+        Ok(())
     }
 
     // ACCESSORS

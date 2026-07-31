@@ -7,17 +7,23 @@
 //! sender are covered by the parent [`super`] suite.
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{AccountId, StorageMapKey};
+use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::policies::BlocklistStorage;
 use miden_standards::errors::standards::{
+    ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{BlocklistConfig, BlocklistConfigNote};
+use miden_standards::note::{
+    BlocklistConfig,
+    BlocklistConfigNote,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -52,8 +58,11 @@ fn blocklist_config_note(
 
 /// Builds a note carrying the BlocklistConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note,
+/// so the note passes the script's target check and reaches the guard under test.
 fn malformed_blocklist_config_note(
     sender: AccountId,
+    target: AccountId,
     storage: Vec<Felt>,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
@@ -61,6 +70,7 @@ fn malformed_blocklist_config_note(
     let note = NoteBuilder::new(sender, &mut rng)
         .script(BlocklistConfigNote::script())
         .note_storage(storage)?
+        .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
         .build()?;
     Ok(note)
 }
@@ -161,6 +171,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     // selector 99 is not a known action
     let note = malformed_blocklist_config_note(
         owner_id,
+        faucet.id(),
         vec![
             Felt::from(99u32),
             target_account.id().suffix(),
@@ -194,6 +205,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     // BlockAccount selector (0) but the account prefix is missing
     let note = malformed_blocklist_config_note(
         owner_id,
+        faucet.id(),
         vec![Felt::from(0u32), target_account.id().suffix()],
         7,
     )?;
@@ -212,5 +224,40 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
 
+    Ok(())
+}
+
+/// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
+/// another one. The decoy carries the same manager setup with the same owner, so the sender-based
+/// authorization would pass; consuming a note targeted at a different faucet aborts at the target
+/// check before the list changes. Without the binding the decoy would succeed and burn the note,
+/// denying it to its intended target.
+#[tokio::test]
+async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let decoy = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    let note = blocklist_config_note(
+        owner_id,
+        target,
+        BlocklistConfig::BlockAccount { account: target_account.id() },
+        9,
+    )?;
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(decoy.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH);
     Ok(())
 }

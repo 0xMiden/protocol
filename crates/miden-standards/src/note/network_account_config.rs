@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountProcedureRoot};
@@ -23,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -176,9 +175,9 @@ impl NetworkAccountConfigNote {
     ) -> Result<Self, NoteError> {
         // Bind consumption to the target account. Prepended so it is the canonical
         // `NetworkAccountTarget` the note script reads.
-        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
-            .map_err(|err| NoteError::other(err.to_string()))?;
-        attachments.insert(0, NoteAttachment::from(target));
+        NetworkAccountTarget::bind(&mut attachments, account).map_err(|err| {
+            NoteError::other_with_source("failed to bind the note to its target account", err)
+        })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 

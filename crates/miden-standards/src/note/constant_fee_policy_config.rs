@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
@@ -23,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -127,9 +126,9 @@ impl ConstantFeePolicyConfigNote {
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
         // the consuming account matches this `NetworkAccountTarget`.
-        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
-            .map_err(|err| NoteError::other(err.to_string()))?;
-        attachments.insert(0, NoteAttachment::from(target));
+        NetworkAccountTarget::bind(&mut attachments, account).map_err(|err| {
+            NoteError::other_with_source("failed to bind the note to its target account", err)
+        })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -294,6 +293,7 @@ mod tests {
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
+    use crate::note::NoteExecutionHint;
 
     fn account_id(seed: u8) -> AccountId {
         AccountId::builder()
