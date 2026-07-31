@@ -24,6 +24,7 @@ use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
@@ -80,6 +81,7 @@ fn network_auth_with_fees(
         allowed_script_roots,
         allowed_tx_script_roots: BTreeSet::new(),
         fee_policy_manager,
+        sponsorship_policy: SponsorshipPolicy::default(),
     })
 }
 
