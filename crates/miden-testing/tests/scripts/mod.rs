@@ -6,6 +6,7 @@ mod constant_fee_manager;
 mod constant_fee_policy_config;
 mod expiration;
 mod faucet;
+mod faucet_metadata;
 mod faucet_policy_config;
 mod fee_collection;
 mod fee_manager;
