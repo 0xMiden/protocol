@@ -1,5 +1,7 @@
 extern crate alloc;
 
+mod config;
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 
@@ -37,7 +39,7 @@ fn create_rbac_account_with_admin(admin: AccountId) -> anyhow::Result<Account> {
     Ok(account)
 }
 
-// Shared with the `rbac_action` note test suite.
+// Shared with the child `config` note suite.
 pub(super) fn create_rbac_chain(admin: AccountId) -> anyhow::Result<(Account, MockChain)> {
     let account = create_rbac_account_with_admin(admin)?;
     let mut builder = MockChain::builder();

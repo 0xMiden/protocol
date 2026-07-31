@@ -23,6 +23,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
+use miden_testing::MockChain;
 use miden_tx::{LocalTransactionProver, ProvingOptions};
 
 // HELPER FUNCTIONS
@@ -71,4 +72,23 @@ pub fn get_note_with_fungible_asset_and_script(
     let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
     Note::new(vault, metadata, recipient)
+}
+
+/// Consumes a single authenticated input note against `account_id` in its own transaction and
+/// commits the resulting block, so the note's effects are visible to subsequent transactions.
+#[cfg(test)]
+pub async fn consume_note(
+    mock_chain: &mut MockChain,
+    account_id: AccountId,
+    note: &Note,
+) -> anyhow::Result<()> {
+    let executed = mock_chain
+        .build_transaction(account_id)
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+    Ok(())
 }
