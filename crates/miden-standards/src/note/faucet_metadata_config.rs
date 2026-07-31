@@ -198,8 +198,8 @@ impl FaucetMetadataConfigNote {
         config: FaucetMetadataConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        // Bind the note to `target`: the note script asserts, before any dispatch, that the
-        // consuming account matches this `NetworkAccountTarget`.
+        // The note script asserts that the consuming account matches this target before
+        // dispatching.
         NetworkAccountTarget::bind(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the FaucetMetadataConfig note to its target account",

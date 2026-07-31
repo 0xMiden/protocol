@@ -109,8 +109,9 @@ fn faucet_policy_config_note(
 
 /// Builds a note carrying the FaucetPolicyConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
-/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note,
-/// so the note passes the script's target check and reaches the guard under test.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_faucet_policy_config_note(
     sender: AccountId,
     target: AccountId,
@@ -250,8 +251,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 /// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
 /// another one. The decoy carries the same `TokenPolicyManager` setup with the same owner, so the
 /// sender-based authorization would pass; consuming a note targeted at a different faucet aborts at
-/// the target check before any policy switch runs. Without the binding the decoy would succeed and
-/// burn the note, denying it to its intended target.
+/// the target check before any policy switch runs.
 #[tokio::test]
 async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);

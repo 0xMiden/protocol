@@ -42,8 +42,9 @@ fn rbac_config_note(
 
 /// Builds a note carrying the RbacConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
-/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note,
-/// so the note passes the script's target check and reaches the guard under test.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_rbac_config_note(
     sender: AccountId,
     target: AccountId,
@@ -209,8 +210,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 /// The note is bound to its target account, so a decoy account cannot consume a note meant for
 /// another account. The decoy carries the same `RoleBasedAccessControl` setup with the same admin,
 /// so the sender-based authorization inside `rbac::grant_role` would pass; consuming a note
-/// targeted at a different account aborts at the target check before any role change runs. Without
-/// the binding the decoy would succeed and burn the note, denying it to its intended target.
+/// targeted at a different account aborts at the target check before any role change runs.
 #[tokio::test]
 async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
     let admin = test_account_id(41);

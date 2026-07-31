@@ -63,8 +63,9 @@ fn pause_config_note(
 
 /// Builds a note carrying the PauseConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
-/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note,
-/// so the note passes the script's target check and reaches the guard under test.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_pause_config_note(
     sender: AccountId,
     target: AccountId,
@@ -175,8 +176,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 /// The note is bound to its target account, so a decoy account cannot consume a note meant for
 /// another account. The decoy carries the same `PausableManager` setup with the same owner, so the
 /// sender-based authorization would pass; consuming a note targeted at a different account aborts
-/// at the target check before the pause state changes. Without the binding the decoy would succeed
-/// and burn the note, denying it to its intended target.
+/// at the target check before the pause state changes.
 #[tokio::test]
 async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
