@@ -815,14 +815,7 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
 
     // Apply the allowlist mutation; it takes effect from the next block. The mutation note is
     // priced by the still-active constant policy at 0, so it needs no sponsorship.
-    let executed_transaction = mock_chain
-        .build_transaction(account.id())
-        .authenticated_input_note(mutation_note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-    mock_chain.prove_next_block()?;
+    crate::consume_note(&mut mock_chain, account.id(), &mutation_note).await?;
 
     // Switch to the mutated root, consuming the switch note followed immediately by its sponsorship
     // note. In the `add` case the switch succeeds and fee collection prices the switch note through
