@@ -21,6 +21,9 @@ pub use burn::BurnNote;
 mod constant_fee_policy_config;
 pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
 
+mod faucet_metadata_config;
+pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+
 mod faucet_policy_config;
 pub use faucet_policy_config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 
@@ -87,6 +90,7 @@ pub enum StandardNote {
     BURN,
     CONSTANT_FEE_POLICY_CONFIG,
     FAUCET_POLICY_CONFIG,
+    FAUCET_METADATA_CONFIG,
     ALLOWLIST_CONFIG,
     BLOCKLIST_CONFIG,
     PAUSE_CONFIG,
@@ -134,6 +138,9 @@ impl StandardNote {
         if root == FaucetPolicyConfigNote::script_root() {
             return Some(Self::FAUCET_POLICY_CONFIG);
         }
+        if root == FaucetMetadataConfigNote::script_root() {
+            return Some(Self::FAUCET_METADATA_CONFIG);
+        }
         if root == AllowlistConfigNote::script_root() {
             return Some(Self::ALLOWLIST_CONFIG);
         }
@@ -176,6 +183,7 @@ impl StandardNote {
             Self::BURN => "BURN",
             Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
             Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
+            Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
             Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
             Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
             Self::PAUSE_CONFIG => "PAUSE_CONFIG",
@@ -198,6 +206,8 @@ impl StandardNote {
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
             Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
+            // FaucetMetadataConfig storage is variable per action; this returns the upper bound.
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS,
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
             Self::PAUSE_CONFIG => PauseConfigNote::NUM_STORAGE_ITEMS,
@@ -222,6 +232,7 @@ impl StandardNote {
             Self::BURN => BurnNote::script(),
             Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
             Self::PAUSE_CONFIG => PauseConfigNote::script(),
@@ -244,6 +255,7 @@ impl StandardNote {
             Self::BURN => BurnNote::script_root(),
             Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script_root(),
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
             Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
