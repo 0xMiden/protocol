@@ -6,13 +6,12 @@
 
 - Added `miden::standards::interop::eth::bytes32_to_account_id` and the `TryFrom<[u8; 32]>` impl for `EthAddress` for converting bytes32-embedded Ethereum-format addresses ([#3426](https://github.com/0xMiden/protocol/pull/3426)).
 - Added `<NOTE>_CONSUMPTION_CYCLES` constants in `miden_standards::note::costs` and `miden_agglayer::costs`, exposing each standard/agglayer note's benchmarked consumption cost for the canonical network-account transaction, regenerated via `make update-note-costs` and guarded by CI snapshot tests with a 5% drift tolerance ([#3354](https://github.com/0xMiden/protocol/pull/3354)).
+- Added the `ConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Added the `AllowlistConfigNote` standard note, which dispatches the `AllowlistManager` admin procedures (`allow_account`, `disallow_account`) on the account that consumes it ([#3440](https://github.com/0xMiden/protocol/pull/3440)).
 - [BREAKING] Added `NetworkNotePricer` in `miden-tx` (with the `NoteConsumptionCost` trait and the `StandardNote::note_cost` / `AgglayerNote::note_cost` lookups) to turn the benchmarked note consumption costs into network account fee schedules via `BasicConstantFeePolicy::with_fees`; `TransactionFee` moved from miden-protocol's testing module to the public API (now fallibly constructed from the total cycle count, mirroring the kernel fee formula exactly) with the pricer building on it, and the now-unused `TransactionMeasurements::trace_length` was removed ([#3356](https://github.com/0xMiden/protocol/pull/3356)).
 - Added the `BlocklistConfigNote` standard note, which dispatches the `BlocklistManager` admin procedures (`block_account`, `unblock_account`) on the account that consumes it ([#3438](https://github.com/0xMiden/protocol/pull/3438)).
-
-### Features
-
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
+- Added the standardized `ConstantFeePolicyConfigNote`, which schedules a fee for a note script root by calling a consuming network account's `ConstantFeeManager::set_note_fee`, and registered it as `StandardNote::CONSTANT_FEE_POLICY_CONFIG` ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 
 ### Changes
@@ -41,6 +40,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
 - [BREAKING] Bound FEE_SPONSORSHIP notes to the notes they pay for by note ID instead of by position in `collect_sponsored_fees` and allow multiple sponsorship notes to sponsor the same feature note ([#3318](https://github.com/0xMiden/protocol/issues/3318)).
 - [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
+- Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 
 ### Fixes
 

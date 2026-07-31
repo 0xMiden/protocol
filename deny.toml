@@ -26,6 +26,7 @@ allow = [
   "MIT",
   "MPL-2.0",
   "Unicode-3.0",
+  "Zlib",
 ]
 exceptions = [
   # Each entry is the crate and version constraint, and its specific allowed licenses
@@ -46,6 +47,7 @@ skip = [
   #{ name = "ansi_term", version = "=0.11.0" },
   { name = "cpufeatures" },
   { name = "itertools" },
+  { name = "num-bigint" },
   { name = "sha3" },
   # Allow duplicate rand versions - miden-field uses 0.10, proptest uses 0.9.
   { name = "getrandom" },
