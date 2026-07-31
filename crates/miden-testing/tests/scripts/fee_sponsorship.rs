@@ -149,6 +149,8 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         "the network account should receive the sponsored fee",
     );
 
+    crate::prove_and_verify_transaction(executed).await?;
+
     Ok(())
 }
 

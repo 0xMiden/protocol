@@ -23,6 +23,7 @@ use miden_protocol::{Felt, Word};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
+use crate::note::costs::{FEE_SPONSORSHIP_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -59,12 +60,16 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// The mirror-image check (that a feature note is not consumed *without* sponsorship) protects
 /// the consuming account rather than the sponsor, and so lives in the account's auth procedure.
+/// That check binds sponsorships to feature notes by note ID, so the note can be at any position in
+/// the input notes. Several sponsorship notes may be bound to the same feature note to top up its
+/// fee between them.
 ///
 /// # Reclaim
 ///
 /// Every consumption without the bound feature note is a reclaim: the note returns to its
 /// `reclaimer` once `reclaim_height` is reached. If the bound feature note is consumed by some
-/// other transaction, reclaim is the only way to recover the assets.
+/// other transaction, reclaim is the only way to recover the assets. A reclaim cannot happen in a
+/// transaction that also collects fees, which rejects a sponsorship whose feature note is absent.
 #[derive(Debug, Clone)]
 pub struct FeeSponsorshipNote {
     sender: AccountId,
@@ -309,6 +314,15 @@ impl TryFrom<&[Felt]> for FeeSponsorshipNoteStorage {
         )?;
 
         Ok(Self::new(feature_note_id, reclaimer, reclaim_height))
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for FeeSponsorshipNote {
+    fn consumption_cycles() -> u32 {
+        FEE_SPONSORSHIP_CONSUMPTION_CYCLES
     }
 }
 

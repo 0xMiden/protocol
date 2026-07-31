@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
+use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::{EventId, EventName};
 use miden_protocol::{CoreLibrary, Word};
@@ -37,6 +37,9 @@ pub(crate) struct MockHost<'store> {
     /// Event IDs that are not in this set are not handled. This can be useful in certain test
     /// scenarios.
     handled_events: BTreeSet<EventId>,
+
+    /// Overrides the input-note index response for tests that exercise host-claim validation.
+    input_note_index_response: Option<[Felt; 2]>,
 }
 
 impl<'store> MockHost<'store> {
@@ -55,13 +58,23 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
+                &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]
             .map(TransactionEventId::event_id),
         );
 
-        Self { exec_host, handled_events }
+        Self {
+            exec_host,
+            handled_events,
+            input_note_index_response: None,
+        }
+    }
+
+    /// Overrides the input-note index response with `[note_idx, is_found]`.
+    pub fn set_input_note_index_response(&mut self, response: [Felt; 2]) {
+        self.input_note_index_response = Some(response);
     }
 
     // Adds the transaction events needed for Lazy loading to the set of handled events.
@@ -113,6 +126,12 @@ impl<'store> Host for MockHost<'store> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 
         async move {
+            if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
+                && let Some(response) = self.input_note_index_response
+            {
+                return Ok(vec![AdviceMutation::extend_stack(response)]);
+            }
+
             // If the host should handle the event, delegate to the tx executor host.
             if self.handled_events.contains(&event_id) {
                 self.exec_host.on_event(process).await

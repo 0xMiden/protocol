@@ -10,7 +10,13 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Package;
-use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
+use miden_standards::account::access::{
+    Authority,
+    Ownable2Step,
+    Pausable,
+    PausableManager,
+    RoleBasedAccessControl,
+};
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -22,6 +28,7 @@ use miden_standards::account::policies::{
 };
 use miden_utils_sync::LazyLock;
 
+pub mod agglayer_note;
 pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
@@ -38,6 +45,7 @@ pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
+pub use agglayer_note::AgglayerNote;
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoles, RemovedGerHashChain};
 pub use claim_note::{
@@ -54,15 +62,7 @@ pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
-pub use eth_types::{
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    GlobalIndex,
-    GlobalIndexError,
-    MetadataHash,
-};
+pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
@@ -201,6 +201,11 @@ fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePo
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
 /// tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the network
 /// transaction builder can bound how long the bridge's transactions stay valid.
+///
+/// The bridge also installs the [`Pausable`] and [`PausableManager`] components for emergency
+/// pauses, gated by the `ADMIN` role via the [`Authority`] unmapped-procedure fallback. While
+/// paused, all bridge entry points abort except `remove_ger`, which stays available so a
+/// fraudulent GER can still be revoked.
 fn create_bridge_account_builder(
     seed: Word,
     admin: AccountId,
@@ -215,6 +220,8 @@ fn create_bridge_account_builder(
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
 }
 
 /// Creates a new bridge account with the standard configuration.

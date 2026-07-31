@@ -25,10 +25,13 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use miden_standards::interop::eth::EthAddress;
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::{EthAddress, MetadataHash, note_script};
+use crate::costs::CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES;
+use crate::{MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -174,6 +177,15 @@ impl ConfigAggBridgeNote {
         let assets = NoteAssets::new(vec![])?;
 
         Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for ConfigAggBridgeNote {
+    fn consumption_cycles() -> u32 {
+        CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES
     }
 }
 

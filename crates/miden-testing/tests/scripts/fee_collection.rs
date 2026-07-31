@@ -7,6 +7,7 @@ use miden_protocol::account::component::{AccountComponentCode, AccountComponentM
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteAssets, NoteId, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -20,12 +21,10 @@ use miden_standards::account::wallets::{BasicWallet, NoteCreator};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
-    ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP,
-    ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW,
+    ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
+    ERR_FEE_MANAGER_SPONSORED_NOTE_NOT_FOUND,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
-    ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE,
     ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH,
-    ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE,
     ERR_FEE_POLICY_FEE_ASSET_MISMATCH,
     ERR_FEE_POLICY_ROOT_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
@@ -39,6 +38,9 @@ use miden_standards::note::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::SeedableRng;
+use rand::rngs::Xoshiro256PlusPlus;
+use rand::seq::SliceRandom;
 use rstest::rstest;
 
 use crate::scripts::fee_manager::{
@@ -135,8 +137,7 @@ fn network_account(
         .build_existing()?)
 }
 
-/// A network account plus a set of feature notes, each optionally paired with a FEE_SPONSORSHIP
-/// note carrying the assets specified for it.
+/// A network account plus a set of feature notes and the FEE_SPONSORSHIP notes bound to them.
 struct Test {
     mock_chain: MockChain,
     network_account: Account,
@@ -144,23 +145,25 @@ struct Test {
     sponsorship_notes: Vec<Note>,
 }
 
-/// Builds a [`Test`] with one feature note (a 0-asset P2ANY note, so all feature notes share
-/// the same script root) per entry in `sponsorships`. An entry of `Some(asset)` creates a
-/// FEE_SPONSORSHIP note bound to that feature note and carrying `asset`; `None` leaves the feature
-/// note unpaired. The feature note script root is priced in the fee schedule with
-/// `feature_note_fee` when provided, and left unscheduled otherwise.
+/// Builds a [`Test`] with `num_feature_notes` feature notes (0-asset P2ANY notes, so they all share
+/// the same script root) and one FEE_SPONSORSHIP note per `sponsorships` entry, each bound to the
+/// feature note at the entry's index and carrying its asset. Several entries may name the same
+/// feature note. The feature note script root is priced in the fee schedule with `feature_note_fee`
+/// when provided, and left unscheduled otherwise.
 fn build_test(
     feature_note_fee: Option<AssetAmount>,
-    sponsorships: Vec<Option<Asset>>,
+    num_feature_notes: usize,
+    sponsorships: Vec<(usize, Asset)>,
 ) -> anyhow::Result<Test> {
     let mut rng = RandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let feature_notes: Vec<Note> = sponsorships
-        .iter()
+    let feature_notes: Vec<Note> = (0..num_feature_notes)
         .map(|_| builder.add_p2any_note(sponsor.id(), NoteType::Public, []))
         .collect::<anyhow::Result<_>>()?;
+    let num_unique_notes = feature_notes.iter().map(Note::id).collect::<BTreeSet<_>>().len();
+    assert_eq!(feature_notes.len(), num_unique_notes, "feature notes should be unique");
 
     let fee_entry = feature_note_fee.map(|fee| (feature_notes[0].script().root(), fee));
 
@@ -173,14 +176,13 @@ fn build_test(
     builder.add_account(network_account.clone())?;
 
     let mut sponsorship_notes = Vec::new();
-    for (feature_note, asset) in feature_notes.iter().zip(&sponsorships) {
-        let Some(asset) = asset else { continue };
+    for (feature_note_idx, asset) in sponsorships {
         let note = Note::from(
             FeeSponsorshipNote::builder()
                 .sender(sponsor.id())
                 .target_account(network_account.id())
-                .feature_note_id(feature_note.id())
-                .asset(*asset)
+                .feature_note_id(feature_notes[feature_note_idx].id())
+                .asset(asset)
                 .generate_serial_number(&mut rng)
                 .build()?,
         );
@@ -219,21 +221,33 @@ async fn collect_fee_balance(
         .as_u64())
 }
 
-/// A feature note paired with a sponsorship note that covers its fee is collected: the aggregated
-/// fee equals the sponsored amount, whether the sponsorship covers the fee exactly or with a
-/// surplus.
+/// A feature note bound to a sponsorship note that covers its fee is collected: the aggregated fee
+/// equals the sponsored amount, whether the sponsorship covers the fee exactly or with a surplus -
+/// including for a 0-priced feature note, which owes nothing yet still has its sponsorship
+/// collected - and regardless of whether the sponsorship is consumed before or after the note it
+/// pays for.
 #[rstest]
-#[case::exact_cover(FEE_AMOUNT)]
-#[case::over_cover(FEE_AMOUNT + 250)]
 #[tokio::test]
-async fn collects_sponsored_fee_for_a_pair(#[case] sponsored_amount: u64) -> anyhow::Result<()> {
+async fn collects_sponsored_fee_for_a_bound_pair(
+    #[values(0, FEE_AMOUNT)] feature_note_fee: u64,
+    #[values(FEE_AMOUNT, FEE_AMOUNT + 250)] sponsored_amount: u64,
+    #[values(false, true)] sponsorship_first: bool,
+) -> anyhow::Result<()> {
     let Test {
         mock_chain,
         network_account,
         feature_notes,
         sponsorship_notes,
-    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), vec![Some(fee_asset(sponsored_amount)?)])?;
-    let input_notes = [feature_notes[0].id(), sponsorship_notes[0].id()];
+    } = build_test(
+        Some(AssetAmount::new(feature_note_fee)?),
+        1,
+        vec![(0, fee_asset(sponsored_amount)?)],
+    )?;
+    let input_notes = if sponsorship_first {
+        [sponsorship_notes[0].id(), feature_notes[0].id()]
+    } else {
+        [feature_notes[0].id(), sponsorship_notes[0].id()]
+    };
 
     let balance = collect_fee_balance(mock_chain, network_account, &input_notes).await?;
 
@@ -241,6 +255,109 @@ async fn collects_sponsored_fee_for_a_pair(#[case] sponsored_amount: u64) -> any
         balance, sponsored_amount,
         "the account should collect the sponsored fee into its vault"
     );
+
+    Ok(())
+}
+
+/// Several FEE_SPONSORSHIP notes may be bound to the same feature note, topping up its fee between
+/// them. Uses three input notes, so the fee table's element count is not a multiple of the word
+/// size and its zeroing has to round up.
+#[rstest]
+#[case::even_split(FEE_AMOUNT / 2, FEE_AMOUNT / 2)]
+#[case::uneven_split(FEE_AMOUNT - 1, 1)]
+#[tokio::test]
+async fn multiple_sponsorships_top_up_one_feature_note(
+    #[case] first_amount: u64,
+    #[case] second_amount: u64,
+) -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = build_test(
+        Some(AssetAmount::new(FEE_AMOUNT)?),
+        1,
+        vec![(0, fee_asset(first_amount)?), (0, fee_asset(second_amount)?)],
+    )?;
+    let input_notes = [feature_notes[0].id(), sponsorship_notes[0].id(), sponsorship_notes[1].id()];
+
+    let balance = collect_fee_balance(mock_chain, network_account, &input_notes).await?;
+
+    assert_eq!(
+        balance,
+        first_amount + second_amount,
+        "both sponsorships should be collected and together cover the feature note's fee"
+    );
+
+    Ok(())
+}
+
+/// Sponsorships are attributed to the feature note they name. Tests random orders of five input
+/// notes - two feature notes and three sponsorships - through a fixed seed.
+#[rstest]
+#[tokio::test]
+async fn sponsorships_are_attributed_by_note_id(
+    #[values(0, 1, 2, 3)] seed: u8,
+) -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = build_test(
+        Some(AssetAmount::new(FEE_AMOUNT)?),
+        2,
+        vec![
+            (0, fee_asset(FEE_AMOUNT)?),
+            (1, fee_asset(FEE_AMOUNT / 2)?),
+            (1, fee_asset(FEE_AMOUNT / 2)?),
+        ],
+    )?;
+
+    let mut input_notes = [
+        feature_notes[0].id(),
+        feature_notes[1].id(),
+        sponsorship_notes[0].id(),
+        sponsorship_notes[1].id(),
+        sponsorship_notes[2].id(),
+    ];
+
+    let mut rng = Xoshiro256PlusPlus::from_seed([seed; 32]);
+    input_notes.shuffle(&mut rng);
+
+    let balance = collect_fee_balance(mock_chain, network_account, &input_notes).await?;
+
+    assert_eq!(
+        balance,
+        2 * FEE_AMOUNT,
+        "both sponsorships should pay for the note they name regardless of position"
+    );
+
+    Ok(())
+}
+
+/// A surplus on one feature note does not pay for another note's fee: fees are tracked per note, so
+/// an over-funded note cannot subsidize an unfunded one.
+#[tokio::test]
+async fn over_sponsoring_one_note_does_not_cover_another() -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), 2, vec![(0, fee_asset(2 * FEE_AMOUNT)?)])?;
+
+    let result = mock_chain
+        .build_transaction(network_account.id())
+        .authenticated_input_note(feature_notes[0].id())
+        .authenticated_input_note(sponsorship_notes[0].id())
+        .authenticated_input_note(feature_notes[1].id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED);
 
     Ok(())
 }
@@ -356,7 +473,8 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fees from several feature/sponsorship pairs are aggregated into a single total.
+/// Fees from several feature/sponsorship pairs are aggregated into a single total. Uses four input
+/// notes, so the fee table's element count is an exact multiple of the word size.
 #[tokio::test]
 async fn aggregates_fees_across_pairs() -> anyhow::Result<()> {
     let Test {
@@ -366,7 +484,8 @@ async fn aggregates_fees_across_pairs() -> anyhow::Result<()> {
         sponsorship_notes,
     } = build_test(
         Some(AssetAmount::new(FEE_AMOUNT)?),
-        vec![Some(fee_asset(FEE_AMOUNT)?), Some(fee_asset(FEE_AMOUNT)?)],
+        2,
+        vec![(0, fee_asset(FEE_AMOUNT)?), (1, fee_asset(FEE_AMOUNT)?)],
     )?;
     let input_notes = [
         feature_notes[0].id(),
@@ -436,7 +555,7 @@ async fn unscheduled_feature_note_aborts_fee_collection() -> anyhow::Result<()> 
         network_account,
         feature_notes,
         ..
-    } = build_test(None, vec![None])?;
+    } = build_test(None, 1, vec![])?;
 
     let result = mock_chain
         .build_transaction(network_account.id())
@@ -459,7 +578,7 @@ async fn zero_fee_feature_note_requires_no_sponsorship() -> anyhow::Result<()> {
         network_account,
         feature_notes,
         ..
-    } = build_test(Some(AssetAmount::ZERO), vec![None])?;
+    } = build_test(Some(AssetAmount::ZERO), 1, vec![])?;
     let input_notes = [feature_notes[0].id()];
 
     let balance = collect_fee_balance(mock_chain, network_account, &input_notes).await?;
@@ -509,72 +628,35 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A priced feature note that is not followed by a sponsorship note aborts the transaction.
+/// A priced feature note whose fee is not fully covered aborts the transaction, whether no
+/// sponsorship is bound to it at all or the bound one falls short.
+#[rstest]
+#[case::no_sponsorship(None)]
+#[case::underfunded(Some(FEE_AMOUNT - 1))]
 #[tokio::test]
-async fn priced_feature_note_without_sponsorship_is_rejected() -> anyhow::Result<()> {
-    let Test {
-        mock_chain,
-        network_account,
-        feature_notes,
-        ..
-    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), vec![None])?;
-
-    let result = mock_chain
-        .build_transaction(network_account.id())
-        .authenticated_input_note(feature_notes[0].id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_FEATURE_NOTE_MISSING_SPONSORSHIP);
-
-    Ok(())
-}
-
-/// A sponsorship note encountered as a current note - here consumed before its feature note - is
-/// rejected as unpaired.
-#[tokio::test]
-async fn sponsorship_note_as_current_note_is_rejected() -> anyhow::Result<()> {
+async fn uncovered_feature_note_fee_is_rejected(
+    #[case] sponsored_amount: Option<u64>,
+) -> anyhow::Result<()> {
+    let sponsorships = match sponsored_amount {
+        Some(amount) => vec![(0, fee_asset(amount)?)],
+        None => vec![],
+    };
     let Test {
         mock_chain,
         network_account,
         feature_notes,
         sponsorship_notes,
-    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), vec![Some(fee_asset(FEE_AMOUNT)?)])?;
+    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), 1, sponsorships)?;
 
-    let result = mock_chain
+    let mut builder = mock_chain
         .build_transaction(network_account.id())
-        .authenticated_input_note(sponsorship_notes[0].id())
-        .authenticated_input_note(feature_notes[0].id())
-        .build()?
-        .execute()
-        .await;
+        .authenticated_input_note(feature_notes[0].id());
+    for sponsorship_note in &sponsorship_notes {
+        builder = builder.authenticated_input_note(sponsorship_note.id());
+    }
+    let result = builder.build()?.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_UNEXPECTED_SPONSORSHIP_NOTE);
-
-    Ok(())
-}
-
-/// A sponsorship note whose fee amount does not cover the feature note's required fee aborts the
-/// transaction.
-#[tokio::test]
-async fn sponsorship_below_required_fee_is_rejected() -> anyhow::Result<()> {
-    let Test {
-        mock_chain,
-        network_account,
-        feature_notes,
-        sponsorship_notes,
-    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), vec![Some(fee_asset(FEE_AMOUNT - 1)?)])?;
-
-    let result = mock_chain
-        .build_transaction(network_account.id())
-        .authenticated_input_note(feature_notes[0].id())
-        .authenticated_input_note(sponsorship_notes[0].id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORSHIP_FEE_TOO_LOW);
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED);
 
     Ok(())
 }
@@ -587,7 +669,7 @@ async fn sponsorship_with_wrong_asset_is_rejected() -> anyhow::Result<()> {
         network_account,
         feature_notes,
         sponsorship_notes,
-    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), vec![Some(other_asset(FEE_AMOUNT)?)])?;
+    } = build_test(Some(AssetAmount::new(FEE_AMOUNT)?), 1, vec![(0, other_asset(FEE_AMOUNT)?)])?;
 
     let result = mock_chain
         .build_transaction(network_account.id())
@@ -602,35 +684,32 @@ async fn sponsorship_with_wrong_asset_is_rejected() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A well-formed FEE_SPONSORSHIP note carrying the correct fee asset, but sitting next to a priced
-/// feature note it does not actually sponsor (its stored feature note ID names a different note),
-/// is rejected. This guards against pairing a sponsorship with an unintended, wrongly-priced
-/// feature note.
+/// A FEE_SPONSORSHIP note whose feature note is absent aborts fee collection. Such a note is
+/// reclaimable by its own script, so this pins that reclaiming a sponsorship and collecting fees
+/// cannot happen in the same transaction.
 #[tokio::test]
-async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> {
+async fn sponsorship_for_absent_feature_note_is_rejected() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    // Two priced feature notes sharing the same script root.
     let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
-    let other_feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
-
-    // Both feature notes are P2ANY notes and so share one script root; allowlist it.
     let network_account = network_account(
         Some((feature_note.script().root(), AssetAmount::new(FEE_AMOUNT)?)),
         BTreeSet::from([feature_note.script().root()]),
     )?;
     builder.add_account(network_account.clone())?;
 
-    // The sponsorship note sponsors `other_feature_note`, yet below it is consumed right after
-    // `feature_note`, where `collect_sponsored_fees` looks for `feature_note`'s sponsor.
+    // The network account is the reclaimer, so consuming the sponsorship without its feature note
+    // takes the note script's reclaim path rather than aborting there.
     let sponsorship_note = Note::from(
         FeeSponsorshipNote::builder()
             .sender(sponsor.id())
             .target_account(network_account.id())
-            .feature_note_id(other_feature_note.id())
+            .feature_note_id(feature_note.id())
             .asset(fee_asset(FEE_AMOUNT)?)
+            .reclaimer(network_account.id())
+            .reclaim_height(BlockNumber::from(1u32))
             .generate_serial_number(&mut rng)
             .build()?,
     );
@@ -639,18 +718,14 @@ async fn sponsorship_for_wrong_feature_note_is_rejected() -> anyhow::Result<()> 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // `other_feature_note` is consumed too so the sponsorship note's own pairing check passes; the
-    // mismatch is caught by `collect_sponsored_fees` at the `feature_note`/sponsorship pair first.
     let result = mock_chain
         .build_transaction(network_account.id())
-        .authenticated_input_note(feature_note.id())
         .authenticated_input_note(sponsorship_note.id())
-        .authenticated_input_note(other_feature_note.id())
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORSHIP_WRONG_FEATURE_NOTE);
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORED_NOTE_NOT_FOUND);
 
     Ok(())
 }

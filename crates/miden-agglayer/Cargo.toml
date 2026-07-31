@@ -29,7 +29,6 @@ miden-utils-sync = { workspace = true }
 
 # Third-party dependencies
 alloy-sol-types = { workspace = true }
-primitive-types = { workspace = true }
 thiserror       = { workspace = true }
 
 # Crypto

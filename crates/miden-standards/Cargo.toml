@@ -24,9 +24,10 @@ testing = ["dep:rand", "miden-assembly/testing", "miden-protocol/testing"]
 miden-protocol = { workspace = true }
 
 # External dependencies
-bon       = { workspace = true }
-rand      = { optional = true, workspace = true }
-thiserror = { workspace = true }
+bon             = { workspace = true }
+primitive-types = { workspace = true }
+rand            = { optional = true, workspace = true }
+thiserror       = { workspace = true }
 
 [build-dependencies]
 miden-assembly             = { features = ["std"], workspace = true }

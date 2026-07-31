@@ -29,11 +29,15 @@ pub enum ExecutionBenchmark {
     ConsumeMintFungibleNetwork,
     ConsumeMintNonFungibleNetwork,
     ConsumeBurnNetwork,
-    ConsumeFaucetPolicyActionNetwork,
-    ConsumePauseActionNetwork,
-    ConsumeOwnerActionNetwork,
-    ConsumeRbacActionNetwork,
+    ConsumeFaucetPolicyConfigNetwork,
+    ConsumeFaucetMetadataConfigNetwork,
+    ConsumeAllowlistConfigNetwork,
+    ConsumeBlocklistConfigNetwork,
+    ConsumePauseConfigNetwork,
+    ConsumeOwnerConfigNetwork,
+    ConsumeRbacConfigNetwork,
     ConsumeNetworkAccountConfigNetwork,
+    ConsumeConstantFeePolicyConfigNetwork,
     ConsumeFeeSponsorshipWithFeatureNetwork,
     ConsumeFeeSponsorshipReclaim,
     ConsumeClaimL1WithFee,
@@ -73,11 +77,15 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeMintFungibleNetwork,
             ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ExecutionBenchmark::ConsumeBurnNetwork,
-            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork,
-            ExecutionBenchmark::ConsumePauseActionNetwork,
-            ExecutionBenchmark::ConsumeOwnerActionNetwork,
-            ExecutionBenchmark::ConsumeRbacActionNetwork,
+            ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork,
+            ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork,
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork,
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork,
+            ExecutionBenchmark::ConsumePauseConfigNetwork,
+            ExecutionBenchmark::ConsumeOwnerConfigNetwork,
+            ExecutionBenchmark::ConsumeRbacConfigNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
+            ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipReclaim,
             ExecutionBenchmark::ConsumeClaimL1WithFee,
@@ -164,20 +172,32 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeBurnNetwork => {
                 write!(f, "consume BURN note (network account)")
             },
-            ExecutionBenchmark::ConsumeFaucetPolicyActionNetwork => {
-                write!(f, "consume FAUCET_POLICY_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork => {
+                write!(f, "consume FAUCET_POLICY_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumePauseActionNetwork => {
-                write!(f, "consume PAUSE_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork => {
+                write!(f, "consume FAUCET_METADATA_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumeOwnerActionNetwork => {
-                write!(f, "consume OWNER_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
+                write!(f, "consume ALLOWLIST_CONFIG note (network account)")
             },
-            ExecutionBenchmark::ConsumeRbacActionNetwork => {
-                write!(f, "consume RBAC_ACTION note (network account)")
+            ExecutionBenchmark::ConsumeBlocklistConfigNetwork => {
+                write!(f, "consume BLOCKLIST_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumePauseConfigNetwork => {
+                write!(f, "consume PAUSE_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeOwnerConfigNetwork => {
+                write!(f, "consume OWNER_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeRbacConfigNetwork => {
+                write!(f, "consume RBAC_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
                 write!(f, "consume NETWORK_ACCOUNT_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork => {
+                write!(f, "consume CONSTANT_FEE_POLICY_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
                 write!(f, "consume FEE_SPONSORSHIP note with feature note (network account)")

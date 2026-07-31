@@ -13,7 +13,6 @@ use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 
 pub mod execution_hint
 pub mod note_creator
-pub mod note_id
 
 # ERRORS
 # =================================================================================================
@@ -84,9 +83,8 @@ end
 #! Recovers a note's script root and storage commitment from the given recipient via the advice
 #! provider.
 #!
-#! Requires the recipient preimage in the advice provider. Generally present for public notes
-#! (recipients added to advice inputs, or created via compute_and_store_recipient) and for private
-#! notes whose preimage is available.
+#! Requires the recipient preimage in the advice provider. Always present for input notes and
+#! must be present for public output notes.
 #!
 #! Inputs:  [RECIPIENT]
 #! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]

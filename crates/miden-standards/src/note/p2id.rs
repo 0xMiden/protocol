@@ -22,6 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, P2ID_CONSUMPTION_CYCLES};
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -271,6 +272,15 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             .map_err(|err| NoteError::other_with_source("failed to create account id", err))?;
 
         Ok(Self { target })
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for P2idNote {
+    fn consumption_cycles() -> u32 {
+        P2ID_CONSUMPTION_CYCLES
     }
 }
 

@@ -25,7 +25,7 @@ use miden_protocol_build_utils::{
     generate_error_file,
 };
 use miden_standards::StandardsLib;
-use miden_standards::account::access::{AccessControl, Authority};
+use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -230,6 +230,8 @@ fn generate_agglayer_constants(
                 admin: dummy_owner,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
+            components.push(AccountComponent::from(Pausable::unpaused()));
+            components.push(AccountComponent::from(PausableManager));
         } else if component_name == "faucet" {
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
@@ -364,7 +366,7 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use {mem_store_double_word} from agglayer::common::utils
+use {mem_store_double_word} from miden::standards::utils
 
 
 #! Inputs:  [zeros_ptr]

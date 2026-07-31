@@ -9,11 +9,23 @@ use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
 pub mod costs;
 
+mod allowlist_config;
+pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
+
+mod blocklist_config;
+pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
+
 mod burn;
 pub use burn::BurnNote;
 
-mod faucet_policy_action;
-pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
+mod constant_fee_policy_config;
+pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
+
+mod faucet_metadata_config;
+pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+
+mod faucet_policy_config;
+pub use faucet_policy_config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
@@ -30,8 +42,8 @@ pub use mint::{MintNote, MintNoteStorage};
 mod network_account_config;
 pub use network_account_config::{NetworkAccountConfig, NetworkAccountConfigNote};
 
-mod owner_action;
-pub use owner_action::{OwnerAction, OwnerActionNote};
+mod owner_config;
+pub use owner_config::{OwnerConfig, OwnerConfigNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -39,14 +51,14 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
-mod pause_action;
-pub use pause_action::{PauseAction, PauseActionNote};
+mod pause_config;
+pub use pause_config::{PauseConfig, PauseConfigNote};
 
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
-mod rbac_action;
-pub use rbac_action::{RbacAction, RbacActionNote};
+mod rbac_config;
+pub use rbac_config::{RbacConfig, RbacConfigNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
@@ -68,6 +80,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -75,10 +88,14 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    FAUCET_POLICY_ACTION,
-    PAUSE_ACTION,
-    OWNER_ACTION,
-    RBAC_ACTION,
+    CONSTANT_FEE_POLICY_CONFIG,
+    FAUCET_POLICY_CONFIG,
+    FAUCET_METADATA_CONFIG,
+    ALLOWLIST_CONFIG,
+    BLOCKLIST_CONFIG,
+    PAUSE_CONFIG,
+    OWNER_CONFIG,
+    RBAC_CONFIG,
     NETWORK_ACCOUNT_CONFIG,
     FEE_SPONSORSHIP,
     TX_FEE,
@@ -115,17 +132,29 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
-        if root == FaucetPolicyActionNote::script_root() {
-            return Some(Self::FAUCET_POLICY_ACTION);
+        if root == ConstantFeePolicyConfigNote::script_root() {
+            return Some(Self::CONSTANT_FEE_POLICY_CONFIG);
         }
-        if root == PauseActionNote::script_root() {
-            return Some(Self::PAUSE_ACTION);
+        if root == FaucetPolicyConfigNote::script_root() {
+            return Some(Self::FAUCET_POLICY_CONFIG);
         }
-        if root == OwnerActionNote::script_root() {
-            return Some(Self::OWNER_ACTION);
+        if root == FaucetMetadataConfigNote::script_root() {
+            return Some(Self::FAUCET_METADATA_CONFIG);
         }
-        if root == RbacActionNote::script_root() {
-            return Some(Self::RBAC_ACTION);
+        if root == AllowlistConfigNote::script_root() {
+            return Some(Self::ALLOWLIST_CONFIG);
+        }
+        if root == BlocklistConfigNote::script_root() {
+            return Some(Self::BLOCKLIST_CONFIG);
+        }
+        if root == PauseConfigNote::script_root() {
+            return Some(Self::PAUSE_CONFIG);
+        }
+        if root == OwnerConfigNote::script_root() {
+            return Some(Self::OWNER_CONFIG);
+        }
+        if root == RbacConfigNote::script_root() {
+            return Some(Self::RBAC_CONFIG);
         }
         if root == NetworkAccountConfigNote::script_root() {
             return Some(Self::NETWORK_ACCOUNT_CONFIG);
@@ -152,10 +181,14 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
-            Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
-            Self::PAUSE_ACTION => "PAUSE_ACTION",
-            Self::OWNER_ACTION => "OWNER_ACTION",
-            Self::RBAC_ACTION => "RBAC_ACTION",
+            Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
+            Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
+            Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
+            Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
+            Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
+            Self::PAUSE_CONFIG => "PAUSE_CONFIG",
+            Self::OWNER_CONFIG => "OWNER_CONFIG",
+            Self::RBAC_CONFIG => "RBAC_CONFIG",
             Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
             Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
             Self::TX_FEE => "TX_FEE",
@@ -171,12 +204,17 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
-            Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
-            // OwnerAction storage is variable per action; this returns the upper bound.
-            Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
-            // RbacAction storage is variable per action; this returns the upper bound.
-            Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS,
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
+            // FaucetMetadataConfig storage is variable per action; this returns the upper bound.
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS,
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
+            Self::PAUSE_CONFIG => PauseConfigNote::NUM_STORAGE_ITEMS,
+            // OwnerConfig storage is variable per action; this returns the upper bound.
+            Self::OWNER_CONFIG => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
+            // RbacConfig storage is variable per action; this returns the upper bound.
+            Self::RBAC_CONFIG => RbacConfigNote::MAX_NUM_STORAGE_ITEMS,
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::NUM_STORAGE_ITEMS,
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
             Self::TX_FEE => TxFeeNote::NUM_STORAGE_ITEMS,
@@ -192,10 +230,14 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
-            Self::PAUSE_ACTION => PauseActionNote::script(),
-            Self::OWNER_ACTION => OwnerActionNote::script(),
-            Self::RBAC_ACTION => RbacActionNote::script(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script(),
+            Self::RBAC_CONFIG => RbacConfigNote::script(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
             Self::TX_FEE => TxFeeNote::script(),
@@ -211,10 +253,14 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
-            Self::PAUSE_ACTION => PauseActionNote::script_root(),
-            Self::OWNER_ACTION => OwnerActionNote::script_root(),
-            Self::RBAC_ACTION => RbacActionNote::script_root(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script_root(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
+            Self::RBAC_CONFIG => RbacConfigNote::script_root(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
             Self::TX_FEE => TxFeeNote::script_root(),
