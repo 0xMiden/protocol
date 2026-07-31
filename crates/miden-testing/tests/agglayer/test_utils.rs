@@ -9,6 +9,7 @@ pub use miden_agglayer::testing::{
     MtfVectorsFile,
     SOLIDITY_CANONICAL_ZEROS,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
 use miden_core_lib::CoreLibrary;
@@ -22,9 +23,13 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::ProtocolLib;
+use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::StandardsLib;
+use miden_testing::{Auth, MockChainBuilder};
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -85,4 +90,46 @@ pub async fn execute_program_with_default_host(
         .with_advice(advice_inputs)
         .map_err(ExecutionError::advice_error_no_context)?;
     processor.execute(&program, &mut host).await
+}
+
+// BRIDGE SETUP
+// ================================================================================================
+
+/// The bridge account together with the wallets holding each of its operational roles.
+pub struct BridgeSetup {
+    pub bridge: Account,
+    pub faucet_manager: Account,
+    pub ger_injector: Account,
+    pub ger_remover: Account,
+}
+
+/// Creates the faucet manager, GER injector, and GER remover wallets, builds the bridge account
+/// wired to those roles (with the fixed [`bridge_admin_account_id`] as the `ADMIN` member), and
+/// registers the bridge account with the builder.
+pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge = create_existing_bridge_account_with_roles(
+        builder.rng_mut().draw_word(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+        MIDEN_NETWORK_ID,
+    );
+    builder.add_account(bridge.clone())?;
+
+    Ok(BridgeSetup {
+        bridge,
+        faucet_manager,
+        ger_injector,
+        ger_remover,
+    })
 }
