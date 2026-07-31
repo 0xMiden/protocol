@@ -225,11 +225,6 @@ impl BlocklistConfigNote {
 
 impl<S: blocklist_config_note_builder::State> BlocklistConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
-    ///
-    /// The note reserves one attachment slot for its bound `NetworkAccountTarget`, so callers can
-    /// add at most [`NoteAttachments::MAX_COUNT`] - 1 of their own. A caller-supplied
-    /// `NetworkAccountTarget` does not override the bound one (the bound target is prepended and
-    /// wins as the canonical first match).
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
         self
