@@ -49,8 +49,9 @@ static SEND_NOTES_NON_FUNGIBLE_FAUCET_TX_SCRIPT: LazyLock<TransactionScript> =
 /// Each variant wraps the dedicated type for one canonical script. Use [`Self::new`] to let the
 /// account's interface decide, or construct a concrete type directly when the kind is known.
 ///
-/// When the account exposes both [`BasicWallet`] and faucet ([`FungibleFaucet`] or
-/// [`NonFungibleFaucet`]) procedures, the faucet script is preferred.
+/// The script is picked from the interfaces the account exposes, cross-checked against the
+/// composition of the assets being sent: a faucet script is built only for notes its faucet can
+/// mint, and any other notes are sent with the [`BasicWallet`] script.
 ///
 /// # Example
 ///
@@ -177,23 +178,60 @@ impl SendNotesTransactionScript {
         output_notes: &[PartialNote],
         expiration_delta: u16,
     ) -> Result<Self, SendNotesTransactionScriptError> {
-        if interface.contains([FungibleFaucet::mint_and_send_root()]) {
+        let fungible_faucet = interface.contains([FungibleFaucet::mint_and_send_root()]);
+        let non_fungible_faucet = interface.contains([NonFungibleFaucet::mint_and_send_root()]);
+        let basic_wallet = interface
+            .contains([BasicWallet::move_asset_to_note_root(), BasicWallet::create_note_root()]);
+
+        // A faucet script mints one asset per note as part of note creation, so it applies only to
+        // notes shaped that way whose assets all have the composition that faucet mints. Notes the
+        // faucet cannot mint hold assets the account already owns, which the wallet script sends.
+        let one_asset_per_note = output_notes.iter().all(|note| note.assets().num_assets() == 1);
+        let mints_composition = |composition| {
+            one_asset_per_note
+                && output_notes
+                    .iter()
+                    .flat_map(|note| note.assets().iter())
+                    .all(|asset| asset.id().composition() == composition)
+        };
+
+        if fungible_faucet && mints_composition(AssetComposition::Fungible) {
             SendFungibleFaucetNotesTransactionScript::build(
                 interface,
                 output_notes,
                 expiration_delta,
             )
             .map(Self::Fungible)
-        } else if interface.contains([NonFungibleFaucet::mint_and_send_root()]) {
+        } else if non_fungible_faucet && mints_composition(AssetComposition::None) {
             SendNonFungibleFaucetNotesTransactionScript::build(
                 interface,
                 output_notes,
                 expiration_delta,
             )
             .map(Self::NonFungible)
-        } else {
+        } else if basic_wallet {
             SendWalletNotesTransactionScript::build(interface, output_notes, expiration_delta)
                 .map(Self::Wallet)
+        } else if !(fungible_faucet || non_fungible_faucet) {
+            Err(SendNotesTransactionScriptError::UnsupportedAccountInterface)
+        } else if !one_asset_per_note {
+            Err(SendNotesTransactionScriptError::FaucetNoteUnexpectedNumAssets)
+        } else {
+            // The notes are shaped for a faucet, but carry an asset composition this one does not
+            // mint.
+            let expected = if fungible_faucet {
+                AssetComposition::Fungible
+            } else {
+                AssetComposition::None
+            };
+            let actual = output_notes
+                .iter()
+                .flat_map(|note| note.assets().iter())
+                .map(|asset| asset.id().composition())
+                .find(|composition| *composition != expected)
+                .unwrap_or(expected);
+
+            Err(SendNotesTransactionScriptError::AssetCompositionMismatch { expected, actual })
         }
     }
 }

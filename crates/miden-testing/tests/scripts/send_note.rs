@@ -219,7 +219,7 @@ async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that the faucet path still rejects assetless notes at script-build time.
+/// Tests that the faucet path rejects assetless notes at script-build time.
 #[tokio::test]
 async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -418,6 +418,39 @@ fn test_send_note_script_rejects_foreign_faucet_asset() -> anyhow::Result<()> {
         result,
         Err(SendNotesTransactionScriptError::IssuanceFaucetMismatch(faucet_id))
             if faucet_id == foreign_asset.faucet_id()
+    ));
+
+    Ok(())
+}
+
+/// Tests that an account exposing both faucet interfaces builds the script matching the
+/// composition of the assets it is sending, since either faucet could mint them.
+#[test]
+fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow::Result<()> {
+    let account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
+    let interface = AccountCodeInterface::new(
+        account_id,
+        FungibleFaucet::code()
+            .procedure_roots()
+            .chain(NonFungibleFaucet::code().procedure_roots())
+            .collect(),
+    )?;
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let non_fungible =
+        Asset::NonFungible(NonFungibleAsset::from_parts(account_id, Word::from([5, 6, 7, 8u32])));
+    let non_fungible_note =
+        create_p2any_note(account_id, NoteType::Private, [non_fungible], &mut rng);
+    assert!(matches!(
+        SendNotesTransactionScript::new(&interface, &[non_fungible_note.into()])?,
+        SendNotesTransactionScript::NonFungible(_)
+    ));
+
+    let fungible = Asset::Fungible(FungibleAsset::new(account_id, 10)?);
+    let fungible_note = create_p2any_note(account_id, NoteType::Private, [fungible], &mut rng);
+    assert!(matches!(
+        SendNotesTransactionScript::new(&interface, &[fungible_note.into()])?,
+        SendNotesTransactionScript::Fungible(_)
     ));
 
     Ok(())
