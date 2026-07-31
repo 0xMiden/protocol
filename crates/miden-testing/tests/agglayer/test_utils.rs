@@ -22,11 +22,14 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::ProtocolLib;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::StandardsLib;
+use miden_testing::{Auth, MockChainBuilder};
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -43,6 +46,53 @@ pub const MIDEN_NETWORK_ID: u32 = 77;
 pub fn bridge_admin_id() -> AccountId {
     AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
         .expect("dummy admin account ID should be valid")
+}
+
+// BRIDGE SETUP
+// ================================================================================================
+
+/// The bridge account together with the wallets seeded as its `ADMIN` member and GER role
+/// holders. A faucet-manager wallet is also seeded but not exposed; add it here once a consumer
+/// needs it.
+pub struct BridgeSetup {
+    pub bridge_account: Account,
+    pub admin: Account,
+    pub ger_injector: Account,
+    pub ger_remover: Account,
+}
+
+/// Creates the admin and operational-role wallets, builds the bridge account wired to them, and
+/// registers the bridge account with the builder.
+pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
+    let admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account_with_roles(
+        builder.rng_mut().draw_word(),
+        admin.id(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+        MIDEN_NETWORK_ID,
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    Ok(BridgeSetup {
+        bridge_account,
+        admin,
+        ger_injector,
+        ger_remover,
+    })
 }
 
 // EMBEDDED TEST VECTOR JSON FILES

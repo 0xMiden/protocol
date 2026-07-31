@@ -29,9 +29,9 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::note::{RbacConfig, RbacConfigNote};
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::setup_bridge;
 // The role-membership storage getter is shared with the `rbac` suite, which owns the
 // exhaustive tests of the underlying component.
 use crate::scripts::rbac::is_role_member;
@@ -43,48 +43,6 @@ const GER_BYTES: [u8; 32] = [
 
 // HELPERS
 // ================================================================================================
-
-/// The bridge account together with the wallet IDs of its seeded `ADMIN` member and
-/// `GER_INJECTOR` holder.
-struct RotationSetup {
-    bridge_account: Account,
-    admin: AccountId,
-    ger_injector: AccountId,
-}
-
-/// Creates the admin and operational-role wallets, builds the bridge account wired to them, and
-/// registers the bridge account with the builder.
-fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<RotationSetup> {
-    let admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_roles(
-        bridge_seed,
-        admin.id(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
-    builder.add_account(bridge_account.clone())?;
-
-    Ok(RotationSetup {
-        bridge_account,
-        admin: admin.id(),
-        ger_injector: ger_injector.id(),
-    })
-}
 
 /// Builds an `RBAC_CONFIG` note for `config` sent by `sender` and targeted at the bridge.
 fn bridge_rbac_config_note(
@@ -138,7 +96,7 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     let mut bridge_account = setup.bridge_account;
 
     let grant = bridge_rbac_config_note(
-        setup.admin,
+        setup.admin.id(),
         bridge_account.id(),
         RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
@@ -176,19 +134,23 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     let mut bridge_account = setup.bridge_account;
 
     let revoke = bridge_rbac_config_note(
-        setup.admin,
+        setup.admin.id(),
         bridge_account.id(),
         RbacConfig::RevokeRole {
             role: AggLayerBridge::ger_injector_role(),
-            account: setup.ger_injector,
+            account: setup.ger_injector.id(),
         },
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(revoke.clone()));
 
     let ger = ExitRoot::from(GER_BYTES);
-    let update_ger_note =
-        UpdateGerNote::create(ger, setup.ger_injector, bridge_account.id(), builder.rng_mut())?;
+    let update_ger_note = UpdateGerNote::create(
+        ger,
+        setup.ger_injector.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -197,7 +159,7 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     assert!(!is_role_member(
         &bridge_account,
         &AggLayerBridge::ger_injector_role(),
-        setup.ger_injector
+        setup.ger_injector.id()
     )?);
 
     let result = mock_chain
