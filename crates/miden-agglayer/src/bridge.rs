@@ -503,16 +503,18 @@ impl AggLayerBridge {
         bridge_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, AgglayerBridgeError> {
-        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)?;
+        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)
+            .map_err(AgglayerBridgeError::NonPublicPauseNoteTarget)?;
 
-        Ok(PauseConfigNote::builder()
+        PauseConfigNote::builder()
             .sender(sender)
             .account(bridge_id)
             .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)
-            .build()?
-            .into())
+            .build()
+            .map(Into::into)
+            .map_err(AgglayerBridgeError::PauseNoteCreationFailed)
     }
 }
 
@@ -841,9 +843,9 @@ pub enum AgglayerBridgeError {
     #[error("the network ID stored in the bridge account does not fit into a u32")]
     InvalidNetworkId,
     #[error("bridge account must be public to be named by a network account target")]
-    NonPublicPauseNoteTarget(#[from] NetworkAccountTargetError),
+    NonPublicPauseNoteTarget(#[source] NetworkAccountTargetError),
     #[error("failed to create a PAUSE_CONFIG note for the bridge account")]
-    PauseNoteCreationFailed(#[from] NoteError),
+    PauseNoteCreationFailed(#[source] NoteError),
 }
 
 // HELPER FUNCTIONS
