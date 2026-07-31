@@ -27,8 +27,8 @@ pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 18947;
 /// Cycles of consuming a FAUCET_POLICY_CONFIG note (single benchmarked path).
 pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 26654;
 
-/// Cycles of consuming a FUNGIBLE_FAUCET_CONFIG note (single benchmarked path).
-pub const FUNGIBLE_FAUCET_CONFIG_CONSUMPTION_CYCLES: u32 = 25472;
+/// Cycles of consuming a FAUCET_METADATA_CONFIG note (single benchmarked path).
+pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 25472;
 
 /// Cycles of consuming an ALLOWLIST_CONFIG note (single benchmarked path).
 pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 24762;

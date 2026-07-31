@@ -12,16 +12,16 @@ const STRING_NUM_ELEMENTS = 28
 # Memory base at which the note storage is written by `active_note::get_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the FungibleFaucetConfig note storage. The selector occupies the whole first
-# storage word so that the 7-Word string payload of the metadata actions starts word-aligned, which
-# `poseidon2::hash_elements` requires.
+# Memory addresses of the FaucetMetadataConfig note storage. The selector is one felt padded out to
+# a full word with three zeros, so the 7-Word string payload of the metadata actions starts
+# word-aligned, as `poseidon2::hash_elements` requires.
 const SELECTOR_PTR = STORAGE_PTR
 const MAX_SUPPLY_PTR = STORAGE_PTR + 1
 const STRING_PTR = STORAGE_PTR + 4
 const STRING_END_PTR = STORAGE_PTR + 32
 
 # Config note selectors, stored in the first storage item. Keep in sync with
-# `FungibleFaucetConfig` on the Rust side.
+# `FaucetMetadataConfig` on the Rust side.
 const SELECTOR_SET_MAX_SUPPLY = 0
 const SELECTOR_SET_DESCRIPTION = 1
 const SELECTOR_SET_LOGO_URI = 2
@@ -34,15 +34,21 @@ const NUM_ITEMS_SET_STRING = 32
 # ERRORS
 # =================================================================================================
 
-const ERR_FUNGIBLE_FAUCET_CONFIG_UNKNOWN_SELECTOR = "fungible faucet config note selector does not match a known action"
+const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR = "faucet metadata config note selector does not match a known action"
 
-const ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fungible faucet config note storage item count does not match the selected action"
+const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet metadata config note storage item count does not match the selected action"
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! FungibleFaucetConfig script: triggers a `FungibleFaucet` token metadata admin action against the
-#! consuming account, dispatched on a selector stored in the first note storage item.
+#! FaucetMetadataConfig script: triggers a token metadata admin action against the consuming
+#! faucet, dispatched on a selector stored in the first note storage item.
+#!
+#! The three string setters live in the shared `miden::standards::faucets` module, which both the
+#! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those selectors work on either
+#! kind of faucet. `SetMaxSupply` is fungible-only: it calls
+#! `miden::standards::faucets::fungible::set_max_supply`, which a non-fungible faucet does not
+#! expose, so that selector aborts there.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation, so
 #! authorization is bound to the note sender):
@@ -56,13 +62,13 @@ const ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fungible 
 #! to memory and inserts it into the advice map under that commitment, so the value is bound into
 #! the note commitment through the note storage and needs no out-of-band advice inputs.
 #!
-#! Authorization is enforced by the called `FungibleFaucet` procedures via the account-wide
-#! `Authority` component (`assert_authorized`); this script only loads the arguments and calls them.
+#! Authorization is enforced by the called setters via the account-wide `Authority` component
+#! (`assert_authorized`); this script only loads the arguments and calls them.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::fungible::set_max_supply` and
-#!   `miden::standards::faucets::{set_description, set_logo_uri, set_external_link}` (the
-#!   `FungibleFaucet` component), backed by the `Authority` and `Pausable` companion components.
+#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_link}` for the string
+#!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
+#!   the `Authority` and `Pausable` companion components.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -113,7 +119,7 @@ pub proc main
                 exec.execute_set_logo_uri
             else
                 eq.SELECTOR_SET_EXTERNAL_LINK
-                assert.err=ERR_FUNGIBLE_FAUCET_CONFIG_UNKNOWN_SELECTOR
+                assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR
                 # => [num_storage_items]
 
                 exec.execute_set_external_link
@@ -140,7 +146,7 @@ end
 #! Invocation: exec
 proc execute_set_max_supply
     eq.NUM_ITEMS_SET_MAX_SUPPLY
-    assert.err=ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # build the `set_max_supply` input window: [new_max_supply, pad(15)]
@@ -179,7 +185,7 @@ end
 #! Invocation: exec
 proc prepare_string_call
     eq.NUM_ITEMS_SET_STRING
-    assert.err=ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # pad the window the setter expects below the commitment

@@ -23,46 +23,51 @@ use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 use crate::account::faucets::{Description, ExternalLink, LogoURI};
-use crate::note::costs::{FUNGIBLE_FAUCET_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::costs::{FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the FUNGIBLE_FAUCET_CONFIG note script procedure in the standards library.
-const FUNGIBLE_FAUCET_CONFIG_SCRIPT_PATH: &str =
-    "::miden::standards::notes::fungible_faucet_config::main";
+/// Path to the FAUCET_METADATA_CONFIG note script procedure in the standards library.
+const FAUCET_METADATA_CONFIG_SCRIPT_PATH: &str =
+    "::miden::standards::notes::faucet_metadata_config::main";
 
-// Initialize the FUNGIBLE_FAUCET_CONFIG note script only once.
-static FUNGIBLE_FAUCET_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the FAUCET_METADATA_CONFIG note script only once.
+static FAUCET_METADATA_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(FUNGIBLE_FAUCET_CONFIG_SCRIPT_PATH);
+    let path = Path::new(FAUCET_METADATA_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains FUNGIBLE_FAUCET_CONFIG note script procedure")
+        .expect("Standards library contains FAUCET_METADATA_CONFIG note script procedure")
 });
 
 // FUNGIBLE FAUCET CONFIG
 // ================================================================================================
 
 /// Number of felts encoding a metadata string: 7 Words. Keep in sync with
-/// `fungible_faucet_config.masm`.
+/// `faucet_metadata_config.masm`.
 const STRING_NUM_ELEMENTS: usize = 28;
 
-/// A token metadata management action of the
-/// [`FungibleFaucet`](crate::account::faucets::FungibleFaucet) component that a
-/// [`FungibleFaucetConfigNote`] triggers on the account that consumes it.
+/// A token metadata management action that a [`FaucetMetadataConfigNote`] triggers on the faucet
+/// that consumes it.
 ///
 /// The action, together with its arguments, is encoded into the note's storage (see [`NoteStorage`]
 /// conversion below). Because the storage is fixed at note creation and bound into the note
-/// commitment, the authorized party is the note sender: the consuming account's `FungibleFaucet`
-/// procedures authorize the sender through the account-wide `Authority` component.
+/// commitment, the authorized party is the note sender: the consuming faucet's metadata setters
+/// authorize the sender through the account-wide `Authority` component.
+///
+/// The three string actions apply to both faucet kinds, since
+/// [`FungibleFaucet`](crate::account::faucets::FungibleFaucet) and
+/// [`NonFungibleFaucet`](crate::account::faucets::NonFungibleFaucet) re-export the same setters
+/// from the shared `miden::standards::faucets` module. [`Self::SetMaxSupply`] is fungible-only, and
+/// aborts on a non-fungible faucet, which does not expose `set_max_supply`.
 ///
 /// The three string actions carry their new value as the 28 felts the faucet stores it in. The note
 /// script commits to those felts and publishes them in the advice map, which is how the called
 /// setter receives them — nothing outside the note has to supply advice inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FungibleFaucetConfig {
-    /// Set the faucet's maximum supply. Requires the max supply to be configured as mutable, and
-    /// the new cap to be at least the current token supply.
+pub enum FaucetMetadataConfig {
+    /// Set the faucet's maximum supply. Fungible faucets only. Requires the max supply to be
+    /// configured as mutable, and the new cap to be at least the current token supply.
     SetMaxSupply { max_supply: AssetAmount },
     /// Set the token description. Requires the description to be configured as mutable.
     SetDescription { description: Description },
@@ -72,12 +77,12 @@ pub enum FungibleFaucetConfig {
     SetExternalLink { external_link: ExternalLink },
 }
 
-impl FungibleFaucetConfig {
+impl FaucetMetadataConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
     // Config note selectors stored in the first storage item. Keep in sync with
-    // `fungible_faucet_config.masm`.
+    // `faucet_metadata_config.masm`.
     const SELECTOR_SET_MAX_SUPPLY: u8 = 0;
     const SELECTOR_SET_DESCRIPTION: u8 = 1;
     const SELECTOR_SET_LOGO_URI: u8 = 2;
@@ -86,33 +91,33 @@ impl FungibleFaucetConfig {
     /// Returns the selector encoding this action in the first storage item.
     const fn selector(&self) -> u8 {
         match self {
-            FungibleFaucetConfig::SetMaxSupply { .. } => Self::SELECTOR_SET_MAX_SUPPLY,
-            FungibleFaucetConfig::SetDescription { .. } => Self::SELECTOR_SET_DESCRIPTION,
-            FungibleFaucetConfig::SetLogoUri { .. } => Self::SELECTOR_SET_LOGO_URI,
-            FungibleFaucetConfig::SetExternalLink { .. } => Self::SELECTOR_SET_EXTERNAL_LINK,
+            FaucetMetadataConfig::SetMaxSupply { .. } => Self::SELECTOR_SET_MAX_SUPPLY,
+            FaucetMetadataConfig::SetDescription { .. } => Self::SELECTOR_SET_DESCRIPTION,
+            FaucetMetadataConfig::SetLogoUri { .. } => Self::SELECTOR_SET_LOGO_URI,
+            FaucetMetadataConfig::SetExternalLink { .. } => Self::SELECTOR_SET_EXTERNAL_LINK,
         }
     }
 
     /// Returns the note storage values encoding this action.
     ///
     /// `SetMaxSupply` lays out as `[selector, new_max_supply]`. The string actions lay out as
-    /// `[selector, 0, 0, 0, value(28)]`: the selector occupies the whole first storage word so that
-    /// the payload starts word-aligned, which the note script's `poseidon2::hash_elements` call
-    /// requires.
+    /// `[selector, 0, 0, 0, value(28)]`: the selector is padded out to a full word with three
+    /// zeros, so the payload starts word-aligned, as the note script's `poseidon2::hash_elements`
+    /// call requires.
     fn to_storage_values(&self) -> Vec<Felt> {
         let selector = Felt::from(self.selector());
 
         match self {
-            FungibleFaucetConfig::SetMaxSupply { max_supply } => {
+            FaucetMetadataConfig::SetMaxSupply { max_supply } => {
                 vec![selector, Felt::from(*max_supply)]
             },
-            FungibleFaucetConfig::SetDescription { description } => {
+            FaucetMetadataConfig::SetDescription { description } => {
                 string_storage_values(selector, &description.to_words())
             },
-            FungibleFaucetConfig::SetLogoUri { logo_uri } => {
+            FaucetMetadataConfig::SetLogoUri { logo_uri } => {
                 string_storage_values(selector, &logo_uri.to_words())
             },
-            FungibleFaucetConfig::SetExternalLink { external_link } => {
+            FaucetMetadataConfig::SetExternalLink { external_link } => {
                 string_storage_values(selector, &external_link.to_words())
             },
         }
@@ -121,7 +126,7 @@ impl FungibleFaucetConfig {
 
 /// Lays out a string action as `[selector, 0, 0, 0, value(28)]`.
 fn string_storage_values(selector: Felt, value: &[Word]) -> Vec<Felt> {
-    let mut items = Vec::with_capacity(FungibleFaucetConfigNote::MAX_NUM_STORAGE_ITEMS);
+    let mut items = Vec::with_capacity(FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS);
     items.push(selector);
     items.extend([Felt::ZERO; 3]);
     items.extend(value.iter().flat_map(Word::as_elements).copied());
@@ -131,8 +136,8 @@ fn string_storage_values(selector: Felt, value: &[Word]) -> Vec<Felt> {
     items
 }
 
-impl From<FungibleFaucetConfig> for NoteStorage {
-    fn from(config: FungibleFaucetConfig) -> Self {
+impl From<FaucetMetadataConfig> for NoteStorage {
+    fn from(config: FaucetMetadataConfig) -> Self {
         NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
@@ -141,35 +146,36 @@ impl From<FungibleFaucetConfig> for NoteStorage {
 // FUNGIBLE FAUCET CONFIG NOTE
 // ================================================================================================
 
-/// A FungibleFaucetConfig note: triggers a
-/// [`FungibleFaucet`](crate::account::faucets::FungibleFaucet) token metadata admin action on the
-/// account that consumes it.
+/// A FaucetMetadataConfig note: triggers a token metadata admin action on the faucet that consumes
+/// it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on a selector in the note's storage to one of the faucet's
 /// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`).
 /// Authorization is enforced by those procedures through the account-wide `Authority` component
 /// against the note sender, so the note carries no assets and its authorization is bound to
 /// `sender` at creation time.
 ///
-/// The note is always public and tagged for `target` — the faucet carrying the `FungibleFaucet`
-/// component whose metadata is being managed. The `sender` is the account authorized for the action
-/// per the target's `Authority` configuration (the owner under `Authority::OwnerControlled`, or a
-/// role member under `Authority::RbacControlled`).
+/// See [`FaucetMetadataConfig`] for which actions apply to which faucet kind.
 ///
-/// Construct one with the [builder](FungibleFaucetConfigNote::builder); convert it into a protocol
+/// The note is always public and tagged for `target` — the faucet whose metadata is being managed.
+/// The `sender` is the account authorized for the action per the target's `Authority` configuration
+/// (the owner under `Authority::OwnerControlled`, or a role member under
+/// `Authority::RbacControlled`).
+///
+/// Construct one with the [builder](FaucetMetadataConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct FungibleFaucetConfigNote {
+pub struct FaucetMetadataConfigNote {
     sender: AccountId,
     target: AccountId,
-    config: FungibleFaucetConfig,
+    config: FaucetMetadataConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl FungibleFaucetConfigNote {
-    /// Builds a new [`FungibleFaucetConfigNote`] that applies `config` to `target`.
+impl FaucetMetadataConfigNote {
+    /// Builds a new [`FaucetMetadataConfigNote`] that applies `config` to `target`.
     ///
     /// # Errors
     ///
@@ -180,7 +186,7 @@ impl FungibleFaucetConfigNote {
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        config: FungibleFaucetConfig,
+        config: FaucetMetadataConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         let attachments = NoteAttachments::new(attachments)?;
@@ -195,11 +201,11 @@ impl FungibleFaucetConfigNote {
     }
 }
 
-impl FungibleFaucetConfigNote {
+impl FaucetMetadataConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Upper bound on the number of storage items of a FungibleFaucetConfig note.
+    /// Upper bound on the number of storage items of a FaucetMetadataConfig note.
     ///
     /// The layout is variable: `SetMaxSupply` uses 2 items (`[selector, new_max_supply]`), while
     /// the three string actions use 32 (`[selector, 0, 0, 0, value(28)]`).
@@ -208,14 +214,14 @@ impl FungibleFaucetConfigNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the FungibleFaucetConfig note.
+    /// Returns the script of the FaucetMetadataConfig note.
     pub fn script() -> NoteScript {
-        FUNGIBLE_FAUCET_CONFIG_SCRIPT.clone()
+        FAUCET_METADATA_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the FungibleFaucetConfig note script root.
+    /// Returns the FaucetMetadataConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        FUNGIBLE_FAUCET_CONFIG_SCRIPT.root()
+        FAUCET_METADATA_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the account authorized for the action).
@@ -229,7 +235,7 @@ impl FungibleFaucetConfigNote {
     }
 
     /// Returns the metadata action carried by the note.
-    pub fn config(&self) -> &FungibleFaucetConfig {
+    pub fn config(&self) -> &FaucetMetadataConfig {
         &self.config
     }
 
@@ -247,7 +253,7 @@ impl FungibleFaucetConfigNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: fungible_faucet_config_note_builder::State> FungibleFaucetConfigNoteBuilder<S> {
+impl<S: faucet_metadata_config_note_builder::State> FaucetMetadataConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -264,15 +270,15 @@ impl<S: fungible_faucet_config_note_builder::State> FungibleFaucetConfigNoteBuil
     }
 }
 
-impl<S: fungible_faucet_config_note_builder::State> FungibleFaucetConfigNoteBuilder<S>
+impl<S: faucet_metadata_config_note_builder::State> FaucetMetadataConfigNoteBuilder<S>
 where
-    S::SerialNumber: fungible_faucet_config_note_builder::IsUnset,
+    S::SerialNumber: faucet_metadata_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> FungibleFaucetConfigNoteBuilder<fungible_faucet_config_note_builder::SetSerialNumber<S>>
+    ) -> FaucetMetadataConfigNoteBuilder<faucet_metadata_config_note_builder::SetSerialNumber<S>>
     {
         self.serial_number(rng.draw_word())
     }
@@ -281,15 +287,15 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<FungibleFaucetConfigNote> for Note {
-    fn from(note: FungibleFaucetConfigNote) -> Self {
-        // FungibleFaucetConfig notes carry no assets and are always public; the action and its
+impl From<FaucetMetadataConfigNote> for Note {
+    fn from(note: FaucetMetadataConfigNote) -> Self {
+        // FaucetMetadataConfig notes carry no assets and are always public; the action and its
         // arguments live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            FungibleFaucetConfigNote::script(),
+            FaucetMetadataConfigNote::script(),
             NoteStorage::from(note.config),
         );
 
@@ -297,9 +303,9 @@ impl From<FungibleFaucetConfigNote> for Note {
     }
 }
 
-impl NoteConsumptionCost for FungibleFaucetConfigNote {
+impl NoteConsumptionCost for FaucetMetadataConfigNote {
     fn consumption_cycles() -> u32 {
-        FUNGIBLE_FAUCET_CONFIG_CONSUMPTION_CYCLES
+        FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES
     }
 }
 
@@ -325,15 +331,15 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed faucet.
     #[test]
-    fn builder_builds_fungible_faucet_config_note() {
+    fn builder_builds_faucet_metadata_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let faucet = account_id(1);
         let owner = account_id(2);
 
-        let note = FungibleFaucetConfigNote::builder()
+        let note = FaucetMetadataConfigNote::builder()
             .sender(owner)
             .target(faucet)
-            .config(FungibleFaucetConfig::SetDescription { description: description() })
+            .config(FaucetMetadataConfig::SetDescription { description: description() })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -351,12 +357,12 @@ mod tests {
     #[test]
     fn set_max_supply_storage_layout() {
         let max_supply = AssetAmount::new(1_000).unwrap();
-        let storage = NoteStorage::from(FungibleFaucetConfig::SetMaxSupply { max_supply });
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetMaxSupply { max_supply });
 
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(FungibleFaucetConfig::SELECTOR_SET_MAX_SUPPLY),
+                Felt::from(FaucetMetadataConfig::SELECTOR_SET_MAX_SUPPLY),
                 Felt::from(max_supply),
             ]
         );
@@ -367,13 +373,13 @@ mod tests {
     #[test]
     fn set_description_storage_layout() {
         let description = description();
-        let storage = NoteStorage::from(FungibleFaucetConfig::SetDescription {
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetDescription {
             description: description.clone(),
         });
 
         let items = storage.items();
-        assert_eq!(items.len(), FungibleFaucetConfigNote::MAX_NUM_STORAGE_ITEMS);
-        assert_eq!(items[0], Felt::from(FungibleFaucetConfig::SELECTOR_SET_DESCRIPTION));
+        assert_eq!(items.len(), FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS);
+        assert_eq!(items[0], Felt::from(FaucetMetadataConfig::SELECTOR_SET_DESCRIPTION));
         assert_eq!(&items[1..4], &[Felt::ZERO; 3]);
 
         let payload: Vec<Felt> =
@@ -385,14 +391,14 @@ mod tests {
     #[test]
     fn string_action_selectors() {
         let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
-        let storage = NoteStorage::from(FungibleFaucetConfig::SetLogoUri { logo_uri });
-        assert_eq!(storage.items()[0], Felt::from(FungibleFaucetConfig::SELECTOR_SET_LOGO_URI));
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetLogoUri { logo_uri });
+        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::SELECTOR_SET_LOGO_URI));
 
         let external_link = ExternalLink::new("https://example.com").unwrap();
-        let storage = NoteStorage::from(FungibleFaucetConfig::SetExternalLink { external_link });
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetExternalLink { external_link });
         assert_eq!(
             storage.items()[0],
-            Felt::from(FungibleFaucetConfig::SELECTOR_SET_EXTERNAL_LINK)
+            Felt::from(FaucetMetadataConfig::SELECTOR_SET_EXTERNAL_LINK)
         );
     }
 }

@@ -23,7 +23,7 @@ Covered scenarios, with one variant per distinct execution path:
 
 - standards, consumed by a network basic wallet: P2ID (1 vs 16 assets); P2IDE (claim, claim with 16 assets, reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note; the sponsor-side reclaim path is benchmarked separately on a regular wallet, since a network account cannot consume a lone sponsorship note)
 - standards, consumed by a network faucet: MINT (fungible vs non-fungible faucet); BURN
-- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FUNGIBLE_FAUCET_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path)
+- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FAUCET_METADATA_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path)
 - agglayer, consumed by the bridge account (a network account): CLAIM (L1 vs L2 origin, with fee payment), B2AGG (empty vs `2^31 - 1`-leaf frontier, with fee payment), CONFIG_AGG_BRIDGE, DEREGISTER_AGG_FAUCET, UPDATE_GER, REMOVE_GER
 
 The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for continuity; the `with fee payment` variants are the network-account pricing baseline.

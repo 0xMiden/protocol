@@ -1,4 +1,4 @@
-//! Tests for the `FUNGIBLE_FAUCET_CONFIG` standard note, which dispatches the
+//! Tests for the `FAUCET_METADATA_CONFIG` standard note, which dispatches the
 //! [`miden_standards::account::faucets::FungibleFaucet`] metadata setters from a note.
 //!
 //! The suite covers the note itself: that each selector dispatches to the matching setter, and that
@@ -13,10 +13,10 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
 use miden_standards::errors::standards::{
-    ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_FUNGIBLE_FAUCET_CONFIG_UNKNOWN_SELECTOR,
+    ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{FungibleFaucetConfig, FungibleFaucetConfigNote};
+use miden_standards::note::{FaucetMetadataConfig, FaucetMetadataConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -25,15 +25,15 @@ use super::{INITIAL_MAX_SUPPLY, consume_note, create_faucet, metadata, owner_id}
 // HELPERS
 // ================================================================================================
 
-/// Builds a [`FungibleFaucetConfigNote`] for `config`, sent by `sender` and targeting the faucet.
+/// Builds a [`FaucetMetadataConfigNote`] for `config`, sent by `sender` and targeting the faucet.
 fn config_note(
     sender: AccountId,
     faucet_id: AccountId,
-    config: FungibleFaucetConfig,
+    config: FaucetMetadataConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
-    let note = FungibleFaucetConfigNote::builder()
+    let note = FaucetMetadataConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
         .config(config)
@@ -43,7 +43,7 @@ fn config_note(
     Ok(note)
 }
 
-/// Builds a note carrying the FungibleFaucetConfig script with hand-crafted storage, bypassing the
+/// Builds a note carrying the FaucetMetadataConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
 fn malformed_config_note(
     sender: AccountId,
@@ -52,7 +52,7 @@ fn malformed_config_note(
 ) -> anyhow::Result<Note> {
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
-        .script(FungibleFaucetConfigNote::script())
+        .script(FaucetMetadataConfigNote::script())
         .note_storage(storage)?
         .build()?;
     Ok(note)
@@ -79,7 +79,7 @@ async fn set_max_supply_dispatch() -> anyhow::Result<()> {
     let note = config_note(
         owner,
         faucet.id(),
-        FungibleFaucetConfig::SetMaxSupply { max_supply: new_max_supply },
+        FaucetMetadataConfig::SetMaxSupply { max_supply: new_max_supply },
         1,
     )?;
 
@@ -111,19 +111,19 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
         config_note(
             owner,
             faucet.id(),
-            FungibleFaucetConfig::SetDescription { description: description.clone() },
+            FaucetMetadataConfig::SetDescription { description: description.clone() },
             2,
         )?,
         config_note(
             owner,
             faucet.id(),
-            FungibleFaucetConfig::SetLogoUri { logo_uri: logo_uri.clone() },
+            FaucetMetadataConfig::SetLogoUri { logo_uri: logo_uri.clone() },
             3,
         )?,
         config_note(
             owner,
             faucet.id(),
-            FungibleFaucetConfig::SetExternalLink { external_link: external_link.clone() },
+            FaucetMetadataConfig::SetExternalLink { external_link: external_link.clone() },
             4,
         )?,
     ];
@@ -163,7 +163,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FUNGIBLE_FAUCET_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR);
 
     Ok(())
 }
@@ -189,7 +189,7 @@ async fn wrong_storage_item_count_fails_for_max_supply() -> anyhow::Result<()> {
 
     assert_transaction_executor_error!(
         result,
-        ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
 
     Ok(())
@@ -221,7 +221,7 @@ async fn wrong_storage_item_count_fails_for_string_action() -> anyhow::Result<()
 
     assert_transaction_executor_error!(
         result,
-        ERR_FUNGIBLE_FAUCET_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
 
     Ok(())

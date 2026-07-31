@@ -573,7 +573,7 @@
       }
     }
   },
-  "consume FUNGIBLE_FAUCET_CONFIG note (network account)": {
+  "consume FAUCET_METADATA_CONFIG note (network account)": {
     "prologue": 4730,
     "notes_processing": 5178,
     "note_execution": {

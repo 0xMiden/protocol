@@ -7,7 +7,7 @@
 //! the preimage in the advice map under it; the setter pipes the preimage back out and validates it
 //! against the commitment.
 //!
-//! `FungibleFaucetConfigNote` is the standard caller that satisfies this contract, so the tests
+//! `FaucetMetadataConfigNote` is the standard caller that satisfies this contract, so the tests
 //! below drive the setters through it. The one exception is
 //! [`set_description_accepts_caller_computed_commitment`], which supplies a commitment computed
 //! outside the VM — something the standard note never does — and therefore uses a hand-written
@@ -46,7 +46,7 @@ use miden_standards::errors::standards::{
     ERR_LOGO_URI_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{FungibleFaucetConfig, FungibleFaucetConfigNote};
+use miden_standards::note::{FaucetMetadataConfig, FaucetMetadataConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -92,15 +92,15 @@ fn create_faucet(owner: AccountId, mutable: bool) -> anyhow::Result<Account> {
     Ok(account)
 }
 
-/// Builds a `sender`-authored [`FungibleFaucetConfigNote`] carrying `config`.
+/// Builds a `sender`-authored [`FaucetMetadataConfigNote`] carrying `config`.
 fn config_note(
     sender: AccountId,
     faucet_id: AccountId,
-    config: FungibleFaucetConfig,
+    config: FaucetMetadataConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
-    let note = FungibleFaucetConfigNote::builder()
+    let note = FaucetMetadataConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
         .config(config)
@@ -111,7 +111,7 @@ fn config_note(
 }
 
 /// Builds a `sender`-authored note that calls `set_description` with a caller-supplied
-/// `commitment`, rather than one computed in MASM as `FungibleFaucetConfigNote` does.
+/// `commitment`, rather than one computed in MASM as `FaucetMetadataConfigNote` does.
 ///
 /// The 7-Word payload travels in the note storage; the script publishes it in the advice map under
 /// `commitment` so the setter can pipe it back out and validate it. Only
@@ -218,7 +218,7 @@ async fn set_description_fails_when_immutable() -> anyhow::Result<()> {
 
     let description = Description::new("nope")?;
     let note =
-        config_note(owner, faucet.id(), FungibleFaucetConfig::SetDescription { description }, 4)?;
+        config_note(owner, faucet.id(), FaucetMetadataConfig::SetDescription { description }, 4)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -241,7 +241,7 @@ async fn set_logo_uri_fails_when_immutable() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let logo_uri = LogoURI::new("https://example.com/nope.png")?;
-    let note = config_note(owner, faucet.id(), FungibleFaucetConfig::SetLogoUri { logo_uri }, 5)?;
+    let note = config_note(owner, faucet.id(), FaucetMetadataConfig::SetLogoUri { logo_uri }, 5)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -267,7 +267,7 @@ async fn set_external_link_fails_when_immutable() -> anyhow::Result<()> {
     let note = config_note(
         owner,
         faucet.id(),
-        FungibleFaucetConfig::SetExternalLink { external_link },
+        FaucetMetadataConfig::SetExternalLink { external_link },
         6,
     )?;
 
@@ -300,7 +300,7 @@ async fn set_description_fails_when_sender_is_not_owner() -> anyhow::Result<()> 
     let note = config_note(
         stranger,
         faucet.id(),
-        FungibleFaucetConfig::SetDescription { description },
+        FaucetMetadataConfig::SetDescription { description },
         7,
     )?;
 

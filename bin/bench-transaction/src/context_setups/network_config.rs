@@ -48,10 +48,10 @@ use miden_standards::note::{
     BlocklistConfig,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    FaucetMetadataConfig,
+    FaucetMetadataConfigNote,
     FaucetPolicyConfig,
     FaucetPolicyConfigNote,
-    FungibleFaucetConfig,
-    FungibleFaucetConfigNote,
     NetworkAccountConfig,
     NetworkAccountConfigNote,
     OwnerConfig,
@@ -131,14 +131,14 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
 // FUNGIBLE FAUCET CONFIG NOTE SETUP
 // ================================================================================================
 
-/// Returns the transaction context for a network faucet consuming a FUNGIBLE_FAUCET_CONFIG note.
+/// Returns the transaction context for a network faucet consuming a FAUCET_METADATA_CONFIG note.
 ///
 /// The faucet carries the token metadata with every mutability flag set, gated by the owner wallet
 /// via `Authority::OwnerControlled` (mirrors `create_faucet` in the `faucet_metadata` test suite).
 /// The benchmarked action is `SetDescription`, the most expensive selector: it commits to the
 /// 7-Word payload and republishes it in the advice map before the call, which the `SetMaxSupply`
 /// selector does not do.
-pub fn tx_consume_fungible_faucet_config_note_network() -> Result<MockTransaction> {
+pub fn tx_consume_faucet_metadata_config_note_network() -> Result<MockTransaction> {
     let mut builder = super::chain_builder(true);
 
     // the owner wallet authorized to send metadata config notes
@@ -163,15 +163,15 @@ pub fn tx_consume_fungible_faucet_config_note_network() -> Result<MockTransactio
         .with_component(Pausable::unpaused())
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
-        super::network_auth([FungibleFaucetConfigNote::script_root()])?,
+        super::network_auth([FaucetMetadataConfigNote::script_root()])?,
         account_builder,
         AccountState::Exists,
     )?;
 
-    let note: Note = FungibleFaucetConfigNote::builder()
+    let note: Note = FaucetMetadataConfigNote::builder()
         .sender(owner.id())
         .target(account.id())
-        .config(FungibleFaucetConfig::SetDescription {
+        .config(FaucetMetadataConfig::SetDescription {
             description: Description::new("benchmarked token description")?,
         })
         .generate_serial_number(builder.rng_mut())
