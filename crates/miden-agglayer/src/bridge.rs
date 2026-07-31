@@ -496,26 +496,23 @@ impl AggLayerBridge {
     /// [`NetworkAccountTarget`], without which the note is never routed to the bridge.
     ///
     /// # Errors
-    /// Returns an error if `bridge_id` cannot be named by a network account target, or if note
-    /// creation fails.
+    /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
     pub fn pause_note<R: FeltRng>(
         config: PauseConfig,
         sender: AccountId,
         bridge_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, AgglayerBridgeError> {
-        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)
-            .map_err(AgglayerBridgeError::InvalidPauseNoteTarget)?;
+        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)?;
 
-        PauseConfigNote::builder()
+        Ok(PauseConfigNote::builder()
             .sender(sender)
             .account(bridge_id)
             .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)
-            .build()
-            .map(Into::into)
-            .map_err(AgglayerBridgeError::PauseNoteCreationFailed)
+            .build()?
+            .into())
     }
 }
 
@@ -843,10 +840,10 @@ pub enum AgglayerBridgeError {
     EmptyBridgeRole(RoleSymbol),
     #[error("the network ID stored in the bridge account does not fit into a u32")]
     InvalidNetworkId,
-    #[error("failed to target the bridge account with a network account target attachment")]
-    InvalidPauseNoteTarget(#[source] NetworkAccountTargetError),
-    #[error("failed to build a PAUSE_CONFIG note for the bridge account")]
-    PauseNoteCreationFailed(#[source] NoteError),
+    #[error("bridge account must be public to be named by a network account target")]
+    NonPublicPauseNoteTarget(#[from] NetworkAccountTargetError),
+    #[error("failed to create a PAUSE_CONFIG note for the bridge account")]
+    PauseNoteCreationFailed(#[from] NoteError),
 }
 
 // HELPER FUNCTIONS

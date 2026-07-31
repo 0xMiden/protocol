@@ -1,4 +1,3 @@
-use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -13,10 +12,8 @@ use miden_agglayer::{
     UpdateGerNote,
 };
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -25,54 +22,18 @@ use miden_standards::account::access::PausableStorage;
 use miden_standards::errors::standards::{ERR_PAUSABLE_IS_PAUSED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 
-use super::test_utils::{
-    ClaimDataSource,
-    MIDEN_NETWORK_ID,
-    create_existing_bridge_account_with_roles,
-};
+use super::test_utils::{BridgeSetup, ClaimDataSource, bridge_admin_account_id, setup_bridge};
+use crate::consume_note;
+
+// CONSTANTS
+// ================================================================================================
+
+const DUMMY_ETH_ADDRESS: &str = "0x00000000000000000000000000000000000000aa";
 
 // HELPERS
 // ================================================================================================
-
-struct BridgeSetup {
-    bridge: Account,
-    faucet_manager: Account,
-    ger_injector: Account,
-    ger_remover: Account,
-}
-
-/// Creates the three operational-role wallets, builds the bridge account wired to those roles
-/// (with the fixed [`bridge_admin_account_id`] as the `ADMIN` member), and registers the bridge
-/// account with the builder.
-fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let bridge = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
-    builder.add_account(bridge.clone())?;
-
-    Ok(BridgeSetup {
-        bridge,
-        faucet_manager,
-        ger_injector,
-        ger_remover,
-    })
-}
 
 /// Builds a bridge-targeted [`PauseConfigNote`] for `action` sent by `sender`.
 fn pause_config_note(
@@ -102,24 +63,6 @@ fn stage_pause_note(
     Ok(note)
 }
 
-/// Consumes a staged note on the bridge and commits the resulting transaction to the chain, so
-/// subsequent transactions see the updated bridge state.
-async fn consume_and_commit(
-    mock_chain: &mut MockChain,
-    bridge_id: AccountId,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let executed = mock_chain
-        .build_transaction(bridge_id)
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
-}
-
 /// Reads the pause state from the committed bridge account.
 fn is_bridge_paused(mock_chain: &MockChain, bridge_id: AccountId) -> anyhow::Result<bool> {
     let word = mock_chain
@@ -129,12 +72,13 @@ fn is_bridge_paused(mock_chain: &MockChain, bridge_id: AccountId) -> anyhow::Res
     Ok(word != Word::default())
 }
 
+/// Builds the note a "paused bridge rejects <entry point>" test stages against the bridge.
+type BuildNote<'a> = &'a dyn Fn(&mut MockChainBuilder, &BridgeSetup) -> anyhow::Result<Note>;
+
 /// Shared skeleton for the "paused bridge rejects <entry point>" tests: sets up the bridge,
 /// stages the note produced by `build_note`, pauses the bridge, and asserts that consuming the
 /// note fails with `ERR_PAUSABLE_IS_PAUSED`.
-async fn assert_note_rejected_while_paused(
-    build_note: impl FnOnce(&mut MockChainBuilder, &BridgeSetup) -> anyhow::Result<Note>,
-) -> anyhow::Result<()> {
+async fn assert_note_rejected_while_paused(build_note: BuildNote<'_>) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
     let note = build_note(&mut builder, &setup)?;
@@ -142,7 +86,7 @@ async fn assert_note_rejected_while_paused(
     let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
     let mut mock_chain = builder.build()?;
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
 
     let result = mock_chain
         .build_transaction(setup.bridge.id())
@@ -160,8 +104,6 @@ async fn assert_note_rejected_while_paused(
 fn dummy_faucet_id() -> AccountId {
     AccountIdBuilder::new().build_with_seed([7; 32])
 }
-
-const DUMMY_ETH_ADDRESS: &str = "0x00000000000000000000000000000000000000aa";
 
 // TESTS
 // ================================================================================================
@@ -183,10 +125,10 @@ async fn pause_config_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     let target = NetworkAccountTarget::try_from(pause_note.attachments())?;
     assert_eq!(target.target_id(), setup.bridge.id(), "pause note must be routed to the bridge");
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
     assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &unpause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &unpause_note).await?;
     assert!(!is_bridge_paused(&mock_chain, setup.bridge.id())?);
 
     Ok(())
@@ -221,7 +163,7 @@ async fn non_admin_unpause_of_paused_bridge_reverts() -> anyhow::Result<()> {
     let pause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Pause)?;
     let mut mock_chain = builder.build()?;
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
     assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
 
     let note = pause_config_note(setup.ger_injector.id(), setup.bridge.id(), PauseConfig::Unpause)?;
@@ -262,7 +204,7 @@ async fn pause_note_targeting_another_account_is_currently_accepted() -> anyhow:
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &note).await?;
 
     assert!(
         is_bridge_paused(&mock_chain, setup.bridge.id())?,
@@ -274,7 +216,7 @@ async fn pause_note_targeting_another_account_is_currently_accepted() -> anyhow:
 /// A paused bridge rejects GER injection via UPDATE_GER.
 #[tokio::test]
 async fn paused_bridge_rejects_update_ger() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(|builder, setup| {
+    assert_note_rejected_while_paused(&|builder, setup| {
         Ok(UpdateGerNote::create(
             ExitRoot::from([0x11; 32]),
             setup.ger_injector.id(),
@@ -289,7 +231,7 @@ async fn paused_bridge_rejects_update_ger() -> anyhow::Result<()> {
 /// before any storage write).
 #[tokio::test]
 async fn paused_bridge_rejects_register_faucet() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(|builder, setup| {
+    assert_note_rejected_while_paused(&|builder, setup| {
         Ok(ConfigAggBridgeNote::create(
             ConversionMetadata {
                 faucet_account_id: dummy_faucet_id(),
@@ -311,7 +253,7 @@ async fn paused_bridge_rejects_register_faucet() -> anyhow::Result<()> {
 /// fires before the is-registered check).
 #[tokio::test]
 async fn paused_bridge_rejects_deregister_faucet() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(|builder, setup| {
+    assert_note_rejected_while_paused(&|builder, setup| {
         Ok(DeregisterAggFaucetNote::create(
             dummy_faucet_id(),
             setup.faucet_manager.id(),
@@ -326,7 +268,7 @@ async fn paused_bridge_rejects_deregister_faucet() -> anyhow::Result<()> {
 /// registry lookup).
 #[tokio::test]
 async fn paused_bridge_rejects_bridge_out() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(|builder, setup| {
+    assert_note_rejected_while_paused(&|builder, setup| {
         let faucet_id = dummy_faucet_id();
         let asset: Asset = FungibleAsset::new(faucet_id, 100)?.into();
         Ok(B2AggNote::create(
@@ -344,7 +286,7 @@ async fn paused_bridge_rejects_bridge_out() -> anyhow::Result<()> {
 /// A paused bridge rejects claims via CLAIM (the pause guard fires before proof validation).
 #[tokio::test]
 async fn paused_bridge_rejects_claim() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(|builder, setup| {
+    assert_note_rejected_while_paused(&|builder, setup| {
         let (proof_data, leaf_data, _ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
         let miden_claim_amount = leaf_data
             .amount
@@ -384,11 +326,11 @@ async fn paused_bridge_allows_remove_ger() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Register the GER while the bridge is live, then pause.
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &update_note).await?;
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &update_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
 
     // The GER remover can still revoke the GER while the bridge is paused.
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &remove_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &remove_note).await?;
 
     let bridge = mock_chain.committed_account(setup.bridge.id())?;
     assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
@@ -416,10 +358,10 @@ async fn unpause_restores_operation() -> anyhow::Result<()> {
 
     let mut mock_chain = builder.build()?;
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &unpause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &unpause_note).await?;
 
-    consume_and_commit(&mut mock_chain, setup.bridge.id(), &update_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &update_note).await?;
 
     let bridge = mock_chain.committed_account(setup.bridge.id())?;
     assert!(

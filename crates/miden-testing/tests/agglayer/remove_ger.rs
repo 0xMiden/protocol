@@ -3,47 +3,16 @@ extern crate alloc;
 use miden_agglayer::errors::ERR_GER_NOT_FOUND;
 use miden_agglayer::{AggLayerBridge, ExitRoot, RemoveGerNote, UpdateGerNote};
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_protocol::account::Account;
-use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::{BridgeSetup, setup_bridge};
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 ];
-
-/// Creates the faucet manager, GER injector, and GER remover wallets, builds the bridge account
-/// wired to those roles, and registers the bridge account with the builder.
-///
-/// Returns the bridge account together with the GER injector and GER remover wallets.
-fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Account, Account)> {
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_roles(
-        bridge_seed,
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
-    builder.add_account(bridge_account.clone())?;
-
-    Ok((bridge_account, ger_injector, ger_remover))
-}
 
 /// Computes one fold of the removed-GER hash chain, `keccak256(prev_chain || ger)`, in the
 /// same byte representation that [`AggLayerBridge::removed_ger_hash_chain`] returns.
@@ -67,7 +36,12 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
 #[tokio::test]
 async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     // STEP 1: Register the GER via UPDATE_GER
     let ger = ExitRoot::from(GER_BYTES);
@@ -122,7 +96,12 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 #[tokio::test]
 async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -199,7 +178,12 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 #[tokio::test]
 async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -263,7 +247,12 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
@@ -309,7 +298,12 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_first =
@@ -357,7 +351,7 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, _ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup { bridge: bridge_account, ger_injector, .. } = setup_bridge(&mut builder)?;
 
     // Register a GER first so the failure is exclusively due to the sender check.
     let ger = ExitRoot::from(GER_BYTES);
