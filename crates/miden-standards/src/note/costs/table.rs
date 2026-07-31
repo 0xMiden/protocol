@@ -21,6 +21,9 @@ pub const MINT_CONSUMPTION_CYCLES: u32 = 33762;
 /// Cycles of consuming a BURN note (single benchmarked path).
 pub const BURN_CONSUMPTION_CYCLES: u32 = 27579;
 
+/// Cycles of consuming a CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
+pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 18947;
+
 /// Cycles of consuming a FAUCET_POLICY_CONFIG note (single benchmarked path).
 pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 26654;
 
