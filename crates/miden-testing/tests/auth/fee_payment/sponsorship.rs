@@ -262,12 +262,12 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     mock_chain.add_pending_executed_transaction(&creation_tx)?;
     mock_chain.prove_next_block()?;
 
-    // tx2: the network account consumes the feature note and its sponsorship (in that order, as
-    // collect_sponsored_fees requires) and collects the prepaid fee
+    // tx2: the network account consumes the feature note and its sponsorship and collects the
+    // prepaid fee.
     let collection_tx = mock_chain
         .build_transaction(network.id())
-        .authenticated_input_note(network_note.id())
         .authenticated_input_note(sponsorship_id)
+        .authenticated_input_note(network_note.id())
         .build()?
         .execute()
         .await?;

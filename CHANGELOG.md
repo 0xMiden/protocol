@@ -38,6 +38,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Always insert recipients of input notes into the advice map to simplify note fee stimation ([#3421](https://github.com/0xMiden/protocol/pull/3421)).
 - [BREAKING] Removed the outdated `AccountId` to `[Felt; 2]` conversion. Use `AccountId::{suffix, prefix}` accessors instead ([#3422](https://github.com/0xMiden/protocol/pull/3422)).
 - [BREAKING] Removed the standalone `Warden` account component and the `miden::standards::access::warden` module ([#3436](https://github.com/0xMiden/protocol/pull/3436)).
+- [BREAKING] Bound FEE_SPONSORSHIP notes to the notes they pay for by note ID instead of by position in `collect_sponsored_fees` and allow multiple sponsorship notes to sponsor the same feature note ([#3318](https://github.com/0xMiden/protocol/issues/3318)).
 - [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 
