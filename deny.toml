@@ -26,6 +26,7 @@ allow = [
   "MIT",
   "MPL-2.0",
   "Unicode-3.0",
+  "Zlib"
 ]
 exceptions = [
   # Each entry is the crate and version constraint, and its specific allowed licenses
@@ -44,6 +45,7 @@ highlight = "all"
 multiple-versions = "deny"
 skip = [
   #{ name = "ansi_term", version = "=0.11.0" },
+  { name = "num-bigint" },
   { name = "cpufeatures" },
   { name = "itertools" },
   { name = "sha3" },
