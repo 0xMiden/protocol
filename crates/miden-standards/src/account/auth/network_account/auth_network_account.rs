@@ -198,8 +198,9 @@ impl AuthNetworkAccount {
     ///   so the account's allowlists can be updated after deployment by sending that note.
     /// - The [`FeeSponsorshipNote`] script root is added to the note allowlist. A network account
     ///   collects prepaid fees by consuming these notes, so without it, fees could not be
-    ///   collected. Allowlisting it is safe: an unpaired sponsorship note is rejected during fee
-    ///   collection.
+    ///   collected. Allowlisting it is safe: the note's own script refuses consumption without the
+    ///   note it sponsors, and fee collection asserts every consumed note's fee is covered by the
+    ///   sponsorships bound to it.
     /// - The tx-script allowlist contains the [`ExpirationTransactionScript`] root, which the
     ///   network transaction builder attaches to every network transaction, so the account is
     ///   serviceable by the network.

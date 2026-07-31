@@ -1,6 +1,8 @@
 pub mod allowlist_config
 pub mod blocklist_config
 pub mod burn
+pub mod constant_fee_policy_config
+pub mod faucet_metadata_config
 pub mod faucet_policy_config
 pub mod fee_sponsorship
 pub mod mint

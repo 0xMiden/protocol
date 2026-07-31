@@ -24,9 +24,9 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use super::{
     add_faucet_with_owner_allowlist_transfer,
     add_rbac_faucet_with_allowlist,
-    consume_admin_note,
     dummy_owner,
 };
+use crate::consume_note;
 use crate::scripts::rbac::{build_grant_role_note, role, test_account_id};
 
 // HELPERS
@@ -109,10 +109,10 @@ async fn allow_then_disallow_dispatch() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
     assert!(!is_allowed(&mock_chain, faucet.id(), target_account.id())?);
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &allow).await?;
+    consume_note(&mut mock_chain, faucet.id(), &allow).await?;
     assert!(is_allowed(&mock_chain, faucet.id(), target_account.id())?);
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &disallow).await?;
+    consume_note(&mut mock_chain, faucet.id(), &disallow).await?;
     assert!(!is_allowed(&mock_chain, faucet.id(), target_account.id())?);
 
     Ok(())
@@ -142,8 +142,8 @@ async fn rbac_allowlister_can_allow() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &grant).await?;
-    consume_admin_note(&mut mock_chain, faucet.id(), &allow).await?;
+    consume_note(&mut mock_chain, faucet.id(), &grant).await?;
+    consume_note(&mut mock_chain, faucet.id(), &allow).await?;
 
     assert!(is_allowed(&mock_chain, faucet.id(), target_account.id())?);
 

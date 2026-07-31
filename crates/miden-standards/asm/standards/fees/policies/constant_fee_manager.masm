@@ -1,0 +1,102 @@
+# miden::standards::fees::policies::constant_fee_manager
+#
+# Authority-gated admin for a constant-fee schedule: exposes `set_note_fee`, which updates a single
+# note-script-root -> fee entry in the managed fee schedule map after deployment. The map slot is
+# not hardcoded: this component owns a value slot holding the ID of the fee schedule slot to write
+# (populated at construction from the managed policy's slot name), so it can manage any constant-fee
+# policy's schedule (e.g. `BasicConstantFeePolicy`) without sharing a slot name with it. Because the
+# fee asset ID is read from the network account's storage, that account must be an
+# `AuthNetworkAccount`.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+use miden::standards::access::authority
+use miden::standards::fees::fee_manager
+
+use {Asset} from miden::protocol::types
+use miden::standards::assets::fungible_asset
+
+# CONSTANTS
+# =================================================================================================
+
+# This component's own value slot, holding the ID (as [slot_id_suffix, slot_id_prefix, 0, 0]) of the
+# fee schedule map slot this manager updates. Populated at construction.
+const FEE_SCHEDULE_SLOT_ID_SLOT = word("miden::standards::fees::policies::constant_fee_manager::fee_schedule_slot_id")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FEE_ASSET_ID_MISMATCH = "provided fee asset ID does not match the fee manager's configured fee asset ID"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Sets the scheduled fee for the given note lookup key, gated by the account-wide `Authority`
+#! component.
+#!
+#! Writes the fee schedule entry `[fee_amount, 0, 0, 1]` at `note_lookup_key` in the fee schedule
+#! map of the managed constant policy, replacing any previous entry; the last element is the
+#! set-marker `compute_note_fee` asserts is present. The lookup key is the note's script root.
+#! Scheduling an explicit fee of 0 makes matching notes free.
+#!
+#! The provided fee asset's ID must match the fee asset ID the account's fee manager is configured
+#! with (see `fee_manager::read_fee_asset_id`); only its amount is stored.
+#!
+#! Inputs:  [NOTE_LOOKUP_KEY, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - NOTE_LOOKUP_KEY is the fee schedule key (the note's script root) to set the fee for.
+#! - FEE_ASSET is the fungible fee asset whose amount is scheduled for the key.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the fee asset's ID does not match the fee manager's configured fee asset ID.
+#! - the fee asset value is not well-formed.
+#! - the fee asset amount exceeds maximum allowed amount.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
+    exec.authority::assert_authorized
+    # => [NOTE_LOOKUP_KEY, FEE_ASSET_ID, FEE_ASSET_VALUE, pad(4)]
+
+    # assert the provided fee asset ID matches the fee manager's configured fee asset ID
+    swapw
+    # => [FEE_ASSET_ID, NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+
+    exec.fee_manager::read_fee_asset_id
+    # => [CONFIGURED_FEE_ASSET_ID, FEE_ASSET_ID, NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(4)]
+
+    assert_eqw.err=ERR_FEE_ASSET_ID_MISMATCH
+    # => [NOTE_LOOKUP_KEY, FEE_ASSET_VALUE, pad(8)]
+
+    swapw
+    # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(8)]
+
+    # Extract the asset amount from the value and assert that it was well-formed
+    exec.fungible_asset::try_value_to_amount
+    # => [amount, NOTE_LOOKUP_KEY, pad(11)]
+
+    # build the fee schedule entry [amount, 0, 0, 1] with the set-marker as the last element
+    push.0.0.1 swap.3
+    # => [FEE_SCHEDULE_ENTRY, NOTE_LOOKUP_KEY, pad(11)]
+
+    swapw
+    # => [NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(11)]
+
+    # read the managed fee schedule slot ID from this component's own storage
+    push.FEE_SCHEDULE_SLOT_ID_SLOT[0..2] exec.active_account::get_item
+    # => [FEE_SCHEDULE_SLOT_ID, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(11)]
+
+    # the stored value is [slot_id_suffix, slot_id_prefix, 0, 0]; keep the id felts, drop the zeros
+    movup.2 drop movup.2 drop
+    # => [slot_id_suffix, slot_id_prefix, NOTE_LOOKUP_KEY, FEE_SCHEDULE_ENTRY, pad(11)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
