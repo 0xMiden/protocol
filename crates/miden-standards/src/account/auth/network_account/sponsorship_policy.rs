@@ -93,7 +93,7 @@ impl TryFrom<Word> for SponsorshipPolicy {
     /// Returns an error if the word's first element is not a known discriminant or any of its
     /// reserved elements is non-zero.
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        if word[1] != Felt::ZERO || word[2] != Felt::ZERO || word[3] != Felt::ZERO {
+        if word[1..4] != [Felt::ZERO; 3] {
             return Err(SponsorshipPolicyError::InvalidEncoding(word));
         }
 
@@ -174,7 +174,9 @@ mod tests {
 
     #[rstest::rstest]
     #[case::unknown_discriminant(Word::from([2u32, 0, 0, 0]))]
-    #[case::non_zero_reserved_element(Word::from([1u32, 0, 5, 0]))]
+    #[case::non_zero_reserved_element_1(Word::from([1u32, 5, 0, 0]))]
+    #[case::non_zero_reserved_element_2(Word::from([1u32, 0, 5, 0]))]
+    #[case::non_zero_reserved_element_3(Word::from([1u32, 0, 0, 5]))]
     fn decoding_an_invalid_encoding_fails(#[case] word: Word) {
         assert_matches!(
             SponsorshipPolicy::try_from(word),

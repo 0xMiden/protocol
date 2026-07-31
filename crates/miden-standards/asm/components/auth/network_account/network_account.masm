@@ -83,8 +83,8 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Read the sponsorship policy ----
-    # read before the fee is computed to keep its cost inside the region compute_fee measures
-    # negate the setting to make the assertions clearer
+    # read before the fee is computed to keep its cost inside the region compute_fee measures.
+    # negate the setting to make the assertions clearer.
     exec.network_account::get_sponsor_at_most_collected_fees not
     # => [sponsor_unlimited, pad(16)]
 
@@ -99,7 +99,7 @@ pub proc auth_network_transaction(auth_args: word)
     # => [FEE_ASSET_ID, CONVERSION_INFO, sponsor_unlimited, pad(16)]
 
     # collected fees are denominated in the configured fee asset while sponsorship notes are funded
-    # in the native one, so the two amounts are only comparable when they are the same asset
+    # in the native one, so the two amounts are only comparable when they are the same asset.
     dupw dup.9 dup.9 exec.fungible_asset::create_id exec.word::eq
     # => [is_fee_asset_id_match, FEE_ASSET_ID, CONVERSION_INFO, sponsor_unlimited, pad(16)]
 
