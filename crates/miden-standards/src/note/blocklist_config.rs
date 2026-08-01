@@ -114,10 +114,10 @@ impl From<BlocklistConfig> for NoteStorage {
 /// authorized for the action per the target's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
-/// The note is bound to the target `target` by a
+/// The note is bound to `target` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
 /// that the consuming account matches that target before dispatching, so the note cannot be
-/// consumed (and burned) by a third-party account that merely accepts its sender.
+/// consumed by a third-party account that merely accepts its sender.
 ///
 /// Construct one with the [builder](BlocklistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.

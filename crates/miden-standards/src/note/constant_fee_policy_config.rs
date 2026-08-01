@@ -58,7 +58,7 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts the
 /// consuming account matches that target before calling `set_note_fee`, so the note cannot be
-/// consumed (and burned) by a third-party account that merely accepts its sender.
+/// consumed by a third-party account that merely accepts its sender.
 ///
 /// # Consuming account requirements
 ///

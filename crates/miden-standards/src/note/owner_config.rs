@@ -118,7 +118,7 @@ impl From<OwnerConfig> for NoteStorage {
 ///
 /// The note is bound to the target `account` by a [`NetworkAccountTarget`] attachment: the script
 /// asserts that the consuming account matches that target before dispatching, so the note cannot be
-/// consumed (and burned) by a third-party account that merely accepts its sender. The binding also
+/// consumed by a third-party account that merely accepts its sender. The binding also
 /// makes the note a valid [`AccountTargetNetworkNote`], routing it to `account` for network
 /// execution.
 ///
