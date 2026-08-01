@@ -3,7 +3,7 @@
     "prologue": 3717,
     "notes_processing": 2148,
     "note_execution": {
-      "0xf1ce1ff91dfa790f56bb0a84160437802ea72e947652f64ea95b1f3d4f1246c4": 2106
+      "0x49c96e7b0d9d7ebe1a4b7633417b8cb97b0e2939a288087f31b4dc316f3ce6f1": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79661,
       "chiplets_rows": 64714,
-      "range_rows": 20457,
+      "range_rows": 20391,
       "chiplets_shape": {
         "hasher_rows": 61632,
         "bitwise_rows": 640,
@@ -27,7 +27,7 @@
     "prologue": 3717,
     "notes_processing": 2148,
     "note_execution": {
-      "0x09f59a4357ac2bff04e6718aa64d10c94880fe2137f8a3f0d612734ddb45a364": 2106
+      "0xac002ba07e259f706221485e759e635dc60d57e38415fd5836397bef978e598d": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 11475,
       "chiplets_rows": 22540,
-      "range_rows": 1293,
+      "range_rows": 1313,
       "chiplets_shape": {
         "hasher_rows": 21088,
         "bitwise_rows": 640,
@@ -51,8 +51,8 @@
     "prologue": 4988,
     "notes_processing": 4478,
     "note_execution": {
-      "0x37426231dd629e047dd74fca7f29ecaf931a0731d6bf09a5d628cfaf219a6d3f": 2106,
-      "0x4d1d5fc37ca46885c4f3264113e862d3ae871b2e47c062c172fc2a1386e2d29d": 2321
+      "0x0ff983e6b5e8a0a04e7375b87d8e811ad51de36406f871e1d9d4e219f0f8abfb": 2321,
+      "0x60bba08165a03bfcf1febebf16679a0661b4d2672d9341545034f86c5c03a295": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83190,
       "chiplets_rows": 67730,
-      "range_rows": 20269,
+      "range_rows": 20285,
       "chiplets_shape": {
         "hasher_rows": 64160,
         "bitwise_rows": 984,
@@ -76,8 +76,8 @@
     "prologue": 4988,
     "notes_processing": 4478,
     "note_execution": {
-      "0x37426231dd629e047dd74fca7f29ecaf931a0731d6bf09a5d628cfaf219a6d3f": 2106,
-      "0x4d1d5fc37ca46885c4f3264113e862d3ae871b2e47c062c172fc2a1386e2d29d": 2321
+      "0x0ff983e6b5e8a0a04e7375b87d8e811ad51de36406f871e1d9d4e219f0f8abfb": 2321,
+      "0x60bba08165a03bfcf1febebf16679a0661b4d2672d9341545034f86c5c03a295": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 15004,
       "chiplets_rows": 25556,
-      "range_rows": 1227,
+      "range_rows": 1241,
       "chiplets_shape": {
         "hasher_rows": 23616,
         "bitwise_rows": 984,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 78923,
       "chiplets_rows": 63181,
-      "range_rows": 20183,
+      "range_rows": 20431,
       "chiplets_shape": {
         "hasher_rows": 60208,
         "bitwise_rows": 616,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 10737,
       "chiplets_rows": 20959,
-      "range_rows": 1095,
+      "range_rows": 1089,
       "chiplets_shape": {
         "hasher_rows": 19616,
         "bitwise_rows": 616,
@@ -145,7 +145,7 @@
     "prologue": 3920,
     "notes_processing": 31447,
     "note_execution": {
-      "0xd40e8733b750d8eeb3a1b1ba7f1feba560c317ffcdfc66a233289ff9f23e9663": 31405
+      "0xb907d391a9a74f5bd9963b28a9fc4df1939603296eea9ccee636fc53fabb44ed": 31405
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -169,7 +169,7 @@
     "prologue": 3920,
     "notes_processing": 44425,
     "note_execution": {
-      "0xb9203afe520d6a6ad30c1edc501ebba8ae948f198c5ebdb66709361396ad3093": 44383
+      "0xa79c883f226e384ddb20b98f81bdfb40fb715ca17812fdd019cd7ee251da323c": 44383
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -193,7 +193,7 @@
     "prologue": 4844,
     "notes_processing": 119178,
     "note_execution": {
-      "0xf72494ea5cb6205750bfb347820ce41dbf78407a02b7258796cee7c618929c72": 119136
+      "0x1c5edf2ad267cb0b116793fc55b257a89c420728a04eae3631bddf77e2defd8a": 119136
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -217,7 +217,7 @@
     "prologue": 4844,
     "notes_processing": 117481,
     "note_execution": {
-      "0xf72494ea5cb6205750bfb347820ce41dbf78407a02b7258796cee7c618929c72": 117439
+      "0x1c5edf2ad267cb0b116793fc55b257a89c420728a04eae3631bddf77e2defd8a": 117439
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -241,7 +241,7 @@
     "prologue": 4844,
     "notes_processing": 63132,
     "note_execution": {
-      "0xf72494ea5cb6205750bfb347820ce41dbf78407a02b7258796cee7c618929c72": 63090
+      "0x1c5edf2ad267cb0b116793fc55b257a89c420728a04eae3631bddf77e2defd8a": 63090
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -265,7 +265,7 @@
     "prologue": 3682,
     "notes_processing": 2148,
     "note_execution": {
-      "0x734f068a0a81a2c92fecee5b845bfb97b660295c51b6b49a1cc6e664e81ed87f": 2106
+      "0x9ffdc9ed78028f7eda93f7c44287cb1f719d69069d2d8669025fc760c7da567a": 2106
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -289,7 +289,7 @@
     "prologue": 12277,
     "notes_processing": 29792,
     "note_execution": {
-      "0x2e356f4ddf273e2df75bf64c33a4db4645f699eb696b32b77ac05d435d9ee10a": 29750
+      "0x27098731a1d1d6d12551117a4e3c77fa946491a977105e8d33f70a367fbceda7": 29750
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -313,7 +313,7 @@
     "prologue": 3682,
     "notes_processing": 2273,
     "note_execution": {
-      "0xe78efa35c437bdea750e8151cd2917eca41a66bbc83049d3bcd58fe010f12b1f": 2231
+      "0x05847ac68b2b527d6932ebc07325c6e4346cacba2c8eca17334cabaed180fe50": 2231
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -337,7 +337,7 @@
     "prologue": 12277,
     "notes_processing": 29917,
     "note_execution": {
-      "0x0625c0de17b5fb7eeabd083367c2cf992f44bc8016e7cf4e30d951996e2e066b": 29875
+      "0x3cb8d89cd690317eadc9777eb377d0bc75e44c5f3b76b4484a3928c9fc0bb16f": 29875
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -361,7 +361,7 @@
     "prologue": 3785,
     "notes_processing": 2325,
     "note_execution": {
-      "0xed21b1632bfc3453d75490fa1b3e48b26b1338c020c554031bc39d0b50db9599": 2283
+      "0xbb2f39f6cb6f735050be9911032bebb082c4477c01920a05bdf81449a2a2531f": 2283
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -385,7 +385,7 @@
     "prologue": 3682,
     "notes_processing": 4495,
     "note_execution": {
-      "0x6597e806dd48b7221e192feac9c9660a3cf3548e6a39e8bdcd3684379d02a559": 4453
+      "0x1a822075ba1e6e6b4bb255ba415fbbc1a557cb568e09c7a512258294f82c5eb9": 4453
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -409,7 +409,7 @@
     "prologue": 3682,
     "notes_processing": 3984,
     "note_execution": {
-      "0x282f1f571cd357fe8bab4f83e08738a760442ad866780e0aa32d33d30853ecf0": 3942
+      "0xe3ee513ebd187b406f9735914f0ebfd05e2fd4313bf075e0a29a9f885f4d8d8b": 3942
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -433,7 +433,7 @@
     "prologue": 3682,
     "notes_processing": 7017,
     "note_execution": {
-      "0x08d0fa9c9912c7605d2bf62ce6be9200342b212b1c2134c81c03eb3bc43fd380": 6975
+      "0x3e059d0e37de0337d6ccc537d35e1389edeed4bfd83d5f321cbbd8fc4bb2864f": 6975
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -457,7 +457,7 @@
     "prologue": 3682,
     "notes_processing": 9555,
     "note_execution": {
-      "0x08d0fa9c9912c7605d2bf62ce6be9200342b212b1c2134c81c03eb3bc43fd380": 9513
+      "0x3e059d0e37de0337d6ccc537d35e1389edeed4bfd83d5f321cbbd8fc4bb2864f": 9513
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -467,7 +467,7 @@
     "trace": {
       "core_rows": 28908,
       "chiplets_rows": 44275,
-      "range_rows": 1991,
+      "range_rows": 1983,
       "chiplets_shape": {
         "hasher_rows": 40928,
         "bitwise_rows": 1704,
@@ -481,7 +481,7 @@
     "prologue": 5410,
     "notes_processing": 7260,
     "note_execution": {
-      "0x1d9d2b5165863884fcb23f2d37f1089ec6aa9b0f4e6fab82725db66e8ee1135f": 7218
+      "0xaaf5d698e300f4d77fbd1b5d29be1dcb080aca623ea0fdddfe58e145882f757b": 7218
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -505,7 +505,7 @@
     "prologue": 5459,
     "notes_processing": 9797,
     "note_execution": {
-      "0x36b1a5f973161e7a7a143c41a075d66cbe6ece697400a920d3721315963795f4": 9755
+      "0xcf2be30429ec20babf7d7e49b27c56d94bafe5bb11c0ad28e0d6a28be1eb3fd3": 9755
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -769,8 +769,8 @@
     "prologue": 4738,
     "notes_processing": 1178,
     "note_execution": {
-      "0x30e133565785ae090e4920c05bb4adac8004adba6ba51e887396e0082197e1e7": 461,
-      "0x495030d5f3631fe2a1c80daed0d6533fa0a077100600d3ca4734111ef78ad4bb": 666
+      "0x0ac353668246cdbf750e7e8a12eba871f95984a19b9f0998b5c9809e7e27cea4": 666,
+      "0x30e133565785ae090e4920c05bb4adac8004adba6ba51e887396e0082197e1e7": 461
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -779,10 +779,10 @@
     },
     "trace": {
       "core_rows": 21135,
-      "chiplets_rows": 34781,
+      "chiplets_rows": 34797,
       "range_rows": 1581,
       "chiplets_shape": {
-        "hasher_rows": 32560,
+        "hasher_rows": 32576,
         "bitwise_rows": 952,
         "memory_rows": 1206,
         "kernel_rom_rows": 62,
@@ -794,7 +794,7 @@
     "prologue": 3568,
     "notes_processing": 2907,
     "note_execution": {
-      "0xabc408b207033594b9b08e8440d21e4e8f5e02a9dc23bcc3844d9f341140b346": 2865
+      "0x10ecf93babe366a86b031e4bc407ec2e05f08b8be402539782e54f239aca3222": 2865
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -804,7 +804,7 @@
     "trace": {
       "core_rows": 16296,
       "chiplets_rows": 29296,
-      "range_rows": 1345,
+      "range_rows": 1361,
       "chiplets_shape": {
         "hasher_rows": 27392,
         "bitwise_rows": 960,
@@ -818,7 +818,7 @@
     "prologue": 3920,
     "notes_processing": 31447,
     "note_execution": {
-      "0xd40e8733b750d8eeb3a1b1ba7f1feba560c317ffcdfc66a233289ff9f23e9663": 31405
+      "0xb907d391a9a74f5bd9963b28a9fc4df1939603296eea9ccee636fc53fabb44ed": 31405
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -842,7 +842,7 @@
     "prologue": 3920,
     "notes_processing": 44425,
     "note_execution": {
-      "0xb9203afe520d6a6ad30c1edc501ebba8ae948f198c5ebdb66709361396ad3093": 44383
+      "0xa79c883f226e384ddb20b98f81bdfb40fb715ca17812fdd019cd7ee251da323c": 44383
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -866,7 +866,7 @@
     "prologue": 4844,
     "notes_processing": 119178,
     "note_execution": {
-      "0xf72494ea5cb6205750bfb347820ce41dbf78407a02b7258796cee7c618929c72": 119136
+      "0x1c5edf2ad267cb0b116793fc55b257a89c420728a04eae3631bddf77e2defd8a": 119136
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -890,7 +890,7 @@
     "prologue": 4844,
     "notes_processing": 63132,
     "note_execution": {
-      "0xf72494ea5cb6205750bfb347820ce41dbf78407a02b7258796cee7c618929c72": 63090
+      "0x1c5edf2ad267cb0b116793fc55b257a89c420728a04eae3631bddf77e2defd8a": 63090
     },
     "tx_script_processing": 42,
     "epilogue": {

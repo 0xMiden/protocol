@@ -357,7 +357,8 @@ async fn test_get_initial_assets_writes_to_memory() -> anyhow::Result<()> {
         )
     }
 
-    // give each note a disjoint 16-element (MAX_ASSETS_PER_NOTE * ASSET_SIZE) memory region
+    // give each note a disjoint 16-element memory region, enough for the two assets of the
+    // largest note
     let code = format!(
         "
         use miden::protocol::asset
@@ -988,7 +989,7 @@ async fn test_remove_asset(
 
         # allocate ASSET_SIZE * MAX_ASSETS_PER_NOTE locals as the destination buffer for
         # remove_all_assets; no assets remain by then, but the buffer must fit the maximum
-        @locals(512)
+        @locals(128)
         proc process_note
             # drop the note storage
             dropw dropw dropw dropw
