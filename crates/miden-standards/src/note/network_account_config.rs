@@ -164,6 +164,7 @@ impl NetworkAccountConfigNote {
     ///
     /// Returns an error if:
     /// - `account` does not have [`AccountType::Public`](miden_protocol::account::AccountType).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
     /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
@@ -173,9 +174,8 @@ impl NetworkAccountConfigNote {
         config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        // Bind consumption to the target account. Prepended so it is the canonical
-        // `NetworkAccountTarget` the note script reads.
-        NetworkAccountTarget::bind(&mut attachments, account).map_err(|err| {
+        // Bind consumption to the target account: the note script rejects any other consumer.
+        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
             NoteError::other_with_source("failed to bind the note to its target account", err)
         })?;
 

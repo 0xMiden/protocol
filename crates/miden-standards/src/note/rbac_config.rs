@@ -155,15 +155,16 @@ impl RbacConfigNote {
     /// Builds a new [`RbacConfigNote`] that applies `config` to `account`.
     ///
     /// The note is bound to `account` by a [`NetworkAccountTarget`] attachment that the builder
-    /// prepends; callers can still add their own attachments, but cannot override the binding.
+    /// appends unless the caller already supplied one for `account`.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
-    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the bound
-    ///   target attachment occupies one of the available slots.
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
@@ -174,7 +175,7 @@ impl RbacConfigNote {
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::bind(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the RbacConfig note to its target account",
                 err,
@@ -253,9 +254,6 @@ impl<S: rbac_config_note_builder::State> RbacConfigNoteBuilder<S> {
     }
 
     /// Adds multiple attachments to the note.
-    ///
-    /// See [`Self::attachment`] for how the bound `NetworkAccountTarget` interacts with the
-    /// attachment limit and caller-supplied targets.
     pub fn attachments(
         mut self,
         attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
@@ -323,7 +321,7 @@ mod tests {
     use miden_protocol::note::NoteAttachmentScheme;
 
     use super::*;
-    use crate::note::{NetworkNoteExt, NoteExecutionHint};
+    use crate::note::{NetworkAccountTargetError, NetworkNoteExt, NoteExecutionHint};
 
     fn account_id(seed: u8) -> AccountId {
         typed_account_id(seed, AccountType::Public)
@@ -385,7 +383,7 @@ mod tests {
         assert!(network_note.as_note().is_network_note());
     }
 
-    /// Caller-supplied attachments are kept alongside the bound network target, which is prepended.
+    /// Caller-supplied attachments are kept in their order, with the bound network target appended.
     #[test]
     fn builder_keeps_caller_attachments() {
         let mut rng = RandomCoin::new(Word::empty());
@@ -402,35 +400,37 @@ mod tests {
             .build()
             .unwrap();
 
-        // The bound target is prepended, so the caller's attachment follows it.
+        // The target is appended, so the caller's attachment comes first.
         assert_eq!(note.attachments().num_attachments(), 2);
-        assert_eq!(note.attachments().get(1), Some(&custom));
+        assert_eq!(note.attachments().get(0), Some(&custom));
 
         let network_note = AccountTargetNetworkNote::from(note);
         assert_eq!(network_note.target_account_id(), managed);
     }
 
-    /// A caller-supplied `NetworkAccountTarget` for a different account does not override the bound
-    /// target: the bound one is prepended and wins as the canonical (first) match.
+    /// A caller-supplied `NetworkAccountTarget` for another account is rejected rather than
+    /// silently coexisting with the note's own target.
     #[test]
-    fn caller_supplied_target_does_not_override_binding() {
+    fn builder_rejects_target_for_other_account() {
         let mut rng = RandomCoin::new(Word::empty());
-        let managed = account_id(1);
         let rogue_target =
             NetworkAccountTarget::new(account_id(3), NoteExecutionHint::None).unwrap();
 
-        let note = RbacConfigNote::builder()
+        let err = RbacConfigNote::builder()
             .attachment(rogue_target)
             .sender(account_id(2))
-            .account(managed)
+            .account(account_id(1))
             .config(RbacConfig::RenounceRole { role: role("MINTER") })
             .generate_serial_number(&mut rng)
             .build()
-            .unwrap();
+            .unwrap_err();
 
-        let network_note = AccountTargetNetworkNote::from(note);
-        assert_eq!(network_note.target_account_id(), managed);
-        assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetMismatch { .. }
+            )
+        });
     }
 
     /// A non-public managed account cannot be a network target, so the builder rejects it.
@@ -447,7 +447,12 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_matches!(err, NoteError::Other { .. });
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetNotPublic { .. }
+            )
+        });
     }
 
     /// `GrantRole` storage is `[selector, role_symbol, account_suffix, account_prefix]`.

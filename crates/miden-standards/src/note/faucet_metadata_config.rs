@@ -188,8 +188,9 @@ impl FaucetMetadataConfigNote {
     /// Returns an error if:
     /// - `target` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
-    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the bound
-    ///   target attachment occupies one of the available slots.
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `target`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
@@ -200,7 +201,7 @@ impl FaucetMetadataConfigNote {
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::bind(&mut attachments, target).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the FaucetMetadataConfig note to its target account",
                 err,
@@ -279,9 +280,6 @@ impl<S: faucet_metadata_config_note_builder::State> FaucetMetadataConfigNoteBuil
     }
 
     /// Adds multiple attachments to the note.
-    ///
-    /// See [`Self::attachment`] for how the bound `NetworkAccountTarget` interacts with the
-    /// attachment limit and caller-supplied targets.
     pub fn attachments(
         mut self,
         attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
