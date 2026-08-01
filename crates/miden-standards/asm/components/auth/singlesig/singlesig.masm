@@ -71,7 +71,7 @@ pub proc auth_tx(auth_args: word)
     swap movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, scheme_id, pad(12)]
 
-    exec.fee::pay_fee
+    exec.fee::pay_fee drop
     # => [scheme_id, pad(12)]
 
     # Fetch public key commitment from storage.

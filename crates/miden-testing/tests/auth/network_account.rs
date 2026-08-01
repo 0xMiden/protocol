@@ -15,6 +15,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
@@ -887,6 +888,31 @@ async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// The auth procedure rejects a transaction whose sponsorship policy slot does not hold a valid
+/// policy: neither an unknown discriminant nor a non-zero reserved element is accepted.
+#[rstest]
+#[case::unknown_discriminant(Word::from([2u32, 0, 0, 0]))]
+#[case::non_zero_reserved_element(Word::from([1u32, 0, 0, 7]))]
+#[tokio::test]
+async fn test_auth_network_account_rejects_invalid_sponsorship_policy(
+    #[case] policy: Word,
+) -> anyhow::Result<()> {
+    let mut account = build_allowlist_account(vec![placeholder_script_root()])?;
+    account
+        .storage_mut()
+        .set_item(AuthNetworkAccount::sponsorship_policy_slot(), policy)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY);
 
     Ok(())
 }

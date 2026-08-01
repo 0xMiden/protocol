@@ -15,6 +15,7 @@
 
 ### Features
 
+- [BREAKING] Added the `SponsorshipPolicy` setting to `AuthNetworkAccount` to configure whether a transaction is allowed to fund outgoing sponsorship notes from the account's vault or if all fees must come from input sponsorship notes. ([#3456](https://github.com/0xMiden/protocol/pull/3456)).
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 - Added the standardized `ConstantFeePolicyConfigNote`, which schedules a fee for a note script root by calling a consuming network account's `ConstantFeeManager::set_note_fee`, and registered it as `StandardNote::CONSTANT_FEE_POLICY_CONFIG` ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).

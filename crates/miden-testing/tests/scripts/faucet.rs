@@ -33,6 +33,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_PRIV
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
+use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -2524,6 +2525,7 @@ fn build_network_faucet_with_blocklist_transfer(
             allowed_script_roots,
             allowed_tx_script_roots: BTreeSet::new(),
             fee_policy_manager,
+            sponsorship_policy: SponsorshipPolicy::default(),
         },
         account_builder,
         AccountState::Exists,
