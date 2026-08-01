@@ -35,8 +35,17 @@ use crate::{
 // BRIDGE ACCOUNT HELPERS
 // ================================================================================================
 
+/// Returns the fixed account ID seeded as the built-in `ADMIN` role member by
+/// [`create_existing_bridge_account_with_roles`].
+///
+/// Tests that exercise `ADMIN`-gated procedures (e.g. the pause toggles) must use this ID as the
+/// note sender.
+pub fn bridge_admin_account_id() -> AccountId {
+    AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap()
+}
+
 /// Creates an existing bridge account seeded with a single holder per operational role and a
-/// fixed dummy account as the built-in `ADMIN` role member.
+/// fixed dummy account ([`bridge_admin_account_id`]) as the built-in `ADMIN` role member.
 ///
 /// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
 pub fn create_existing_bridge_account_with_roles(
@@ -53,10 +62,7 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    let admin_account =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    create_bridge_account_builder(seed, admin_account, roles, network_id)
+    create_bridge_account_builder(seed, bridge_admin_account_id(), roles, network_id)
         .build_existing()
         .expect("bridge account should be valid")
 }

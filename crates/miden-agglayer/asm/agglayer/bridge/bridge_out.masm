@@ -11,6 +11,7 @@ use {ALWAYS} from miden::standards::note::execution_hint
 use {MemoryAddress} from miden::protocol::types
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
+use miden::standards::access::pausable
 use miden::standards::utils
 use miden::standards::assets::asset_amount
 use agglayer::bridge::bridge_config
@@ -107,6 +108,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=8
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Panics if:
+#! - the bridge is paused.
 #! - the B2AGG note calling `bridge_out` is not public.
 #! - destination network ID is Miden's AggLayer network ID.
 #!
@@ -114,6 +116,8 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=8
 @locals(15)
 @account_procedure
 pub proc bridge_out
+    exec.pausable::assert_not_paused
+
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
     # => [ASSET_ID, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 

@@ -25,6 +25,7 @@ use miden_standards::account::auth::{
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
     GuardianConfig,
+    SponsorshipPolicy,
 };
 use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::testing::account_component::{
@@ -92,6 +93,7 @@ pub enum Auth {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
         fee_policy_manager: FeePolicyManager,
+        sponsorship_policy: SponsorshipPolicy,
     },
 }
 
@@ -192,6 +194,7 @@ impl Auth {
                 allowed_script_roots,
                 allowed_tx_script_roots,
                 fee_policy_manager,
+                sponsorship_policy,
             } => {
                 let components = AuthNetworkAccount::new(
                     allowed_script_roots.clone(),
@@ -199,6 +202,7 @@ impl Auth {
                 )
                 .expect("network account allowlist must be non-empty")
                 .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
+                .with_sponsorship_policy(*sponsorship_policy)
                 .into_iter()
                 .collect();
                 (components, None)

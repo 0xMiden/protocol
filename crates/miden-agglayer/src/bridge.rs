@@ -14,7 +14,18 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::NoteError;
+use miden_protocol::note::{Note, NoteScriptRoot};
+#[cfg(any(feature = "testing", test))]
+use miden_standards::account::access::PausableStorage;
+use miden_standards::note::{
+    NetworkAccountTarget,
+    NetworkAccountTargetError,
+    NoteExecutionHint,
+    PauseConfig,
+    PauseConfigNote,
+};
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
@@ -459,6 +470,9 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
+    /// Besides the agglayer-specific notes, the bridge accepts the standards [`PauseConfigNote`]
+    /// so the `ADMIN` role can toggle the emergency pause.
+    ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
@@ -468,7 +482,39 @@ impl AggLayerBridge {
             DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
+            PauseConfigNote::script_root(),
         ])
+    }
+
+    // PAUSE NOTE
+    // --------------------------------------------------------------------------------------------
+
+    /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
+    /// `bridge_id`. `sender` must hold the bridge's `ADMIN` role.
+    ///
+    /// Use this instead of [`PauseConfigNote::builder`] directly: the builder attaches no
+    /// [`NetworkAccountTarget`], without which the note is never routed to the bridge.
+    ///
+    /// # Errors
+    /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
+    pub fn pause_note<R: FeltRng>(
+        config: PauseConfig,
+        sender: AccountId,
+        bridge_id: AccountId,
+        rng: &mut R,
+    ) -> Result<Note, AgglayerBridgeError> {
+        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)
+            .map_err(AgglayerBridgeError::NonPublicPauseNoteTarget)?;
+
+        PauseConfigNote::builder()
+            .sender(sender)
+            .account(bridge_id)
+            .config(config)
+            .attachment(attachment)
+            .generate_serial_number(rng)
+            .build()
+            .map(Into::into)
+            .map_err(AgglayerBridgeError::PauseNoteCreationFailed)
     }
 }
 
@@ -751,7 +797,12 @@ impl AggLayerBridge {
         Ok(())
     }
 
-    /// Returns a vector of all [`AggLayerBridge`] storage slot names.
+    /// Returns a vector of all storage slot names a bridge account must have.
+    ///
+    /// Besides the [`AggLayerBridge`] component's own slots, this includes the standards-owned
+    /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so this
+    /// testing-side validator certifies the slot exists. (In production the slot is guaranteed by
+    /// `create_bridge_account_builder` always installing the `Pausable` component.)
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,
@@ -768,6 +819,7 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
             &*NETWORK_ID_SLOT_NAME,
+            PausableStorage::is_paused_slot(),
         ]
     }
 }
@@ -790,6 +842,10 @@ pub enum AgglayerBridgeError {
     EmptyBridgeRole(RoleSymbol),
     #[error("the network ID stored in the bridge account does not fit into a u32")]
     InvalidNetworkId,
+    #[error("bridge account must be public to be named by a network account target")]
+    NonPublicPauseNoteTarget(#[source] NetworkAccountTargetError),
+    #[error("failed to create a PAUSE_CONFIG note for the bridge account")]
+    PauseNoteCreationFailed(#[source] NoteError),
 }
 
 // HELPER FUNCTIONS
