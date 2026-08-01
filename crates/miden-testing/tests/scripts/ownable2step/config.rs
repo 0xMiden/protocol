@@ -39,7 +39,7 @@ fn owner_config_note(
 ) -> anyhow::Result<Note> {
     let note = OwnerConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .generate_serial_number(rng)
         .build()?

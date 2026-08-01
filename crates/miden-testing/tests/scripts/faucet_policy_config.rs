@@ -99,7 +99,7 @@ fn faucet_policy_config_note(
 ) -> anyhow::Result<Note> {
     let note = FaucetPolicyConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .generate_serial_number(rng)
         .build()?

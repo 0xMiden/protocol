@@ -32,7 +32,7 @@ fn rbac_config_note(
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .generate_serial_number(rng)
         .build()?

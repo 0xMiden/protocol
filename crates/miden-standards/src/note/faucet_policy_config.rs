@@ -141,7 +141,7 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct FaucetPolicyConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: FaucetPolicyConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -163,13 +163,13 @@ impl FaucetPolicyConfigNote {
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: FaucetPolicyConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the FaucetPolicyConfig note to its target account",
                 err,
@@ -180,7 +180,7 @@ impl FaucetPolicyConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -215,7 +215,7 @@ impl FaucetPolicyConfigNote {
 
     /// Returns the account ID of the managed faucet (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the policy-switch action carried by the note.
@@ -275,7 +275,7 @@ impl From<FaucetPolicyConfigNote> for Note {
         // FaucetPolicyConfig notes carry no assets and are always public for network execution; the
         // action and its policy root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             FaucetPolicyConfigNote::script(),
@@ -324,7 +324,7 @@ mod tests {
 
         let note = FaucetPolicyConfigNote::builder()
             .sender(sender)
-            .account(faucet)
+            .target(faucet)
             .config(FaucetPolicyConfig::SetMintPolicy { policy_root: policy_root(10) })
             .generate_serial_number(&mut rng)
             .build()

@@ -144,7 +144,7 @@ impl From<RbacConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct RbacConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: RbacConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -169,13 +169,13 @@ impl RbacConfigNote {
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: RbacConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the RbacConfig note to its target account",
                 err,
@@ -185,7 +185,7 @@ impl RbacConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -223,7 +223,7 @@ impl RbacConfigNote {
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the management action carried by the note.
@@ -284,7 +284,7 @@ impl From<RbacConfigNote> for Note {
         // RbacConfig notes carry no assets and are always public for network execution; the action
         // and its arguments live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             RbacConfigNote::script(),
@@ -345,7 +345,7 @@ mod tests {
 
         let note = RbacConfigNote::builder()
             .sender(admin)
-            .account(managed)
+            .target(managed)
             .config(RbacConfig::GrantRole { role: role("MINTER"), account: grantee })
             .generate_serial_number(&mut rng)
             .build()
@@ -369,7 +369,7 @@ mod tests {
 
         let note = RbacConfigNote::builder()
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(RbacConfig::RenounceRole { role: role("MINTER") })
             .generate_serial_number(&mut rng)
             .build()
@@ -394,7 +394,7 @@ mod tests {
         let note = RbacConfigNote::builder()
             .attachment(custom.clone())
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(RbacConfig::RenounceRole { role: role("MINTER") })
             .generate_serial_number(&mut rng)
             .build()
@@ -419,7 +419,7 @@ mod tests {
         let err = RbacConfigNote::builder()
             .attachment(rogue_target)
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .config(RbacConfig::RenounceRole { role: role("MINTER") })
             .generate_serial_number(&mut rng)
             .build()
@@ -441,7 +441,7 @@ mod tests {
 
         let err = RbacConfigNote::builder()
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(RbacConfig::RenounceRole { role: role("MINTER") })
             .generate_serial_number(&mut rng)
             .build()

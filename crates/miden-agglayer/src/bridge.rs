@@ -508,7 +508,7 @@ impl AggLayerBridge {
 
         PauseConfigNote::builder()
             .sender(sender)
-            .account(bridge_id)
+            .target(bridge_id)
             .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)

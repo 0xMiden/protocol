@@ -109,7 +109,7 @@ impl From<PauseConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct PauseConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: PauseConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -131,13 +131,13 @@ impl PauseConfigNote {
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: PauseConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
                 "failed to bind the PauseConfig note to its target account",
                 err,
@@ -148,7 +148,7 @@ impl PauseConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -183,7 +183,7 @@ impl PauseConfigNote {
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the admin action carried by the note.
@@ -243,7 +243,7 @@ impl From<PauseConfigNote> for Note {
         // PauseConfig notes carry no assets and are always public for network execution; the action
         // lives in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             PauseConfigNote::script(),
@@ -288,7 +288,7 @@ mod tests {
 
         let note = PauseConfigNote::builder()
             .sender(sender)
-            .account(managed)
+            .target(managed)
             .config(PauseConfig::Pause)
             .generate_serial_number(&mut rng)
             .build()

@@ -96,7 +96,7 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     note_script_root: NoteScriptRoot,
     fee_asset: FungibleAsset,
     serial_number: Word,
@@ -120,14 +120,14 @@ impl ConstantFeePolicyConfigNote {
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         note_script_root: NoteScriptRoot,
         fee_asset: FungibleAsset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
         // the consuming account matches this `NetworkAccountTarget`.
-        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source("failed to bind the note to its target account", err)
         })?;
 
@@ -135,7 +135,7 @@ impl ConstantFeePolicyConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             note_script_root,
             fee_asset,
             serial_number,
@@ -175,7 +175,7 @@ impl ConstantFeePolicyConfigNote {
     /// Returns the account ID of the managed account: the account the note is tagged for and bound
     /// to via its `NetworkAccountTarget` attachment (only this account can consume the note).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the note script root the fee is scheduled for.
@@ -255,7 +255,7 @@ impl From<ConstantFeePolicyConfigNote> for Note {
         // ConstantFeePolicyConfig notes carry no assets and are always public for network
         // execution; the note script root and fee asset live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let storage = NoteStorage::new(note.to_storage_values())
             .expect("number of storage items should not exceed max storage items");
         let recipient =
@@ -313,7 +313,7 @@ mod tests {
 
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(sender)
-            .account(account)
+            .target(account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .generate_serial_number(&mut rng)
@@ -336,7 +336,7 @@ mod tests {
         let account = account_id(1);
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account)
+            .target(account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
@@ -358,7 +358,7 @@ mod tests {
 
         let err = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
@@ -383,7 +383,7 @@ mod tests {
 
         let err = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(private_account)
+            .target(private_account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
@@ -404,7 +404,7 @@ mod tests {
     fn caller_attachments_beyond_limit_are_rejected() {
         let mut builder = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty());
@@ -427,7 +427,7 @@ mod tests {
 
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .note_script_root(root)
             .fee_asset(asset)
             .serial_number(Word::empty())

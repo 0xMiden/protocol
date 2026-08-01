@@ -146,7 +146,7 @@ impl From<NetworkAccountConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct NetworkAccountConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: NetworkAccountConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -170,12 +170,12 @@ impl NetworkAccountConfigNote {
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind consumption to the target account: the note script rejects any other consumer.
-        NetworkAccountTarget::ensure_presence(&mut attachments, account).map_err(|err| {
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source("failed to bind the note to its target account", err)
         })?;
 
@@ -183,7 +183,7 @@ impl NetworkAccountConfigNote {
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -219,7 +219,7 @@ impl NetworkAccountConfigNote {
 
     /// Returns the account ID of the managed network account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the allowlist-mutation action carried by the note.
@@ -280,7 +280,7 @@ impl From<NetworkAccountConfigNote> for Note {
         // NetworkAccountConfig notes carry no assets and are always public for network
         // execution; the action and its script root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             NetworkAccountConfigNote::script(),
@@ -339,7 +339,7 @@ mod tests {
 
         let note = NetworkAccountConfigNote::builder()
             .sender(sender)
-            .account(account)
+            .target(account)
             .config(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
             .generate_serial_number(&mut rng)
             .build()

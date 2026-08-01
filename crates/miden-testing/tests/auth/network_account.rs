@@ -409,7 +409,7 @@ fn build_config_note(
 ) -> anyhow::Result<Note> {
     let note = NetworkAccountConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .serial_number(Word::from([serial_seed, 0, 0, 0]))
         .build()?;
