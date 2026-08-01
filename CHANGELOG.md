@@ -19,6 +19,7 @@
 - [BREAKING] Cached each input note's `NoteId` in the transaction prologue and added the `miden::protocol::input_note::get_note_id` and `miden::protocol::active_note::get_note_id` accessors. The input note memory layout and the kernel procedure offsets shift, so the kernel commitment changes ([#3291](https://github.com/0xMiden/protocol/issues/3291)).
 - Added the standardized `ConstantFeePolicyConfigNote`, which schedules a fee for a note script root by calling a consuming network account's `ConstantFeeManager::set_note_fee`, and registered it as `StandardNote::CONSTANT_FEE_POLICY_CONFIG` ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
+- [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state (not yet consume-side bound to the bridge, see [#3433](https://github.com/0xMiden/protocol/issues/3433)); the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 
 ### Changes
 
