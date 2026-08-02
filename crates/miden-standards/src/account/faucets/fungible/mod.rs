@@ -36,7 +36,7 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSigAcl, NetworkAccount};
+use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
@@ -288,8 +288,7 @@ impl FungibleFaucet {
 
     /// Returns the procedure root of the `set_max_supply` account procedure. This is an
     /// authority-gated setter; when paired with `Authority::AuthControlled` (via
-    /// [`create_singlesig_user_fungible_faucet`]) it requires a signature by default and must
-    /// never be added to the auth component's exempt set.
+    /// [`create_singlesig_user_fungible_faucet`]) it requires a signature.
     pub fn set_max_supply_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
     }
@@ -554,19 +553,17 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Creates a new **user-account** fungible faucet authenticated by a single-signature ACL.
+/// Creates a new **user-account** fungible faucet authenticated by a single signature.
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
 ///
-/// Caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list semantics,
-/// every authority-gated setter on the faucet (`mint_and_send`, the metadata setters, the policy
-/// setters, and `pause` / `unpause`) requires a signature by default. Adding any such setter to
-/// the exempt set makes it permissionless under [`Authority::AuthControlled`], so authority-gated
-/// setters must never be exempted.
+/// Caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter on the faucet
+/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
+/// signature.
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
-    auth_component: AuthSingleSigAcl,
+    auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {

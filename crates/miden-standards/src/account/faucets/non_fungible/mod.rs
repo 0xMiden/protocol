@@ -37,7 +37,7 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthSingleSigAcl, NetworkAccount};
+use crate::account::auth::{AuthSingleSig, NetworkAccount};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
@@ -480,15 +480,13 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list
-/// semantics, every authority-gated setter (`mint_and_send`, the metadata setters, the policy
-/// setters, and `pause` / `unpause`) requires a signature by default. A setter only becomes
-/// callable without a signature if its root is explicitly added to the exempt set, so
-/// authority-gated setters must never be exempted.
+/// The caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter
+/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
+/// signature.
 pub fn create_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
-    auth_component: AuthSingleSigAcl,
+    auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, NonFungibleFaucetError> {

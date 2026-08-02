@@ -47,8 +47,9 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// When consumed by the faucet that issued the asset, the note's asset is destroyed via the
 /// faucet's `receive_and_burn` procedure. The single BURN script works against both fungible and
 /// non-fungible faucets: it detects the faucet kind by reflection (via the `CodeInspection`
-/// component) and calls the matching `receive_and_burn`. BURN notes are always public so they can
-/// be executed by the network.
+/// component) and calls the matching `receive_and_burn`. BURN notes are always public so they are
+/// visible on-chain and discoverable by the network; whether consuming one requires a signature
+/// depends on the target faucet's auth component.
 ///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
@@ -180,9 +181,10 @@ where
 
 impl From<BurnNote> for Note {
     fn from(note: BurnNote) -> Self {
-        // BURN notes are always public for network execution. The NetworkAccountTarget attachment
-        // routes the note to the asset's issuing faucet, while storage binds the script to the
-        // asset it must burn.
+        // BURN notes are always public so they are visible on-chain and routable. The
+        // NetworkAccountTarget attachment routes the note to the asset's issuing faucet (which may
+        // or may not be network-executable, depending on that faucet's auth component), while
+        // storage binds the script to the asset it must burn.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public);
         let storage = NoteStorage::new(note.asset.as_elements().to_vec())
             .expect("an asset always fits in BURN note storage");

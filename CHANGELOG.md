@@ -49,6 +49,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Bound FEE_SPONSORSHIP notes to the notes they pay for by note ID instead of by position in `collect_sponsored_fees` and allow multiple sponsorship notes to sponsor the same feature note ([#3318](https://github.com/0xMiden/protocol/issues/3318)).
 - [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
+- [BREAKING] Removed the `AuthSingleSigAcl` auth component, the `Auth::Acl` `miden-testing` mock-chain variant, and the `user_faucet_single_sig_acl` testing helper: the exempt (no-signature) branch let fee-charging accounts be drained via calls to exempt procedures. The plain `AuthSingleSig` component (every call requires a signature) remains available and now backs the "singlesig user faucet" factories; a `BurnNote` targeted at a singlesig user faucet, previously exempt via `receive_and_burn`, now requires the owner's signature to be consumed ([#3360](https://github.com/0xMiden/protocol/issues/3360)).
 
 ### Fixes
 
