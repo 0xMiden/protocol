@@ -38,6 +38,7 @@ thiserror   = { workspace = true }
 [dev-dependencies]
 anyhow          = { features = ["backtrace", "std"], workspace = true }
 assert_matches  = { workspace = true }
+bon             = { workspace = true }
 miden-agglayer  = { features = ["testing"], workspace = true }
 miden-assembly  = { workspace = true }
 miden-crypto    = { workspace = true }

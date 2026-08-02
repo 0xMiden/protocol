@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::create_existing_bridge_account_with_roles;
+use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -17,17 +17,14 @@ use miden_agglayer::{
     create_existing_agglayer_faucet,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, StorageMapKey};
+use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_FEE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_SENDER,
-};
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
@@ -65,6 +62,12 @@ fn fee_funding_asset() -> Result<Asset> {
     Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, FEE_FUNDING_AMOUNT)?.into())
 }
 
+/// Returns the native fee asset carrying `amount`, whose ID matches the fee asset a network
+/// account is configured with.
+fn native_fee_asset(amount: u64) -> Result<FungibleAsset> {
+    Ok(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, amount)?)
+}
+
 /// Returns network-account authentication allowlisting the given note script roots (and no
 /// transaction scripts), with a fee policy manager pricing each `(root, amount)` in `priced`
 /// through a [`BasicConstantFeePolicy`] and every other allowlisted root at an explicit 0 fee.
@@ -78,6 +81,7 @@ fn network_auth_with_fees(
         allowed_script_roots,
         allowed_tx_script_roots: BTreeSet::new(),
         fee_policy_manager,
+        sponsorship_policy: SponsorshipPolicy::default(),
     })
 }
 
@@ -182,6 +186,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork => {
             network_config::tx_consume_faucet_policy_config_note_network()
         },
+        ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork => {
+            network_config::tx_consume_faucet_metadata_config_note_network()
+        },
         ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
             network_config::tx_consume_allowlist_config_note_network()
         },
@@ -199,6 +206,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         },
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_config::tx_consume_network_account_config_note_network()
+        },
+        ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork => {
+            network_config::tx_consume_constant_fee_policy_config_note_network()
         },
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => {
             network_wallet::tx_consume_fee_sponsorship_note_network(false)
@@ -424,11 +434,9 @@ fn setup_bridge_fixture(
 
     // CREATE BRIDGE ACCOUNT
     // the dummy admin only matters for role rotation, which the benches do not exercise
-    let admin = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
-        .expect("dummy admin account ID should be valid");
     let mut bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        admin,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

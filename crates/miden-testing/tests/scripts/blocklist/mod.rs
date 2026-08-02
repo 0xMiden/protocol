@@ -9,7 +9,6 @@ extern crate alloc;
 mod config;
 
 use alloc::collections::BTreeMap;
-use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
@@ -22,7 +21,6 @@ use miden_protocol::account::{
     AssetCallbackFlag,
     RoleSymbol,
 };
-use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
@@ -48,6 +46,7 @@ use miden_testing::{
 };
 
 use super::rbac::{build_grant_role_note, role, test_account_id};
+use crate::consume_note;
 
 // HELPERS
 // ================================================================================================
@@ -148,25 +147,6 @@ fn build_admin_note(
         .map_err(Into::into)
 }
 
-/// Consumes an owner-authored admin note in a faucet transaction.
-async fn consume_admin_note(
-    mock_chain: &mut MockChain,
-    faucet_id: AccountId,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let executed = mock_chain
-        .build_transaction(faucet_id)
-        .authenticated_input_note(note.id())
-        .with_source_manager(source_manager)
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
-}
-
 // TESTS
 // ================================================================================================
 
@@ -260,7 +240,7 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -294,7 +274,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note).await?;
 
     let recipient = Word::from([0u32, 1, 2, 3]);
     let script_code = format!(
@@ -362,8 +342,8 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note).await?;
-    consume_admin_note(&mut mock_chain, faucet.id(), &unblock_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &unblock_note).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -393,10 +373,10 @@ async fn block_already_blocked_is_noop() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note_1).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note_1).await?;
 
     // Second block on the same already-blocked user is a noop — succeeds silently.
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note_2).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note_2).await?;
 
     Ok(())
 }
@@ -415,7 +395,7 @@ async fn unblock_when_not_blocked_is_noop() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Unblocking a non-blocked account is a noop — succeeds silently.
-    consume_admin_note(&mut mock_chain, faucet.id(), &unblock_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &unblock_note).await?;
 
     Ok(())
 }
@@ -444,7 +424,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_admin_note(&mut mock_chain, faucet.id(), &block_note).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block_note).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -603,8 +583,8 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Admin grants BLOCKLISTER; the role holder then blocks the target.
-    consume_admin_note(&mut mock_chain, faucet.id(), &grant).await?;
-    consume_admin_note(&mut mock_chain, faucet.id(), &block).await?;
+    consume_note(&mut mock_chain, faucet.id(), &grant).await?;
+    consume_note(&mut mock_chain, faucet.id(), &block).await?;
 
     // Blocked → receiving the asset fails.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
@@ -618,7 +598,7 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
 
     // The same role unblocks the target.
-    consume_admin_note(&mut mock_chain, faucet.id(), &unblock).await?;
+    consume_note(&mut mock_chain, faucet.id(), &unblock).await?;
 
     // Unblocked → receiving the asset now succeeds.
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;

@@ -76,6 +76,11 @@ impl NoteAssets {
         self.commitment
     }
 
+    /// Returns the assets as a slice.
+    pub fn as_slice(&self) -> &[Asset] {
+        &self.assets
+    }
+
     /// Returns the number of assets.
     pub fn num_assets(&self) -> usize {
         self.assets.len()

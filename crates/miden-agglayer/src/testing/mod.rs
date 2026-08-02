@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::interop::eth::{EthAddress, EthAmount};
@@ -33,6 +34,15 @@ use crate::{
 
 // BRIDGE ACCOUNT HELPERS
 // ================================================================================================
+
+/// Returns the fixed dummy account ID commonly seeded as the bridge's built-in `ADMIN` role
+/// member in tests.
+///
+/// Tests that exercise `ADMIN`-gated procedures (e.g. the pause toggles or role rotation) must
+/// use the seeded admin's ID as the note sender.
+pub fn bridge_admin_account_id() -> AccountId {
+    AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap()
+}
 
 /// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
 /// role member and a single holder per operational role.

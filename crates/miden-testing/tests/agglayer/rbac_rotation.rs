@@ -23,15 +23,16 @@ use miden_agglayer::{
     UpdateGerNote,
 };
 use miden_crypto::rand::FeltRng;
+use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::{RbacConfig, RbacConfigNote};
+use miden_standards::note::{PauseConfigNote, RbacConfig, RbacConfigNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::setup_bridge;
+use super::test_utils::{bridge_admin_account_id, setup_bridge};
+use crate::consume_note;
 // The role-membership storage getter is shared with the `rbac` suite, which owns the
 // exhaustive tests of the underlying component.
 use crate::scripts::rbac::is_role_member;
@@ -61,25 +62,6 @@ fn bridge_rbac_config_note(
     Ok(note)
 }
 
-/// Executes the (chain-committed) `note` against the bridge, commits the transaction into the
-/// next block, and applies the resulting account patch to `bridge_account`.
-async fn execute_bridge_note(
-    mock_chain: &mut MockChain,
-    bridge_account: &mut Account,
-    note: &Note,
-) -> anyhow::Result<()> {
-    let executed = mock_chain
-        .build_transaction(bridge_account.id())
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    bridge_account.apply_patch(executed.account_patch())?;
-    Ok(())
-}
-
 // TESTS
 // ================================================================================================
 
@@ -93,11 +75,11 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     let new_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut bridge_account = setup.bridge_account;
+    let bridge_id = setup.bridge.id();
 
     let grant = bridge_rbac_config_note(
-        setup.admin.id(),
-        bridge_account.id(),
+        bridge_admin_account_id(),
+        bridge_id,
         RbacConfig::GrantRole {
             role: AggLayerBridge::ger_injector_role(),
             account: new_injector.id(),
@@ -108,20 +90,23 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
-        UpdateGerNote::create(ger, new_injector.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, new_injector.id(), bridge_id, builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.build()?;
 
-    execute_bridge_note(&mut mock_chain, &mut bridge_account, &grant).await?;
+    consume_note(&mut mock_chain, bridge_id, &grant).await?;
     assert!(is_role_member(
-        &bridge_account,
+        mock_chain.committed_account(bridge_id)?,
         &AggLayerBridge::ger_injector_role(),
         new_injector.id()
     )?);
 
-    execute_bridge_note(&mut mock_chain, &mut bridge_account, &update_ger_note).await?;
-    assert!(AggLayerBridge::is_ger_registered(ger, &bridge_account)?);
+    consume_note(&mut mock_chain, bridge_id, &update_ger_note).await?;
+    assert!(AggLayerBridge::is_ger_registered(
+        ger,
+        mock_chain.committed_account(bridge_id)?
+    )?);
     Ok(())
 }
 
@@ -131,11 +116,11 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
 async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
-    let mut bridge_account = setup.bridge_account;
+    let bridge_id = setup.bridge.id();
 
     let revoke = bridge_rbac_config_note(
-        setup.admin.id(),
-        bridge_account.id(),
+        bridge_admin_account_id(),
+        bridge_id,
         RbacConfig::RevokeRole {
             role: AggLayerBridge::ger_injector_role(),
             account: setup.ger_injector.id(),
@@ -145,25 +130,21 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(revoke.clone()));
 
     let ger = ExitRoot::from(GER_BYTES);
-    let update_ger_note = UpdateGerNote::create(
-        ger,
-        setup.ger_injector.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
+    let update_ger_note =
+        UpdateGerNote::create(ger, setup.ger_injector.id(), bridge_id, builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.build()?;
 
-    execute_bridge_note(&mut mock_chain, &mut bridge_account, &revoke).await?;
+    consume_note(&mut mock_chain, bridge_id, &revoke).await?;
     assert!(!is_role_member(
-        &bridge_account,
+        mock_chain.committed_account(bridge_id)?,
         &AggLayerBridge::ger_injector_role(),
         setup.ger_injector.id()
     )?);
 
     let result = mock_chain
-        .build_transaction(bridge_account.id())
+        .build_transaction(bridge_id)
         .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
@@ -184,6 +165,7 @@ fn bridge_allowed_notes_pin() {
         DeregisterAggFaucetNote::script_root(),
         UpdateGerNote::script_root(),
         RemoveGerNote::script_root(),
+        PauseConfigNote::script_root(),
         RbacConfigNote::script_root(),
     ]);
     assert_eq!(AggLayerBridge::allowed_notes(), expected);

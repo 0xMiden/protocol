@@ -43,7 +43,9 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PSWAP),
             PricedNote::Standard(StandardNote::MINT),
             PricedNote::Standard(StandardNote::BURN),
+            PricedNote::Standard(StandardNote::CONSTANT_FEE_POLICY_CONFIG),
             PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG),
+            PricedNote::Standard(StandardNote::FAUCET_METADATA_CONFIG),
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
             PricedNote::Standard(StandardNote::PAUSE_CONFIG),
@@ -88,8 +90,14 @@ impl PricedNote {
                 ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ],
             PricedNote::Standard(StandardNote::BURN) => &[ExecutionBenchmark::ConsumeBurnNetwork],
+            PricedNote::Standard(StandardNote::CONSTANT_FEE_POLICY_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork]
+            },
             PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::FAUCET_METADATA_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork]
             },
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeAllowlistConfigNetwork]
@@ -441,6 +449,7 @@ mod tests {
     #[case::mint(PricedNote::Standard(StandardNote::MINT))]
     #[case::burn(PricedNote::Standard(StandardNote::BURN))]
     #[case::faucet_policy_config(PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG))]
+    #[case::faucet_metadata_config(PricedNote::Standard(StandardNote::FAUCET_METADATA_CONFIG))]
     #[case::allowlist_config(PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG))]
     #[case::blocklist_config(PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG))]
     #[case::pause_config(PricedNote::Standard(StandardNote::PAUSE_CONFIG))]

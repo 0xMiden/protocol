@@ -22,7 +22,7 @@ use serde::Deserialize;
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
-    bridge_admin_id,
+    bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
     execute_program_with_default_host,
 };
@@ -76,7 +76,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -308,7 +308,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -375,7 +375,7 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

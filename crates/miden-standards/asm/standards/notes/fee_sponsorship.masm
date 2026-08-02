@@ -20,7 +20,11 @@ const STORAGE_PTR = 0
 # - reclaimer_suffix      [4]    : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix      [5]    : prefix of the account allowed to reclaim the note
 # - reclaim_block_height  [6]    : block height at or after which the reclaimer may reclaim (0 = disabled)
-const FEATURE_NOTE_ID_ITEM = STORAGE_PTR
+
+#! The offset of the FEATURE_NOTE_ID in the note's storage.
+pub const FEATURE_NOTE_ID_ITEM_OFFSET = 0
+
+const FEATURE_NOTE_ID_ITEM = STORAGE_PTR + FEATURE_NOTE_ID_ITEM_OFFSET
 const RECLAIMER_SUFFIX_ITEM = STORAGE_PTR + 4
 const RECLAIMER_PREFIX_ITEM = STORAGE_PTR + 5
 const RECLAIM_HEIGHT_ITEM = STORAGE_PTR + 6

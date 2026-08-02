@@ -49,7 +49,7 @@ use super::test_utils::{
     MIDEN_NETWORK_ID,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
-    bridge_admin_id,
+    bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
 
@@ -157,7 +157,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -456,7 +456,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -663,7 +663,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -814,7 +814,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -981,7 +981,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -1139,7 +1139,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -1428,7 +1428,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -1679,7 +1679,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -1824,7 +1824,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

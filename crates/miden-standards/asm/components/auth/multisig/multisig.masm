@@ -53,7 +53,7 @@ pub proc auth_tx_multisig(auth_args: word)
     exec.signature::estimate_multisig_authentication_cycles
     # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS]
 
-    exec.fee::pay_fee
+    exec.fee::pay_fee drop
     # => [AUTH_ARGS]
 
     # Authenticate the transaction and record it for replay protection.

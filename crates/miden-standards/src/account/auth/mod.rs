@@ -31,4 +31,6 @@ pub use network_account::{
     NetworkAccountNoteAllowlistError,
     NetworkAccountTxScriptAllowlist,
     NetworkAccountTxScriptAllowlistError,
+    SponsorshipPolicy,
+    SponsorshipPolicyError,
 };

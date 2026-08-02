@@ -20,6 +20,7 @@ use super::{
     NetworkAccountNoteAllowlist,
     NetworkAccountNoteAllowlistError,
     NetworkAccountTxScriptAllowlist,
+    SponsorshipPolicy,
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
@@ -158,15 +159,25 @@ procedure_root!(
 /// This component owns the fee-policy related storage slots and procedures. It carries the
 /// [`FeePolicyManager`] it was constructed with, which configures those slots, and, when expanded
 /// into [`AccountComponent`]s, yields the components of the manager's registered fee policies right
-/// after itself. The auth procedure also collects fees prepaid by `FEE_SPONSORSHIP` input notes,
+/// after itself. The auth procedure also collects fees from `FEE_SPONSORSHIP` input notes,
 /// denominated in the configured fee asset.
 ///
 /// Because every network transaction pays a fee, the fee policy is not optional: the component is
 /// constructed from a [`FeePolicyManager`], which initializes the slots from the manager's active
 /// policy, allowed policies and fee asset.
+///
+/// # Sponsorship policy
+///
+/// Paying the fee also sponsors every network output note the transaction creates, out of this
+/// account's vault. The component's [`SponsorshipPolicy`] decides whether that spending is bounded
+/// by what the account collected in the same transaction. It defaults to
+/// [`SponsorshipPolicy::AtMostCollectedFees`], so an account only forwards value it collected.
+/// Accounts that are meant to subsidise their own outgoing notes opt into
+/// [`SponsorshipPolicy::Unlimited`].
 pub struct AuthNetworkAccount {
     allowed_notes: NetworkAccountNoteAllowlist,
     allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
+    sponsorship_policy: SponsorshipPolicy,
     policy_manager: FeePolicyManager,
 }
 
@@ -198,8 +209,9 @@ impl AuthNetworkAccount {
     ///   so the account's allowlists can be updated after deployment by sending that note.
     /// - The [`FeeSponsorshipNote`] script root is added to the note allowlist. A network account
     ///   collects prepaid fees by consuming these notes, so without it, fees could not be
-    ///   collected. Allowlisting it is safe: an unpaired sponsorship note is rejected during fee
-    ///   collection.
+    ///   collected. Allowlisting it is safe: the note's own script refuses consumption without the
+    ///   note it sponsors, and fee collection asserts every consumed note's fee is covered by the
+    ///   sponsorships bound to it.
     /// - The tx-script allowlist contains the [`ExpirationTransactionScript`] root, which the
     ///   network transaction builder attaches to every network transaction, so the account is
     ///   serviceable by the network.
@@ -229,8 +241,16 @@ impl AuthNetworkAccount {
         Ok(Self {
             allowed_notes: NetworkAccountNoteAllowlist::new(allowed_notes)?,
             allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
+            sponsorship_policy: SponsorshipPolicy::default(),
             policy_manager: fee_policy_manager,
         })
+    }
+
+    /// Sets the [`SponsorshipPolicy`] bounding how much the account spends sponsoring the network
+    /// notes it creates.
+    pub fn with_sponsorship_policy(mut self, sponsorship_policy: SponsorshipPolicy) -> Self {
+        self.sponsorship_policy = sponsorship_policy;
+        self
     }
 
     /// Extends the tx-script allowlist with the given transaction script roots, keeping any that
@@ -269,6 +289,11 @@ impl AuthNetworkAccount {
     /// Returns the [`NetworkAccountTxScriptAllowlist`] of this component.
     pub fn allowed_tx_scripts(&self) -> &NetworkAccountTxScriptAllowlist {
         &self.allowed_tx_scripts
+    }
+
+    /// Returns the [`SponsorshipPolicy`] of this component.
+    pub fn sponsorship_policy(&self) -> SponsorshipPolicy {
+        self.sponsorship_policy
     }
 
     /// Returns the procedure root of the `add_allowed_note_script` procedure exposed by this
@@ -345,11 +370,22 @@ impl AuthNetworkAccount {
         NetworkAccountTxScriptAllowlist::slot_schema()
     }
 
+    /// Returns the storage slot holding the sponsorship policy.
+    pub fn sponsorship_policy_slot() -> &'static StorageSlotName {
+        SponsorshipPolicy::slot_name()
+    }
+
+    /// Returns the storage slot schema for the sponsorship policy slot.
+    pub fn sponsorship_policy_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        SponsorshipPolicy::slot_schema()
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let mut slot_schemas = vec![
             NetworkAccountNoteAllowlist::slot_schema(),
             NetworkAccountTxScriptAllowlist::slot_schema(),
+            SponsorshipPolicy::slot_schema(),
         ];
         slot_schemas.extend(FeePolicyManager::slot_schemas());
         let storage_schema =
@@ -374,12 +410,16 @@ impl IntoIterator for AuthNetworkAccount {
         let Self {
             allowed_notes,
             allowed_tx_scripts,
+            sponsorship_policy,
             policy_manager,
         } = self;
 
         let fee_policy_slots = policy_manager.to_storage_slots();
-        let mut storage_slots =
-            vec![allowed_notes.into_storage_slot(), allowed_tx_scripts.into_storage_slot()];
+        let mut storage_slots = vec![
+            allowed_notes.into_storage_slot(),
+            allowed_tx_scripts.into_storage_slot(),
+            sponsorship_policy.into_storage_slot(),
+        ];
         storage_slots.extend(fee_policy_slots);
 
         let auth_component =

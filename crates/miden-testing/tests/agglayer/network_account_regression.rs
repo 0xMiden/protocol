@@ -24,7 +24,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
-    bridge_admin_id,
+    bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
 
@@ -57,7 +57,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -113,7 +113,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
-        bridge_admin_id(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

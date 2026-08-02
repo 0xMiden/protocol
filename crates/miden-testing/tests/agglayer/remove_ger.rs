@@ -37,7 +37,7 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
 async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let BridgeSetup {
-        bridge_account,
+        bridge: bridge_account,
         ger_injector,
         ger_remover,
         ..
@@ -97,7 +97,7 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let BridgeSetup {
-        bridge_account,
+        bridge: bridge_account,
         ger_injector,
         ger_remover,
         ..
@@ -179,7 +179,7 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let BridgeSetup {
-        bridge_account,
+        bridge: bridge_account,
         ger_injector,
         ger_remover,
         ..
@@ -248,7 +248,7 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let BridgeSetup {
-        bridge_account,
+        bridge: bridge_account,
         ger_injector,
         ger_remover,
         ..
@@ -299,7 +299,7 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
 async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let BridgeSetup {
-        bridge_account,
+        bridge: bridge_account,
         ger_injector,
         ger_remover,
         ..
@@ -351,7 +351,7 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let BridgeSetup { bridge_account, ger_injector, .. } = setup_bridge(&mut builder)?;
+    let BridgeSetup { bridge: bridge_account, ger_injector, .. } = setup_bridge(&mut builder)?;
 
     // Register a GER first so the failure is exclusively due to the sender check.
     let ger = ExitRoot::from(GER_BYTES);
