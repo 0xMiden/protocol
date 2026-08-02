@@ -10,10 +10,16 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
+    ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{PauseConfig, PauseConfigNote};
+use miden_standards::note::{
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    PauseConfig,
+    PauseConfigNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -47,7 +53,7 @@ fn pause_config_note(
 ) -> anyhow::Result<Note> {
     let note = PauseConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .generate_serial_number(rng)
         .build()?
@@ -57,14 +63,19 @@ fn pause_config_note(
 
 /// Builds a note carrying the PauseConfig script with hand-crafted storage, bypassing the builder
 /// so malformed inputs can be exercised.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_pause_config_note(
     sender: AccountId,
+    target: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(PauseConfigNote::script())
         .note_storage(storage)?
+        .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
         .build()?;
     Ok(note)
 }
@@ -123,7 +134,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // selector 99 is not a known action
-    let note = malformed_pause_config_note(owner, vec![Felt::from(99u32)], &mut rng)?;
+    let note = malformed_pause_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -146,8 +157,12 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
     // Pause selector (0) but two storage items instead of the expected one
-    let note =
-        malformed_pause_config_note(owner, vec![Felt::from(0u32), Felt::from(0u32)], &mut rng)?;
+    let note = malformed_pause_config_note(
+        owner,
+        account.id(),
+        vec![Felt::from(0u32), Felt::from(0u32)],
+        &mut rng,
+    )?;
     let tx = mock_chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
@@ -155,5 +170,34 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let result = tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    Ok(())
+}
+
+/// The note is bound to its target account, so a decoy account cannot consume a note meant for
+/// another account. The decoy carries the same `PausableManager` setup with the same owner, so the
+/// sender-based authorization would pass; consuming a note targeted at a different account aborts
+/// at the target check before the pause state changes.
+#[tokio::test]
+async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let decoy = create_pausable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    let note = pause_config_note(owner, target, PauseConfig::Pause, &mut rng)?;
+    let result = mock_chain
+        .build_transaction(decoy.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH);
     Ok(())
 }

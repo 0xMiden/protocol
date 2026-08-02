@@ -26,10 +26,16 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::errors::standards::{
+    ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{FaucetPolicyConfig, FaucetPolicyConfigNote};
+use miden_standards::note::{
+    FaucetPolicyConfig,
+    FaucetPolicyConfigNote,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -93,7 +99,7 @@ fn faucet_policy_config_note(
 ) -> anyhow::Result<Note> {
     let note = FaucetPolicyConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .config(config)
         .generate_serial_number(rng)
         .build()?
@@ -103,14 +109,19 @@ fn faucet_policy_config_note(
 
 /// Builds a note carrying the FaucetPolicyConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_faucet_policy_config_note(
     sender: AccountId,
+    target: AccountId,
     storage: Vec<Felt>,
     rng: &mut RandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(FaucetPolicyConfigNote::script())
         .note_storage(storage)?
+        .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
         .build()?;
     Ok(note)
 }
@@ -199,7 +210,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
 
     // a root-sized payload followed by selector 99, which is not a known action
     let storage = vec![Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(99u32)];
-    let note = malformed_faucet_policy_config_note(owner, storage, &mut rng)?;
+    let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)
@@ -222,7 +233,8 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
 
     // a single storage item instead of the expected five; the selector position reads as an
     // uninitialized zero, dispatching to SetMintPolicy, whose count guard then rejects the note
-    let note = malformed_faucet_policy_config_note(owner, vec![Felt::from(0u32)], &mut rng)?;
+    let note =
+        malformed_faucet_policy_config_note(owner, faucet.id(), vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)
@@ -233,5 +245,40 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         result,
         ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
+    Ok(())
+}
+
+/// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
+/// another one. The decoy carries the same `TokenPolicyManager` setup with the same owner, so the
+/// sender-based authorization would pass; consuming a note targeted at a different faucet aborts at
+/// the target check before any policy switch runs.
+#[tokio::test]
+async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let mut builder = MockChain::builder();
+    let decoy = create_faucet_with_policies(&mut builder, owner)?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    let note = faucet_policy_config_note(
+        owner,
+        target,
+        FaucetPolicyConfig::SetMintPolicy {
+            policy_root: MintPolicy::owner_only().root(),
+        },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(decoy.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH);
     Ok(())
 }

@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
@@ -23,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -59,7 +58,7 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts the
 /// consuming account matches that target before calling `set_note_fee`, so the note cannot be
-/// consumed (and burned) by a third-party account that merely accepts its sender.
+/// consumed by a third-party account that merely accepts its sender.
 ///
 /// # Consuming account requirements
 ///
@@ -97,7 +96,7 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     note_script_root: NoteScriptRoot,
     fee_asset: FungibleAsset,
     serial_number: Word,
@@ -114,28 +113,29 @@ impl ConstantFeePolicyConfigNote {
     /// Returns an error if:
     /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
-    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the bound
-    ///   target attachment occupies one of the available slots.
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         note_script_root: NoteScriptRoot,
         fee_asset: FungibleAsset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
         // the consuming account matches this `NetworkAccountTarget`.
-        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
-            .map_err(|err| NoteError::other(err.to_string()))?;
-        attachments.insert(0, NoteAttachment::from(target));
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source("failed to bind the note to its target account", err)
+        })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
-            account,
+            target,
             note_script_root,
             fee_asset,
             serial_number,
@@ -175,7 +175,7 @@ impl ConstantFeePolicyConfigNote {
     /// Returns the account ID of the managed account: the account the note is tagged for and bound
     /// to via its `NetworkAccountTarget` attachment (only this account can consume the note).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the note script root the fee is scheduled for.
@@ -217,20 +217,12 @@ impl ConstantFeePolicyConfigNote {
 
 impl<S: constant_fee_policy_config_note_builder::State> ConstantFeePolicyConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
-    ///
-    /// The note reserves one attachment slot for its bound `NetworkAccountTarget`, so callers can
-    /// add at most [`NoteAttachments::MAX_COUNT`] - 1 of their own. A caller-supplied
-    /// `NetworkAccountTarget` does not override the bound one (the bound target is prepended and
-    /// wins as the canonical first match).
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
         self
     }
 
     /// Adds multiple attachments to the note.
-    ///
-    /// See [`Self::attachment`] for how the bound `NetworkAccountTarget` interacts with the
-    /// attachment limit and caller-supplied targets.
     pub fn attachments(
         mut self,
         attachments: impl IntoIterator<Item = impl Into<NoteAttachment>>,
@@ -263,7 +255,7 @@ impl From<ConstantFeePolicyConfigNote> for Note {
         // ConstantFeePolicyConfig notes carry no assets and are always public for network
         // execution; the note script root and fee asset live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let storage = NoteStorage::new(note.to_storage_values())
             .expect("number of storage items should not exceed max storage items");
         let recipient =
@@ -289,11 +281,14 @@ impl NoteConsumptionCost for ConstantFeePolicyConfigNote {
 mod tests {
     use alloc::vec::Vec;
 
+    use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::note::NoteAttachmentScheme;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
+    use crate::note::{NetworkAccountTargetError, NoteExecutionHint};
 
     fn account_id(seed: u8) -> AccountId {
         AccountId::builder()
@@ -318,7 +313,7 @@ mod tests {
 
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(sender)
-            .account(account)
+            .target(account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .generate_serial_number(&mut rng)
@@ -341,7 +336,7 @@ mod tests {
         let account = account_id(1);
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account)
+            .target(account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
@@ -354,27 +349,29 @@ mod tests {
         assert_eq!(target.target_id(), account);
     }
 
-    /// A caller-supplied `NetworkAccountTarget` for a different account does not override the bound
-    /// target: the bound one is prepended and wins as the canonical (first) match.
+    /// A caller-supplied `NetworkAccountTarget` for another account is rejected rather than
+    /// silently coexisting with the note's own target.
     #[test]
-    fn caller_supplied_target_does_not_override_binding() {
-        let account = account_id(1);
-        let other = account_id(3);
-        let rogue_target = NetworkAccountTarget::new(other, NoteExecutionHint::Always).unwrap();
+    fn caller_supplied_target_for_other_account_is_rejected() {
+        let rogue_target =
+            NetworkAccountTarget::new(account_id(3), NoteExecutionHint::Always).unwrap();
 
-        let note = ConstantFeePolicyConfigNote::builder()
+        let err = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account)
+            .target(account_id(1))
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
             .attachment(rogue_target)
             .build()
-            .unwrap();
+            .unwrap_err();
 
-        let built = Note::from(note);
-        let target = NetworkAccountTarget::try_from(built.attachments()).unwrap();
-        assert_eq!(target.target_id(), account);
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetMismatch { .. }
+            )
+        });
     }
 
     /// A non-public `account` is rejected by the builder, since the note binds to it via a
@@ -384,15 +381,21 @@ mod tests {
         let private_account =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-        let result = ConstantFeePolicyConfigNote::builder()
+        let err = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(private_account)
+            .target(private_account)
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty())
-            .build();
+            .build()
+            .unwrap_err();
 
-        assert!(matches!(result, Err(NoteError::Other { .. })));
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetNotPublic { .. }
+            )
+        });
     }
 
     /// The bound target attachment reserves one of the `NoteAttachments::MAX_COUNT` slots, so a
@@ -401,13 +404,15 @@ mod tests {
     fn caller_attachments_beyond_limit_are_rejected() {
         let mut builder = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .note_script_root(note_root(10))
             .fee_asset(fee_asset(500))
             .serial_number(Word::empty());
-        for seed in 0..NoteAttachments::MAX_COUNT as u8 {
-            let extra = NetworkAccountTarget::new(account_id(seed + 20), NoteExecutionHint::Always)
-                .unwrap();
+        for scheme in 0..NoteAttachments::MAX_COUNT as u16 {
+            let extra = NoteAttachment::with_word(
+                NoteAttachmentScheme::new(64 + scheme).unwrap(),
+                Word::empty(),
+            );
             builder = builder.attachment(extra);
         }
 
@@ -422,7 +427,7 @@ mod tests {
 
         let note = ConstantFeePolicyConfigNote::builder()
             .sender(account_id(2))
-            .account(account_id(1))
+            .target(account_id(1))
             .note_script_root(root)
             .fee_asset(asset)
             .serial_number(Word::empty())

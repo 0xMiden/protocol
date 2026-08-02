@@ -25,25 +25,25 @@ pub const BURN_CONSUMPTION_CYCLES: u32 = 28348;
 pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 19716;
 
 /// Cycles of consuming a FAUCET_POLICY_CONFIG note (single benchmarked path).
-pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 27423;
+pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 28285;
 
 /// Cycles of consuming a FAUCET_METADATA_CONFIG note (single benchmarked path).
-pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 26241;
+pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 27103;
 
 /// Cycles of consuming an ALLOWLIST_CONFIG note (single benchmarked path).
-pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 25531;
+pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 26393;
 
 /// Cycles of consuming a BLOCKLIST_CONFIG note (single benchmarked path).
-pub const BLOCKLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 25531;
+pub const BLOCKLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 26393;
 
 /// Cycles of consuming a PAUSE_CONFIG note (single benchmarked path).
-pub const PAUSE_CONFIG_CONSUMPTION_CYCLES: u32 = 17481;
+pub const PAUSE_CONFIG_CONSUMPTION_CYCLES: u32 = 18343;
 
 /// Cycles of consuming an OWNER_CONFIG note (single benchmarked path).
-pub const OWNER_CONFIG_CONSUMPTION_CYCLES: u32 = 17075;
+pub const OWNER_CONFIG_CONSUMPTION_CYCLES: u32 = 17937;
 
 /// Cycles of consuming an RBAC_CONFIG note (single benchmarked path).
-pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 20337;
+pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 21199;
 
 /// Cycles of consuming a NETWORK_ACCOUNT_CONFIG note (single benchmarked path).
 pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 18837;

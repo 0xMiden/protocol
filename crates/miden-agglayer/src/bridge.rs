@@ -492,8 +492,9 @@ impl AggLayerBridge {
     /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
     /// `bridge_id`. `sender` must hold the bridge's `ADMIN` role.
     ///
-    /// Use this instead of [`PauseConfigNote::builder`] directly: the builder attaches no
-    /// [`NetworkAccountTarget`], without which the note is never routed to the bridge.
+    /// Use this instead of [`PauseConfigNote::builder`] directly: it reports a non-public
+    /// `bridge_id` as [`AgglayerBridgeError::NonPublicPauseNoteTarget`] rather than as an opaque
+    /// note creation failure.
     ///
     /// # Errors
     /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
@@ -508,7 +509,7 @@ impl AggLayerBridge {
 
         PauseConfigNote::builder()
             .sender(sender)
-            .account(bridge_id)
+            .target(bridge_id)
             .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)

@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{NoteConsumptionCost, PAUSE_CONFIG_CONSUMPTION_CYCLES};
 
 // NOTE SCRIPT
@@ -98,12 +99,17 @@ impl From<PauseConfig> for NoteStorage {
 /// the account authorized for the action per the account's `Authority` configuration (the owner
 /// under `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
+/// The note is bound to the target `account` by a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
+/// that the consuming account matches that target before dispatching, so the note cannot be
+/// consumed by a third-party account that merely accepts its sender.
+///
 /// Construct one with the [builder](PauseConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct PauseConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: PauseConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -115,21 +121,34 @@ impl PauseConfigNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
+    ///   which requires a public target).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: PauseConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // The note script asserts that the consuming account matches this target before
+        // dispatching.
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source(
+                "failed to bind the PauseConfig note to its target account",
+                err,
+            )
+        })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -164,7 +183,7 @@ impl PauseConfigNote {
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the admin action carried by the note.
@@ -224,7 +243,7 @@ impl From<PauseConfigNote> for Note {
         // PauseConfig notes carry no assets and are always public for network execution; the action
         // lives in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             PauseConfigNote::script(),
@@ -269,7 +288,7 @@ mod tests {
 
         let note = PauseConfigNote::builder()
             .sender(sender)
-            .account(managed)
+            .target(managed)
             .config(PauseConfig::Pause)
             .generate_serial_number(&mut rng)
             .build()

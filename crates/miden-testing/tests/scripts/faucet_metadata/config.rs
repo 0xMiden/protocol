@@ -8,15 +8,21 @@
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
 use miden_standards::errors::standards::{
+    ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+use miden_standards::note::{
+    FaucetMetadataConfig,
+    FaucetMetadataConfigNote,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -45,8 +51,12 @@ fn config_note(
 
 /// Builds a note carrying the FaucetMetadataConfig script with hand-crafted storage, bypassing the
 /// builder so malformed inputs can be exercised.
+///
+/// It carries a `NetworkAccountTarget` for the consuming account, like a real config note, so
+/// the note passes the script's target check and reaches the guard under test.
 fn malformed_config_note(
     sender: AccountId,
+    target: AccountId,
     storage: Vec<Felt>,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
@@ -54,6 +64,7 @@ fn malformed_config_note(
     let note = NoteBuilder::new(sender, &mut rng)
         .script(FaucetMetadataConfigNote::script())
         .note_storage(storage)?
+        .attachment(NetworkAccountTarget::new(target, NoteExecutionHint::Always)?)
         .build()?;
     Ok(note)
 }
@@ -154,7 +165,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // selector 99 is not a known action
-    let note = malformed_config_note(owner, vec![Felt::from(99u32), Felt::ZERO], 5)?;
+    let note = malformed_config_note(owner, faucet.id(), vec![Felt::from(99u32), Felt::ZERO], 5)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -178,7 +189,7 @@ async fn wrong_storage_item_count_fails_for_max_supply() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // SetMaxSupply selector (0) but the new cap is missing
-    let note = malformed_config_note(owner, vec![Felt::ZERO], 6)?;
+    let note = malformed_config_note(owner, faucet.id(), vec![Felt::ZERO], 6)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -208,6 +219,7 @@ async fn wrong_storage_item_count_fails_for_string_action() -> anyhow::Result<()
     // SetDescription selector (1) with only the reserved selector word, no payload
     let note = malformed_config_note(
         owner,
+        faucet.id(),
         vec![Felt::from(1u32), Felt::ZERO, Felt::ZERO, Felt::ZERO],
         7,
     )?;
@@ -223,6 +235,40 @@ async fn wrong_storage_item_count_fails_for_string_action() -> anyhow::Result<()
         result,
         ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
+
+    Ok(())
+}
+
+/// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
+/// another one. The decoy carries the same faucet setup with the same owner, so the sender-based
+/// authorization would pass; consuming a note targeted at a different faucet aborts at the target
+/// check before any metadata change runs.
+#[tokio::test]
+async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let decoy = create_faucet(owner, true)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    let mock_chain = builder.build()?;
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    let note = config_note(
+        owner,
+        target,
+        FaucetMetadataConfig::SetMaxSupply { max_supply: AssetAmount::new(1)? },
+        9,
+    )?;
+
+    let result = mock_chain
+        .build_transaction(decoy.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH);
 
     Ok(())
 }
