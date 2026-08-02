@@ -181,10 +181,9 @@ where
 
 impl From<BurnNote> for Note {
     fn from(note: BurnNote) -> Self {
-        // BURN notes are always public so they are visible on-chain and routable. The
-        // NetworkAccountTarget attachment routes the note to the asset's issuing faucet (which may
-        // or may not be network-executable, depending on that faucet's auth component), while
-        // storage binds the script to the asset it must burn.
+        // BURN notes are always public for network execution. The NetworkAccountTarget attachment
+        // routes the note to the asset's issuing faucet, while storage binds the script to the
+        // asset it must burn.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public);
         let storage = NoteStorage::new(note.asset.as_elements().to_vec())
             .expect("an asset always fits in BURN note storage");
