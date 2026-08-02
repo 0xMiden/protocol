@@ -38,12 +38,14 @@ use miden_standards::note::{
     RbacConfig,
     RbacConfigNote,
 };
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    is_bridge_paused,
     setup_bridge,
 };
 use crate::consume_note;
@@ -168,8 +170,8 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A paused bridge still consumes `RBAC_CONFIG` notes: role rotation stays available as the
-/// emergency-recovery path while bridging is halted, as documented in SPEC section 2.5.
+/// A paused bridge still consumes `RBAC_CONFIG` notes: role rotation stays available while
+/// bridging is halted, as documented in SPEC section 2.5.
 #[tokio::test]
 async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -201,12 +203,16 @@ async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     consume_note(&mut mock_chain, bridge_id, &pause).await?;
+    assert!(is_bridge_paused(&mock_chain, bridge_id)?);
+
     consume_note(&mut mock_chain, bridge_id, &grant).await?;
     assert!(is_role_member(
         mock_chain.committed_account(bridge_id)?,
         &AggLayerBridge::ger_injector_role(),
         new_injector.id()
     )?);
+    // the rotation must not have cleared the pause
+    assert!(is_bridge_paused(&mock_chain, bridge_id)?);
     Ok(())
 }
 
@@ -244,4 +250,10 @@ fn bridge_allowed_notes_pin() {
     effective.insert(NetworkAccountConfigNote::script_root());
     effective.insert(FeeSponsorshipNote::script_root());
     assert_eq!(network_account.allowed_notes().allowed_script_roots(), &effective);
+
+    // the tx-script allowlist carries only the canonical expiration script
+    assert_eq!(
+        network_account.allowed_tx_scripts().allowed_script_roots(),
+        &BTreeSet::from([ExpirationTransactionScript::script_root()])
+    );
 }

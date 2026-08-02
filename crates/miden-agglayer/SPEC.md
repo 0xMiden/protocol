@@ -235,9 +235,9 @@ bridge-specific consequences are:
 
 - **`ADMIN` is the bridge's root authority.** It is the effective admin of all three
   operational roles, and the auto-allowlisted `NETWORK_ACCOUNT_CONFIG` note dispatches the
-  `ADMIN`-defaulted allowlist- and fee-policy-update procedures, so a compromised `ADMIN` key
-  controls the
-  whole bridge configuration (see [Section 1](#1-entities-and-trust-model)). For the same
+  `ADMIN`-defaulted note-, tx-script-, and allowed-fee-policy-update procedures, so a
+  compromised `ADMIN` key controls the whole bridge configuration (see
+  [Section 1](#1-entities-and-trust-model)). For the same
   reason the `ADMIN` role must never be emptied: role rotation and every `ADMIN`-defaulted
   procedure - the bridge's post-deployment configuration channel, including `unpause` - would
   be lost forever, and on a paused bridge that would freeze claims and bridge-outs

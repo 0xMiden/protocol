@@ -22,14 +22,15 @@ use miden_processor::{
     Program,
     StackInputs,
 };
-use miden_protocol::ProtocolLib;
-use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{Account, AccountId};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{ProtocolLib, Word};
 use miden_standards::StandardsLib;
-use miden_testing::{Auth, MockChainBuilder};
+use miden_standards::account::access::PausableStorage;
+use miden_testing::{Auth, MockChain, MockChainBuilder};
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -37,6 +38,18 @@ use miden_testing::{Auth, MockChainBuilder};
 /// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
+
+// PAUSE STATE
+// ================================================================================================
+
+/// Reads the pause state from the committed bridge account.
+pub fn is_bridge_paused(mock_chain: &MockChain, bridge_id: AccountId) -> anyhow::Result<bool> {
+    let word = mock_chain
+        .committed_account(bridge_id)?
+        .storage()
+        .get_item(PausableStorage::is_paused_slot())?;
+    Ok(word != Word::default())
+}
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
