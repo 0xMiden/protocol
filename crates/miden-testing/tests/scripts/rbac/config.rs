@@ -10,6 +10,7 @@ use miden_standards::errors::standards::{
     ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
+    ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, RbacConfig, RbacConfigNote};
 use miden_standards::testing::note::NoteBuilder;
@@ -204,6 +205,34 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    Ok(())
+}
+
+/// A note whose sender is not a member of the role's effective admin role is rejected by the
+/// dispatched procedure's authorization check.
+#[tokio::test]
+async fn unauthorized_sender_grant_fails() -> anyhow::Result<()> {
+    let admin = test_account_id(41);
+    let outsider = test_account_id(45);
+    let member = test_account_id(46);
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = rbac_config_note(
+        outsider,
+        account.id(),
+        RbacConfig::GrantRole { role: role("MINTER"), account: member },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
     Ok(())
 }
 
