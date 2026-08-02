@@ -3,11 +3,13 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_processor::ExecutionError;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_IS_NOT_NATIVE,
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -26,6 +28,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::{TransactionExecutorError, TransactionKernelError};
@@ -36,6 +39,7 @@ use crate::utils::create_public_p2any_note;
 use crate::{
     Auth,
     MockChain,
+    MockChainBuilder,
     MockTransaction,
     TestTransactionBuilder,
     assert_execution_error,
@@ -751,6 +755,189 @@ async fn test_malicious_note_cannot_remove_all_assets_from_later_p2id_note() -> 
         .build_transaction(account.id())
         .unauthenticated_input_notes([malicious_note, p2id_note])
         .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_rejected_by_account_origin_auth(result);
+
+    Ok(())
+}
+
+/// The account-origin check resolves the caller against the *active* account, so on its own it
+/// would let a malicious note reach indexed removal through an attacker-controlled foreign account:
+/// inside the FPI context that foreign account is active and vouches for its own procedures. The
+/// native account check closes that path, keeping indexed removal available only to the account the
+/// transaction is executed against.
+#[tokio::test]
+async fn test_malicious_note_cannot_remove_assets_via_foreign_account() -> anyhow::Result<()> {
+    let stolen_asset = FungibleAsset::mock(100);
+
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "foreign_account",
+            "
+            use miden::protocol::input_note
+
+            @account_procedure
+            pub proc drain
+                exec.input_note::remove_asset
+            end
+            ",
+        )?,
+        Vec::new(),
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let victim_note = build_victim_p2id_note(native_account.id(), stolen_asset)?;
+    let attacker_output_note = build_attacker_output_note(native_account.id(), stolen_asset)?;
+
+    let malicious_note_code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::output_note
+        use miden::protocol::tx
+
+        @note_script
+        pub proc main
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            # Route the indexed removal through the attacker's foreign account, which is the
+            # active account for the duration of the FPI call.
+            padw push.0.0.0
+            push.{p2id_note_index}
+            push.{asset_value}
+            push.{asset_id}
+            procref.::foreign_account::drain
+            push.{foreign_prefix} push.{foreign_suffix}
+            exec.tx::execute_foreign_procedure
+            dropw
+            exec.sys::truncate_stack
+
+            # If the removal above were allowed, create an attacker-controlled output note and
+            # move the stolen asset into it.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            push.{asset_value}
+            push.{asset_id}
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        asset_id = stolen_asset.to_id_word(),
+        asset_value = stolen_asset.to_value_word(),
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        foreign_prefix = foreign_account.id().prefix().as_felt(),
+        foreign_suffix = foreign_account.id().suffix(),
+        recipient = attacker_output_note.recipient().digest(),
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
+    );
+
+    let malicious_note_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_note_script(malicious_note_code)?;
+
+    let malicious_note = NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+    )
+    .note_type(NoteType::Public)
+    .script(malicious_note_script)
+    .build()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+
+    let foreign_account_inputs = mock_chain
+        .get_foreign_account_inputs(foreign_account.id())
+        .expect("foreign account inputs should be available");
+
+    let result = mock_chain
+        .build_transaction(native_account.id())
+        .unauthenticated_input_notes([malicious_note, victim_note])
+        .foreign_accounts(vec![foreign_account_inputs])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+
+    Ok(())
+}
+
+/// Transaction scripts run outside the account context, so the account-origin gate on indexed
+/// input-note asset removal rejects them as well. This intentionally retires the previously
+/// supported pattern of a transaction script taking assets out of an input note by index;
+/// indexed removal on behalf of a transaction now requires a procedure of the native account (as
+/// the fee manager does for sponsorship notes, from its auth procedure).
+#[rstest]
+#[tokio::test]
+async fn test_tx_script_cannot_remove_input_note_assets_by_index(
+    #[values("remove_asset", "remove_all_assets")] removal_call: &str,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+
+    let asset = FungibleAsset::mock(100);
+
+    // a note with a no-op script that does not touch its own assets
+    let note = NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 2, 3, 4u32])),
+    )
+    .note_type(NoteType::Public)
+    .add_assets([asset])
+    .build()?;
+
+    let removal_code = match removal_call {
+        "remove_asset" => format!(
+            "push.0 push.{asset_value} push.{asset_id} exec.input_note::remove_asset dropw",
+            asset_id = asset.to_id_word(),
+            asset_value = asset.to_value_word(),
+        ),
+        "remove_all_assets" => {
+            format!("push.0 push.{STOLEN_ASSET_PTR} exec.input_note::remove_all_assets drop")
+        },
+        other => anyhow::bail!("unknown removal call {other}"),
+    };
+
+    let code = format!(
+        r#"
+        use miden::protocol::input_note
+
+        @transaction_script
+        pub proc main
+            # attempt to remove assets from input note 0 by index from the tx script context
+            {removal_code}
+        end
+    "#
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(code)?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .tx_script(tx_script)
         .build()?
         .execute()
         .await;

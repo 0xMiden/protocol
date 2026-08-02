@@ -42,7 +42,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 
 ### Fixes
 
-- Restricted indexed input-note asset removal to the account context while preserving active-note self-removal ([#3445](https://github.com/0xMiden/protocol/issues/3445)).
+- Restricted indexed input-note asset removal to the native account's context while preserving active-note self-removal. As a consequence, note scripts and transaction scripts can no longer remove input-note assets by index directly, and neither can foreign accounts invoked through FPI; indexed removal must go through a procedure of the native account ([#3445](https://github.com/0xMiden/protocol/issues/3445)).
 - Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 
