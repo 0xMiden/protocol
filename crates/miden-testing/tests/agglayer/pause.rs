@@ -12,13 +12,12 @@ use miden_agglayer::{
     UpdateGerNote,
 };
 use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
-use miden_standards::account::access::PausableStorage;
 use miden_standards::errors::standards::{
     ERR_PAUSABLE_IS_PAUSED,
     ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
@@ -28,7 +27,13 @@ use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 
-use super::test_utils::{BridgeSetup, ClaimDataSource, bridge_admin_account_id, setup_bridge};
+use super::test_utils::{
+    BridgeSetup,
+    ClaimDataSource,
+    bridge_admin_account_id,
+    is_bridge_paused,
+    setup_bridge,
+};
 use crate::consume_note;
 
 // CONSTANTS
@@ -65,15 +70,6 @@ fn stage_pause_note(
     let note = pause_config_note(bridge_admin_account_id(), bridge_id, action)?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     Ok(note)
-}
-
-/// Reads the pause state from the committed bridge account.
-fn is_bridge_paused(mock_chain: &MockChain, bridge_id: AccountId) -> anyhow::Result<bool> {
-    let word = mock_chain
-        .committed_account(bridge_id)?
-        .storage()
-        .get_item(PausableStorage::is_paused_slot())?;
-    Ok(word != Word::default())
 }
 
 /// Builds the note a "paused bridge rejects <entry point>" test stages against the bridge.

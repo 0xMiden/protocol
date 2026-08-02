@@ -141,6 +141,14 @@ impl From<RbacConfig> for NoteStorage {
 ///
 /// Construct one with the [builder](RbacConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
+///
+/// ## Security considerations
+///
+/// A created note is an unordered, unexpiring, uncancellable instruction — treat it as a
+/// standing capability and do not create role-management notes ahead of need. Consumption order
+/// is chosen by whoever consumes the note, so when rotating a role, wait for the successor's
+/// grant to commit before issuing any revoke or renounce (a note that fails because its sender
+/// currently lacks the role stays pending and revives if the sender regains it).
 #[derive(Debug, Clone)]
 pub struct RbacConfigNote {
     sender: AccountId,

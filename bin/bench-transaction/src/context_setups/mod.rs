@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::create_existing_bridge_account_with_roles;
+use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -433,8 +433,10 @@ fn setup_bridge_fixture(
     })?;
 
     // CREATE BRIDGE ACCOUNT
+    // the dummy admin only matters for ADMIN-gated operations, which the benches do not exercise
     let mut bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

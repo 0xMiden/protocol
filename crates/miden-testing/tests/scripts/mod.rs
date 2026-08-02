@@ -17,7 +17,7 @@ mod p2id;
 mod p2ide;
 mod pausable;
 mod pswap;
-mod rbac;
+pub(crate) mod rbac;
 mod send_note;
 mod swap;
 mod tx_fee;
