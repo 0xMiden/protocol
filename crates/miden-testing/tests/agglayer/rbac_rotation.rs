@@ -171,7 +171,7 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
 }
 
 /// A paused bridge still consumes `RBAC_CONFIG` notes: role rotation stays available while
-/// bridging is halted, as documented in SPEC section 2.5.
+/// bridging is halted.
 #[tokio::test]
 async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -216,11 +216,7 @@ async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Pins the exact contents of the bridge's input-note allowlist — both the set the bridge
-/// declares and the effective on-account set including the entries [`AuthNetworkAccount`]
-/// auto-adds — so that any drift is a deliberate, reviewed change.
-///
-/// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+/// Pins the bridge's input-note allowlist.
 #[test]
 fn bridge_allowed_notes_pin() {
     let expected = BTreeSet::from([
