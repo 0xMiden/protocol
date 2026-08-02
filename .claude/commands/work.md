@@ -13,3 +13,17 @@ Work on a GitHub issue and open a **draft** PR.
 3. **Start in plan mode.** Produce an implementation plan and wait for approval before writing any code.
 4. After approval: implement per `.claude/CLAUDE.md` (worktree, branch, commit conventions).
 5. Open the draft PR against the base branch: `gh pr create --draft --base <branch> --body "Closes #<number> ..."`. Report the PR URL.
+6. **Set up base auto-sync.** Create a scheduled cloud routine (via the `schedule` skill) named
+   `sync-pr-<number>-base`, running **every 2 hours** against this repository, with this prompt
+   (substitute the PR number, head branch, and base branch):
+
+   > Check PR #<number> in this repository (head `<head-branch>`, base `<base>`). If the PR is
+   > merged or closed, or was opened more than 48 hours ago, delete this routine and stop. If
+   > the base branch has commits the PR branch lacks, merge the base into the PR branch and
+   > resolve conflicts. Run `make lint` and the test suites relevant to the changed crates;
+   > push the merge only if everything passes. If a conflict or failure cannot be resolved
+   > confidently, push nothing and comment on the PR describing what blocked the sync.
+
+   Report the routine name alongside the PR URL so the user can find it at
+   claude.ai/code/routines. If routine creation fails (e.g. no scheduling available in this
+   environment), say so and continue - the PR itself is the deliverable.
