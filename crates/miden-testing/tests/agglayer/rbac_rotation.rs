@@ -70,7 +70,7 @@ fn bridge_rbac_config_note(
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
-        .account(bridge_id)
+        .target(bridge_id)
         .config(config)
         .generate_serial_number(rng)
         .build()?

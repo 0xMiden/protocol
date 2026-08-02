@@ -18,7 +18,11 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::errors::standards::{ERR_PAUSABLE_IS_PAUSED, ERR_SENDER_LACKS_ROLE};
+use miden_standards::errors::standards::{
+    ERR_PAUSABLE_IS_PAUSED,
+    ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_SENDER_LACKS_ROLE,
+};
 use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -114,9 +118,9 @@ async fn pause_config_note_pauses_and_unpauses_bridge() -> anyhow::Result<()> {
     let unpause_note = stage_pause_note(&mut builder, setup.bridge.id(), PauseConfig::Unpause)?;
     let mut mock_chain = builder.build()?;
 
-    // The note must be discoverable by network-note routing, and routed to the bridge: the
-    // PAUSE_CONFIG script does not assert the target, so this attachment is the only thing that
-    // delivers the pause to the bridge.
+    // The note must be discoverable by network-note routing, and routed to the bridge: the same
+    // attachment that delivers the pause to the bridge is what the PAUSE_CONFIG script asserts
+    // against the consuming account.
     assert!(pause_note.is_network_note(), "pause note should be a routable network note");
     let target = NetworkAccountTarget::try_from(pause_note.attachments())?;
     assert_eq!(target.target_id(), setup.bridge.id(), "pause note must be routed to the bridge");
@@ -175,18 +179,16 @@ async fn non_admin_unpause_of_paused_bridge_reverts() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Characterizes the accepted limitation tracked by
-/// [#3433](https://github.com/0xMiden/protocol/issues/3433): the `PAUSE_CONFIG` script does not
-/// assert its target, so an `ADMIN`-issued pause note built for a *different* account is still
-/// accepted by the bridge. When #3433 binds these notes to their target this test must be
-/// inverted to expect a rejection.
+/// The `PAUSE_CONFIG` script asserts its target, so an `ADMIN`-issued pause note built for a
+/// *different* account is rejected by the bridge even though its sender is authorized.
 #[tokio::test]
-async fn pause_note_targeting_another_account_is_currently_accepted() -> anyhow::Result<()> {
+async fn pause_note_targeting_another_account_is_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
+    let mock_chain = builder.build()?;
 
     // Admin-sent, but built for an unrelated account: the attachment names that account, not the
-    // bridge, which is exactly the case #3433's target assertion will reject.
+    // bridge, so the script's target check rejects it.
     let other_account = AccountIdBuilder::new()
         .account_type(AccountType::Public)
         .build_with_seed([9; 32]);
@@ -197,15 +199,16 @@ async fn pause_note_targeting_another_account_is_currently_accepted() -> anyhow:
         other_account,
         &mut rng,
     )?;
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
-    let mut mock_chain = builder.build()?;
 
-    consume_note(&mut mock_chain, setup.bridge.id(), &note).await?;
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
 
-    assert!(
-        is_bridge_paused(&mock_chain, setup.bridge.id())?,
-        "the bridge currently accepts a pause note built for another account (see #3433)"
-    );
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert!(!is_bridge_paused(&mock_chain, setup.bridge.id())?);
     Ok(())
 }
 

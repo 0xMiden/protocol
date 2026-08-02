@@ -871,7 +871,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::with_account_target(bridge)` |
-| `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. Unlike the other bridge notes' scripts, the `RBAC_CONFIG` script does **not** validate the attachment target. |
+| `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. The script asserts the consuming account matches this target. |
 
 **`NoteDetails`**
 
@@ -894,16 +894,16 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | `2` | `set_role_admin` | 3 | `[2, role_symbol, admin_role_symbol]` (`0` reverts to the default `ADMIN` role) |
 | `3` | `renounce_role` | 2 | `[3, role_symbol]` |
 
-**Consumption:** Script asserts the storage item count matches the selector, then dispatches to
-the corresponding `rbac` procedure of the consuming account. All authorization is enforced by
-those procedures against the note sender; the script itself performs no target or sender checks.
+**Consumption:** Script asserts the consuming account matches the `NetworkAccountTarget` and
+that the storage item count matches the selector, then dispatches to the corresponding `rbac`
+procedure. Authorization is enforced by those procedures against the note sender.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
-| **Consumer** | **Not enforced** -- the note is not bound to the bridge; any account that allowlists the `RBAC_CONFIG` script could consume it ([#3433](https://github.com/0xMiden/protocol/issues/3433)) |
+| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ### 4.8 BURN (generated)
 
@@ -1079,20 +1079,16 @@ agglayer-specific note; the bridge merely includes its script root in
 procedure, which runs `authority::assert_authorized` before flipping the pause state. On the
 bridge that procedure has no mapped role, so the note sender must hold the `ADMIN` role.
 
-Build these notes with [`AggLayerBridge::pause_note`] rather than the standards builder, which
-attaches no `NetworkAccountTarget` - without it the note is never routed to the bridge.
-
-Unlike the agglayer admin notes above, the `PAUSE_CONFIG` script does not *assert* the attachment
-target, so the note is not bound to the bridge on consumption. This affects the remaining
-standards admin notes (`NETWORK_ACCOUNT_CONFIG` already binds its target) and is tracked in
-[#3433](https://github.com/0xMiden/protocol/issues/3433).
+The builder binds the note to the bridge via a `NetworkAccountTarget` attachment, which the
+script asserts against the consuming account; [`AggLayerBridge::pause_note`] wraps the builder
+with clearer error reporting for non-public targets.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
-| **Consumer** | Bridge account -- **routed** via the `NetworkAccountTarget` attachment; not script-enforced ([#3433](https://github.com/0xMiden/protocol/issues/3433)) |
+| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---
 
