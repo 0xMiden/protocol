@@ -236,19 +236,14 @@ async fn unauthorized_sender_grant_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The note is bound to its target account, so a decoy account cannot consume a note meant for
-/// another account. The decoy carries the same `RoleBasedAccessControl` setup with the same admin,
-/// so the sender-based authorization inside `rbac::grant_role` would pass; consuming a note
-/// targeted at a different account aborts at the target check before any role change runs.
-#[tokio::test]
-async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
+/// Decoy: same RBAC setup and admin as the note's real target, so sender-based authorization
+/// would pass; only the target check stops it, before any role change runs.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let admin = test_account_id(41);
     let member = test_account_id(42);
 
     let (decoy, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
-
-    // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
 
     let note = rbac_config_note(
@@ -258,13 +253,11 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         &mut rng,
     )?;
 
-    let result = mock_chain
-        .build_transaction(decoy.clone())
-        .unauthenticated_input_note(note)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH);
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy.id(),
+        mock_chain,
+        note,
+        target,
+        expected_error: ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    })
 }

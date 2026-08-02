@@ -1,6 +1,6 @@
 extern crate alloc;
 
-mod config;
+pub(crate) mod config;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;

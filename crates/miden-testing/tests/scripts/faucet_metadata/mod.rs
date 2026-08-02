@@ -19,7 +19,7 @@
 
 extern crate alloc;
 
-mod config;
+pub(crate) mod config;
 
 use alloc::vec::Vec;
 

@@ -2,10 +2,12 @@ extern crate alloc;
 
 mod agglayer;
 mod auth;
+mod decoy_target_rejection;
 mod scripts;
 mod standards;
 mod wallet;
 
+pub(crate) use decoy_target_rejection::{DecoyScenario, chain_with_decoy};
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;

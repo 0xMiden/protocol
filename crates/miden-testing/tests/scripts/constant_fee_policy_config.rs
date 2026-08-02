@@ -176,38 +176,27 @@ async fn config_note_with_wrong_storage_item_count_is_rejected(
     Ok(())
 }
 
-/// A config note targeted at one account cannot be consumed by a different account: the script's
-/// `NetworkAccountTarget` check rejects it before `set_note_fee` runs, even though the consuming
-/// account allowlists the note's root and its `Authority` would accept the sender. This prevents a
-/// third party from hijacking a public config note away from its intended account.
-#[tokio::test]
-async fn config_note_for_another_account_is_rejected() -> anyhow::Result<()> {
+/// Decoy: allowlists the note's root and its `Authority` would accept the sender; only the
+/// target-account check stops it, before `set_note_fee` runs. Consumed unauthenticated (unlike
+/// this file's other tests) since the target check fires regardless.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let owner = owner_id();
-    // The note targets a different (public) account than the one that will consume it.
     let target_account =
         AccountId::builder().account_type(AccountType::Public).build_with_seed([80; 32]);
-    let consuming_account = build_manageable_fee_account(
+    let decoy = build_manageable_fee_account(
         owner,
         BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
-    let config_note = build_config_note(owner, target_account, fee_asset(FEE_AMOUNT)?, 3)?;
+    let note = build_config_note(owner, target_account, fee_asset(FEE_AMOUNT)?, 3)?;
+    let (decoy_id, mock_chain) = crate::chain_with_decoy(decoy)?;
 
-    let mut builder = MockChain::builder();
-    builder.add_account(consuming_account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let result = mock_chain
-        .build_transaction(consuming_account.id())
-        .authenticated_input_note(config_note.id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH);
-
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy_id,
+        mock_chain,
+        note,
+        target: target_account,
+        expected_error: ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH,
+    })
 }
 
 /// A hand-crafted note reusing the config-note script but WITHOUT a `NetworkAccountTarget`

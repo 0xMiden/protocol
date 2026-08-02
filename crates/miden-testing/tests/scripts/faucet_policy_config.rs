@@ -248,20 +248,15 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
-/// another one. The decoy carries the same `TokenPolicyManager` setup with the same owner, so the
-/// sender-based authorization would pass; consuming a note targeted at a different faucet aborts at
-/// the target check before any policy switch runs.
-#[tokio::test]
-async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
+/// Decoy: same `TokenPolicyManager` setup and owner as the note's real target, so sender-based
+/// authorization would pass; only the target check stops it, before any policy switch runs.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let mut builder = MockChain::builder();
     let decoy = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
-
-    // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
 
     let note = faucet_policy_config_note(
@@ -272,13 +267,12 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         },
         &mut rng,
     )?;
-    let result = mock_chain
-        .build_transaction(decoy.clone())
-        .unauthenticated_input_note(note)
-        .build()?
-        .execute()
-        .await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH);
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy.id(),
+        mock_chain,
+        note,
+        target,
+        expected_error: ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    })
 }

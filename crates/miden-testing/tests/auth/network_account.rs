@@ -654,22 +654,13 @@ async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
     Ok(())
 }
 
-/// A config note is bound to its target account by a `NetworkAccountTarget` attachment, so a decoy
-/// account cannot consume a note meant for another account. The decoy is owned by the note's sender
-/// (so it passes both the note-script allowlist and the owner authority), yet consuming a note
-/// targeted at a different account aborts at the target-account check before any action runs.
-#[tokio::test]
-async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
+/// Decoy: owned by the note's sender (so it passes the note-script allowlist and owner
+/// authority); only the target-account check stops it, before any action runs. Consumed
+/// unauthenticated (unlike this file's other tests) since the target check fires regardless.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let owner = owner_id();
-
-    // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
-
-    // The decoy account, owned by the same `owner` (so it authorizes the sender's notes) and
-    // allowlisting the config note by default.
     let decoy = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-
-    // A config note targeted at `target` (not the decoy), sent by `owner`.
     let admin_note = build_config_note(
         owner,
         target,
@@ -679,23 +670,15 @@ async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
         8,
     )?;
 
-    let mut builder = MockChain::builder();
-    builder.add_account(decoy.clone())?;
-    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
+    let (decoy_id, mock_chain) = crate::chain_with_decoy(decoy)?;
 
-    // The decoy consumes the note; the target-account check aborts before any action runs.
-    let result = mock_chain
-        .build_transaction(decoy.id())
-        .authenticated_input_note(admin_note.id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
-
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy_id,
+        mock_chain,
+        note: admin_note,
+        target,
+        expected_error: ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    })
 }
 
 /// A transaction that consumes a mix of allowed and disallowed input notes must be rejected: the

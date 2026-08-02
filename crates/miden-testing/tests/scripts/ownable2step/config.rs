@@ -182,31 +182,22 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The note is bound to its target account, so a decoy account cannot consume a note meant for
-/// another account. The decoy carries the same `Ownable2Step` setup with the same owner, so the
-/// sender-based authorization would pass; consuming a note targeted at a different account aborts
-/// at the target check before any ownership change runs.
-#[tokio::test]
-async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Result<()> {
+/// Decoy: same `Ownable2Step` setup and owner as the note's real target, so sender-based
+/// authorization would pass; only the target check stops it, before any ownership change runs.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
-    let decoy = create_ownable_account(owner)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(decoy.clone())?;
-    let mock_chain = builder.build()?;
+    let (decoy_id, mock_chain) = crate::chain_with_decoy(create_ownable_account(owner)?)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
-
     let note = owner_config_note(owner, target, OwnerConfig::AcceptOwnership, &mut rng)?;
-    let result = mock_chain
-        .build_transaction(decoy.clone())
-        .unauthenticated_input_note(note)
-        .build()?
-        .execute()
-        .await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH);
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy_id,
+        mock_chain,
+        note,
+        target,
+        expected_error: ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    })
 }

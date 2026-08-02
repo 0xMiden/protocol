@@ -239,19 +239,11 @@ async fn wrong_storage_item_count_fails_for_string_action() -> anyhow::Result<()
     Ok(())
 }
 
-/// The note is bound to its target faucet, so a decoy faucet cannot consume a note meant for
-/// another one. The decoy carries the same faucet setup with the same owner, so the sender-based
-/// authorization would pass; consuming a note targeted at a different faucet aborts at the target
-/// check before any metadata change runs.
-#[tokio::test]
-async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<()> {
+/// Decoy: same faucet setup and owner as the note's real target, so sender-based authorization
+/// would pass; only the target check stops it, before any metadata change runs.
+pub(crate) fn decoy_scenario() -> anyhow::Result<crate::DecoyScenario> {
     let owner = owner_id();
-    let decoy = create_faucet(owner, true)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(decoy.clone())?;
-    let mock_chain = builder.build()?;
-
-    // The note's intended target. It need not be built: the note only references its ID.
+    let (decoy_id, mock_chain) = crate::chain_with_decoy(create_faucet(owner, true)?)?;
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
 
     let note = config_note(
@@ -261,14 +253,11 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         9,
     )?;
 
-    let result = mock_chain
-        .build_transaction(decoy.clone())
-        .unauthenticated_input_note(note)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH);
-
-    Ok(())
+    Ok(crate::DecoyScenario {
+        decoy: decoy_id,
+        mock_chain,
+        note,
+        target,
+        expected_error: ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    })
 }
