@@ -433,7 +433,7 @@ fn setup_bridge_fixture(
     })?;
 
     // CREATE BRIDGE ACCOUNT
-    // the dummy admin only matters for role rotation, which the benches do not exercise
+    // the dummy admin only matters for ADMIN-gated operations, which the benches do not exercise
     let mut bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
         bridge_admin_account_id(),
