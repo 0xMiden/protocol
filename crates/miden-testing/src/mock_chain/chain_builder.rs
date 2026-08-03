@@ -56,6 +56,7 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -410,6 +411,7 @@ impl MockChainBuilder {
             allowed_script_roots,
             allowed_tx_script_roots: BTreeSet::new(),
             fee_policy_manager,
+            sponsorship_policy: SponsorshipPolicy::default(),
         };
 
         self.add_account_from_builder(auth, account_builder, AccountState::Exists)

@@ -1119,7 +1119,9 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#! - is_active_note is false and the active account is not the native account.
+#! - is_active_note is false and the invocation does not originate from the account context.
+#! - is_active_note is true and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
@@ -1130,6 +1132,9 @@ end
 pub proc input_note_remove_asset
     # bring note_index directly above is_active_note so the note pointer can be resolved
     movup.9 swap
+    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+
+    exec.authenticate_indexed_input_note_asset_removal
     # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
@@ -1175,11 +1180,16 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is being processed (attempted to access note assets
+#! - is_active_note is false and the active account is not the native account.
+#! - is_active_note is false and the invocation does not originate from the account context.
+#! - is_active_note is true and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
 pub proc input_note_remove_all_assets
+    exec.authenticate_indexed_input_note_asset_removal
+    # => [is_active_note, note_index, pad(14)]
+
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
     exec.get_requested_note_ptr
@@ -2073,6 +2083,30 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Authenticates indexed input-note asset removal while allowing active-note self-removal.
+#!
+#! The native account check is required in addition to the account-origin check: the latter
+#! resolves the caller against the active account, so without it a foreign account reached through
+#! FPI could authorize the removal with its own procedures.
+#!
+#! Inputs:  [is_active_note]
+#! Outputs: [is_active_note]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether the assets are removed from the active
+#!   note or from the note with the specified index.
+#!
+#! Panics if:
+#! - is_active_note is false and the active account is not the native account.
+#! - is_active_note is false and the invocation does not originate from the account context.
+proc authenticate_indexed_input_note_asset_removal
+    dup eq.0
+    if.true
+        exec.memory::assert_native_account
+        exec.authenticate_account_origin
+    end
+end
 
 #! Returns the memory pointer to the input note, depending on whether the requested note is current
 #! or it was requested by index.

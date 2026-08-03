@@ -1,5 +1,6 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
 use miden::standards::faucets
 use miden::standards::faucets::fungible
 
@@ -33,6 +34,8 @@ const NUM_ITEMS_SET_STRING = 32
 
 # ERRORS
 # =================================================================================================
+
+const ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet metadata config note attachment target account does not match the consuming account"
 
 const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR = "faucet metadata config note selector does not match a known action"
 
@@ -74,6 +77,7 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the selected field's mutability flag is not set, or the account is paused.
@@ -81,6 +85,12 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

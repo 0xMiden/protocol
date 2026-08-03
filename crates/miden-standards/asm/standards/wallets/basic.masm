@@ -76,7 +76,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-@locals(512)
+@locals(128)
 pub proc move_note_assets_to_account
     # write assets to local memory starting at offset 0
     # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit

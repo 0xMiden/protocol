@@ -10,7 +10,6 @@ use crate::account::auth::{
     AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
     NoAuth,
 };
 use crate::account::faucets::FungibleFaucet;
@@ -32,7 +31,6 @@ pub enum StandardAccountComponent {
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
-    AuthSingleSigAcl,
     AuthMultisig,
     AuthMultisigSmart,
     AuthGuardedMultisig,
@@ -53,7 +51,6 @@ impl StandardAccountComponent {
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
             Self::AuthSingleSig => AuthSingleSig::code(),
-            Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
             Self::AuthMultisig => AuthMultisig::code(),
             Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
@@ -105,9 +102,6 @@ impl StandardAccountComponent {
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
                 },
-                Self::AuthSingleSigAcl => {
-                    component_interface_vec.push(AccountComponentInterface::AuthSingleSigAcl)
-                },
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
@@ -143,7 +137,6 @@ impl StandardAccountComponent {
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
-        Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);

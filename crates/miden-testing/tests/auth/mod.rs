@@ -1,7 +1,6 @@
 mod fee_payment;
 
 mod singlesig;
-mod singlesig_acl;
 
 mod multisig;
 
