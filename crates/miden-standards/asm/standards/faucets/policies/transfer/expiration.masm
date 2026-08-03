@@ -1,0 +1,22 @@
+use miden::protocol::tx
+
+# CONSTANTS
+# ================================================================================================
+
+#! Standard expiration window for transfer policies that read faucet-owned policy state.
+pub const TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA = 10
+
+# PROCEDURES
+# ================================================================================================
+
+#! Sets the standard transaction expiration delta for transfer policies that read faucet-owned
+#! policy state.
+#!
+#! Inputs:  [...]
+#! Outputs: [...]
+#!
+#! Invocation: exec
+pub proc set_transfer_policy_expiration_delta
+    push.TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA
+    exec.tx::update_expiration_block_delta
+end

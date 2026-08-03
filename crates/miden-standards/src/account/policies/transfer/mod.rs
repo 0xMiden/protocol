@@ -27,6 +27,9 @@ pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistManager, BlocklistStorage};
 
+/// Standard expiration window for transfer policies that read faucet-owned policy state.
+pub const TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA: u16 = 10;
+
 // TRANSFER POLICY ERROR
 // ================================================================================================
 

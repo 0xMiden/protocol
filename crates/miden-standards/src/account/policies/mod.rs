@@ -46,6 +46,7 @@ pub use transfer::{
     BasicBlocklist,
     BlocklistManager,
     BlocklistStorage,
+    TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA,
     TransferAllowAll,
     TransferPolicy,
     TransferPolicyError,

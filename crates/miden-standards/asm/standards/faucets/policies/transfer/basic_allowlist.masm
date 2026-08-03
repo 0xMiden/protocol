@@ -6,6 +6,7 @@
 
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::allowlist
+use miden::standards::faucets::policies::transfer::expiration
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -30,6 +31,9 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Invocation: call
 @account_procedure
 pub proc check_policy
+    exec.expiration::set_transfer_policy_expiration_delta
+    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 

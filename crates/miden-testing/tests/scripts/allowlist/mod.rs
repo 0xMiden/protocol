@@ -22,6 +22,8 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::ProposedBatchError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -32,6 +34,7 @@ use miden_standards::account::policies::{
     AllowlistStorage,
     BurnPolicy,
     MintPolicy,
+    TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -356,6 +359,87 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn allowlist_stale_reference_sets_expiration_delta() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_owner_allowlist_transfer_initialized(
+        &mut builder,
+        owner_id,
+        [target_account.id()],
+    )?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let stale_ref_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+    let fresh_ref_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let disallow_note = build_admin_note(owner_id, target_account.id(), "disallow_account", 77)?;
+    builder.add_output_note(RawOutputNote::Full(disallow_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+    let n_minus_1 = mock_chain.latest_block_header().block_num();
+    let stale_faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    consume_note(&mut mock_chain, faucet.id(), &disallow_note).await?;
+    let n = mock_chain.latest_block_header().block_num();
+    assert!(n > n_minus_1);
+
+    let fresh_faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let rejected = mock_chain
+        .build_transaction(target_account.id())
+        .reference_block(n)
+        .authenticated_input_note(fresh_ref_note.id())
+        .foreign_accounts(vec![fresh_faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(rejected, ERR_ACCOUNT_IS_NOT_ALLOWED);
+
+    let executed = mock_chain
+        .build_transaction(target_account.id())
+        .reference_block(n_minus_1)
+        .authenticated_input_note(stale_ref_note.id())
+        .foreign_accounts(vec![stale_faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    let expected_expiration =
+        BlockNumber::from(n_minus_1.as_u32() + u32::from(TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA));
+    assert_eq!(executed.expiration_block_num(), expected_expiration);
+    assert_ne!(executed.expiration_block_num(), BlockNumber::from(u32::MAX));
+
+    mock_chain.prove_until_block(expected_expiration)?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    let error = mock_chain
+        .prove_next_block()
+        .expect_err("expired stale-reference transaction should not be included")
+        .downcast::<ProposedBatchError>()?;
+    assert!(matches!(
+        error,
+        ProposedBatchError::ExpiredTransaction {
+            transaction_expiration_num,
+            reference_block_num,
+            ..
+        } if transaction_expiration_num == expected_expiration
+            && reference_block_num == expected_expiration
+    ));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn allow_already_allowed_is_noop() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
@@ -489,13 +573,19 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+    let reference_block = mock_chain.latest_block_header().block_num();
     let executed = mock_chain
         .build_transaction(faucet.id())
+        .reference_block(reference_block)
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
 
+    let expected_expiration = BlockNumber::from(
+        reference_block.as_u32() + u32::from(TRANSFER_POLICY_EXPIRATION_BLOCK_DELTA),
+    );
+    assert_eq!(executed.expiration_block_num(), expected_expiration);
     assert_eq!(executed.output_notes().num_notes(), 1);
     Ok(())
 }

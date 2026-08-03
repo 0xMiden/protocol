@@ -3,6 +3,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
+use miden::standards::faucets::policies::transfer::expiration
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -526,6 +527,9 @@ end
 #! Invocation: exec
 @locals(4)
 proc invoke_transfer_policy
+    exec.expiration::set_transfer_policy_expiration_delta
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
     exec.active_account::get_item
     # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
