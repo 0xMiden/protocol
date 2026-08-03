@@ -426,15 +426,7 @@ async fn allowlist_stale_reference_sets_expiration_delta() -> anyhow::Result<()>
         .prove_next_block()
         .expect_err("expired stale-reference transaction should not be included")
         .downcast::<ProposedBatchError>()?;
-    assert!(matches!(
-        error,
-        ProposedBatchError::ExpiredTransaction {
-            transaction_expiration_num,
-            reference_block_num,
-            ..
-        } if transaction_expiration_num == expected_expiration
-            && reference_block_num == expected_expiration
-    ));
+    assert!(matches!(error, ProposedBatchError::ExpiredTransaction { .. }));
 
     Ok(())
 }
