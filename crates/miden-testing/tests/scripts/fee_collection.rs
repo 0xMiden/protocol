@@ -19,7 +19,8 @@ use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionScri
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
-use miden_standards::account::wallets::{BasicWallet, NoteCreator};
+use miden_standards::account::note_creator::NoteCreator;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
@@ -974,7 +975,7 @@ fn create_network_notes_tx_script(
         use miden::protocol::output_note
 
         use miden::standards::attachments::network_account_target
-        use miden::standards::note_tag
+        use miden::standards::note::note_tag
 
         use {{NOTE_TYPE_PUBLIC}} from miden::protocol::note
 

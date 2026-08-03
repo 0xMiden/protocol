@@ -2,7 +2,6 @@ use miden::protocol::active_note
 use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::wallets::basic as basic_wallet
-use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
@@ -105,7 +104,7 @@ end
 #! Creates a new TX_FEE output note from the given serial number and returns its index.
 #!
 #! Note creation must originate from the account context, so this procedure routes creation through
-#! the account's `note_creator::create_note` procedure. This lets `tx_fee::create_output_note` be used
+#! the account's `create_note` procedure. This lets `tx_fee::create_output_note` be used
 #! from contexts outside the account code, such as note or transaction scripts. Callers that are
 #! already inside an account procedure should instead use `tx_fee::prepare_note` together with
 #! `exec.output_note::create`.
@@ -113,7 +112,7 @@ end
 #! The created note is always public and carries the unique TX_FEE_NOTE_TAG note tag.
 #!
 #! Requires that the account exposes:
-#! - miden::standards::note::note_creator::create_note procedure.
+#! - the `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [SERIAL_NUM]
 #! Outputs: [note_idx]
@@ -131,7 +130,7 @@ pub proc create_output_note
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.note_creator::create_note
+    call.basic_wallet::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop

@@ -12,7 +12,7 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes the `create_note` procedure from the
-    /// [`NoteCreator`][crate::account::wallets::NoteCreator] component.
+    /// [`NoteCreator`][crate::account::note_creator::NoteCreator] component.
     NoteCreator,
     /// Exposes procedures from the
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.

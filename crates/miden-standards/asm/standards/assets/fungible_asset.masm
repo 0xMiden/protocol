@@ -108,7 +108,8 @@ end
 #!
 #! Panics if:
 #! - the asset composition encoded in ASSET_ID is not fungible.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_native_account_balance
