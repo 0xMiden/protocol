@@ -222,14 +222,19 @@ async fn test_auth_request_with_invalid_encoded_signature_length_is_rejected(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        execution_result,
-        matches ExecutionError::EventError { error: ref event_err, .. }
-            if matches!(
-                event_err.downcast_ref::<TransactionKernelError>(),
-                Some(TransactionKernelError::InvalidEncodedSignatureLength { actual, .. })
-                    if *actual == num_felts
-            )
+    assert_matches!(
+        execution_result.unwrap_err(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(ExecutionError::EventError {
+            error,
+            ..
+        }) => {
+            assert_matches!(
+                *error.downcast().unwrap(),
+                TransactionKernelError::InvalidEncodedSignatureLength { actual, .. } => {
+                    assert_eq!(actual, num_felts);
+                }
+            );
+        }
     );
 
     Ok(())
